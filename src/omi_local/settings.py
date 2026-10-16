@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .domain import HintPolicy
 
-LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly"]
+LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
 
 
 def local_endpoint(value: str) -> str:
@@ -35,13 +35,12 @@ def local_endpoint(value: str) -> str:
     return value.rstrip("/")
 
 
-class LLMRouteOverride(BaseModel):
+class ModelRouteOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str | None = Field(default=None, min_length=1, max_length=200)
     base_url: str | None = None
     token: SecretStr | None = None
-    revision: str | None = Field(default=None, max_length=200)
 
     @field_validator("model")
     @classmethod
@@ -56,10 +55,17 @@ class LLMRouteOverride(BaseModel):
         return local_endpoint(value) if value is not None else None
 
 
-class LLMRoute(BaseModel):
+class LLMRouteOverride(ModelRouteOverride):
+    revision: str | None = Field(default=None, max_length=200)
+
+
+class ModelRoute(BaseModel):
     model: str
     base_url: str
     token: SecretStr
+
+
+class LLMRoute(ModelRoute):
     revision: str
 
     @property
@@ -86,7 +92,9 @@ class Settings(BaseSettings):
     audio_forwarding_token: SecretStr = SecretStr("")
     omi_api_key: SecretStr = SecretStr("")
     stt_model: str = "stt-danish"
+    stt_routes: dict[str, ModelRouteOverride] = Field(default_factory=dict)
     llm_model: str = "home"
+    llm_enable_thinking: bool | None = None
     llm_revision: str = Field(default="", max_length=200)
     llm_routes: dict[LLMTask, LLMRouteOverride] = Field(default_factory=dict)
     embedding_enabled: bool = False
@@ -100,6 +108,10 @@ class Settings(BaseSettings):
     embedding_query_prefix: str = Field(default="", max_length=1000)
     embedding_document_prefix: str = Field(default="", max_length=1000)
     embedding_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    embedding_query_timeout_seconds: float = Field(default=2, gt=0, le=60)
+    embedding_query_cache_size: int = Field(default=128, ge=0, le=4096)
+    embedding_query_cache_seconds: int = Field(default=300, ge=0, le=3600)
+    embedding_query_retry_seconds: float = Field(default=15, ge=0, le=300)
     embedding_min_score: float = Field(default=0.5, ge=-1, le=1)
     language: str = Field(default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
@@ -114,9 +126,38 @@ class Settings(BaseSettings):
     audio_retention_days: int = Field(default=7, ge=0, le=36500)
     transcript_retention_days: int = Field(default=30, ge=0, le=36500)
     inference_timeout_seconds: int = Field(default=120, ge=1, le=1800)
+    chat_query_expansion: bool = True
+    chat_query_expansion_timeout_seconds: float = Field(default=5, gt=0, le=60)
     silence_threshold: int = Field(default=35, ge=0, le=32767)
     stt_segment_timestamps: bool = False
     web_dir: Path | None = None
+
+    @field_validator("stt_routes", mode="before")
+    @classmethod
+    def valid_stt_languages(cls, value):
+        if not isinstance(value, dict):
+            raise ValueError("STT routes must map language codes or names to overrides")
+        routes = {}
+        for language, override in value.items():
+            if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z-]{2,32}", language):
+                raise ValueError("Use a language code or a provider's language name for STT routes")
+            normalized = language.lower()
+            if normalized in routes:
+                raise ValueError("Duplicate STT language route")
+            routes[normalized] = override
+        return routes
+
+    def stt_override(self, language: str) -> ModelRouteOverride | None:
+        language = language.lower()
+        return self.stt_routes.get(language) or self.stt_routes.get(language.split("-")[0])
+
+    def stt_route(self, language: str) -> ModelRoute:
+        override = self.stt_override(language) or ModelRouteOverride()
+        return ModelRoute(
+            model=override.model if override.model is not None else self.stt_model,
+            base_url=override.base_url if override.base_url is not None else self.stt_base_url,
+            token=override.token if override.token is not None else self.inference_token,
+        )
 
     def llm_route(self, task: LLMTask) -> LLMRoute:
         override = self.llm_routes.get(task, LLMRouteOverride())

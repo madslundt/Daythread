@@ -165,18 +165,22 @@ bash scripts/dev.sh
 
 Open **http://localhost:8787** or `http://<server-LAN-address>:8787` from another device. Existing `.env` files are preserved. The launcher binds all interfaces; set `OMI_HOST=127.0.0.1` for access from the server only.
 
-Set these values in `.env`; the example gateway/model names are specific to the original home network:
+Configure models, language/task routes, local endpoints, API keys, embeddings, forwarding and processing options from **web Settings → Models, keys & server settings** or **iPhone Settings → Transcription → Models, keys & all server settings**. Keys are write-only: keep, replace or clear them without displaying the saved value. STT/LLM/key changes apply immediately; embedding, worker and archive-path changes are marked for backend restart. The clients expose all backend `Settings` fields.
+
+Environment variables remain available as initial defaults; the example gateway/model names are specific to the original home network:
 
 | Setting | Purpose |
 |---|---|
 | `OMI_STT_BASE_URL`, `OMI_STT_MODEL` | Local transcription endpoint base (including `/v1`) and model name. |
+| `OMI_STT_ROUTES__<LANGUAGE>__MODEL` | Optional STT model per language, e.g. `DA` or `EN`; each also supports `BASE_URL` and `TOKEN`. Automatic routing uses language metadata from a multilingual first pass. See [local inference](docs/README.md#local-inference). |
 | `OMI_LLM_BASE_URL`, `OMI_LLM_MODEL` | Local language-model endpoint base (including `/v1`) and model name. |
 | `OMI_INFERENCE_TOKEN` | Optional credential for your local inference gateway. |
-| `OMI_LLM_ROUTES__<TASK>__MODEL` | Optional model override for `CHAT`, `SUMMARY`, `EXTRACTION`, `PREPARATION`, or `WEEKLY`; unset tasks use `OMI_LLM_MODEL`. Each task also supports `BASE_URL`, `TOKEN`, and `REVISION`. See [local inference](docs/README.md#local-inference). |
+| `OMI_LLM_ROUTES__<TASK>__MODEL` | Optional model override for `CHAT`, `SUMMARY`, `EXTRACTION`, `PREPARATION`, `WEEKLY`, or `RETRIEVAL`; unset tasks use `OMI_LLM_MODEL`. Each task also supports `BASE_URL`, `TOKEN`, and `REVISION`. See [local inference](docs/README.md#local-inference). |
+| `OMI_CHAT_QUERY_EXPANSION` | Default `true`: try bounded alternate search wording when chat finds no evidence. Successful searches need no extra planning call. |
 | `OMI_DATA_DIR`, `OMI_TIMEZONE` | Archive location (default `data/`) and local calendar timezone. |
 | `OMI_AUDIO_RETENTION_DAYS`, `OMI_TRANSCRIPT_RETENTION_DAYS` | Independent retention periods; defaults are 7 days for audio and 30 days for transcripts. `0` keeps data indefinitely. |
 
-See [all starter settings](config/omi.env.example). Saved runtime settings override environment defaults.
+See [all starter settings](config/omi.env.example). Saved settings override environment defaults. Service configuration and keys are saved atomically with owner-only permissions in `.private-settings.json` inside the initial archive directory; this file is excluded from application archive exports. Copy it separately when moving the deployment. Changing the archive path selects another archive after restart and does not move recordings.
 
 **Docker alternative:** create `.env` from `config/omi.env.example` if absent, edit the model settings, then run:
 

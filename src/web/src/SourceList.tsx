@@ -1,3 +1,4 @@
+import { ImportanceButton, ImportantBadge } from "./Importance";
 import { SourceLabels } from "./SourceLabels";
 import { useEffect, useState } from "react";
 import { audioUrl, errorMessage, request } from "./api";
@@ -150,13 +151,15 @@ function SourceRow({
               : `Recording · ${source.state}`)}
         </span>
         <span className="source-hints">
-          {source.important ? <Icon name="star" size={15} /> : null}
+          <ImportantBadge target={{ kind: "source", id: source.id }} />
+          {source.important ? <span title="Importance hint added during recording"><Icon name="star" size={15} /></span> : null}
           {source.meeting_hint_ids?.length ? (
             <Icon name="mic" size={15} />
           ) : null}
         </span>
         <Icon name="chevron-right" size={15} />
       </summary>
+      <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" />
       <FeedbackForm sourceId={source.id} />
       {source.error_code ||
       source.transcription_outcome === "silence_gate" ||

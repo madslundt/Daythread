@@ -65,6 +65,50 @@ struct BackendClient {
         let value = try await request(path, method: method, query: query, body: body)
         return try JSONDecoder().decode(type, from: JSONEncoder().encode(value))
     }
+    @MainActor
+    func chat(body: [String: Any], onEvent: @MainActor (JSONValue) -> Void) async throws -> JSONValue {
+        var request = URLRequest(url: url("v1/chat/stream"), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForResource = 3600
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        return try await withTaskCancellationHandler {
+            let (bytes, response) = try await session.bytes(for: request)
+            try Self.validate(response, data: Data())
+            var size = 0, textSize = 0
+            for try await line in bytes.lines {
+                try Task.checkCancellation()
+                size += line.utf8.count
+                guard size <= 16_000_000 else { throw BackendFailure(message: "The answer exceeded its response limit.") }
+                if line.isEmpty { continue }
+                let event = try JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
+                switch event["type"].text {
+                case "done":
+                    let result = event["result"]
+                    guard !result["session_id"].text.isEmpty, !result["message_id"].text.isEmpty,
+                          !result["answer"].text.isEmpty else { throw BackendFailure(message: "The answer response was invalid.") }
+                    return result
+                case "error":
+                    throw BackendFailure(message: event["message"].text.isEmpty ? "The answer could not be completed." : event["message"].text, status: event["status"].integer)
+                case "delta":
+                    textSize += event["text"].text.count
+                    guard textSize <= 30_000 else { throw BackendFailure(message: "The answer exceeded its text limit.") }
+                    onEvent(event)
+                case "status": onEvent(event)
+                case "heartbeat": break
+                default: throw BackendFailure(message: "The answer response was invalid.")
+                }
+            }
+            throw BackendFailure(message: "The answer was interrupted. Please try again.")
+        } onCancel: {
+            session.invalidateAndCancel()
+        }
+    }
     func prep<Body: Encodable, Result: Decodable>(_ action: String, body: Body) async throws -> Result {
         var request = URLRequest(url: url("v1/conversation-prep/" + action), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.httpMethod = "POST"

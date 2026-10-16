@@ -54,6 +54,10 @@ struct ChatView: View {
     @State private var cached = false
     @State private var scopeExpanded = false
     @State private var requestID = UUID()
+    @State private var sendTask: Task<Void, Never>?
+    @State private var streamingText = ""
+    @State private var streamStage = "searching"
+    @State private var pendingQuestion = ""
     @FocusState private var focused: Bool
 
     init(initialScope: ChatScope? = nil) {
@@ -127,7 +131,16 @@ struct ChatView: View {
                     if !message["sources"].array.isEmpty { SourceList(sources: message["sources"].array) }
                 }
             }
-            if loading { Section { ProgressView("Reading recorded evidence…") } }
+            if !pendingQuestion.isEmpty {
+                Section("You") { Text(pendingQuestion) }
+                Section("Omi Local") {
+                    if !streamingText.isEmpty {
+                        Text(streamingText).textSelection(.enabled)
+                        Text("Draft answer · sources are checked before saving.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    ProgressView(streamStage == "expanding" ? "Trying alternate search wording…" : streamStage == "generating" ? "Writing your answer…" : "Reading recorded evidence…")
+                }
+            } else if loading { Section { ProgressView("Reading recorded evidence…") } }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle("Chat").navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
@@ -137,18 +150,25 @@ struct ChatView: View {
                         .background(.background, in: RoundedRectangle(cornerRadius: 18))
                         .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.accent.opacity(focused ? 0.6 : 0.18), lineWidth: 1) }
                         .accessibilityLabel("Question about your recordings").accessibilityIdentifier("chat.question")
-                    Button { Task { await send() } } label: {
+                        .disabled(sendTask != nil)
+                    if sendTask != nil {
+                        Button("Stop") { sendTask?.cancel() }
+                            .accessibilityIdentifier("chat.stop")
+                    } else {
+                    Button { sendTask = Task { await send() } } label: {
                         Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold))
                             .frame(width: 48, height: 48)
                             .foregroundStyle(canSend ? Theme.onAccent : Color.secondary)
                             .background(canSend ? Theme.accent : Color.secondary.opacity(0.12), in: Circle())
                     }.buttonStyle(.plain).disabled(!canSend)
                         .accessibilityLabel("Send question").accessibilityIdentifier("chat.send")
+                    }
                 }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 860)
                     .frame(maxWidth: .infinity).background(.bar)
             }
-            .task(id: cacheKey + model.archiveRevision) { await load(restore: true) }.refreshable { await load(restore: false) }
-            .onDisappear { requestID = UUID(); loading = false }
+            .task(id: cacheKey + model.archiveRevision) { sendTask?.cancel(); sendTask = nil; await load(restore: true) }
+            .refreshable { sendTask?.cancel(); sendTask = nil; await load(restore: false) }
+            .onDisappear { sendTask?.cancel(); sendTask = nil; requestID = UUID(); loading = false; streamingText = ""; pendingQuestion = "" }
     }
 
     private var scopeControls: some View {
@@ -290,25 +310,37 @@ struct ChatView: View {
 
     private func send() async {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !loading, scope.isReady else { return }
-        guard !text.isEmpty, text.count <= 2000 else { error = "Keep questions under 2,000 characters."; return }
+        guard !loading, scope.isReady else { sendTask = nil; return }
+        guard !text.isEmpty, text.count <= 2000 else { sendTask = nil; error = "Keep questions under 2,000 characters."; return }
         let key = cacheKey, request = UUID(), client: BackendClient
-        do { client = try model.client() } catch { self.error = error.localizedDescription; return }
+        do { client = try model.client() } catch { sendTask = nil; self.error = error.localizedDescription; return }
         requestID = request; focused = false; loading = true; error = nil
-        defer { if requestID == request { loading = false } }
+        pendingQuestion = text; streamingText = ""; streamStage = "searching"
+        defer { if requestID == request { sendTask = nil; loading = false; pendingQuestion = ""; streamingText = "" } }
         var body: [String: Any] = ["question": text]
         if let sessionID { body["session_id"] = sessionID }
         else { for (field, value) in scope.fields { body[field] = value } }
         do {
-            let result = try await client.request("v1/chat", method: "POST", body: body)
+            let result = try await client.chat(body: body) { event in
+                guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+                if event["type"].text == "delta" { streamingText += event["text"].text }
+                else if event["type"].text == "status" { streamStage = event["stage"].text }
+            }
             guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
             messages.append(.object(["id": result["user_message_id"], "role": .string("user"), "content": .string(text)]))
             messages.append(.object(["id": result["message_id"], "role": .string("assistant"), "content": result["answer"], "sources": result["sources"], "evidence": result["evidence"], "retrieval_details": result["retrieval_details"]]))
             if !result["session_id"].text.isEmpty { sessionID = result["session_id"].text }
+            let old = sessions.first { $0["id"].text == sessionID }
+            let entry: JSONValue = .object([
+                "id": result["session_id"],
+                "title": old?["title"] ?? .string(String(text.prefix(120))),
+                "updated_at": result["evidence"]["generated_at"],
+                "day": result["day"], "meeting_id": result["meeting_id"],
+                "start_day": result["start_day"], "end_day": result["end_day"]
+            ])
+            sessions.removeAll { $0["id"].text == sessionID }
+            sessions.insert(entry, at: 0)
             question = ""; cached = false; save()
-            let resultSessions = try await client.request("v1/chat/sessions")
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            sessions = resultSessions["items"].array; save()
         } catch {
             guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
             self.error = error.localizedDescription

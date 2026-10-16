@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+from collections import OrderedDict
+from time import monotonic
 
 import httpx
 
@@ -22,10 +24,67 @@ class Embeddings:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings, self.client = settings, client
         self.health = {"state": "unknown" if settings.embedding_enabled else "disabled"}
+        self._queries = OrderedDict()
+        self._pending = {}
+        self._waiters = {}
+        self._retry_at = {}
 
     async def embed(self, texts: list[str], *, query: bool = False) -> list[list[float]]:
         if not self.settings.embedding_enabled:
             raise EmbeddingError("Embeddings disabled")
+        if not query:
+            return await self._embed(texts, query=False)
+        # Only query vectors are cached. Documents and retrieval results always read current
+        # source versions. Include the complete model contract so vectors cannot cross models.
+        identity = json.dumps(self.settings.embedding_manifest, sort_keys=True)
+        key = (identity, tuple(texts))
+        now = monotonic()
+        cached = self._queries.get(key)
+        if cached and cached[0] > now:
+            self._queries.move_to_end(key)
+            return [list(vector) for vector in cached[1]]
+        self._queries.pop(key, None)
+        if self._retry_at.get(identity, 0) > now:
+            raise EmbeddingError("Query embeddings are cooling down after an outage")
+        task = self._pending.get(key)
+        if task is None:
+            task = asyncio.create_task(self._embed_query(texts, key, identity))
+            self._pending[key] = task
+        self._waiters[key] = self._waiters.get(key, 0) + 1
+        try:
+            return [list(vector) for vector in await asyncio.shield(task)]
+        finally:
+            self._waiters[key] -= 1
+            if not self._waiters[key]:
+                self._waiters.pop(key)
+                self._pending.pop(key, None)
+                if not task.done():
+                    task.cancel()
+                    # Close the underlying HTTP stream before releasing the last consumer.
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+    async def _embed_query(self, texts, key, identity):
+        try:
+            async with asyncio.timeout(self.settings.embedding_query_timeout_seconds):
+                vectors = await self._embed(texts, query=True)
+        except (EmbeddingError, TimeoutError) as exc:
+            self.health = {"state": "unavailable", "checked_at": stamp(utc_now())}
+            self._retry_at = {identity: monotonic() + self.settings.embedding_query_retry_seconds}
+            raise EmbeddingError("Query embeddings unavailable") from exc
+        self._retry_at.pop(identity, None)
+        size = self.settings.embedding_query_cache_size
+        ttl = self.settings.embedding_query_cache_seconds
+        if size and ttl:
+            self._queries[key] = (monotonic() + ttl, tuple(tuple(v) for v in vectors))
+            self._queries.move_to_end(key)
+            while len(self._queries) > size:
+                self._queries.popitem(last=False)
+        return vectors
+
+    async def _embed(self, texts: list[str], *, query: bool) -> list[list[float]]:
         prefix = (
             self.settings.embedding_query_prefix
             if query

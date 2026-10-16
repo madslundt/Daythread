@@ -210,6 +210,7 @@ struct SourceDetail: View {
                 Section("Recorded evidence") {
                     NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
+                    ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: "recording").disabled(evidence == .null)
                     Text(evidence["text"].text.isEmpty ? "No transcript text · \(evidence["transcription_outcome"].text) · \(evidence["state"].text)" : evidence["text"].text).textSelection(.enabled)
                     Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
@@ -276,5 +277,58 @@ struct SourceDetail: View {
         formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
         formatter.dateStyle = .medium; formatter.timeStyle = .short
         return formatter.string(from: date) + " · " + formatter.timeZone.identifier
+    }
+}
+
+struct ImportanceTarget: Codable, Hashable {
+    let kind: String
+    let id: String
+    var section = ""
+}
+struct ImportanceDirectory: Decodable { let items: [ImportanceTarget] }
+
+struct ImportanceButton: View {
+    let target: ImportanceTarget
+    let label: String
+    @Environment(AppModel.self) private var model
+    @State private var error: String?
+    private var important: Bool { model.importanceMarks.contains(target) }
+    private var busy: Bool { model.importanceSaving.contains(target) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                Task {
+                    error = nil
+                    if !model.importanceLoaded { await model.loadImportance(); return }
+                    do { try await model.setImportant(target, to: !important) }
+                    catch { self.error = error.localizedDescription }
+                }
+            } label: {
+                Label(busy ? "Saving…" : !model.importanceLoaded && model.importanceError != nil ? "Retry importance" : important ? "Important" : "Mark important", systemImage: important ? "star.fill" : "star")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel((important ? "Remove importance from " : "Mark as important: ") + label)
+            .accessibilityValue(important ? "Important" : "Not marked important")
+            .disabled(busy || (!model.importanceLoaded && model.importanceError == nil))
+            ErrorNote(message: error ?? (!model.importanceLoaded ? model.importanceError : nil))
+        }.task(id: model.backendAddress) { await model.loadImportance() }
+    }
+}
+
+struct RecapImportanceView: View {
+    let recap: JSONValue
+    var body: some View {
+        if UUID(uuidString: recap["output_id"].text) != nil {
+            ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text), label: "day recap")
+            DisclosureGroup("Important recap sections") {
+                ForEach(Array(RecapSections.texts(recap["summary"].text).enumerated()), id: \.offset) { _, text in
+                    VStack(alignment: .leading) {
+                        Text(.init(text)).font(.callout)
+                        ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text, section: text), label: "recap section")
+                    }
+                }
+                Text("Marks belong to this saved recap version.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

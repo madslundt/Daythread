@@ -31,6 +31,8 @@ they them their that those these more details decision decisions decide decided 
 all across every everything diary diaries recordings alle dagbog dagbøger dage tværs hele optagelser
 month months year years måned måneder år
 dem deres dette disse mere detaljer beslutning beslutninger besluttede uddyb
+key main themes should follow up followup commitments commitment tasks task discussed
+vigtigste hovedtemaer opfølgning følge op forpligtelser
 """.split()
 )
 
@@ -94,11 +96,32 @@ def topic_query(question: str) -> str:
     )
 
 
+def contextual_query(question: str, history: list[dict]) -> tuple[str, str]:
+    """Resolve short referential follow-ups without another model call or changing scope."""
+    query = topic_query(question)
+    referential = re.search(
+        r"\b(it|its|that|those|they|them|he|she|his|her|det|den|han|hun|dem|deres)\b",
+        question,
+        re.I,
+    )
+    if query and len(query.split()) <= 2 and referential:
+        for message in reversed(history):
+            if message["role"] == "user":
+                previous = topic_query(message["content"])
+                if previous and previous != query:
+                    return " ".join(dict.fromkeys((previous + " " + query).split())), (
+                        message["content"][:1000] + "\nFollow-up: " + question
+                    )
+    return query, question
+
+
 def archive_recall(question: str) -> bool:
     """An explicit archive-wide request should broaden an earlier topical conversation."""
-    return bool(re.search(
-        r"\b(?:all|every)\s+(?:the\s+)?(?:diar(?:y|ies)|days?|recordings?)\b"
-        r"|\bacross\s+(?:all\s+)?(?:diaries|days)\b|\beverything\b"
-        r"|\balle\s+(?:dagbøger|dage|optagelser)\b",
-        question.lower(),
-    ))
+    return bool(
+        re.search(
+            r"\b(?:all|every)\s+(?:the\s+)?(?:diar(?:y|ies)|days?|recordings?)\b"
+            r"|\bacross\s+(?:all\s+)?(?:diaries|days)\b|\beverything\b"
+            r"|\balle\s+(?:dagbøger|dage|optagelser)\b",
+            question.lower(),
+        )
+    )

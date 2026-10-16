@@ -3,6 +3,7 @@
 import asyncio
 import json
 import runpy
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -222,17 +223,31 @@ async def test_embedding_input_ceiling_and_total_stream_timeout(config):
 
 
 @pytest.mark.anyio
-async def test_correction_while_query_is_embedding_never_returns_stale_lexical_source(config):
+async def test_correction_while_query_is_embedding_never_returns_stale_lexical_source(
+    config, monkeypatch
+):
     store = Store(config.data_dir)
     memory = Memory(store, config, None)
     key = uuid4()
     store.ingest(key, "omi", AT, b"audio", 30)
     store.complete(str(key), "Invoice old evidence")
+    # Force the stale-read ordering explicitly now that lexical and semantic branches
+    # overlap. A correction before the read can legitimately return the new evidence.
+    lexical_read = threading.Event()
+    search = store.search
+
+    def read_before_correction(*args):
+        rows = search(*args)
+        lexical_read.set()
+        return rows
+
+    monkeypatch.setattr(store, "search", read_before_correction)
 
     class CorrectingEmbeddings:
         health = {"state": "ready"}
 
         async def embed(self, texts, query=False):
+            assert await asyncio.to_thread(lexical_read.wait, 1)
             store.correct_transcript(str(key), "Invoice new evidence")
             return [[1, 0]]
 

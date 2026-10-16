@@ -1,3 +1,4 @@
+import { ImportanceButton, ImportantBadge } from "./Importance";
 import { LabelDecisionLink } from "./LabelDecisionLink";
 import { DecisionDetail } from "./Decisions";
 import { LabelRequestEpoch } from "./labelRequests";
@@ -128,7 +129,7 @@ export function Labels({ timezone }: { timezone: string }) {
             <span className="caption">
               {entity.kind === "person" ? "Person" : "Project"}
             </span>
-            <h2>{entity.name}</h2>
+            <h2>{entity.name} <ImportantBadge target={{ kind: "label", id: entity.id }} /></h2>
             <p>{entity.description}</p>
             <p className="caption">{entity.aliases.join(" · ")}</p>
           </a>
@@ -234,6 +235,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
             <div>
               <p className="caption">{data.entity.kind}</p>
               <h2>{data.entity.name}</h2>
+              <ImportanceButton target={{ kind: "label", id: data.entity.id }} label={data.entity.name} />
               <p>{data.entity.description}</p>
               <p>{data.entity.aliases.join(" · ")}</p>
             </div>

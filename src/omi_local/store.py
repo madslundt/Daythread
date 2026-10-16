@@ -16,6 +16,8 @@ from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
 from .forwarding_store import SCHEMA as FORWARDING_SCHEMA
 from .forwarding_store import ForwardingStore
+from .importance import SCHEMA as IMPORTANCE_SCHEMA
+from .importance import ImportanceStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
@@ -44,7 +46,13 @@ CREATE TABLE IF NOT EXISTS diary (
 
 
 class Store(
-    ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, LabelStore, ForwardingStore
+    ArchiveStore,
+    CompletenessStore,
+    DecisionStore,
+    SemanticStore,
+    LabelStore,
+    ForwardingStore,
+    ImportanceStore,
 ):
     def __init__(self, root: Path):
         self.root = root
@@ -115,6 +123,7 @@ class Store(
                 db.execute("ALTER TABLE chat_messages ADD COLUMN retrieval_details TEXT")
             db.executescript(INBOX_SCHEMA)
             db.executescript(LABEL_SCHEMA)
+            db.executescript(IMPORTANCE_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
@@ -267,6 +276,18 @@ class Store(
             row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
             return dict(row) if row else None
 
+    def get_audio_many(self, audio_ids: list[str]) -> dict[str, dict]:
+        if not audio_ids:
+            return {}
+        with self.connect() as db:
+            return {
+                row["id"]: dict(row)
+                for row in db.execute(
+                    "SELECT * FROM audio WHERE id IN (" + ",".join("?" for _ in audio_ids) + ")",
+                    audio_ids,
+                )
+            }
+
     def has_recordings(self, start: datetime, end: datetime) -> bool:
         with self.connect() as db:
             return (
@@ -346,9 +367,22 @@ class Store(
             row = dict(row)
             highlighted = row.pop("matched_text")
             if marker not in row["text"] and close not in row["text"]:
-                offset = highlighted.find(marker)
-                if offset >= 0:
-                    row["lexical_offset"] = offset
+                # Track authoritative original offsets across highlighted tokens. Keep a
+                # bounded set so a repeated common name cannot crowd out the transcript tail.
+                first, last, cursor, removed = {}, {}, 0, 0
+                while (position := highlighted.find(marker, cursor)) >= 0:
+                    ending = highlighted.find(close, position + len(marker))
+                    if ending < 0:
+                        break
+                    term = highlighted[position + len(marker) : ending].casefold()
+                    first.setdefault(term, position - removed)
+                    last[term] = position - removed
+                    removed += len(marker) + len(close)
+                    cursor = ending + len(close)
+                offsets = sorted(set(first.values()) | set(last.values()))
+                if offsets:
+                    row["lexical_offset"] = offsets[0]
+                    row["lexical_offsets"] = offsets[:64]
             result.append(row)
         return result
 

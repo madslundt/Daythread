@@ -13,6 +13,7 @@ final class AppModel {
             backendGeneration = UUID()
             serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
             serverTimeline = LocalCache.load(backendAddress + ".timeline") ?? .null
+            importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
             labelRevision = ""
             archiveRevision = ""
             serverStatus = "Not connected"
@@ -21,6 +22,12 @@ final class AppModel {
             refreshLocal()
         }
     }
+    var importanceMarks: Set<ImportanceTarget> = []
+    var importanceLoaded = false
+    var importanceError: String?
+    var importanceSaving: Set<ImportanceTarget> = []
+    @ObservationIgnored private var importanceRequest: UUID?
+    @ObservationIgnored private var importanceRevision = UUID()
     var labelRevision = ""
     var archiveRevision = ""
     var serverTimeZoneIdentifier: String?
@@ -190,9 +197,36 @@ final class AppModel {
             LocalCache.save(timeline, key: address + ".timeline")
             refreshLocal()
             try await publishObservation(using: backend)
+            await loadImportance()
         } catch {
             if backendGeneration == generation { serverStatus = error.localizedDescription }
         }
+    }
+    func loadImportance() async {
+        guard importanceRequest == nil else { return }
+        let token = UUID(), generation = backendGeneration, revision = importanceRevision
+        importanceRequest = token
+        defer { if importanceRequest == token { importanceRequest = nil } }
+        do {
+            let result: ImportanceDirectory = try await client().decoded("v1/importance", as: ImportanceDirectory.self)
+            guard !Task.isCancelled, backendGeneration == generation, importanceRevision == revision else { return }
+            importanceMarks = Set(result.items); importanceLoaded = true; importanceError = nil
+        } catch {
+            guard !Task.isCancelled, backendGeneration == generation else { return }
+            importanceError = error.localizedDescription
+        }
+    }
+    func setImportant(_ target: ImportanceTarget, to value: Bool) async throws {
+        guard !importanceSaving.contains(target) else { return }
+        let generation = backendGeneration
+        importanceSaving.insert(target); importanceRevision = UUID()
+        defer { if backendGeneration == generation { importanceSaving.remove(target) } }
+        _ = try await client().request("v1/importance", method: "PUT", body: [
+            "kind": target.kind, "id": target.id, "section": target.section, "important": value
+        ])
+        guard backendGeneration == generation else { return }
+        importanceRevision = UUID()
+        if value { importanceMarks.insert(target) } else { importanceMarks.remove(target) }
     }
     func setPaused(_ value: Bool, synchronize: Bool = true) {
         if value { flush() }

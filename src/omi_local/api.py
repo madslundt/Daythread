@@ -6,16 +6,17 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, ValidationError
 
 from . import conversation_prep
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
+from .configuration import RESTART_FIELDS, Configuration
 from .decision_api import decision_routes
 from .domain import (
     ButtonEvent,
@@ -36,6 +37,7 @@ from .domain import (
     wav_duration,
 )
 from .embeddings import Embeddings, run_embedding_worker
+from .importance import router as importance_router
 from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
 from .label_api import router as label_router
@@ -53,6 +55,8 @@ from .worker import run_worker
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings or Settings()
+    configuration = Configuration(config)
+    config = configuration.startup(config)
     settings_lock = Lock()
 
     @asynccontextmanager
@@ -106,11 +110,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def label_no_store(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/v1/labels"):
+        if request.url.path.startswith(("/v1/labels", "/v1/configuration")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
     app.include_router(label_router)
+    app.include_router(importance_router)
 
     @app.exception_handler(LabelError)
     async def label_error(request: Request, exc: LabelError) -> Response:
@@ -252,6 +257,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_settings() -> dict:
         return public_settings(config)
 
+    def activate_settings(revised: Settings, changes: dict) -> None:
+        nonlocal config
+        config = revised
+        memory().settings = revised
+        memory().inference.settings = revised
+        app.state.omi.key = revised.omi_api_key.get_secret_value().strip()
+        if "timezone" in changes:
+            memory().store.save_decision_timezone(config.timezone)
+            memory().store.invalidate_diaries()
+        if {"audio_retention_days", "transcript_retention_days"} & changes.keys():
+            memory().store.apply_retention(
+                config.audio_retention_days, config.transcript_retention_days
+            )
+
+    @app.get("/v1/configuration")
+    def get_configuration() -> dict:
+        with settings_lock:
+            return configuration.view(config)
+
+    @app.patch("/v1/configuration")
+    def update_configuration(body: dict) -> dict:
+        with settings_lock:
+            if body.get("revision") != configuration.revision:
+                raise HTTPException(
+                    409, "Settings changed. Reload before saving."
+                )
+            changes = body.get("changes")
+            if not isinstance(changes, dict):
+                raise HTTPException(422, "Supply configuration changes")
+            try:
+                desired = configuration.prepare(config, changes)
+                live = {key: getattr(desired, key) for key in changes if key not in RESTART_FIELDS}
+                revised = Settings.model_validate(config.model_dump() | live)
+            except ValidationError as exc:
+                problems = [
+                    f"{'.'.join(map(str, item['loc'])) or 'Settings'}: {item['msg']}"
+                    for item in exc.errors(include_input=False, include_context=False)
+                ]
+                raise HTTPException(422, "; ".join(problems)) from exc
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise HTTPException(422, "Invalid configuration settings or model routes") from exc
+            configuration.save(desired, changes.keys())
+            memory().store.save_settings({
+                key: getattr(desired, key) for key in changes if key in RUNTIME_FIELDS
+            })
+            activate_settings(revised, changes)
+            return configuration.view(config)
+
     @app.patch("/v1/settings")
     def update_settings(changes: dict) -> dict:
         nonlocal config
@@ -263,15 +316,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except ValidationError as exc:
                 raise HTTPException(422, "Invalid setting value") from exc
             memory().store.save_settings(changes)
-            config = revised
-            memory().settings = revised
-            memory().inference.settings = revised
-            if "timezone" in changes:
-                memory().store.save_decision_timezone(config.timezone)
-                memory().store.invalidate_diaries()
-            memory().store.apply_retention(
-                config.audio_retention_days, config.transcript_retention_days
-            )
+            activate_settings(revised, changes)
+            configuration.revision = str(uuid4())
             return public_settings(config)
 
     @app.get("/v1/openapi")
@@ -538,6 +584,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(404, "Chat session not found") from exc
+
+    @app.post("/v1/chat/stream")
+    async def chat_stream(body: ChatRequest) -> StreamingResponse:
+        async def events():
+            queue = asyncio.Queue(maxsize=16)
+
+            async def run():
+                try:
+                    result = await memory().chat(
+                        body.question,
+                        body.limit,
+                        str(body.session_id) if body.session_id else None,
+                        body.day,
+                        str(body.meeting_id) if body.meeting_id else None,
+                        bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                        body.start_day,
+                        body.end_day,
+                        on_event=queue.put,
+                    )
+                    await queue.put({"type": "done", "result": result})
+                except Exception as exc:
+                    if isinstance(exc, (ChatScopeNotFound, KeyError)):
+                        status, message = 404, "Chat or selected recordings not found"
+                    elif isinstance(exc, ChatScopeConflict):
+                        status, message = 409, "Start a new chat to choose a different scope"
+                    elif isinstance(exc, EvidenceChanged):
+                        status, message = 409, "Recorded evidence changed; reload and retry"
+                    elif isinstance(exc, DateScopeError):
+                        status, message = 422, "Use valid ISO calendar dates"
+                    elif isinstance(exc, (InferenceError, httpx.HTTPError, TimeoutError)):
+                        status, message = 502, "Local inference is unavailable"
+                    else:
+                        status, message = 500, "The answer could not be completed; try again"
+                    await queue.put({"type": "error", "status": status, "message": message})
+
+            task = asyncio.create_task(run())
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=10)
+                    except TimeoutError:
+                        event = {"type": "heartbeat"}
+                    yield json.dumps(event, ensure_ascii=False) + "\n"
+                    if event["type"] in ("done", "error"):
+                        break
+            finally:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+        return StreamingResponse(
+            events(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     @app.post("/v1/search")
     async def search(body: ChatRequest) -> dict:

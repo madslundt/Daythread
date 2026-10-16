@@ -1,3 +1,4 @@
+import { ImportanceButton, type ImportanceTarget } from "./Importance";
 import { useId, useState } from "react";
 import { Icon } from "./Icon";
 import { itemSources, recapParts } from "./recapItems";
@@ -28,6 +29,8 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   const [checks, setChecks] = useState(() => savedChecks(storageKey));
   const [storageError, setStorageError] = useState(false);
   const parts = recapParts(text);
+  const savedVersion = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(version);
+  const target = (section = ""): ImportanceTarget => ({ kind: "recap", id: version, section });
   function toggle(key: string) {
     const next = checks.includes(key) ? checks.filter((item) => item !== key) : [...checks, key];
     setChecks(next);
@@ -40,15 +43,17 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   }
   return (
     <div className="prose recap-items">
+      {savedVersion ? <ImportanceButton target={target()} label="day recap" /> : null}
       <p className="caption recap-item-hint">Open any point for recordings and a conversation.</p>
       {parts.map((part, index) => part.kind === "heading" ? (
-        <h3 key={index}><InlineText text={part.text} /></h3>
+        <div key={index} className="recap-section-heading"><h3><InlineText text={part.text} /></h3>{savedVersion ? <ImportanceButton target={target(part.text)} label={part.text} /> : null}</div>
       ) : part.kind === "text" ? (
-        <RichText key={index} text={part.text} />
+        <div key={index}><RichText text={part.text} />{savedVersion ? <ImportanceButton target={target(part.text)} label="recap section" /> : null}</div>
       ) : (
         <RecapItem
           key={`${index}:${part.text}`}
           text={part.text}
+          importanceTarget={savedVersion ? target(part.text) : undefined}
           action={part.action}
           checked={checks.includes(part.text)}
           onToggle={() => toggle(part.text)}
@@ -67,8 +72,9 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   );
 }
 
-function RecapItem({ text, action, checked, onToggle, sources, timezone, onChat, onCorrect }: {
+function RecapItem({ text, importanceTarget, action, checked, onToggle, sources, timezone, onChat, onCorrect }: {
   text: string;
+  importanceTarget?: ImportanceTarget;
   action: boolean;
   checked: boolean;
   onToggle: () => void;
@@ -93,6 +99,7 @@ function RecapItem({ text, action, checked, onToggle, sources, timezone, onChat,
           <Icon name="chevron-right" size={16} />
         </button>
       </div>
+      {importanceTarget ? <ImportanceButton target={importanceTarget} label="recap point" /> : null}
       <div id={id} hidden={!open} className="recap-item-detail">
         {open ? <>
           <button type="button" className="button small" onClick={onChat}><Icon name="chat" size={16} />Chat about this</button>

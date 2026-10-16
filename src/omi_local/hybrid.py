@@ -2,12 +2,56 @@
 
 import asyncio
 import re
+import unicodedata
 from datetime import datetime
 from typing import Literal
 
 from .embeddings import EmbeddingError, Embeddings
 from .settings import Settings
 from .store import Store
+
+
+def normalized_words(text: str) -> set[str]:
+    normalized = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", text.casefold())
+        if not unicodedata.combining(char)
+    )
+    return set(re.findall(r"\w+", normalized))
+
+
+def relevant_excerpts(row: dict, query: str, semantic_match: dict | None) -> list[dict]:
+    """Prefer dense query coverage, retaining distant non-overlapping supporting excerpts."""
+    candidates = [
+        excerpt(row["text"], query, max(0, offset - 200), min(len(row["text"]), offset + 800))
+        for offset in row.get(
+            "lexical_offsets", [row["lexical_offset"]] if "lexical_offset" in row else []
+        )
+    ]
+    if semantic_match:
+        candidates.append(semantic_match)
+    if not candidates:
+        return [excerpt(row["text"] or "", query)]
+    words = normalized_words(query)
+    candidates.sort(
+        key=lambda match: (-len(normalized_words(match["text"]) & words), match["start_offset"])
+    )
+    selected, covered = [], set()
+    for match in candidates:
+        terms = normalized_words(match["text"]) & words
+        if any(
+            match["start_offset"] < previous["end_offset"]
+            and match["end_offset"] > previous["start_offset"]
+            for previous in selected
+        ):
+            continue
+        if selected and not terms - covered and match is not semantic_match:
+            continue
+        selected.append(match)
+        covered |= terms
+        if len(selected) == 3:
+            break
+    return selected
 
 
 def excerpt(text: str, query: str, start: int | None = None, end: int | None = None) -> dict:
@@ -37,13 +81,14 @@ def bound_sources(
     *,
     full_transcripts: bool = False,
 ) -> tuple[list[dict], bool]:
-    selected, remaining = [], 12000
+    selected, remaining, extras = [], 12000, []
     truncated = len(sources) > limit
     for source in sources[:limit]:
         if full_transcripts:
             selected.append(source)
             continue
         match = source.get("matches", [excerpt(source["text"] or "", query)])[0]
+        extra = source.get("matches", [])[1:]
         if remaining <= 0:
             truncated = True
             break
@@ -53,9 +98,22 @@ def bound_sources(
             match["end_offset"] = match["start_offset"] + len(match["text"])
             truncated = True
         source["matches"] = [match]
+        extras.append((source, extra))
         remaining -= len(match["text"])
         truncated |= len(match["text"]) < len(source["text"] or "")
         selected.append(source)
+    # Give ranked recordings their first excerpt before spending spare budget on
+    # additional passages; distant matches never displace another recording's first hit.
+    for source, matches in extras:
+        for match in matches:
+            if remaining <= 0:
+                truncated = True
+                break
+            bounded = dict(match)
+            bounded["text"] = bounded["text"][:remaining]
+            bounded["end_offset"] = bounded["start_offset"] + len(bounded["text"])
+            source["matches"].append(bounded)
+            remaining -= len(bounded["text"])
     ids = {source["id"] for source in selected}
     # A derived diary must not smuggle omitted/out-of-scope dependencies into model evidence.
     for source in selected:
@@ -92,14 +150,18 @@ class HybridRetriever:
         end: datetime | None,
         mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
     ) -> tuple[list[dict], dict]:
-        lexical = (
-            await asyncio.to_thread(self.store.search, query, 50, start, end)
-            if mode != "semantic"
-            else []
-        )
-        semantic = []
         details = {"mode": "keyword", "fallback_reason": None}
-        if self.set_id and mode != "keyword":
+
+        async def lexical_candidates():
+            return (
+                await asyncio.to_thread(self.store.search, query, 50, start, end)
+                if mode != "semantic"
+                else []
+            )
+
+        async def semantic_candidates():
+            if not self.set_id or mode == "keyword":
+                return []
             try:
                 if self.embeddings is None:
                     raise EmbeddingError("No adapter")
@@ -114,8 +176,15 @@ class HybridRetriever:
                     end,
                 )
                 details["mode"] = "semantic" if mode == "semantic" else "hybrid"
+                return semantic
             except EmbeddingError:
                 details["fallback_reason"] = "embedding_unavailable"
+                return []
+
+        async with asyncio.TaskGroup() as group:
+            lexical_task = group.create_task(lexical_candidates())
+            semantic_task = group.create_task(semantic_candidates())
+        lexical, semantic = lexical_task.result(), semantic_task.result()
         status = await asyncio.to_thread(self.status, start, end)
         details["embedding"] = status
         if self.set_id and status["indexed"] < status["total"]:
@@ -124,9 +193,16 @@ class HybridRetriever:
         scores, matches = {}, {}
         for rank, row in enumerate(lexical, 1):
             scores[row["id"]] = 1 / (60 + rank)
+        semantic_rows = (
+            await asyncio.to_thread(
+                self.store.get_audio_many, [passage["audio_id"] for passage in semantic]
+            )
+            if semantic
+            else {}
+        )
         for rank, passage in enumerate(semantic, 1):
             key = passage["audio_id"]
-            row = await asyncio.to_thread(self.store.get_audio, key)
+            row = semantic_rows.get(key)
             if not row or row["transcript_version"] != passage["version"] or row["state"] != "done":
                 continue
             previous = rows.get(key)
@@ -147,17 +223,7 @@ class HybridRetriever:
         result = []
         for key in keys:
             row = rows[key]
-            offset = row.get("lexical_offset")
-            lexical_excerpt = (
-                excerpt(
-                    row["text"], query, max(0, offset - 200), min(len(row["text"]), offset + 800)
-                )
-                if offset is not None
-                else None
-            )
-            row["matches"] = [
-                lexical_excerpt or matches.get(key) or excerpt(row["text"] or "", query)
-            ]
+            row["matches"] = relevant_excerpts(row, query, matches.get(key))
             result.append(row)
         # Ranked hits keep all their slots. Neighbors fill only spare capacity, never recurse.
         included = set(keys)

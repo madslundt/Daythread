@@ -1,3 +1,4 @@
+import { ImportanceButton } from "./Importance";
 import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
@@ -355,6 +356,7 @@ function TranscriptTimeline({
               >
                 Chat with meeting
               </button>
+              <ImportanceButton target={{ kind: "meeting", id: meeting.id }} label={`meeting at ${timeLabel(meeting.started_at, timezone)}`} />
             </p>
           ))}
           <p className="caption">

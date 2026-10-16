@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { errorMessage, post, request } from "./api";
 import { Icon } from "./Icon";
 import { AudioForwarding } from "./AudioForwarding";
+import { Configuration } from "./Configuration";
 import type { Settings as SettingsData, Source } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
@@ -137,6 +138,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [connectionRevision, setConnectionRevision] = useState(0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
     if (resource.data) setDraft(resource.data);
@@ -367,7 +369,8 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           </div>
         </form>
       )}
-      <OmiIntegration onSaved={onSaved} />
+      <Configuration onSaved={() => { setConnectionRevision((value) => value + 1); onSaved(); }} hiddenFields={editableSettings} />
+      <OmiIntegration key={connectionRevision} onSaved={onSaved} />
     </div>
   );
 }
@@ -428,8 +431,8 @@ function OmiIntegration({ onSaved }: { onSaved: () => void }) {
         <p className="caption">
           {resource.data.configured
             ? "Omi API is configured on your server. Import up to 25 conversations at a time, newest first."
-            : <>To enable cloud import, set <code>OMI_OMI_API_KEY</code> on your server and restart it.
-              Your key stays on the server and is never entered in this browser.</>}
+            : <>To enable cloud import, save your Omi API key in Models, keys &amp; server settings → Omi connections.
+              Saved keys stay on home-core and are never displayed here.</>}
         </p>
       ) : null}
       {error ? <ErrorState message={error} /> : null}

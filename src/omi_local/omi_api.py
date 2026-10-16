@@ -106,7 +106,7 @@ class OmiAPI:
     async def import_page(self, request: ImportRequest) -> dict:
         if not self.key:
             raise OmiAPIError(
-                "Set OMI_OMI_API_KEY on the backend and restart to enable import", 503
+                "Save your Omi API key in app or web server settings to enable import", 503
             )
         params = request.model_dump(exclude_none=True, mode="json") | {"include_transcript": "true"}
         try:

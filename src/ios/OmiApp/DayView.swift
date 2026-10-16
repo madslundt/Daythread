@@ -57,6 +57,7 @@ struct DayView: View {
                 if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
                 if !recap["summary"].text.isEmpty {
                     Text(.init(recap["summary"].text)).textSelection(.enabled)
+                    RecapImportanceView(recap: recap)
                     EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
                     if !recap["generated_at"].text.isEmpty { Text("Generated \(recap["generated_at"].text)").font(.caption).foregroundStyle(.secondary) }
                 } else {
@@ -88,6 +89,7 @@ struct DayView: View {
                         } label: {
                             Label("Chat with meeting · " + (AppModel.date(meeting["started_at"].text).map { diary.label($0, template: "HHmm") } ?? meeting["started_at"].text), systemImage: "person.2")
                         }
+                        ImportanceButton(target: ImportanceTarget(kind: "meeting", id: meeting["id"].text), label: "meeting")
                     }
                 }
             }

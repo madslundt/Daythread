@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { errorMessage, post } from "./api";
+import { errorMessage } from "./api";
+import { exchangeMessages, streamChat } from "./chatStream";
+import type { ChatResult } from "./chatStream";
 import { dateRangeForShortcut, dateRangeShortcuts, dateTimeLabel, dayLabel, localDay } from "./format";
 import { Icon } from "./Icon";
 import { EvidenceFeedback } from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
-import type { ChatScope, ChatSession, Conversation, Source, Timeline } from "./types";
+import type { ChatMessage, ChatScope, ChatSession, Conversation, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { EmptyState, ErrorState, Loading, RichText } from "./UI";
+
+const EMPTY_MESSAGES: ChatMessage[] = [];
 
 function savedSession(): string | undefined {
   try {
@@ -36,8 +40,25 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
   const [question, setQuestion] = useState(() => (initialQuestion || "").slice(0, 2000));
   const [sending, setSending] = useState("");
   const [error, setError] = useState("");
+  const [streamedText, setStreamedText] = useState("");
+  const [stage, setStage] = useState("searching");
+  const [completed, setCompleted] = useState<{ result: ChatResult; question: string }>();
+  const activeRequest = useRef<AbortController | null>(null);
+  const pendingText = useRef("");
+  const flushTimer = useRef<number | undefined>(undefined);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => () => {
+    activeRequest.current?.abort();
+    window.clearTimeout(flushTimer.current);
+  }, []);
+  const messages = conversation.data?.messages ?? EMPTY_MESSAGES;
+  const visibleMessages = completed && completed.result.session_id === sessionId
+    && !messages.some((message) => message.id === completed.result.message_id)
+    ? [...messages, ...exchangeMessages(completed.result, completed.question)] : messages;
+  useEffect(() => {
+    if (completed && messages.some((message) => message.id === completed.result.message_id)) setCompleted(undefined);
+  }, [completed, messages]);
   useEffect(() => {
     if (initialQuestion) composer.current?.focus();
   }, [initialQuestion]);
@@ -67,40 +88,61 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       block: "nearest",
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
-  }, [conversation.data?.messages.length, sending]);
+  }, [visibleMessages.length, sending]);
   async function send(event: React.FormEvent) {
     event.preventDefault();
     const value = question.trim();
-    if (!value || sending || conversation.loading || (sessionId && !conversation.data)) return;
+    if (!value || activeRequest.current || sending || conversation.loading || (sessionId && !conversation.data)) return;
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    pendingText.current = "";
+    setStreamedText("");
+    setStage("searching");
     composer.current?.focus();
     setSending(value);
     setError("");
     try {
-      const result = await post<{
-        answer: string;
-        sources: Source[];
-        session_id: string;
-      }>("/v1/chat", {
+      const result = await streamChat({
         question: value,
         ...(sessionId ? { session_id: sessionId } : scope.kind === "day"
           ? { day: scope.day }
           : scope.kind === "range" ? { start_day: scope.start_day, end_day: scope.end_day }
           : scope.kind === "meeting" ? { meeting_id: scope.meeting_id } : {}),
-      });
+      }, (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === "status") setStage(event.stage);
+        else {
+          pendingText.current += event.text;
+          if (flushTimer.current === undefined) flushTimer.current = window.setTimeout(() => {
+            setStreamedText(pendingText.current);
+            flushTimer.current = undefined;
+          }, 40);
+        }
+      }, controller.signal);
+      if (controller.signal.aborted) return;
+      setCompleted({ result, question: value });
+      if (conversation.data && sessionId === result.session_id) {
+        conversation.setData({ ...conversation.data, messages: [...messages, ...exchangeMessages(result, value)] });
+      }
       setQuestion("");
       setSessionId(result.session_id);
-      conversation.refresh();
       sessions.refresh();
     } catch (error) {
-      setError(errorMessage(error));
+      if (!controller.signal.aborted) setError(errorMessage(error));
     } finally {
+      window.clearTimeout(flushTimer.current);
+      flushTimer.current = undefined;
+      pendingText.current = "";
+      setStreamedText("");
       setSending("");
+      activeRequest.current = null;
     }
   }
   function select(id?: string) {
     if (!id) setDraftScope(scope);
     setSessionId(id);
     setError("");
+    setCompleted(undefined);
     setQuestion("");
     if (!id) composer.current?.focus();
   }
@@ -108,6 +150,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     setDraftScope(next);
     setSessionId(undefined);
     setError("");
+    setCompleted(undefined);
   }
   return (
     <div className="chat-layout">
@@ -231,10 +274,10 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">Meetings appear here after a meeting has been recorded.</p> : null}
         </div>
         <div className="messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
-          {conversation.loading && !conversation.data ? (
+          {conversation.loading && !visibleMessages.length ? (
             <Loading>Loading conversation…</Loading>
-          ) : conversation.data?.messages.length ? (
-            conversation.data.messages.map((message) => (
+          ) : visibleMessages.length ? (
+            visibleMessages.map((message) => (
               <article
                 className={`chat-message ${message.role}`}
                 key={message.id}
@@ -284,11 +327,18 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             </EmptyState>
           ) : null}
           {sending ? (
+            <div>
             <article className="chat-message user pending">
               <div className="message-label">You</div>
               <p>{sending}</p>
-              <Loading>Looking through your recordings…</Loading>
             </article>
+            <article className="chat-message assistant pending" aria-busy="true">
+              <div className="message-label">omi</div>
+              {streamedText ? <p style={{ whiteSpace: "pre-wrap" }}>{streamedText}</p> : null}
+              <Loading>{stage === "expanding" ? "Trying alternate search wording…" : stage === "generating" ? "Writing your answer…" : "Looking through your recordings…"}</Loading>
+              {streamedText ? <p className="caption">Draft answer · sources are checked before saving.</p> : null}
+            </article>
+            </div>
           ) : null}
           {conversation.error ? (
             <ErrorState
@@ -324,7 +374,10 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             }}
             readOnly={Boolean(sending)}
           />
-          <button
+          {sending ? <button key="stop" type="button" className="button" onClick={(event) => {
+            event.preventDefault();
+            activeRequest.current?.abort();
+          }}>Stop</button> : <button key="send" type="submit"
             className="button dark"
             disabled={
               !question.trim() || Boolean(sending) || conversation.loading
@@ -334,7 +387,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           >
             <Icon name="send" size={18} />
             <span>{sending ? "Asking…" : "Send"}</span>
-          </button>
+          </button>}
           <p className="caption" id="chat-composer-hint">
             Enter to send · Shift + Enter for a new line. Answers use your selected context;
             open the sources to check the details.

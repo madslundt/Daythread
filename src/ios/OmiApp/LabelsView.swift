@@ -68,6 +68,7 @@ struct LabelTimelineView: View {
                     Text(data.entity.name).font(.title2)
                     Text(data.entity.description)
                     Text(data.entity.aliases.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    ImportanceButton(target: ImportanceTarget(kind: "label", id: data.entity.id), label: data.entity.name)
                     Button("Edit label") { editing = LabelEditSelection(entity: data.entity, revision: data.revision) }
                     NavigationLink("Associate existing decision register record") { LabelDecisionLinkView(entityID: data.entity.id, revision: data.revision) }
                     NavigationLink("Merge / split / delete") { LabelManagementView(entityID: data.entity.id) }

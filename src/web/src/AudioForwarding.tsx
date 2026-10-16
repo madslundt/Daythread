@@ -23,7 +23,7 @@ export function ForwardingDetails({ status }: { status: ForwardingStatus }) {
       {" "}Receipt confirms only that chunk arrived; it does not prove continuous capture or a connected pendant.
     </p>
     {status.last_source_id ? <p className="caption">Latest source: <code>{status.last_source_id}</code>. Open Rewind to play and inspect its transcription.</p> : null}
-    {!status.worker_enabled ? <p className="caption">Transcription worker is disabled. Set OMI_WORKER_ENABLED=true and restart to process accepted audio.</p> : null}
+    {!status.worker_enabled ? <p className="caption">Transcription worker is disabled. Enable Worker enabled in server settings and restart the backend to process accepted audio.</p> : null}
     {status.last_failure ? <p className="caption" role="alert">
       Last receiver failure ({status.last_failure.status}) at {new Date(status.last_failure.at).toLocaleString()}: {status.last_failure.detail}.
       {status.last_received_at && status.last_received_at > status.last_failure.at ? " New audio has arrived since this failure." : ""}
@@ -61,7 +61,7 @@ export function AudioForwarding({ onSaved }: { onSaved: () => void }) {
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.data ? <ForwardingDetails status={resource.data} /> : null}
     <p className="caption">
-      Set <code>OMI_AUDIO_FORWARDING_TOKEN</code> on the server to a random URL-safe secret of at least 32 characters and restart.
+      Save Audio forwarding token under Models, keys &amp; server settings → Omi connections. Use a random URL-safe secret of at least 32 characters.
       The secret is never returned here. Use a dedicated HTTPS ingress that permits only this POST route if you later choose hosted delivery;
       keep the archive UI and other API routes private.
     </p>

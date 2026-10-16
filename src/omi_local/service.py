@@ -2,17 +2,21 @@ import asyncio
 import hashlib
 import json
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
+from time import perf_counter
 from typing import Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+import httpx
 
 from .audio import coverage_gaps
 from .completeness import audio_availability, revision
 from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
 from .hybrid import HybridRetriever, bound_sources
-from .inference import Inference, validate_citations
-from .retrieval import archive_recall, date_scope, topic_query
+from .inference import Inference, InferenceError, validate_citations
+from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
 from .store import Store
 
@@ -321,6 +325,7 @@ class Memory:
         start_day: date | None = None,
         end_day: date | None = None,
         retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
+        query_override: str | None = None,
     ) -> dict:
         if (start_day is None) != (end_day is None) or (
             start_day is not None and start_day > end_day
@@ -375,10 +380,15 @@ class Memory:
             if scope is None:
                 scope = date_scope(question, today)
                 if not scope and history and not archive_recall(question):
-                    prior = next(
-                        (row["content"] for row in reversed(history) if row["role"] == "user"), ""
+                    scope = next(
+                        (
+                            inferred
+                            for row in reversed(history)
+                            if row["role"] == "user"
+                            and (inferred := date_scope(row["content"], today))
+                        ),
+                        None,
                     )
-                    scope = date_scope(prior, today)
             start = self.day_window(scope[0])[0] if scope else None
             end = self.day_window(scope[1])[1] if scope else None
             if (
@@ -387,7 +397,9 @@ class Memory:
                 and not self.store.diary(day.isoformat())
             ):
                 raise ChatScopeNotFound("No diary or recordings found for this date")
-        query = topic_query(question)
+        query, search_question = contextual_query(question, history)
+        if query_override is not None:
+            query = query_override
         if not query:
             rows, total = await asyncio.to_thread(self.store.sample_transcripts, limit, start, end)
             details = {
@@ -397,13 +409,14 @@ class Memory:
             }
         else:
             rows, details = await self.retriever.retrieve(
-                question,
+                search_question,
                 query,
                 limit,
                 start,
                 end,
                 mode=retrieval_mode,
             )
+        details["contextual_query"] = search_question != question
         if not query and not start and not end and history and not archive_recall(question):
             previous = next(
                 (message for message in reversed(history) if message["role"] == "assistant"), None
@@ -519,7 +532,12 @@ class Memory:
         scope_supplied: bool = False,
         start_day: date | None = None,
         end_day: date | None = None,
+        on_event: Callable[[dict], Awaitable[None]] | None = None,
     ) -> dict:
+        began = perf_counter()
+        first_token = None
+        if on_event:
+            await on_event({"type": "status", "stage": "searching"})
         result = await self.retrieve(
             question,
             limit,
@@ -530,6 +548,51 @@ class Memory:
             start_day,
             end_day,
         )
+        scope = result["scope"]
+        start = datetime.fromisoformat(scope["start"]) if scope else None
+        end = datetime.fromisoformat(scope["end"]) if scope else None
+        counts = await asyncio.to_thread(self.store.selection_counts, start, end)
+        expansion_ms = 0
+        if (
+            not result["sources"]
+            and topic_query(question)
+            and self.settings.chat_query_expansion
+            and isinstance(self.inference, Inference)
+            and counts["eligible_transcripts"] > 0
+        ):
+            expansion_start = perf_counter()
+            try:
+                if on_event:
+                    await on_event({"type": "status", "stage": "expanding"})
+                previous = next(
+                    (
+                        message["content"]
+                        for message in reversed(result["_history"])
+                        if message["role"] == "user"
+                    ),
+                    "",
+                )
+                async with asyncio.timeout(self.settings.chat_query_expansion_timeout_seconds):
+                    query = await self.inference.expand_query(question, previous)
+                if query and query != topic_query(question):
+                    result = await self.retrieve(
+                        question,
+                        limit,
+                        session_id,
+                        day,
+                        meeting_id,
+                        scope_supplied,
+                        start_day,
+                        end_day,
+                        query_override=query,
+                    )
+                    result["retrieval_details"]["query_expanded"] = True
+                    result["retrieval_details"]["notice"] += " Used alternate search wording."
+            except httpx.HTTPError, InferenceError, TimeoutError:
+                result["retrieval_details"]["query_expansion_unavailable"] = True
+                result["retrieval_details"]["notice"] += " Alternate search wording unavailable."
+            expansion_ms = (perf_counter() - expansion_start) * 1000
+        retrieval_ms = (perf_counter() - began) * 1000
         history = result.pop("_history")
         sources = result["sources"]
         if not result["session_id"]:
@@ -542,14 +605,20 @@ class Memory:
                 end_day=result["end_day"],
             )
             result["session_id"] = session["id"]
-        scope = result["scope"]
-        start = datetime.fromisoformat(scope["start"]) if scope else None
-        end = datetime.fromisoformat(scope["end"]) if scope else None
-        counts = self.store.selection_counts(start, end)
         trace = None
+        generation_start = perf_counter()
+
+        async def delta(text: str):
+            nonlocal first_token
+            if first_token is None:
+                first_token = (perf_counter() - began) * 1000
+            await on_event({"type": "delta", "text": text})
+
         if not sources:
             answer = "No matching recorded evidence was found. Try a specific name or topic."
         else:
+            if on_event:
+                await on_event({"type": "status", "stage": "generating"})
             # Query embedding awaits may outlive corrections to evidence used only by a
             # prior answer. Recheck those versions immediately before model context.
             history = [
@@ -558,11 +627,14 @@ class Memory:
                 if message["role"] != "assistant"
                 or not self.store.sources_stale(message["sources"])
             ]
-            if hasattr(self.inference, "chat_traced"):
+            if on_event and isinstance(self.inference, Inference):
+                answer, trace = await self.inference.chat_traced(question, sources, history, delta)
+            elif hasattr(self.inference, "chat_traced"):
                 answer, trace = await self.inference.chat_traced(question, sources, history)
             else:
                 answer = await self.inference.chat(question, sources, history)
             answer = validate_citations(answer, sources)
+        generation_ms = (perf_counter() - generation_start) * 1000
         if not sources and result["retrieval_details"].get("fallback_reason"):
             answer += " Semantic search is unavailable; only keyword search was used."
         output_id = str(uuid4())
@@ -570,6 +642,14 @@ class Memory:
             sources, answer, result["retrieval"], start, end, trace=trace, counts=counts
         )
         evidence["retrieval_details"] = result["retrieval_details"]
+        timings = {
+            "retrieval_ms": round(retrieval_ms, 2),
+            "expansion_ms": round(expansion_ms, 2),
+            "generation_ms": round(generation_ms, 2),
+            "first_token_ms": round(first_token, 2) if first_token is not None else None,
+            "total_ms": round((perf_counter() - began) * 1000, 2),
+        }
+        evidence["timings"] = timings
         message_ids = self.store.save_exchange(
             result["session_id"],
             question,
@@ -583,5 +663,6 @@ class Memory:
             "answer": answer,
             "output_id": output_id,
             "evidence": evidence,
+            "timings": timings,
             **message_ids,
         }

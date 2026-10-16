@@ -15,6 +15,64 @@ Direct capture needs no Omi account or cloud AI subscription. Existing hosted Om
 - **Diary:** automatic daily recaps, meeting notes, history, and Markdown export.
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.
 
+## More screenshots
+
+These pages use fictional sample data spanning work, family, friends, the gym, and everyday errands. Expand a page to see its screenshot.
+
+<details>
+<summary>Rewind — revisit plans made over dinner with friends</summary>
+
+A recent audio window, a quick recap, and the original source recordings.
+
+![Rewind page showing a sample dinner conversation, game-night plans, audio playback, and source recordings](docs/images/web-rewind.png)
+
+</details>
+
+<details>
+<summary>Diary — browse a week of everyday moments</summary>
+
+Saved daily recaps alongside a calendar, covering work, workouts, family time, and social plans.
+
+![Diary page showing five sample daily entries, an October calendar, and a recap spanning gym, work, errands, family, and friends](docs/images/web-diary.png)
+
+</details>
+
+<details>
+<summary>Chat — remember what is coming up</summary>
+
+A sample conversation about weekend plans, with the related recordings available for inspection.
+
+![Chat page showing saved conversations and an answer about a gym session, family plans, and a board-game night](docs/images/web-chat.png)
+
+</details>
+
+<details>
+<summary>People — connect recordings to people and projects</summary>
+
+Example labels for a teammate, a training partner, family, an onboarding project, and game night.
+
+![People and projects directory with fictional labels for Alex, Sam, Mia, onboarding research, a family Sunday, and Friday game night](docs/images/web-people.png)
+
+</details>
+
+<details>
+<summary>Inbox — follow through across all parts of your day</summary>
+
+Sample commitments and an open question from work, the gym, family plans, errands, and friends.
+
+![Inbox page showing six sample follow-ups, including a prototype, interview questions, a workout, a bike service, a photo album, and game-night plans](docs/images/web-inbox.png)
+
+</details>
+
+<details>
+<summary>Settings — choose capture, diary, and archive preferences</summary>
+
+Example appearance, timezone, transcription, recap, gesture, and retention settings.
+
+![Settings page showing light appearance, Copenhagen timezone, automatic language detection, a daily recap time, gesture settings, and archive retention](docs/images/web-settings.png)
+
+</details>
+
 ## Architecture
 
 ```mermaid

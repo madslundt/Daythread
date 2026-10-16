@@ -25,6 +25,14 @@ Python/FastAPI service, SQLite WAL, audio files, local HTTP inference adapters, 
 
 Software validation covers the processing pipeline, idempotent ingestion, restart recovery, reordered events, configurable meeting expiry, WAV boundaries, DST day boundaries, and late evidence refreshing a diary. Live local models and physical capture have not been tested.
 
+## Weekly review — first web/backend slice implemented
+
+Diary → Weeks provides on-demand adjacent-week review with supported decisions, qualified commitments, recurring discussions and cited changes. Original transcripts (including transcript-only imports) enter bounded extraction without chat sampling or saved recap prerequisites. Local Monday boundaries, DST, partial cutoffs, missing comparison evidence and received-archive coverage are explicit. Exact quote/schema validation, immutable versions, force regeneration, durable jobs, scoped chat handoff and Markdown export are implemented. Fingerprint validation prevents in-flight evidence mutations from publishing; deletion/transcript retention purge weekly versions/jobs and restored export projections. Backups preserve versions and durable work.
+
+Validation: 189 backend tests, 26 existing web tests, lint, TypeScript/Vite production build and Python package build pass. Added weekly tests cover both-window arrivals, cross-batch explicit resolutions, restart/idempotency, correction/deletion/retention/timezone races, DST, citation/category validation and backup/restore cleanup. Disposable-archive desktop/mobile browser checks cover generation, correction/staleness, history, regeneration, export, chat handoff, empty partial weeks, failure and deletion. Real local-model quality and hardware capture remain unverified.
+
+Next slices: native typed review/source UI; opt-in local Monday scheduling with catch-up and debounced late-evidence refresh; then structured commitment identity/state with explicit completion/cancellation provenance. Weekly synthesis should consume that later read interface without mutating commitment state. Notifications and semantic retrieval remain separate work.
+
 ## 2. Prove the actual pendant and iPhone capture path
 
 The native Swift iPhone app implements pairing, device/firmware/codec and battery display, BLE frame reassembly, real Opus decoding and persistent recording. Review [device research](device-research.md) before physical validation.

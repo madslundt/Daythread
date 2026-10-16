@@ -34,6 +34,8 @@ from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
 from .store import Store
+from .weekly import WeeklyReviews
+from .weekly_api import weekly_routes
 from .worker import run_worker
 
 
@@ -51,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ) as client:
             memory = Memory(store, config, Inference(config, client))
             app.state.memory = memory
+            app.state.weekly = WeeklyReviews(memory)
+            weekly_task = asyncio.create_task(app.state.weekly.run())
+            app.state.weekly_worker = weekly_task
             app.state.omi = OmiAPI(config, client, store)
             task = None
             if config.worker_enabled:
@@ -60,6 +65,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 yield
             finally:
+                weekly_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await weekly_task
                 if task:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -93,7 +101,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # Apply retention before exposing imported text in the response.
         result["items"] = [
-            public_source(row) for item in result["items"]
+            public_source(row)
+            for item in result["items"]
             if (row := memory().store.get_audio(item["id"])) is not None
         ]
         return result
@@ -120,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "audio": memory().store.status(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
+            "weekly_worker_running": not app.state.weekly_worker.done(),
             "worker_running": bool(app.state.worker and not app.state.worker.done()),
             "meeting_max_minutes": config.meeting_max_minutes,
             "hint_policy": config.hint_policy.model_dump(),
@@ -372,6 +382,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not session:
             raise HTTPException(404, "Chat session not found")
         return session
+
+    app.include_router(weekly_routes(lambda: app.state.weekly))
 
     @app.get("/{path:path}", include_in_schema=False)
     def web(path: str) -> FileResponse:

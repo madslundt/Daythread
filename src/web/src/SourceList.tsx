@@ -86,7 +86,7 @@ function SourceRow({
   async function remove() {
     if (
       !window.confirm(
-        "Delete this recording and transcript? Derived diary entries and chat history will also be cleared because they may contain this recording. This cannot be undone.",
+        "Delete this recording and transcript? Derived diary entries, weekly reviews and chat history will also be cleared because they may contain this recording. This cannot be undone.",
       )
     )
       return;
@@ -108,7 +108,7 @@ function SourceRow({
   if (deleted)
     return (
       <p className="caption" role="status">
-        Recording deleted. Derived diary entries and chat history were cleared.
+        Recording deleted. Derived diary entries, weekly reviews and chat history were cleared.
       </p>
     );
   return (
@@ -172,7 +172,7 @@ function SourceRow({
               </button>
             </div>
             <p className="caption">
-              Corrections update search and invalidate saved recaps so they can
+              Corrections update search and invalidate saved recaps and weekly reviews so they can
               be regenerated.
             </p>
           </div>

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     omi_api_key: SecretStr = SecretStr("")
     stt_model: str = "stt-danish"
     llm_model: str = "home"
+    llm_revision: str = Field(default="", max_length=200)
     language: str = Field(default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)

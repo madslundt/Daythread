@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
+from .weekly_models import markdown as weekly_markdown
 
 EXTENDED_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runtime_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -161,6 +162,12 @@ class ArchiveStore:
                     "SELECT 1 FROM audio WHERE path=? AND audio_available=1", (path,)
                 ).fetchone():
                     Path(path).unlink(missing_ok=True)
+            # Restored backup projections must obey the same purge as the SQLite records.
+            for path in (self.root / "weekly").glob("*.md"):
+                if not db.execute(
+                    "SELECT 1 FROM weekly_versions WHERE id=?", (path.stem,)
+                ).fetchone():
+                    path.unlink(missing_ok=True)
             for path in self.diary_dir.glob("*.md"):
                 if not db.execute("SELECT 1 FROM diary WHERE day=?", (path.stem,)).fetchone():
                     path.unlink(missing_ok=True)
@@ -188,9 +195,14 @@ class ArchiveStore:
             ]
 
     def ensure_session(
-        self, session_id: str | None, title: str, day: str | None = None,
-        meeting_id: str | None = None, scope_supplied: bool = False,
-        start_day: str | None = None, end_day: str | None = None,
+        self,
+        session_id: str | None,
+        title: str,
+        day: str | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: str | None = None,
+        end_day: str | None = None,
     ) -> dict:
         key, now = session_id or str(uuid4()), stamp(utc_now())
         with self.connect() as db:
@@ -211,8 +223,14 @@ class ArchiveStore:
                 (key, title[:120], now, now, day, meeting_id, start_day, end_day),
             )
         return {
-            "id": key, "title": title[:120], "created_at": now, "updated_at": now,
-            "day": day, "meeting_id": meeting_id, "start_day": start_day, "end_day": end_day,
+            "id": key,
+            "title": title[:120],
+            "created_at": now,
+            "updated_at": now,
+            "day": day,
+            "meeting_id": meeting_id,
+            "start_day": start_day,
+            "end_day": end_day,
         }
 
     def chat_sessions(self) -> list[dict]:
@@ -374,6 +392,11 @@ class ArchiveStore:
                         for source in content["sources"]
                     )
                     archive.writestr(f"diary/{row['day']}.md", markdown)
+                for row in db.execute("SELECT id,content FROM weekly_versions"):
+                    archive.writestr(
+                        f"weekly/{row['id']}.md",
+                        weekly_markdown(json.loads(row["content"]), stale=True),
+                    )
             snapshot.unlink()
             return output
         except BaseException:

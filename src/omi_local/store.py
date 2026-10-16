@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
+from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -43,6 +44,7 @@ class Store(ArchiveStore):
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
+            db.executescript(WEEKLY_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.
             columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
             if "hint_policy" not in columns:

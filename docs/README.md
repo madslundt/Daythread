@@ -45,6 +45,18 @@ xcodebuild -project OmiLocal.xcodeproj -scheme OmiLocal \
 
 The project file is included; regenerate it when changing `project.yml`. Physical signing/install, actual pendant pairing, button timing, and screen-locked/background endurance still need the purchased hardware. See [device evidence and acceptance checks](device-research.md).
 
+## Weekly review (web)
+
+Open **Diary → Weeks** to generate an on-demand review of the last completed Monday–Sunday week, compared with the previous calendar week. Week boundaries use the saved backend IANA timezone, including DST; **This week so far** shows a partial cutoff. Daily recaps are not required. Every item includes an exact quote and an inspectable original transcript, with correction, history, deletion and audio when available. The four groups cover supported decisions, commitments needing attention, recurring discussions and supported changes.
+
+Commitments are qualified as **explicitly still open** or **follow-through unconfirmed**. Silence or disappearance never establishes completion. This two-week view is not an enduring backlog of older commitments. Cross-week changes require distinct sources in both weeks; recurrence requires two local dates and selected-week evidence. Whole overlapping chunks are preserved; boundary chunks supply context but cannot alone establish a dated decision, change or recurrence. Coverage distinguishes pending/empty/expired transcripts, recorded intervals, known gaps and unavailable audio. Unuploaded phone backlog remains unknown.
+
+Generation runs in a durable local queue independently of transcription, survives leaving the page and recovers interrupted work after backend restart (at most three interrupted attempts). Reads never invoke the model; unchanged requests reuse a version, while **Regenerate** forces a new one. The UI polls only the active job. Model/schema failures and processing-budget failures remain visible; they never publish a partial review. The initial bounds are 2 million transcript characters, 256 model calls and eight reduction rounds, with bounded per-call evidence. All eligible evidence enters extraction; no chat sampling is used.
+
+Late evidence in either week, corrections, source states, hints, timezone and model configuration make saved reviews stale. Publication rechecks the full scoped fingerprint inside a write transaction. Historical versions retain the original evidence and timezone; source inspection shows the current transcript. Deletion or transcript expiry conservatively purges all weekly versions/jobs and restored Markdown projections. Downloaded exports and earlier backups are independent copies. Backups preserve version history and queued jobs. Set `OMI_LLM_REVISION` when replacing a model behind the same route name.
+
+Native weekly UI, scheduled generation, notifications and a structured commitment lifecycle are follow-ons. Current range chat remains useful for follow-up, but its retrieval is not exhaustive. Quote validation checks traceability and format; semantic claim support and real local-model quality still require evaluation.
+
 ## Optional Omi API import
 
 Settings → Omi connection can import existing cloud conversations using Omi's [personal Developer API](https://docs.omi.me/api-reference/conversations/get-conversations). Create an `omi_dev_…` key with `conversations:read` in Omi's Developer settings, set `OMI_OMI_API_KEY` in the backend's `.env`, and restart the backend. The key stays on the backend, outside public settings and backups. Leave it empty to use direct BLE capture without an Omi account.
@@ -89,7 +101,7 @@ For a private TLS CA, export `SSL_CERT_FILE=/path/to/trusted-ca-bundle.pem` into
 
 ## Archive and backup
 
-The default `data/` directory holds SQLite WAL, WAV recordings, and generated `diary/YYYY-MM-DD.md` files. Keep one backend worker. Transcription retries survive restart; daily generation uses the configured local calendar, including DST boundaries, and catches up after downtime. Late evidence and corrections invalidate derived recaps. Transcript corrections and generated diary versions are auditable; chat sessions persist locally.
+The default `data/` directory holds SQLite WAL, WAV recordings, and generated `diary/YYYY-MM-DD.md` files. Weekly review versions and durable jobs live in SQLite; backups also render immutable `weekly/<version-uuid>.md` projections. Keep one backend worker. Transcription retries survive restart; daily generation uses the configured local calendar, including DST boundaries, and catches up after downtime. Late evidence and corrections invalidate derived recaps. Transcript corrections and generated diary versions are auditable; chat sessions persist locally.
 
 Audio and transcript retention are separate, configurable in Settings; **0 keeps data indefinitely**. Deletion/expiry updates search and derived outputs. No backup includes `.env` or inference credentials.
 
@@ -145,6 +157,10 @@ Keep one archive owner and one backend process for a data directory. The app/API
 | `POST /v1/rewind`, `GET /v1/rewind/audio` | Transcript/summary and exact audio window |
 | `GET/POST /v1/recaps/{day}` | Cached recap or generation |
 | `GET /v1/diary`, `/v1/diary/{day}.md`, `/v1/diary/{day}/versions` | Archive, export, history |
+| `GET /v1/weekly-reviews`, `GET /v1/weekly-reviews/{monday}` | Last completed week or selected cached review with live coverage/staleness; no inference |
+| `POST /v1/weekly-reviews/{monday}/generate` | Durable generation; JSON `request_id` UUID and optional `force` |
+| `GET /v1/weekly-reviews/jobs/{uuid}` | Durable generation state, model-call progress and sanitized errors |
+| `GET /v1/weekly-reviews/{monday}/versions`, `/{monday}.md` | Review history and original-evidence Markdown; optional `version_id` on review/export |
 | `POST /v1/meetings/{uuid}/recap` | Qualified meeting notes with surrounding context |
 | `POST /v1/chat`, `GET /v1/chat/sessions`, `/v1/chat/sessions/{uuid}` | Persistent evidence-based chat |
 
@@ -154,10 +170,11 @@ Event responses include the persisted `event_id`, device, capture time, action a
 
 ## Validation and remaining acceptance
 
-- **167 Python tests**: pipeline/retries, policies, offline event snapshots, archive/versioning/settings/chat, retention/deletion races, citations, gaps, backup corruption, static routing, hosted Omi import, concurrent settings updates, compact event receipts, backup/delete/retention concurrency and rollback preservation.
+- **189 Python tests**: weekly DST/evidence/queue/versioning/lifecycle/restore contracts plus pipeline/retries, policies, offline event snapshots, archive/versioning/settings/chat, retention/deletion races, citations, gaps, backup corruption, static routing, hosted Omi import, concurrent settings updates, compact event receipts, backup/delete/retention concurrency and rollback preservation.
 - **39 native core tests**: real Opus encode/decode, packet fragments/loss/rollover/duplicate timestamps, interrupted final frames, crash reconstruction, failed-save retries, metadata reconstruction, original IDs/policies, exact receipts, storage reservations, local rewind, calendar behavior and Omi discovery matching. A temporary harness also exercised the actual AppModel with controlled suspended requests to verify pause and backend-change races; it is not part of the retained core test suite.
 - **26 web tests**, including appearance persistence, system changes, tab synchronization, blocked storage and calendar behavior; production TypeScript/Vite build. Earlier Omi import flows were checked with mocked upstream responses in desktop/mobile browsers: configuration, pagination, errors/retry and transcript-only playback states.
 - Unsigned iOS Simulator (arm64/x86_64) and generic iOS device builds succeed after the hardware-readiness fixes. Physical signing, installation and Omi acceptance remain outstanding.
+- Weekly desktop/mobile checks (1440×1080 and 390×844) cover generation, cited correction, stale refresh, versions, original-evidence export, scoped chat, partial/empty weeks, model failure and deletion with a disposable archive and simulated inference. Idle reads do not poll full transcripts. No browser console/runtime errors or mobile horizontal overflow were observed.
 - Desktop/mobile browser checks cover actual web/API interactions, settings persistence, short meetings, rewind/empty states, archive correction and persistent chat. Populated tests use a separate temporary archive and simulated inference, never the live archive.
 - Plain and age-encrypted backup/restore round trips, no-overwrite and unsafe-path rejection were verified.
 - Docker/Compose image build and a read-only-container runtime smoke check passed for the web page, status API and settings API. Desktop/phone browser upload was also verified against a separate temporary archive.

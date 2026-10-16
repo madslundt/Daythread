@@ -29,6 +29,9 @@ def member_path(name: str) -> PurePosixPath:
     if folder == "audio" and filename.endswith(".wav"):
         if str(UUID(filename[:-4])) != filename[:-4]:
             raise ValueError("Invalid recording ID in archive")
+    elif folder == "weekly" and filename.endswith(".md"):
+        if str(UUID(filename[:-3])) != filename[:-3]:
+            raise ValueError("Invalid weekly review version ID")
     elif folder == "diary" and filename.endswith(".md"):
         if date.fromisoformat(filename[:-3]).isoformat() != filename[:-3]:
             raise ValueError("Invalid diary date in archive")

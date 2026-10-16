@@ -1,3 +1,4 @@
+import { SourceLabels } from "./SourceLabels";
 import { useEffect, useState } from "react";
 import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
@@ -73,6 +74,9 @@ function SourceRow({
   const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  useEffect(() => {
+    setSaved(undefined);
+  }, [source.id, source.source_version]);
   const text = saved ?? source.text;
   useEffect(() => { setCurrentSource(source); setSaved(undefined); }, [source]);
   useEffect(() => {
@@ -279,6 +283,7 @@ function SourceRow({
         )}
         {text && currentSource.source_version ? <button className="button small" onClick={() => setCreatingDecision(true)}>Record a decision from this source</button> : null}
         {creatingDecision ? <DecisionEditor source={currentSource} onClose={() => setCreatingDecision(false)} onSaved={() => {}} /> : null}
+        <SourceLabels sourceId={source.id} />
         <div className="source-tools">
           <button
             className="text-button"

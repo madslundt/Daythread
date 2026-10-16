@@ -72,6 +72,7 @@ The optional Omi adapter fetches `/v1/dev/user/conversations` with transcripts e
 | Weekly review | Adjacent local-calendar weeks of original transcripts, coverage, evidence fingerprint | Immutable cited items, historical versions, durable on-demand jobs |
 | Recall | Evidence UUIDs, transcript time range | Scoped keyword/optional hybrid results, audio rewind, grounded chat |
 | Inbox | Current transcript revisions and validated character spans | Editable, event-backed proposals and cross-day status |
+| Manual labels | User-managed person/project UUIDs, explicit source-version associations, cited annotations and decision-register IDs | Dated cross-day timelines with correction review; no inferred identity or participation |
 | Conversation preparation | Literal subject/aliases, selected source content versions and separately supplied user context | Ephemeral structured brief with exact cited excerpts; no new persistent records |
 
 Meeting state is replayable in event capture order, so delayed uploads and retries do not toggle it twice. One owner/one wearable timeline is assumed. New phone payloads preserve captured timeout/minimum/cooldown values across offline uploads; older payloads use server defaults at delivery. Conflicting policy retries under the same UUID are rejected. Derived closure at a deadline does not depend on a timer surviving process termination. The native app reconciles server state with its pending local events.
@@ -124,3 +125,9 @@ Pause, transcript correction, deletion/export and separate audio/transcript rete
 ## Completeness and evidence repair
 
 SQLite stores first ingestion/processing times, typed capture transitions, latest sequenced phone observations, output evidence metadata and bounded feedback/resolution records. The clients display observation age and separate playback/transcript interval unions. Source selection, final-prompt UUID references and citation counts are provenance rather than accuracy scores. Feedback invokes explicit existing repairs; source deletion/transcript retention conservatively purge derived notes. See [the implemented contracts and limits](completeness-feedback.md).
+
+## Manual people/project timelines
+
+Labels reuse `audio.source_version` for source incarnation and transcript evidence; they do not introduce another audio revision column. Collection revisions protect manual edits and pagination, while a separate destructive-archive token reconciles native day/chat caches after reconnecting. SQL lifecycle guards purge dependent annotations/history and canonical decision associations without changing the existing decision, inbox, semantic or weekly contracts. Source picker pagination keeps older recordings reachable.
+
+Personal decision notes have no structured register status. Explicit label-to-decision associations store only canonical decision ID/version and resolve the live register projection; they never copy or confirm decision content. Merge/split/delete operate on these organizational associations while preserving canonical register records. No label is injected into generation, preparation, speaker identification or commitment ownership.

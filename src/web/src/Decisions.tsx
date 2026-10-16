@@ -67,7 +67,7 @@ function RevisionPicker({ current, selected, onSelect, timezone }: { current: De
   </div>;
 }
 
-function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: string; timezone: string; onClose: () => void; onNavigate: (id: string) => void }) {
+export function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: string; timezone: string; onClose: () => void; onNavigate: (id: string) => void }) {
   const resource = useDecisions<Decision>(`/v1/decisions/${id}`);
   const pendingCommand = useRef<{ key: string; id: string } | null>(null);
   const [editing, setEditing] = useState(false);

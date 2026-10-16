@@ -163,6 +163,10 @@ class OmiAPI:
                 if source is None:
                     skipped += 1
                     continue
+                if db.execute("SELECT 1 FROM import_deletions WHERE source_id=?",
+                              (source["source_id"],)).fetchone():
+                    skipped += 1
+                    continue
                 old = db.execute("SELECT * FROM audio WHERE id=?", (source["id"],)).fetchone()
                 if old:
                     # Repeated imports preserve local corrections and retention decisions.

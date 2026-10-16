@@ -37,6 +37,8 @@ from .domain import (
 from .embeddings import Embeddings, run_embedding_worker
 from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
+from .label_api import router as label_router
+from .label_models import LabelError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .retrieval import DateScopeError
@@ -100,6 +102,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None,
     )
 
+    @app.middleware("http")
+    async def label_no_store(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/v1/labels"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    app.include_router(label_router)
+
+    @app.exception_handler(LabelError)
+    async def label_error(request: Request, exc: LabelError) -> Response:
+        return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
+
     def memory() -> Memory:
         return app.state.memory
 
@@ -147,6 +162,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/status")
     def status() -> dict:
         return {
+            "archive_revision": memory().store.archive_revision(),
+            "label_revision": memory().store.label_revision(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
             "weekly_worker_running": not app.state.weekly_worker.done(),

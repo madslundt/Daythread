@@ -118,7 +118,7 @@ struct ChatView: View {
                         .accessibilityLabel("Send question").accessibilityIdentifier("chat.send")
                 }.padding().background(.bar)
             }
-            .task(id: cacheKey) { await load(restore: true) }.refreshable { await load(restore: false) }
+            .task(id: cacheKey + model.archiveRevision) { await load(restore: true) }.refreshable { await load(restore: false) }
             .onDisappear { requestID = UUID(); loading = false }
     }
 
@@ -222,7 +222,15 @@ struct ChatView: View {
         do {
             let result = try await model.client().request("v1/chat/sessions")
             guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            sessions = result["items"].array; save()
+            sessions = result["items"].array
+            if let savedID = sessionID {
+                if sessions.contains(where: { $0["id"].text == savedID }) {
+                    let restored = try await model.client().request("v1/chat/sessions/\(savedID)")
+                    guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+                    messages = restored["messages"].array; cached = false
+                } else { messages = []; sessionID = nil; cached = false }
+            }
+            save()
         } catch {
             guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
             self.error = error.localizedDescription

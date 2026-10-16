@@ -273,3 +273,12 @@ def test_configured_status_and_backups_do_not_contain_key(connected):
     with zipfile.ZipFile(archive) as content:
         assert all(KEY.encode() not in content.read(name) for name in content.namelist())
     assert KEY not in json.dumps(client.get("/v1/status").json())
+
+
+def test_deleted_import_is_suppressed_after_restart_and_reimport(connected):
+    client, _ = connected
+    first = client.post("/v1/integrations/omi/import", json={}).json()["items"][0]
+    assert client.delete(f"/v1/audio/{first['id']}").status_code == 200
+    Store(client.app.state.memory.store.root)
+    again = client.post("/v1/integrations/omi/import", json={}).json()
+    assert (again["imported"], again["skipped"], again["items"]) == (0, 1, [])

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
+import { Labels } from "./Labels";
 import { Chat } from "./Chat";
 import { Inbox, InboxEntry } from "./Inbox";
 import { DateNavigator } from "./Calendar";
@@ -15,7 +16,7 @@ import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Notice } from "./UI";
 
-type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings";
+type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings" | "labels";
 const pages: {
   id: Page;
   label: string;
@@ -51,6 +52,7 @@ const pages: {
     title: "A conversation with your days.",
     subtitle: "Ask a question. Follow it back to the source.",
   },
+  { id: "labels", label: "People", icon: "people", title: "People & projects.", subtitle: "Follow related recordings across your days." },
   {
     id: "inbox",
     label: "Inbox",
@@ -67,7 +69,7 @@ const pages: {
   },
 ];
 function pageFromHash(): Page {
-  const key = window.location.hash.slice(1);
+  const key = window.location.hash.slice(1).split("/")[0];
   return pages.some((page) => page.id === key) ? (key as Page) : "today";
 }
 
@@ -250,6 +252,8 @@ export default function App() {
           />
         ) : page === "inbox" ? (
           <Inbox timezone={timezone} />
+        ) : page === "labels" ? (
+          <Labels timezone={timezone} />
         ) : page === "chat" ? (
           <Chat
             key={chatIntent?.id}

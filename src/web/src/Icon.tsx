@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 export type IconName =
+  | "people"
   | "home"
   | "rewind"
   | "skip-back"
@@ -24,6 +25,7 @@ export type IconName =
   | "play"
   | "refresh";
 const paths: Record<IconName, string> = {
+  people: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   home: "m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9",
   rewind: "M3 9V4m0 5h5M3 9a9 9 0 1 1 1 9",
   "skip-back": "m11 5-9 7 9 7V5Zm10 0-9 7 9 7V5Z",

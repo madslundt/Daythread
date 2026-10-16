@@ -1,4 +1,5 @@
 @import './features.css';
+@import './labels.css';
 
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -158,7 +159,7 @@ h3 { font-size: 21px; line-height: 1.3; margin-bottom: 7px; }
   .select-with-icon svg { width: 16px; left: 10px; }
   .quick-rewind .button { min-height: 40px; font-size: 12px; padding: 9px 10px; }
   .mobile-nav { position: fixed; bottom: 0; inset-inline: 0; display: flex; justify-content: space-around; border-top: 1px solid var(--line); background: var(--canvas); padding: 10px 6px calc(9px + env(safe-area-inset-bottom)); z-index: 30; }
-  .mobile-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: var(--muted); font-size: 10px; min-width: 55px; padding: 0 5px; }
+  .mobile-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: var(--muted); font-size: 10px; min-width: 0; flex: 1; padding: 0 3px; }
   .mobile-nav a.active { color: var(--accent); }
   .notice { font-size: 12px; padding: 11px 12px; }
   .meeting-notice { font-size: 12px; align-items: flex-start; }

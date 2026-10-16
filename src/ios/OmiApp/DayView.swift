@@ -30,6 +30,7 @@ struct DayView: View {
     var body: some View {
         List {
             Section {
+                NavigationLink { LabelsView() } label: { Label("People & projects", systemImage: "person.2") }
                 EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.")
                 InboxLink()
                 MonthCalendar(diary: diary, month: $month, day: day, today: model.now, days: days, select: select)
@@ -67,7 +68,7 @@ struct DayView: View {
                 } else { Text("Generate a recap after audio has been transcribed. Your diary stays on home-core.").foregroundStyle(.secondary) }
                 Button { Task { await generate() } } label: { Label("Generate daily recap", systemImage: "sparkle") }.disabled(loading)
             }
-            DecisionsSection(day: dayKey).id(model.backendAddress + dayKey)
+            DecisionsSection(day: dayKey).id(model.backendAddress + dayKey + model.archiveRevision)
             if !dayMeetings.isEmpty {
                 Section("Meetings") {
                     ForEach(Array(dayMeetings.enumerated()), id: \.offset) { _, meeting in
@@ -88,7 +89,8 @@ struct DayView: View {
             }
         }.listStyle(.insetGrouped).navigationTitle("Day").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $prepOpen) { ConversationPrepView() }
-            .task(id: cacheKey) { await load() }
+
+            .task(id: cacheKey + model.archiveRevision) { await load() }
             .task(id: calendarTaskKey) { await loadCalendar() }
             .refreshable {
                 async let details: Void = load()

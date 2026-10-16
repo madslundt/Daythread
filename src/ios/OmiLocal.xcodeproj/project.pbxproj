@@ -7,8 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		032E529509B3B5754CE48B7F /* LabelManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4DA08F95FCF7424E6F2FCC /* LabelManagementView.swift */; };
 		13535FA1821C675C35033E36 /* DecisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F6DE1ABD7080468B48F589A /* DecisionModels.swift */; };
 		338972066E29E13D899F0D93 /* RewindView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB103EC0D947AF259813AF67 /* RewindView.swift */; };
+		3A9EA573F32252D67B3C873D /* LabelModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83340E6C000D5883807143F6 /* LabelModels.swift */; };
+		3C279B81979C2EECB7067501 /* LabelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 976E68BC9A49F172B680F852 /* LabelsView.swift */; };
+		4F959E7637FAE2C5C4DF43C4 /* SourceLabelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1818FF06883A2F5D597897F4 /* SourceLabelsView.swift */; };
 		53E5E3E646103D95D8D6D0A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 34E6A4F371E71DE67B84C005 /* Assets.xcassets */; };
 		5ED2AEC6388BE96E237B1F5F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */; };
 		663B7B58CCC7240DDEB8B75D /* CompletenessFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF000BA0F7EED480D3031D5 /* CompletenessFeedback.swift */; };
@@ -20,6 +24,7 @@
 		90BAD984D1081F1A684DDDED /* OmiCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3D7D1432C8722F963DD7EB80 /* OmiCore */; };
 		947EB46471B097F0E2703419 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5C4B1BA79BB1B93E662308 /* InboxView.swift */; };
 		9A209B1529C4C7F9940BC405 /* BackgroundUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B842DC16CA4ABEDC74FD7B /* BackgroundUploader.swift */; };
+		9F0F66CD28A3BE03A2A42C15 /* LabelDecisionLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEA4A368017EC924EE5D309 /* LabelDecisionLinkView.swift */; };
 		BF2370C719FD28CE695675E0 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5149340AC58163457C8EAFA4 /* DecisionsView.swift */; };
 		C1FF364862A99BAC8FDABF8D /* OmiBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65DE8DF0B231718A45BA596C /* OmiBluetooth.swift */; };
 		C7C0F7218715AB6929F0E9BA /* ConversationPrepModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 845B9CE61FCB882C7B03E291 /* ConversationPrepModels.swift */; };
@@ -27,11 +32,13 @@
 		CFE5EA14A2B0FBB3B7257298 /* DecisionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D1609947E22F81415CA125 /* DecisionEditor.swift */; };
 		EAF4AE1FBA11AB23CD07C46C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C626139C28263DAFF05301 /* BackendClient.swift */; };
 		F56EA0F2970F74B82031361F /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759496386C0A6A63464FDB76 /* AppModel.swift */; };
+		F90180FAE2F15EBED0FEE73A /* LabelNoteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34F8A129671FBC56CB4C2EB /* LabelNoteEditor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0BAB8DB32118BFF5635E7A65 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		16D1609947E22F81415CA125 /* DecisionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionEditor.swift; sourceTree = "<group>"; };
+		1818FF06883A2F5D597897F4 /* SourceLabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLabelsView.swift; sourceTree = "<group>"; };
 		30B842DC16CA4ABEDC74FD7B /* BackgroundUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundUploader.swift; sourceTree = "<group>"; };
 		30C626139C28263DAFF05301 /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
 		34E6A4F371E71DE67B84C005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -41,17 +48,22 @@
 		65DE8DF0B231718A45BA596C /* OmiBluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmiBluetooth.swift; sourceTree = "<group>"; };
 		6DF738894717C09600F1F1D9 /* OmiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmiApp.swift; sourceTree = "<group>"; };
 		759496386C0A6A63464FDB76 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		83340E6C000D5883807143F6 /* LabelModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelModels.swift; sourceTree = "<group>"; };
 		845B9CE61FCB882C7B03E291 /* ConversationPrepModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrepModels.swift; sourceTree = "<group>"; };
+		8D4DA08F95FCF7424E6F2FCC /* LabelManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelManagementView.swift; sourceTree = "<group>"; };
 		96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		976E68BC9A49F172B680F852 /* LabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsView.swift; sourceTree = "<group>"; };
 		A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
 		AD9EAC0AB3288CEED0AE38A7 /* OmiLocal.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmiLocal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AEB8513E2E8BCBD64BB4AC61 /* ConversationPrepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrepView.swift; sourceTree = "<group>"; };
+		B34F8A129671FBC56CB4C2EB /* LabelNoteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelNoteEditor.swift; sourceTree = "<group>"; };
 		C713C75E658365D773F6A8DE /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
 		CDF000BA0F7EED480D3031D5 /* CompletenessFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletenessFeedback.swift; sourceTree = "<group>"; };
 		CE6B31CC401589C34B0076D6 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		D68AC74F4420C61DC1058227 /* DayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayView.swift; sourceTree = "<group>"; };
 		E0ACE56629A0C388614F77B4 /* InboxDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDetail.swift; sourceTree = "<group>"; };
 		FB103EC0D947AF259813AF67 /* RewindView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewindView.swift; sourceTree = "<group>"; };
+		FCEA4A368017EC924EE5D309 /* LabelDecisionLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelDecisionLinkView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,10 +105,16 @@
 				E0ACE56629A0C388614F77B4 /* InboxDetail.swift */,
 				4F5C4B1BA79BB1B93E662308 /* InboxView.swift */,
 				0BAB8DB32118BFF5635E7A65 /* Info.plist */,
+				FCEA4A368017EC924EE5D309 /* LabelDecisionLinkView.swift */,
+				8D4DA08F95FCF7424E6F2FCC /* LabelManagementView.swift */,
+				83340E6C000D5883807143F6 /* LabelModels.swift */,
+				B34F8A129671FBC56CB4C2EB /* LabelNoteEditor.swift */,
+				976E68BC9A49F172B680F852 /* LabelsView.swift */,
 				6DF738894717C09600F1F1D9 /* OmiApp.swift */,
 				65DE8DF0B231718A45BA596C /* OmiBluetooth.swift */,
 				FB103EC0D947AF259813AF67 /* RewindView.swift */,
 				96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */,
+				1818FF06883A2F5D597897F4 /* SourceLabelsView.swift */,
 			);
 			path = OmiApp;
 			sourceTree = "<group>";
@@ -207,10 +225,16 @@
 				BF2370C719FD28CE695675E0 /* DecisionsView.swift in Sources */,
 				82CC434A9CA7143BF5BC69D1 /* InboxDetail.swift in Sources */,
 				947EB46471B097F0E2703419 /* InboxView.swift in Sources */,
+				9F0F66CD28A3BE03A2A42C15 /* LabelDecisionLinkView.swift in Sources */,
+				032E529509B3B5754CE48B7F /* LabelManagementView.swift in Sources */,
+				3A9EA573F32252D67B3C873D /* LabelModels.swift in Sources */,
+				F90180FAE2F15EBED0FEE73A /* LabelNoteEditor.swift in Sources */,
+				3C279B81979C2EECB7067501 /* LabelsView.swift in Sources */,
 				6C77E56584FD08FE926970AB /* OmiApp.swift in Sources */,
 				C1FF364862A99BAC8FDABF8D /* OmiBluetooth.swift in Sources */,
 				338972066E29E13D899F0D93 /* RewindView.swift in Sources */,
 				5ED2AEC6388BE96E237B1F5F /* SettingsView.swift in Sources */,
+				4F959E7637FAE2C5C4DF43C4 /* SourceLabelsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

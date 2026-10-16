@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from uuid import UUID
 
 from omi_local.decision_restore import validate_decisions
+from omi_local.label_schema import validate_labels
 from omi_local.settings import Settings
 from omi_local.store import Store
 
@@ -74,6 +75,7 @@ def validate_database(root: Path) -> None:
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("Archive database failed its integrity check")
         validate_decisions(db)
+        validate_labels(db)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(audio)")}
         for row in db.execute("SELECT * FROM audio"):
             key = str(UUID(row["id"]))

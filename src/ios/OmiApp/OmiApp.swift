@@ -100,6 +100,16 @@ struct ErrorNote: View {
 }
 
 enum LocalCache {
+    static func reconcile(address: String, revision: String) {
+        guard !revision.isEmpty else { return }
+        let key = "archiveRevision." + address
+        if UserDefaults.standard.string(forKey: key) != revision {
+            for cacheKey in UserDefaults.standard.dictionaryRepresentation().keys where cacheKey.hasPrefix("cache." + address + ".") {
+                UserDefaults.standard.removeObject(forKey: cacheKey)
+            }
+            UserDefaults.standard.set(revision, forKey: key)
+        }
+    }
     static func load(_ key: String) -> JSONValue? {
         guard let data = UserDefaults.standard.data(forKey: "cache." + key) else { return nil }
         return try? JSONDecoder().decode(JSONValue.self, from: data)
@@ -133,6 +143,14 @@ struct SourceDetail: View {
     var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var fresh: JSONValue?
+    private var evidence: JSONValue { fresh ?? source }
+    private var transcriptDescription: String {
+        if evidence == .null { return "Source removed" }
+        if evidence["state"].text == "expired" { return "Transcript expired under your retention policy." }
+        if !evidence["text"].text.isEmpty { return evidence["text"].text }
+        return evidence["state"].text == "done" ? "No speech detected" : "Transcription pending"
+    }
     @State private var error: String?
     @State private var loading = false
     @State private var editing = false
@@ -141,14 +159,15 @@ struct SourceDetail: View {
         NavigationStack {
             List {
                 Section("Recorded evidence") {
-                    NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: source["id"].text) }
+                    NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
-                    Text(source["text"].text.isEmpty ? "No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)" : source["text"].text).textSelection(.enabled)
-                    Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(evidence["text"].text.isEmpty ? "No transcript text · \(evidence["transcription_outcome"].text) · \(evidence["state"].text)" : evidence["text"].text).textSelection(.enabled)
+                    Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label("People & projects", systemImage: "person.2") }.disabled(evidence == .null)
                 NavigationLink("Create decision from this source") {
-                    SourceDecisionCreation(sourceID: source["id"].text)
-                }.disabled(source["text"].text.isEmpty)
+                    SourceDecisionCreation(sourceID: evidence["id"].text)
+                }.disabled(evidence["text"].text.isEmpty)
                 Section("Transcript correction") {
                     if editing {
                         TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel("Correct transcript")
@@ -159,41 +178,51 @@ struct SourceDetail: View {
                                 defer { loading = false }
                                 do {
                                     guard model.backendAddress == address else { return }
-                                    _ = try await model.client().request("v1/transcripts/\(source["id"].text)", method: "PATCH", body: ["text": draft])
+                                    _ = try await model.client().request("v1/transcripts/\(evidence["id"].text)", method: "PATCH", body: ["text": draft])
                                     guard !Task.isCancelled, model.backendAddress == address else { return }
                                     onCorrect?(); dismiss()
                                 } catch { self.error = error.localizedDescription }
                             }
                         }.disabled(loading || draft.count > 20000)
                         Button("Cancel edit") { editing = false }
-                    } else { Button("Correct transcript") { draft = source["text"].text; editing = true } }
+                    } else { Button("Correct transcript") { draft = evidence["text"].text; editing = true } }
                 }
-                if source["state"].text == "blocked" || !source["error_code"].text.isEmpty {
+                if evidence["state"].text == "blocked" || !evidence["error_code"].text.isEmpty {
                     Button("Retry transcription after resolving the problem") { Task {
-                        do { _ = try await model.client().request("v1/audio/\(source["id"].text)/retry", method: "POST"); error = nil }
+                        do { _ = try await model.client().request("v1/audio/\(evidence["id"].text)/retry", method: "POST"); error = nil }
                         catch { self.error = error.localizedDescription }
                     } }
                 }
-                if source["audio_availability"].text == "missing" { Text("The archive expects audio, but the file is missing.").font(.caption) }
-                if source["audio_available"] == .bool(false) {
-                    Text(source["source_kind"].text == "omi_api" ? "Imported from Omi · transcript only; original audio unavailable." : "Audio expired under retention; transcript remains available.").font(.caption)
+                if evidence["audio_availability"].text == "missing" { Text("The archive expects audio, but the file is missing.").font(.caption) }
+                if evidence["audio_available"] == .bool(false) {
+                    Text(evidence["source_kind"].text == "omi_api" ? "Imported from Omi · transcript only; original audio unavailable." : "Audio expired under retention; transcript remains available.").font(.caption)
                 } else {
                 Button {
                     loading = true
                     Task {
                         defer { loading = false }
-                        do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
+                        do { model.play(try await model.client().download("v1/audio/\(evidence["id"].text)", query: [:])) }
                         catch { self.error = error.localizedDescription }
                     }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_availability"].text == "missing")
+                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || evidence["audio_availability"].text == "missing")
                 }
                 ErrorNote(message: error)
+            }.task(id: model.archiveRevision + model.backendAddress) {
+                do {
+                    let result = try await model.client().request("v1/transcripts/\(source["id"].text)")
+                    guard !Task.isCancelled else { return }
+                    fresh = result; error = nil
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                    if (error as? BackendFailure)?.status == 404 { fresh = .null }
+                }
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
     private var sourceDate: String {
-        guard let date = AppModel.date(source["started_at"].text) else { return source["started_at"].text }
+        guard let date = AppModel.date(evidence["started_at"].text) else { return evidence["started_at"].text }
         let formatter = DateFormatter()
         formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
         formatter.dateStyle = .medium; formatter.timeStyle = .short

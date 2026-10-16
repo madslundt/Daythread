@@ -13,12 +13,16 @@ final class AppModel {
             backendGeneration = UUID()
             serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
             serverTimeline = LocalCache.load(backendAddress + ".timeline") ?? .null
+            labelRevision = ""
+            archiveRevision = ""
             serverStatus = "Not connected"
             completenessStatus = .null
             lastStatusCheck = .distantPast
             refreshLocal()
         }
     }
+    var labelRevision = ""
+    var archiveRevision = ""
     var serverTimeZoneIdentifier: String?
     var gesture: MeetingGesture { didSet { UserDefaults.standard.set(gesture.rawValue, forKey: "meetingGesture") } }
     var meetingMinutes: Int { didSet { UserDefaults.standard.set(meetingMinutes, forKey: "meetingMinutes") } }
@@ -154,6 +158,9 @@ final class AppModel {
             let backend = try BackendClient(address: address)
             let status = try await backend.request("v1/status")
             guard backendGeneration == generation else { return }
+            LocalCache.reconcile(address: address, revision: status["archive_revision"].text)
+            archiveRevision = status["archive_revision"].text
+            labelRevision = status["label_revision"].text
             if TimeZone(identifier: status["timezone"].text) != nil {
                 serverTimeZoneIdentifier = status["timezone"].text
                 UserDefaults.standard.set(serverTimeZoneIdentifier, forKey: address + ".timezone")

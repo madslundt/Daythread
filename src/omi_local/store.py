@@ -15,6 +15,8 @@ from .decision_export import diary_markdown
 from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
+from .label_schema import SCHEMA as LABEL_SCHEMA
+from .label_store import LabelStore
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
@@ -39,7 +41,7 @@ CREATE TABLE IF NOT EXISTS diary (
 """
 
 
-class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore):
+class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, LabelStore):
     def __init__(self, root: Path):
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -103,6 +105,7 @@ class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore):
             if "retrieval_details" not in message_columns:
                 db.execute("ALTER TABLE chat_messages ADD COLUMN retrieval_details TEXT")
             db.executescript(INBOX_SCHEMA)
+            db.executescript(LABEL_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }

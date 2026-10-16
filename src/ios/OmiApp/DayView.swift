@@ -11,6 +11,7 @@ struct DayView: View {
     @State private var transcripts: [JSONValue] = []
     @State private var error: String?
     @State private var loading = false
+    @State private var recapRefreshError: String?
     @State private var cached = false
     @State private var total = 0
     @State private var days: [String: CalendarDay] = [:]
@@ -22,9 +23,9 @@ struct DayView: View {
 
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var dayKey: String { diary.dayKey(day) }
-    private var cacheKey: String { model.backendAddress + ".day." + dayKey }
+    private var cacheKey: String { model.archiveIdentity + ".day." + dayKey }
     private var monthKey: String { diary.monthKey(month) }
-    private var calendarKey: String { model.backendAddress + ".calendar." + monthKey + "." + diary.calendar.timeZone.identifier }
+    private var calendarKey: String { model.archiveIdentity + ".calendar." + monthKey + "." + diary.calendar.timeZone.identifier }
     private var calendarTaskKey: String { calendarKey + ".\(calendarRevision)" }
 
     var body: some View {
@@ -54,7 +55,17 @@ struct DayView: View {
                 ErrorNote(message: error)
             } footer: { Text("Dates in \(diary.calendar.timeZone.identifier)") }
             Section("Daily recap · \(diary.label(day, template: "d MMM yyyy"))") {
+                ErrorNote(message: recapRefreshError)
                 if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
+                if let included = AppModel.date(recap["included_through"].text) {
+                    Text("Includes completed conversations through \(diary.label(included, template: "d MMM HHmm")).").font(.caption).foregroundStyle(.secondary)
+                } else if recap["included_through"] == .null && recap != .null && recap["summary"].text.isEmpty {
+                    Text("No completed conversations included yet.").font(.caption).foregroundStyle(.secondary)
+                }
+                if recap["deferred_conversations"].integer > 0 || recap["deferred_sources"].integer > 0 {
+                    Text("Current conversations are waiting to finish before being included. Active conversations stay out of the recap.").font(.caption).foregroundStyle(.secondary)
+                }
+                if !recap["boundary_note"].text.isEmpty { Text(recap["boundary_note"].text).font(.caption).foregroundStyle(.secondary) }
                 if !recap["summary"].text.isEmpty {
                     Text(.init(recap["summary"].text)).textSelection(.enabled)
                     RecapImportanceView(recap: recap)
@@ -64,7 +75,7 @@ struct DayView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Image(systemName: "book.pages").font(.title2).foregroundStyle(Theme.accent).accessibilityHidden(true)
                         Text("Your day, in a few words.").font(.headline)
-                        Text("After your recordings are transcribed, turn them into a recap you can return to.").foregroundStyle(.secondary)
+                        Text(recapEmptyMessage).foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }
                 Button { Task { await generate() } } label: { Label(recap["summary"].text.isEmpty ? "Generate daily recap" : "Regenerate daily recap", systemImage: "sparkle") }
@@ -80,7 +91,7 @@ struct DayView: View {
                     .accessibilityIdentifier("day.chat")
                 Button { prepOpen = true } label: { Label("Prepare for a conversation", systemImage: "person.crop.rectangle") }
             }
-            DecisionsSection(day: dayKey).id(model.backendAddress + dayKey + model.archiveRevision)
+            DecisionsSection(day: dayKey).id(model.archiveIdentity + dayKey + model.archiveRevision)
             if !dayMeetings.isEmpty {
                 Section("Meetings") {
                     ForEach(Array(dayMeetings.enumerated()), id: \.offset) { _, meeting in
@@ -90,6 +101,9 @@ struct DayView: View {
                             Label("Chat with meeting · " + (AppModel.date(meeting["started_at"].text).map { diary.label($0, template: "HHmm") } ?? meeting["started_at"].text), systemImage: "person.2")
                         }
                         ImportanceButton(target: ImportanceTarget(kind: "meeting", id: meeting["id"].text), label: "meeting")
+                        NavigationLink {
+                            SpeakersView(kind: "meeting", conversationID: meeting["id"].text)
+                        } label: { Label("Meeting speakers · listen & name", systemImage: "person.wave.2") }
                     }
                 }
             }
@@ -105,6 +119,13 @@ struct DayView: View {
 
             .task(id: cacheKey + model.archiveRevision) { await load() }
             .task(id: calendarTaskKey) { await loadCalendar() }
+            .task(id: cacheKey + model.archiveRevision + ".recap-refresh") {
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    guard !Task.isCancelled else { return }
+                    if dayKey == diary.dayKey(model.now) { await refreshRecap() }
+                }
+            }
             .refreshable {
                 async let details: Void = load()
                 async let calendar: Void = loadCalendar()
@@ -117,6 +138,17 @@ struct DayView: View {
                 if !daySelected { month = day }
             }
             .onDisappear { dayRequest = UUID(); calendarRequest = UUID() }
+    }
+
+    private var recapEmptyMessage: String {
+        if recap["no_recap_content"] == .bool(true) {
+            return "No useful recap content in completed conversations yet. Your recordings and transcripts remain in the archive under your retention settings."
+        }
+        if recap["deferred_conversations"].integer > 0 || recap["deferred_sources"].integer > 0 {
+            return "Your current conversation is waiting to finish before it can be included in a recap."
+        }
+        if recap["pending_chunks"].integer > 0 { return "Audio is still being transcribed. Completed conversations can be included once it is ready." }
+        return "Completed conversations will bring the important parts of your day together here."
     }
 
     private var dayMeetings: [JSONValue] {
@@ -151,7 +183,7 @@ struct DayView: View {
 
     private func load() async {
         let key = cacheKey, requestedDay = dayKey, request = UUID()
-        dayRequest = request; error = nil; loading = true; cached = false
+        dayRequest = request; error = nil; recapRefreshError = nil; loading = true; cached = false
         recap = .null; transcripts = []; total = 0
         if let saved = LocalCache.load(key) {
             recap = saved["recap"]; transcripts = saved["transcripts"].array; total = saved["total"].integer; cached = true
@@ -170,13 +202,26 @@ struct DayView: View {
         }
     }
 
+    private func refreshRecap() async {
+        guard !loading else { return }
+        let key = cacheKey, requestedDay = dayKey, request = dayRequest
+        do {
+            let result = try await model.client().request("v1/recaps/\(requestedDay)")
+            guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
+            recap = result; recapRefreshError = nil; save(key)
+        } catch {
+            guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
+            recapRefreshError = "Could not refresh the recap. \(error.localizedDescription)"
+        }
+    }
+
     private func generate() async {
-        let key = cacheKey, requestedDay = dayKey, address = model.backendAddress, request = UUID()
-        dayRequest = request; loading = true; error = nil
+        let key = cacheKey, requestedDay = dayKey, address = model.archiveIdentity, request = UUID()
+        dayRequest = request; loading = true; error = nil; recapRefreshError = nil
         defer { if dayRequest == request { loading = false } }
         do {
             let result = try await model.client().request("v1/recaps/\(requestedDay)", method: "POST")
-            if !Task.isCancelled, model.backendAddress == address { calendarRevision += 1 }
+            if !Task.isCancelled, model.archiveIdentity == address { calendarRevision += 1 }
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
             recap = result; cached = false; save(key)
         } catch {

@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-settings>=2.16.0,<3",
     "tzdata>=2026.5",
     "uvicorn>=0.54.0,<1",
+    "webrtcvad-wheels==2.0.14",
 ]
 
 [dependency-groups]

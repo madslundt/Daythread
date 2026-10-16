@@ -1,23 +1,25 @@
-import { useEffect, useState } from "react";
-import { errorMessage, newId, request } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, errorMessage, newId, request } from "./api";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
+import { ModelPicker } from "./ModelPicker";
 import {
-  keepSecret, routeChanges, routeRows, secretChange, tasks,
-  type ConfigurationData, type ConfigurationField, type ModelOverride,
+  canRebaseConfiguration, configurationChanges, configurationDraft, configurationIsDirty,
+  keepSecret, matchingConfigurationFields, tasks,
+  type ConfigurationData, type ConfigurationDraft, type ConfigurationField,
   type RouteRow, type SecretEdit,
 } from "./configurationModel";
 
-function SecretControl({ id, label, configured, edit, onChange, route = false }: {
+function SecretControl({ id, label, configured, edit, onChange, route = false, description }: {
   id: string; label: string; configured: boolean; edit: SecretEdit;
-  onChange: (edit: SecretEdit) => void; route?: boolean;
+  onChange: (edit: SecretEdit) => void; route?: boolean; description?: string;
 }) {
   return <div className="setting-field">
     <label htmlFor={id}>{label} · {configured ? "Configured" : "Not set"}</label>
-    <select id={id} value={edit.mode} onChange={(event) =>
+    <select id={id} value={edit.mode} aria-describedby={description ? `${id}-hint` : undefined} onChange={(event) =>
       onChange({ mode: event.target.value as SecretEdit["mode"], value: "" })}>
-      <option value="keep">Keep current key</option>
-      <option value="replace">Replace key</option>
+      <option value="keep">{configured ? "Keep current key" : route ? "Keep current setting" : "Leave key unset"}</option>
+      <option value="replace">{configured ? "Replace key" : "Add key"}</option>
       {route ? <option value="inherit">Use shared key</option> : null}
       <option value="clear">{route ? "No authentication" : "Clear key"}</option>
     </select>
@@ -26,12 +28,14 @@ function SecretControl({ id, label, configured, edit, onChange, route = false }:
       autoComplete="new-password" spellCheck={false}
       onChange={(event) => onChange({ ...edit, value: event.target.value })}
     /> : null}
+    {description ? <small id={`${id}-hint`}>{description}</small> : null}
   </div>;
 }
 
-export function ModelRoutes({ field, rows, secrets, onChange }: {
+export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, revision }: {
   field: ConfigurationField; rows: RouteRow[]; secrets: Record<string, boolean>;
   onChange: (rows: RouteRow[]) => void;
+  connectionDraft: ConfigurationDraft; revision: string;
 }) {
   const llm = field.key === "llm_routes";
   function update(id: string, changes: Partial<RouteRow>) {
@@ -49,10 +53,6 @@ export function ModelRoutes({ field, rows, secrets, onChange }: {
           </select> : <input value={row.name} placeholder="da, en, danish, auto…" autoCapitalize="none"
             spellCheck={false} onChange={(event) => update(row.id, { name: event.target.value })} />}
         </label>
-        <label className="setting-field"><span>Model override</span>
-          <input value={row.model || ""} placeholder="Use default model"
-            onChange={(event) => update(row.id, { model: event.target.value })} />
-        </label>
         <label className="setting-field"><span>Endpoint override</span>
           <input type="url" value={row.base_url || ""} placeholder="Use default endpoint"
             onChange={(event) => update(row.id, { base_url: event.target.value })} />
@@ -64,6 +64,9 @@ export function ModelRoutes({ field, rows, secrets, onChange }: {
         <SecretControl id={`route-key-${row.id}`} label="Route key" route
           configured={Boolean(secrets[`${field.key}.${row.name.toLowerCase()}.token`])}
           edit={row.secret} onChange={(secret) => update(row.id, { secret })} />
+        <ModelPicker id={`route-model-${row.id}`} label={`Model for ${row.name || `route ${index + 1}`}`}
+          value={row.model || ""} provider={llm ? "llm" : "stt"} draft={connectionDraft} row={row}
+          revision={revision} onChange={(model) => update(row.id, { model })} />
       </div>
       <button className="text-button" type="button" onClick={() => onChange(rows.filter((value) => value.id !== row.id))}>
         Remove route {row.name || index + 1}
@@ -77,113 +80,192 @@ export function ModelRoutes({ field, rows, secrets, onChange }: {
   </div>;
 }
 
-export function Configuration({ onSaved, hiddenFields = [] }: {
-  onSaved: () => void; hiddenFields?: readonly string[];
+const groupDescriptions: Record<string, string> = {
+  "Transcription": "Turn recordings into text with your chosen speech model.",
+  "Language models & chat": "Choose models for answers, summaries, and other tasks.",
+  "Semantic search": "Find related conversations by meaning.",
+  "Local inference": "Shared connection settings for your model services.",
+  "Omi connections": "Credentials for optional Omi imports and audio forwarding.",
+  "Capture & hints": "Fine-tune how flags and meeting gestures are interpreted.",
+  "Archive & processing": "Control storage locations and background processing.",
+};
+
+export function Configuration({ onSaved, hiddenFields = [], search: controlledSearch,
+  onSearchResults, onDirtyChange, refreshRevision = 0 }: {
+  onSaved: () => void;
+  hiddenFields?: readonly string[];
+  search?: string;
+  onSearchResults?: (count: number) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  refreshRevision?: number;
 }) {
   const resource = useResource<ConfigurationData>("/v1/configuration");
-  const [values, setValues] = useState<Record<string, unknown>>({});
-  const [routes, setRoutes] = useState<Record<string, RouteRow[]>>({});
-  const [secrets, setSecrets] = useState<Record<string, SecretEdit>>({});
+  const [baseline, setBaseline] = useState<ConfigurationData>();
+  const [draft, setDraft] = useState<ConfigurationDraft>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [conflict, setConflict] = useState("");
   const [saved, setSaved] = useState(false);
-  const [search, setSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const search = controlledSearch ?? localSearch;
+  const dirty = Boolean(baseline && draft && configurationIsDirty(baseline, draft, hiddenFields));
+  const previousRefresh = useRef(refreshRevision);
+  const ownRefresh = useRef(false);
+  const handledData = useRef<ConfigurationData | undefined>(undefined);
+
+  function loadDraft(data: ConfigurationData) {
+    setBaseline(data);
+    setDraft(configurationDraft(data));
+    setConflict("");
+  }
+
   useEffect(() => {
-    if (!resource.data) return;
-    setValues(resource.data.values);
-    setRoutes(Object.fromEntries(resource.data.fields.filter((field) => field.kind === "routes")
-      .map((field) => [field.key, routeRows(resource.data!.values[field.key] as Record<string, ModelOverride>)])));
-    setSecrets({});
-  }, [resource.data]);
+    if (previousRefresh.current === refreshRevision) return;
+    previousRefresh.current = refreshRevision;
+    ownRefresh.current = true;
+    resource.refresh();
+  }, [refreshRevision, resource.refresh]);
+
+  useEffect(() => {
+    const latest = resource.data;
+    if (!latest || handledData.current === latest) return;
+    handledData.current = latest;
+    const mayRebase = ownRefresh.current;
+    ownRefresh.current = false;
+    if (!baseline || !draft) {
+      loadDraft(latest);
+    } else if (latest.revision !== baseline.revision) {
+      if (!configurationIsDirty(baseline, draft, hiddenFields)) {
+        loadDraft(latest);
+        setSaved(false);
+      } else if (mayRebase && canRebaseConfiguration(baseline, latest, hiddenFields)) {
+        // Keep every visible edit, including incomplete keys and routes.
+        setBaseline(latest);
+        setConflict("");
+      } else {
+        setError("");
+        setConflict("Server settings changed while you were editing. Your edits are still here. Discard changes to load the current settings before making further changes.");
+      }
+    }
+  }, [resource.data, baseline, draft, hiddenFields]);
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
   function update(key: string, value: unknown) {
-    setValues((current) => ({ ...current, [key]: value }));
+    setDraft((current) => current ? { ...current, values: { ...current.values, [key]: value } } : current);
     setSaved(false);
+    setError("");
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (!resource.data || busy) return;
+    if (!baseline || !draft || busy || resource.loading || conflict || !dirty) return;
     setError(""); setSaved(false);
     try {
-      const changes: Record<string, unknown> = {};
-      for (const field of resource.data.fields) {
-        let value = values[field.key];
-        if (field.kind === "secret") {
-          value = secretChange(secrets[field.key] || keepSecret());
-          if (value === undefined) continue;
-        } else if (field.kind === "routes") {
-          value = routeChanges(routes[field.key] || [], field.key === "llm_routes");
-        } else if (field.kind === "number" || field.kind === "integer") {
-          if (value === "" || !Number.isFinite(Number(value))) throw new Error(`Enter a number for ${field.label}.`);
-          value = Number(value);
-        } else if (field.nullable && value === "") value = null;
-        if (JSON.stringify(value) !== JSON.stringify(resource.data.values[field.key])) changes[field.key] = value;
-      }
-      if (!Object.keys(changes).length) { setSaved(true); return; }
+      const changes = configurationChanges(baseline, draft, hiddenFields);
+      if (!Object.keys(changes).length) return;
       setBusy(true);
       const result = await request<ConfigurationData>("/v1/configuration", {
-        method: "PATCH", body: JSON.stringify({ revision: resource.data.revision, changes }),
+        method: "PATCH", body: JSON.stringify({ revision: baseline.revision, changes }),
       });
+      loadDraft(result);
       resource.setData(result); setSaved(true); onSaved();
-    } catch (failure) { setError(errorMessage(failure)); }
+      window.dispatchEvent(new Event("omi:settings-changed"));
+    } catch (failure) {
+      setError(errorMessage(failure));
+      if (failure instanceof ApiError && failure.status === 409) resource.refresh();
+    }
     finally { setBusy(false); }
+  }
+  function discard() {
+    const latest = resource.data || baseline;
+    if (latest) loadDraft(latest);
+    setError(""); setSaved(false);
   }
   function control(field: ConfigurationField) {
     const id = `config-${field.key}`;
-    if (field.kind === "routes") return <ModelRoutes field={field} rows={routes[field.key] || []}
-      secrets={resource.data!.secrets} onChange={(rows) => { setRoutes((current) => ({ ...current, [field.key]: rows })); setSaved(false); }} />;
+    if (field.key === "stt_model" || field.key === "llm_model") return <ModelPicker
+      id={id} label={field.label} description={field.description} value={String(draft!.values[field.key] || "")}
+      provider={field.key === "stt_model" ? "stt" : "llm"} draft={draft!} revision={baseline!.revision}
+      onChange={(value) => update(field.key, value)} />;
+    if (field.kind === "routes") return <ModelRoutes field={field} rows={draft!.routes[field.key] || []}
+      secrets={baseline!.secrets} connectionDraft={draft!} revision={baseline!.revision} onChange={(rows) => {
+        setDraft((current) => current ? { ...current, routes: { ...current.routes, [field.key]: rows } } : current);
+        setSaved(false); setError("");
+      }} />;
     if (field.kind === "secret") return <SecretControl id={id} label={field.label}
-      configured={Boolean(resource.data!.secrets[field.key])} edit={secrets[field.key] || keepSecret()}
-      onChange={(edit) => { setSecrets((current) => ({ ...current, [field.key]: edit })); setSaved(false); }} />;
+      configured={Boolean(baseline!.secrets[field.key])} edit={draft!.secrets[field.key] || keepSecret()}
+      description={field.description} onChange={(edit) => {
+        setDraft((current) => current ? { ...current, secrets: { ...current.secrets, [field.key]: edit } } : current);
+        setSaved(false); setError("");
+      }} />;
     return <label className="setting-field" htmlFor={id}>
       <span id={`${id}-label`}>{field.label}{field.restart_required ? " · restart required" : ""}</span>
       {field.kind === "boolean" ? field.nullable ? <select id={id}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
-        value={values[field.key] == null ? "default" : String(values[field.key])}
+        value={draft!.values[field.key] == null ? "default" : String(draft!.values[field.key])}
         onChange={(event) => update(field.key, event.target.value === "default" ? null : event.target.value === "true")}>
         <option value="default">Model default</option><option value="true">Enabled</option><option value="false">Disabled</option>
-      </select> : <select id={id} value={String(values[field.key] ?? false)}
+      </select> : <select id={id} value={String(draft!.values[field.key] ?? false)}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         onChange={(event) => update(field.key, event.target.value === "true")}>
         <option value="true">Enabled</option><option value="false">Disabled</option>
       </select> : <input id={id} type={field.kind === "integer" || field.kind === "number" ? "number" : "text"}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         step={field.kind === "integer" ? 1 : "any"} min={field.minimum} max={field.maximum}
-        value={String(values[field.key] ?? "")} spellCheck={false} autoCapitalize="none"
+        value={String(draft!.values[field.key] ?? "")} spellCheck={false} autoCapitalize="none"
         onChange={(event) => update(field.key, event.target.value)} />}
       {field.description ? <small id={`${id}-hint`}>{field.description}</small> : null}
     </label>;
   }
-  const groups = [...new Set(resource.data?.fields.map((field) => field.group) || [])];
+  const fields = matchingConfigurationFields(baseline?.fields || [], search, hiddenFields);
+  const groupOrder = ["Transcription", "Language models & chat", "Local inference", "Omi connections", "Semantic search", "Archive & processing"];
+  const groups = [...new Set(fields.map((field) => field.group))].sort((a, b) => {
+    const rank = (group: string) => groupOrder.includes(group) ? groupOrder.indexOf(group) : groupOrder.length;
+    return rank(a) - rank(b);
+  });
+  useEffect(() => {
+    onSearchResults?.(baseline && !resource.error ? fields.length : -1);
+  }, [Boolean(baseline), resource.error, search, fields.length, onSearchResults]);
   return <section aria-label="Server configuration" className="server-configuration">
-    <h2>Models, keys & server settings</h2>
-    <p className="muted">Shared by the app and web. Keys are write-only and stay on home-core.
-      Settings marked “restart required” take effect the next time the backend starts.</p>
-    {resource.loading ? <Loading>Loading server settings…</Loading> : null}
+    <h2>Models &amp; server</h2>
+    <p className="muted">Choose the services that transcribe, summarize, and search your recordings.
+      Changes are shared by the iPhone app and web. Keys stay on your server and are never shown after saving.</p>
+    {resource.loading && !baseline ? <Loading>Loading server settings…</Loading> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
-    {resource.data ? <form onSubmit={save} aria-busy={busy}>
-      {resource.data.pending_restart.length ? <p role="status" className="notice">Saved changes awaiting backend restart: {resource.data.pending_restart.join(", ")}.</p> : null}
-      <label className="setting-field"><span>Find a server setting</span>
-        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
-      </label>
+    {baseline && draft ? <form onSubmit={save} aria-busy={busy}>
+      {baseline.pending_restart.length ? <p role="status" className="notice">Restart your server to apply: {baseline.pending_restart.map((key) =>
+        baseline.fields.find((field) => field.key === key)?.label || key.replaceAll("_", " ")).join(", ")}.</p> : null}
+      {controlledSearch === undefined ? <label className="setting-field"><span>Find a server setting</span>
+        <input type="search" value={localSearch} placeholder="Search models, keys, storage…"
+          onChange={(event) => setLocalSearch(event.target.value)} />
+      </label> : null}
+      {search.trim() ? <p className="caption" role="status">{fields.length ?
+        `${fields.length} matching server ${fields.length === 1 ? "setting" : "settings"}.` :
+        "No server settings match your search. Try a model name, connection, or storage setting."}</p> : null}
       {groups.map((group) => {
-        const fields = resource.data!.fields.filter((field) => !hiddenFields.includes(field.key) && field.group === group &&
-          `${field.label} ${field.key} ${field.description}`.toLowerCase().includes(search.toLowerCase()));
-        return fields.length ? <details key={group} open={search ? true : undefined}>
-          <summary>{group}</summary>
+        const groupFields = fields.filter((field) => field.group === group);
+        return <details key={group} open={search.trim() ? true : undefined}>
+          <summary>
+            <span className="configuration-group-heading">{group} <span className="caption">{groupFields.length} {groupFields.length === 1 ? "setting" : "settings"}</span></span>
+            <small className="configuration-group-description">{groupDescriptions[group] || "Additional server preferences."}</small>
+          </summary>
           <fieldset disabled={busy} className="configuration-fields">
-            {fields.map((field) => <div key={field.key} className={field.kind === "routes" ? "configuration-routes" : ""}>
+            {groupFields.map((field) => <div key={field.key} className={field.kind === "routes" ? "configuration-routes" : ""}>
               {field.kind === "routes" ? <h3>{field.label}</h3> : null}{control(field)}
-              {field.kind === "secret" && field.description ? <p className="caption">{field.description}</p> : null}
             </div>)}
           </fieldset>
-        </details> : null;
+        </details>;
       })}
+      <p className="caption">Settings marked “restart required” apply the next time your server starts. Other changes apply when saved.</p>
       {error ? <ErrorState message={error} /> : null}
-      {saved ? <p role="status">Server settings saved on home-core.</p> : null}
-      <div className="button-row">
-        <button className="button dark" disabled={busy || resource.loading}>{busy ? "Saving…" : "Save server settings"}</button>
-        <button type="button" className="text-button" disabled={busy} onClick={() => { setError(""); setSaved(false); resource.refresh(); }}>Reload server settings</button>
+      {conflict ? <ErrorState message={conflict} /> : null}
+      <div className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
+        <p className="caption settings-save-status" role="status">{busy ? "Saving server settings…" : resource.loading ?
+          "Checking current server settings…" : saved ? "Server settings saved." : dirty ?
+          "You have unsaved server changes." : "Server settings are up to date."}
+          {dirty && search.trim() ? " Saving includes changes outside your search." : ""}</p>
+        {dirty || conflict ? <button type="button" className="button" disabled={busy || resource.loading} onClick={discard}>Discard changes</button> : null}
+        <button className="button dark" disabled={busy || resource.loading || !dirty || Boolean(conflict)}>{busy ? "Saving…" : "Save server settings"}</button>
       </div>
     </form> : null}
   </section>;

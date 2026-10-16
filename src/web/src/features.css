@@ -138,10 +138,18 @@
 .upload-dialog h2 { font-size: 27px; }
 .upload-dialog .muted { font-size: 14px; }
 .upload-dialog label { display: block; margin-bottom: 8px; font-size: 13px; }
-.upload-dialog input { width: 100%; margin-bottom: 19px; font-size: 14px; }
+.upload-dialog input, .upload-dialog select { width: 100%; margin-bottom: 19px; font-size: 14px; }
 .upload-dialog input[type='file'] { font-size: 13px; }
 .upload-dialog input[type='datetime-local'] { margin-bottom: 6px; }
 .upload-dialog .caption { margin-bottom: 23px; }
+.audio-drop-zone { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 18px; margin: 20px 0 12px; border: 2px dashed var(--line); border-radius: 10px; background: var(--surface); text-align: center; transition: border-color .15s, background-color .15s; }
+.audio-drop-zone > svg { color: var(--accent); }
+.audio-drop-zone > span { font-size: 13px; color: var(--muted); }
+.audio-drop-zone .button { margin: 4px 0 0; cursor: pointer; }
+.audio-drop-zone.dragging, .audio-drop-zone:focus-within { border-color: var(--accent); background: var(--rail); }
+.audio-drop-zone.disabled { opacity: .65; }
+.audio-drop-zone.disabled .button { cursor: wait; }
+.audio-drop-zone .selected-audio-file { max-width: 100%; overflow-wrap: anywhere; color: var(--ink); }
 @media (max-width: 1100px) and (min-width: 761px) { .diary-layout { grid-template-columns: minmax(220px, .8fr) minmax(0, 1fr); gap: 24px; } .chat-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 25px; } }
 @media (max-width: 760px) {
   .prose { font-size: 14px; line-height: 1.75; }

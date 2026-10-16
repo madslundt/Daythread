@@ -36,7 +36,9 @@ struct BackendFailure: LocalizedError {
 
 struct BackendClient {
     let base: URL
-    init(address: String) throws {
+    let profileID: String
+    init(address: String, profileID: String = "default") throws {
+        self.profileID = profileID
         guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased()), url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
@@ -52,9 +54,10 @@ struct BackendClient {
     }
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: [String: Any]? = nil) async throws -> JSONValue {
         var request = URLRequest(url: url(path, query: query)); request.httpMethod = method
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         // A day recap makes multiple sequential model calls, each with its own server
         // timeout. Keep ordinary controls responsive while allowing that reduction to finish.
-        let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/"))
+        let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || (path.hasPrefix("v1/transcripts/") && path.hasSuffix("/translation")))
         request.timeoutInterval = inference ? 3600 : 180
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -68,6 +71,7 @@ struct BackendClient {
     @MainActor
     func chat(body: [String: Any], onEvent: @MainActor (JSONValue) -> Void) async throws -> JSONValue {
         var request = URLRequest(url: url("v1/chat/stream"), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -111,6 +115,7 @@ struct BackendClient {
     }
     func prep<Body: Encodable, Result: Decodable>(_ action: String, body: Body) async throws -> Result {
         var request = URLRequest(url: url("v1/conversation-prep/" + action), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = "POST"
         request.timeoutInterval = action == "generate" ? 3600 : 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -124,7 +129,9 @@ struct BackendClient {
         return try JSONDecoder().decode(Result.self, from: data)
     }
     func download(_ path: String, query: [String: String]) async throws -> URL {
-        let (temporary, response) = try await URLSession.shared.download(from: url(path, query: query))
+        var request = URLRequest(url: url(path, query: query), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
+        let (temporary, response) = try await URLSession.shared.download(for: request)
         try Self.validate(response, data: (try? Data(contentsOf: temporary)) ?? Data())
         let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
         try FileManager.default.moveItem(at: temporary, to: destination)

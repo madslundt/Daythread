@@ -78,7 +78,7 @@ async def test_thinking_control_never_changes_transcription_requests(tmp_path, t
     audio = io.BytesIO()
     with wave.open(audio, "wb") as wav:
         wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-        wav.writeframes(b"\0\0" * 16000)
+        wav.writeframes(b"\x01\0" * 16000)
 
     def handler(request):
         assert request.url.path == "/v1/audio/transcriptions"

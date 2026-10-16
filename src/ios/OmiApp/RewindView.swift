@@ -45,10 +45,13 @@ struct RewindView: View {
             .onChange(of: minutes) { _, _ in result = .null; windowEnd = nil; localMessage = nil; error = nil }
     }
     private func rewind() async {
+        let identity = model.archiveIdentity
         model.checkpoint(); let end = Date(); windowEnd = end; result = .null
         error = nil; localMessage = nil; loading = true; defer { loading = false }
         do {
-            result = try await model.client().request("v1/rewind", method: "POST", body: ["minutes": minutes, "end": DurableStore.stamp(end), "summarize": true])
+            let response = try await model.client().request("v1/rewind", method: "POST", body: ["minutes": minutes, "end": DurableStore.stamp(end), "summarize": true])
+            guard model.archiveIdentity == identity, !Task.isCancelled else { return }
+            result = response
         } catch { self.error = error.localizedDescription }
     }
     private func playLocal() {
@@ -60,8 +63,10 @@ struct RewindView: View {
     }
     private func playServer() async {
         guard let end = windowEnd else { return }
+        let identity = model.archiveIdentity
         do {
             let url = try await model.client().download("v1/rewind/audio", query: ["minutes": "\(minutes)", "end": DurableStore.stamp(end)])
+            guard model.archiveIdentity == identity, !Task.isCancelled else { return }
             model.play(url)
         } catch { self.error = error.localizedDescription }
     }

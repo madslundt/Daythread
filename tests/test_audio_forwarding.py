@@ -132,7 +132,10 @@ def test_worker_and_existing_playback_rewind_diary_chat(receiver):
 
     day = at.astimezone(ZoneInfo(memory.settings.timezone)).date()
     recap = asyncio.run(memory.recap(day))
-    assert accepted["id"] in recap["summary"]
+    # Receipt-timed live audio has no observed conversation ending yet.
+    assert recap["summary"] is None
+    assert recap["deferred_conversations"] == 1
+    assert recap["deferred_sources"] == 1
     chat = receiver.post("/v1/chat", json={"question": "When does the kitchen arrive?"})
     assert chat.status_code == 200
     assert accepted["id"] in chat.text

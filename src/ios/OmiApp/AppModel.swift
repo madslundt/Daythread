@@ -10,17 +10,65 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(backendAddress, forKey: "backendURL")
             guard backendAddress != oldValue else { return }
-            backendGeneration = UUID()
-            serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
-            serverTimeline = LocalCache.load(backendAddress + ".timeline") ?? .null
-            importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
-            labelRevision = ""
-            archiveRevision = ""
-            serverStatus = "Not connected"
-            completenessStatus = .null
-            lastStatusCheck = .distantPast
-            refreshLocal()
+            resetArchive()
+            profiles = [.init(id: "default", name: "Default")]
+            reconnectBackend()
         }
+    }
+    struct Profile: Codable, Identifiable, Hashable {
+        let id: String
+        let name: String
+    }
+    struct ProfileDirectory: Decodable { let profiles: [Profile] }
+    private(set) var profiles: [Profile] = [.init(id: "default", name: "Default")]
+    private(set) var selectedProfileID: String
+    var selectedProfileName: String { profiles.first { $0.id == selectedProfileID }?.name ?? selectedProfileID }
+    // Preserve legacy default caches while isolating every additional profile.
+    var archiveIdentity: String { selectedProfileID == "default" ? backendAddress : backendAddress + ".profile." + selectedProfileID }
+
+    private func resetArchive() {
+        backendGeneration = UUID()
+        player?.stop(); player = nil; playbackStatus = ""
+        serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
+        serverTimeline = LocalCache.load(archiveIdentity + ".timeline") ?? .null
+        importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
+        importanceRevision = UUID()
+        labelRevision = ""; archiveRevision = ""
+        serverStatus = "Not connected"; completenessStatus = .null
+        error = nil; lastStatusCheck = .distantPast
+        refreshLocal()
+    }
+    func selectProfile(_ profile: Profile) {
+        guard profile.id != selectedProfileID else { return }
+        // Finish under the old owner before accepting any frames for the next profile.
+        flush()
+        guard store?.isRecording != true else { return }
+        selectedProfileID = profile.id
+        UserDefaults.standard.set(profile.id, forKey: "selectedProfileID")
+        store?.profileID = profile.id
+        nextAudioDate = nil; disconnectedAt = nil
+        lastDecodedAt = nil; lastPersistedAt = nil
+        resetArchive()
+        recordCaptureState(paused ? "paused" : "unknown", cause: paused ? "user_pause" : "unknown")
+        notice = "Profile: " + profile.name
+        reconnectBackend()
+        Task { await refreshStatus() }
+    }
+    func loadProfiles() async throws {
+        let generation = backendGeneration
+        let directory = try await client().decoded("v1/profiles", as: ProfileDirectory.self)
+        guard backendGeneration == generation, !Task.isCancelled else { return }
+        profiles = directory.profiles
+        if !profiles.contains(where: { $0.id == selectedProfileID }), let fallback = profiles.first(where: { $0.id == "default" }) {
+            selectProfile(fallback)
+        }
+    }
+    func createProfile(name: String) async throws {
+        let generation = backendGeneration
+        let profile = try await client().decoded("v1/profiles", method: "POST", body: ["name": name.trimmingCharacters(in: .whitespacesAndNewlines)], as: Profile.self)
+        guard backendGeneration == generation, !Task.isCancelled else { return }
+        profiles.append(profile)
+        selectProfile(profile)
     }
     var importanceMarks: Set<ImportanceTarget> = []
     var importanceLoaded = false
@@ -96,6 +144,7 @@ final class AppModel {
 
     init() {
         let defaults = UserDefaults.standard
+        selectedProfileID = defaults.string(forKey: "selectedProfileID") ?? "default"
         backendAddress = defaults.string(forKey: "backendURL") ?? "http://home-core.local:8787"
         gesture = MeetingGesture(rawValue: defaults.string(forKey: "meetingGesture") ?? "") ?? .doubleClick
         let timeout = defaults.integer(forKey: "meetingMinutes")
@@ -106,17 +155,18 @@ final class AppModel {
         uploadWiFiOnly = defaults.bool(forKey: "uploadWiFiOnly")
         storageBudgetMB = defaults.object(forKey: "storageBudgetMB") as? Int ?? 2000
         serverTimeZoneIdentifier = defaults.string(forKey: backendAddress + ".timezone")
-        serverTimeline = LocalCache.load(backendAddress + ".timeline") ?? .null
+        serverTimeline = LocalCache.load(archiveIdentity + ".timeline") ?? .null
         do {
             var root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             var backupPolicy = URLResourceValues(); backupPolicy.isExcludedFromBackup = true
             try root.setResourceValues(backupPolicy)
             let capture = root.appendingPathComponent("Capture", isDirectory: true)
             store = try DurableStore(directory: capture)
+            store?.profileID = selectedProfileID
             store?.maximumBytes = Int64(storageBudgetMB) * 1_000_000
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: capture.path)
             if let store { uploader = BackgroundUploader(store: store, uploadWiFiOnly: uploadWiFiOnly) }
-            disconnectedAt = store?.items.filter { $0.kind == .audio }.compactMap(\.endedAt).max()
+            disconnectedAt = store?.items.filter { $0.resolvedProfileID == selectedProfileID && $0.kind == .audio }.compactMap(\.endedAt).max()
             uploader?.onChange = { [weak self] in
                 self?.refreshLocal()
                 Task { @MainActor [weak self] in
@@ -139,7 +189,7 @@ final class AppModel {
         recordCaptureState(paused && captureFailure == nil ? "paused" : captureFailure != nil ? "blocked" : "unknown", cause: paused && captureFailure == nil ? "user_pause" : captureFailure ?? "unknown")
         reconnectBackend()
     }
-    func client() throws -> BackendClient { try BackendClient(address: backendAddress) }
+    func client() throws -> BackendClient { try BackendClient(address: backendAddress, profileID: selectedProfileID) }
     func reconnectBackend() {
         do { uploader?.client = try client(); uploader?.retry() }
         catch { self.error = error.localizedDescription }
@@ -161,11 +211,14 @@ final class AppModel {
         lastStatusCheck = Date()
         let generation = backendGeneration
         let address = backendAddress
+        let identity = archiveIdentity
         do {
-            let backend = try BackendClient(address: address)
+            let backend = try client()
+            try await loadProfiles()
+            guard backendGeneration == generation else { return }
             let status = try await backend.request("v1/status")
             guard backendGeneration == generation else { return }
-            LocalCache.reconcile(address: address, revision: status["archive_revision"].text)
+            LocalCache.reconcile(address: identity, revision: status["archive_revision"].text)
             archiveRevision = status["archive_revision"].text
             labelRevision = status["label_revision"].text
             if TimeZone(identifier: status["timezone"].text) != nil {
@@ -194,7 +247,7 @@ final class AppModel {
             let timeline = try await backend.request("v1/timeline")
             guard backendGeneration == generation else { return }
             serverTimeline = timeline
-            LocalCache.save(timeline, key: address + ".timeline")
+            LocalCache.save(timeline, key: identity + ".timeline")
             refreshLocal()
             try await publishObservation(using: backend)
             await loadImportance()
@@ -356,16 +409,19 @@ final class AppModel {
     }
     private func refreshLocal() {
         guard let store else { return }
-        queueCount = store.pending.count; unsyncedMinutes = store.unsyncedSeconds / 60
+        let items = store.items.filter { $0.resolvedProfileID == selectedProfileID }
+        let pending = items.filter { !$0.acknowledged && $0.ready }
+        queueCount = pending.count
+        unsyncedMinutes = items.filter { $0.kind == .audio && !$0.acknowledged }.reduce(0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) } / 60
         storageMB = Double(store.storageBytes) / 1_000_000
-        recentGaps = Array(store.items.filter { $0.kind == .gap }.suffix(5).reversed())
-        queueErrors = Array(store.items.compactMap(\.error).suffix(3))
-        nextMarkAt = store.items.filter { $0.action == .mark }.map { $0.capturedAt.addingTimeInterval(Double($0.markerCooldownSeconds ?? 60)) }.max()
+        recentGaps = Array(items.filter { $0.kind == .gap }.suffix(5).reversed())
+        queueErrors = Array(items.compactMap(\.error).suffix(3))
+        nextMarkAt = items.filter { $0.action == .mark }.map { $0.capturedAt.addingTimeInterval(Double($0.markerCooldownSeconds ?? 60)) }.max()
         if let remoteMark = serverTimeline["markers"].array.compactMap({ Self.date($0["occurred_at"].text) }).max() {
             let remoteNext = remoteMark.addingTimeInterval(Double(markerCooldownSeconds))
             nextMarkAt = max(nextMarkAt ?? .distantPast, remoteNext)
         }
-        if serverTimeline != .null, !store.pending.contains(where: { $0.kind == .event && $0.action == .meetingToggle }) {
+        if serverTimeline != .null, !pending.contains(where: { $0.kind == .event && $0.action == .meetingToggle }) {
             meetingStart = Self.date(serverTimeline["active_meeting"]["started_at"].text)
             meetingDeadline = Self.date(serverTimeline["active_meeting"]["auto_stop_at"].text)
             meetingQualifiesAt = Self.date(serverTimeline["active_meeting"]["qualifies_at"].text)
@@ -373,7 +429,7 @@ final class AppModel {
             return
         }
         var start: Date?; var deadline: Date?; var qualifies: Date?
-        for item in store.items.filter({ $0.kind == .event && $0.action == .meetingToggle }).sorted(by: { $0.capturedAt < $1.capturedAt }) {
+        for item in items.filter({ $0.kind == .event && $0.action == .meetingToggle }).sorted(by: { $0.capturedAt < $1.capturedAt }) {
             if let stop = deadline, item.capturedAt >= stop { start = nil; deadline = nil }
             if start != nil { start = nil; deadline = nil }
             else {
@@ -393,7 +449,7 @@ final class AppModel {
         guard let store else { return }
         let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
         UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
-        let pending = store.items.filter { $0.kind == .audio && !$0.acknowledged }
+        let pending = store.items.filter { $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }
         let state = captureFailure != nil ? "blocked" : paused ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
         var body: [String: Any] = [
             "sequence": sequence, "observed_at": DurableStore.stamp(Date()),
@@ -402,7 +458,7 @@ final class AppModel {
             "requested_pause": paused && captureFailure == nil,
             "pending_recordings": pending.filter(\.ready).count,
             "recovery_items": pending.filter { !$0.ready }.count,
-            "pending_seconds": store.unsyncedSeconds,
+            "pending_seconds": pending.reduce(0.0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) },
             "upload_policy": uploadWiFiOnly ? "wifi_only" : "any_network",
             "upload_state": uploader?.observedState ?? "unknown",
             "storage_bytes": store.storageBytes, "storage_budget_bytes": Int64(storageBudgetMB) * 1_000_000,

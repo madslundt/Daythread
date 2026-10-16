@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sqlite3
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -21,7 +22,12 @@ from .importance import ImportanceStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
+from .recap_store import SCHEMA as RECAP_SCHEMA
+from .recap_store import RecapStore
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
+from .speaker_store import SCHEMA as SPEAKER_SCHEMA
+from .translation import SCHEMA as TRANSLATION_SCHEMA
+from .translation import TranslationStore
 from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
 SCHEMA = """
@@ -53,6 +59,8 @@ class Store(
     LabelStore,
     ForwardingStore,
     ImportanceStore,
+    TranslationStore,
+    RecapStore,
 ):
     def __init__(self, root: Path):
         self.root = root
@@ -75,6 +83,10 @@ class Store(
             audio_columns = {row["name"] for row in db.execute("PRAGMA table_info(audio)")}
             if "segments" not in audio_columns:
                 db.execute("ALTER TABLE audio ADD COLUMN segments TEXT NOT NULL DEFAULT '[]'")
+            if "transcription_details" not in audio_columns:
+                db.execute(
+                    "ALTER TABLE audio ADD COLUMN transcription_details TEXT NOT NULL DEFAULT '{}'"
+                )
             if "audio_available" not in audio_columns:
                 db.execute(
                     "ALTER TABLE audio ADD COLUMN audio_available INTEGER NOT NULL DEFAULT 1"
@@ -116,6 +128,8 @@ class Store(
                 )
                 db.execute("UPDATE audio SET transcript_version=lower(hex(randomblob(16)))")
             db.executescript(SEMANTIC_SCHEMA)
+            db.executescript(TRANSLATION_SCHEMA)
+            db.executescript(SPEAKER_SCHEMA)
             message_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_messages)")
             }
@@ -124,6 +138,7 @@ class Store(
             db.executescript(INBOX_SCHEMA)
             db.executescript(LABEL_SCHEMA)
             db.executescript(IMPORTANCE_SCHEMA)
+            db.executescript(RECAP_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
@@ -158,7 +173,8 @@ class Store(
             db.close()
 
     def ingest(
-        self, audio_id: UUID, device: str, start: datetime, data: bytes, duration: float
+        self, audio_id: UUID, device: str, start: datetime, data: bytes, duration: float,
+        *, source_kind: str = "", source_id: str = "",
     ) -> dict:
         key = str(audio_id)
         digest = hashlib.sha256(data).hexdigest()
@@ -168,7 +184,10 @@ class Store(
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if old:
-                if (old["digest"], old["device_id"], old["started_at"]) != (digest, device, at):
+                if (
+                    old["digest"], old["device_id"], old["started_at"],
+                    old["source_kind"], old["source_id"],
+                ) != (digest, device, at, source_kind, source_id):
                     raise ValueError("Audio ID already exists with different content or metadata")
                 # A matching resend can repair a missing file, but never reverse retention.
                 if old["audio_available"] and not Path(old["path"]).is_file():
@@ -192,9 +211,9 @@ class Store(
                 target.flush()
                 os.fsync(target.fileno())
             db.execute(
-                "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                (key, device, at, end, digest, str(path), stamp(utc_now())),
+                "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at,"
+                "source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?)",
+                (key, device, at, end, digest, str(path), stamp(utc_now()), source_kind, source_id),
             )
             return dict(db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone())
 
@@ -226,6 +245,7 @@ class Store(
         segments: list[dict] | None = None,
         claimed: bool = False,
         outcome: str | None = None,
+        details: dict | None = None,
     ) -> None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -235,13 +255,15 @@ class Store(
             self.invalidate_decision_sources(db, [audio_id], purge=False)
             db.execute(
                 "UPDATE audio SET state='done',text=?,segments=?,error=NULL,error_code=NULL,"
-                "processed_at=?,transcription_outcome=?,source_version=lower(hex(randomblob(16))) "
+                "processed_at=?,transcription_outcome=?,transcription_details=?,"
+                "source_version=lower(hex(randomblob(16))) "
                 "WHERE id=?",
                 (
                     text,
                     json.dumps(segments or []),
                     stamp(utc_now()),
                     outcome or ("text" if text else "empty_stt"),
+                    json.dumps(details or {}),
                     audio_id,
                 ),
             )
@@ -488,10 +510,15 @@ class Store(
                 )
             ]
 
-    def save_diary(self, day: str, fingerprint: str, content: dict) -> None:
+    def save_diary(
+        self, day: str, fingerprint: str, content: dict,
+        guard: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> None:
         serialized = json.dumps(content, ensure_ascii=False)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if guard is not None:
+                guard(db)
             self.verify_sources(db, content["sources"])
             if content.get("output_id") and content.get("evidence"):
                 self._save_evidence(

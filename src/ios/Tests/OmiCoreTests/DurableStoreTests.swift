@@ -8,6 +8,42 @@ final class DurableStoreTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
     }
+    func testProfileOwnershipSurvivesSwitchRetryAndRestart() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory)
+        let captured = Date(timeIntervalSince1970: 1000)
+        try store.begin(deviceID: "pendant", codec: 0, clock: CaptureClock(wall: captured))
+        try store.append(frame: Data(count: 640), decoded: Data(count: 640))
+        try store.finish()
+        let audio = try XCTUnwrap(store.pending.first)
+        store.profileID = "second"
+        let eventID = try store.event(deviceID: "pendant", at: captured, action: .mark)
+        let gapID = try store.gap(deviceID: "pendant", start: captured, end: captured.addingTimeInterval(1), reason: "BLE loss")
+        let stateID = try store.captureState(phoneID: UUID(), at: captured, state: "paused", cause: "user_pause")
+        try store.failed(audio.id, message: "offline")
+        let restored = try DurableStore(directory: directory)
+        XCTAssertEqual(restored.items.first { $0.id == audio.id }?.resolvedProfileID, "default")
+        for id in [eventID, gapID, stateID] {
+            XCTAssertEqual(restored.items.first { $0.id == id }?.resolvedProfileID, "second")
+        }
+        XCTAssertEqual(restored.pending.count, 4)
+        restored.profileID = "second"
+        XCTAssertThrowsError(try restored.rewind(minutes: 1, end: captured.addingTimeInterval(60)))
+        restored.profileID = "default"
+        let rewind = try restored.rewind(minutes: 1, end: captured.addingTimeInterval(60))
+        try FileManager.default.removeItem(at: rewind.url)
+    }
+    func testLegacyOutboxWithoutProfileStaysInDefault() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory)
+        let id = try store.event(deviceID: "pendant", at: Date(), action: .mark)
+        let index = directory.appendingPathComponent("index.json")
+        var records = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [[String: Any]])
+        records[0].removeValue(forKey: "profileID")
+        try JSONSerialization.data(withJSONObject: records).write(to: index)
+        let restored = try DurableStore(directory: directory)
+        restored.profileID = "second"
+        XCTAssertEqual(restored.pending.first?.id, id)
+        XCTAssertEqual(restored.pending.first?.resolvedProfileID, "default")
+    }
     func testRestartReconstructsUnfinishedSourceAndKeepsStableIDAndMilliseconds() throws {
         let directory = try folder()
         let captured = Date(timeIntervalSince1970: 1000.125)

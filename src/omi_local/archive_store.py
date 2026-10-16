@@ -143,7 +143,8 @@ class ArchiveStore:
                 (str(uuid4()), audio_id, old["text"], text, stamp(utc_now())),
             )
             db.execute(
-                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL,error_code=NULL,"
+                "UPDATE audio SET text=?,state='done',segments='[]',transcription_details='{}',"
+                "error=NULL,error_code=NULL,"
                 "transcription_outcome='corrected',source_version=lower(hex(randomblob(16))) "
                 "WHERE id=?",
                 (text, audio_id),
@@ -410,7 +411,8 @@ class ArchiveStore:
                 self.invalidate_decision_sources(db, removed_transcripts, purge=True)
                 for key in removed_transcripts:
                     db.execute(
-                        "UPDATE audio SET text=NULL,segments='[]',state='expired',"
+                        "UPDATE audio SET text=NULL,segments='[]',transcription_details='{}',"
+                        "state='expired',"
                         "source_version=lower(hex(randomblob(16))) WHERE id=?",
                         (key,),
                     )

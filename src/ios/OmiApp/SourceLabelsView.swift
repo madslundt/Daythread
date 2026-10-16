@@ -53,18 +53,18 @@ struct SourceLabelsView: View {
             ErrorNote(message: error ?? writer.error)
             Button("Refresh evidence and labels") { Task { await load() } }
         }.navigationTitle("Source labels").navigationBarTitleDisplayMode(.inline)
-            .task(id: model.backendAddress + model.labelRevision) { await load() }.refreshable { await load() }
+            .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
     }
     private func load() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         do {
             let client = try model.client()
             async let source: SourceLabelsResponse = client.labels("v1/labels/sources/\(sourceID)")
             async let labels: LabelDirectory = client.labels()
             let (s, d) = try await (source, labels)
-            guard address == model.backendAddress, !Task.isCancelled else { return }
+            guard address == model.archiveIdentity, !Task.isCancelled else { return }
             response = s; directory = d; error = nil
-        } catch { if address == model.backendAddress { self.error = error.localizedDescription } }
+        } catch { if address == model.archiveIdentity { self.error = error.localizedDescription } }
     }
     private func saveLink(id: String, entity: String, meaning: String) async {
         guard let response else { return }

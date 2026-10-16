@@ -55,7 +55,7 @@ def test_model_routes_keys_and_preferences_apply_live_and_survive_restart(settin
                 "llm_routes": {"chat": {"model": "fast", "token": "chat-secret"}},
                 "inference_token": "replacement-secret",
                 "omi_api_key": "new-omi-secret",
-                "language": "da",
+                "summary_language": "da",
                 "recap_hour": 20,
             },
         )
@@ -68,9 +68,9 @@ def test_model_routes_keys_and_preferences_apply_live_and_survive_restart(settin
         assert active.stt_route("en").token.get_secret_value() == "replacement-secret"
         assert active.llm_route("chat").token.get_secret_value() == "chat-secret"
         assert client.app.state.omi.key == "new-omi-secret"
-        assert client.get("/v1/settings").json()["language"] == "da"
+        assert client.get("/v1/settings").json()["summary_language"] == "da"
         assert client.app.state.memory.store.runtime_settings() == {
-            "language": "da",
+            "summary_language": "da",
             "recap_hour": 20,
         }
         private_file = settings.data_dir / ".private-settings.json"
@@ -79,9 +79,29 @@ def test_model_routes_keys_and_preferences_apply_live_and_survive_restart(settin
         active = client.app.state.memory.settings
         assert active.stt_model == "multilingual"
         assert active.stt_base_url == "http://stt.local/v1"
-        assert active.language == "da"
+        assert active.summary_language == "da"
         assert active.inference_token.get_secret_value() == "replacement-secret"
         assert active.stt_route("da").token.get_secret_value() == "route-secret"
+
+
+def test_transcription_request_duration_applies_live_and_survives_restart(settings):
+    with TestClient(create_app(settings)) as client:
+        view = client.get("/v1/configuration").json()
+        assert view["values"]["stt_chunk_seconds"] == 30
+        field = next(item for item in view["fields"] if item["key"] == "stt_chunk_seconds")
+        assert field["group"] == "Transcription"
+        assert field["minimum"] == 1 and field["maximum"] == 120
+        assert not field["restart_required"]
+        result = save(client, {"stt_chunk_seconds": 12})
+        assert result.status_code == 200
+        assert result.json()["pending_restart"] == []
+        assert client.app.state.memory.inference.settings.stt_chunk_seconds == 12
+        for invalid in (0, 121, 1.5):
+            assert save(client, {"stt_chunk_seconds": invalid}).status_code == 422
+        assert client.app.state.memory.inference.settings.stt_chunk_seconds == 12
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/configuration").json()["values"]["stt_chunk_seconds"] == 12
+        assert client.app.state.memory.inference.settings.stt_chunk_seconds == 12
 
 
 def test_route_keys_can_be_replaced_disabled_inherited_and_removed(settings):
@@ -148,7 +168,7 @@ def test_conflicting_app_web_and_legacy_settings_edits_are_rejected(settings):
         assert save(client, {"stt_model": "first"}, revision).status_code == 200
         assert save(client, {"stt_model": "stale"}, revision).status_code == 409
         revision = client.get("/v1/configuration").json()["revision"]
-        assert client.patch("/v1/settings", json={"language": "en"}).status_code == 200
+        assert client.patch("/v1/settings", json={"summary_language": "en"}).status_code == 200
         assert save(client, {"stt_model": "stale"}, revision).status_code == 409
         assert client.app.state.memory.settings.stt_model == "first"
 

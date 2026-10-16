@@ -107,8 +107,16 @@ def output_provenance_markdown(content: dict) -> str:
 
 
 def diary_markdown(db: sqlite3.Connection, day: str, content: dict) -> str:
+    coverage = ""
+    if "included_through" in content:
+        coverage = (
+            f"Completed conversations through: {content.get('included_through') or 'none'}. "
+            f"Pending conversations: {content.get('deferred_conversations', 0)}.\n\n"
+            f"{content.get('boundary_note', '')}\n\n"
+        )
     return (
         f"# {day}\n\n{content.get('summary') or '_No generated recap._'}\n\n"
+        + coverage
         + output_provenance_markdown(content)
         + "## Transcript sources\n\n"
         + "\n".join(f"- {r['started_at']} [{r['id']}] {r['text']}" for r in content["sources"])

@@ -1,3 +1,4 @@
+import { profileRequestOptions } from "./profiles";
 import { ApiError } from "./api";
 import type { ChatMessage, Evidence, Source } from "./types";
 
@@ -27,13 +28,16 @@ export function exchangeMessages(result: ChatResult, question: string): ChatMess
 export async function streamChat(
   body: unknown, onProgress: (event: ChatProgress) => void, signal: AbortSignal,
 ): Promise<ChatResult> {
+  const options = profileRequestOptions("/v1/chat/stream", {
+    method: "POST", signal,
+    headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+    body: JSON.stringify(body),
+  });
+  options.signal?.throwIfAborted();
   let response: Response;
   try {
-    response = await fetch("/v1/chat/stream", {
-      method: "POST", cache: "no-store", signal,
-      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
-      body: JSON.stringify(body),
-    });
+    response = await fetch("/v1/chat/stream", options);
+    options.signal?.throwIfAborted();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError("The local backend could not be reached. Check your connection and try again.", 0);
@@ -77,6 +81,7 @@ export async function streamChat(
   try {
     while (true) {
       const next = await reader.read();
+      options.signal?.throwIfAborted();
       bytes += next.value?.byteLength ?? 0;
       if (bytes > 16_000_000) throw new ApiError("The answer response exceeded its limit.", 502);
       pending += decoder.decode(next.value, { stream: !next.done });

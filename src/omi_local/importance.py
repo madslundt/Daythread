@@ -104,9 +104,9 @@ router = APIRouter(prefix="/v1/importance")
 @router.get("")
 def marks(request: Request, response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"
-    return {"items": request.app.state.memory.store.importance_marks()}
+    return {"items": request.state.memory.store.importance_marks()}
 
 
 @router.put("")
 def edit(request: Request, body: ImportanceEdit) -> dict:
-    return request.app.state.memory.store.set_importance(body)
+    return request.state.memory.store.set_importance(body)

@@ -53,10 +53,10 @@ def client(config):
         yield session
 
 
-def insert(client, at=AT, text="Kitchen delivery Friday"):
+def insert(client, at=AT, text="Kitchen delivery Friday", *, source_kind=""):
     key = uuid4()
     memory = client.app.state.memory
-    memory.store.ingest(key, "omi", at, audio_data(), 1)
+    memory.store.ingest(key, "omi", at, audio_data(), 1, source_kind=source_kind)
     memory.store.complete(str(key), text)
     return str(key)
 
@@ -66,7 +66,7 @@ def test_settings_are_validated_persisted_and_redacted(client, config):
         "/v1/settings",
         json={
             "capture_paused": True,
-            "language": "da",
+            "summary_language": "da",
             "recap_hour": 21,
             "marker_cooldown_seconds": 90,
         },
@@ -76,14 +76,14 @@ def test_settings_are_validated_persisted_and_redacted(client, config):
     assert "inference_token" not in changed.json()
     assert client.get("/v1/status").json()["capture_paused"] is True
     with TestClient(create_app(config)) as restarted:
-        assert restarted.get("/v1/settings").json()["language"] == "da"
+        assert restarted.get("/v1/settings").json()["summary_language"] == "da"
         assert restarted.get("/v1/settings").json()["marker_cooldown_seconds"] == 90
     for patch in (
         {"api_token": "value"},
         {"timezone": "NoSuch/Zone"},
         {"meeting_min_seconds": 1},
         {"recap_hour": 24},
-        {"language": None},
+        {"summary_language": None},
     ):
         assert client.patch("/v1/settings", json=patch).status_code == 422
     assert client.get("/v1/settings").json()["recap_hour"] == 21
@@ -148,21 +148,22 @@ def test_transcript_pagination_search_calendar_and_auditable_correction(client):
 
 
 def test_cached_diary_reads_generate_only_on_post_and_keep_versions(client):
-    key = insert(client)
+    key = insert(client, source_kind="manual_upload")
     ai = client.app.state.memory.inference
     before = client.get("/v1/recaps/2026-10-15").json()
     assert before["summary"] is None and before["generated_at"] is None
     assert ai.calls == 0
     assert client.get("/v1/diary/2026-10-15.md").status_code == 404
     assert client.post("/v1/recaps/2026-10-15").status_code == 200
-    assert ai.calls == 1
-    assert client.get("/v1/recaps/2026-10-15").json()["summary"].startswith("Summary 1")
+    assert ai.calls == 2
+    assert client.get("/v1/recaps/2026-10-15").json()["summary"].startswith("Summary 2")
     assert len(client.get("/v1/diary").json()["items"]) == 1
     assert key in client.get("/v1/diary/2026-10-15.md").text
-    insert(client, AT + timedelta(hours=1), "Late evidence")
+    insert(client, AT + timedelta(hours=1), "Late evidence", source_kind="manual_upload")
     assert client.get("/v1/recaps/2026-10-15").json()["stale"] is True
-    assert ai.calls == 1
+    assert ai.calls == 2
     assert client.post("/v1/recaps/2026-10-15").status_code == 200
+    assert ai.calls == 4  # Reuse the first conversation; prepare the late upload and synthesize.
     assert len(client.get("/v1/diary/2026-10-15/versions").json()["items"]) == 2
     client.patch(f"/v1/transcripts/{key}", json={"text": "Corrected delivery date"})
     assert client.get("/v1/diary").json()["items"] == []
@@ -355,7 +356,7 @@ async def test_stt_auto_language_segments_and_timeout_contract(config):
     )
 
     def handler(request):
-        assert b'name="language"' not in request.content
+        assert b'name="summary_language"' not in request.content
         assert b"verbose_json" in request.content
         assert request.extensions["timeout"]["read"] == 17
         return httpx.Response(
@@ -365,7 +366,8 @@ async def test_stt_auto_language_segments_and_timeout_contract(config):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         inference = Inference(config, http)
         result = await inference.transcribe_result(audio_data())
-        assert result == {"text": "Hej", "segments": [{"start": 0.1, "end": 0.9, "text": "Hej"}]}
+        assert result["text"] == "Hej"
+        assert result["segments"] == [{"start": 0.1, "end": 0.9, "text": "Hej"}]
         assert inference.health["stt"]["state"] == "ready"
 
 
@@ -375,7 +377,7 @@ def anyio_backend():
 
 
 def test_inflight_summary_cannot_restore_deleted_recordings(client):
-    key = insert(client)
+    key = insert(client, source_kind="manual_upload")
     store = client.app.state.memory.store
 
     class DeletingInference(FakeInference):

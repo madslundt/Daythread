@@ -30,9 +30,11 @@ def plain(value):
 
 
 def group(key: str) -> str:
-    if key.startswith("stt_") or key == "language":
+    if key.startswith("diarization_"):
+        return "Speaker detection"
+    if key.startswith("stt_"):
         return "Transcription"
-    if key.startswith("llm_") or key.startswith("chat_"):
+    if key.startswith("llm_") or key.startswith("chat_") or key == "summary_language":
         return "Language models & chat"
     if key.startswith("embedding_"):
         return "Semantic search"
@@ -46,7 +48,43 @@ def group(key: str) -> str:
 
 
 DESCRIPTIONS = {
+    "diarization_enabled": "Enable local speaker detection for meetings and conversations. "
+    "Requires the separate local diarization service and downloaded model weights. "
+    "Names apply only to the selected conversation; simultaneous voices remain mixed.",
+    "diarization_base_url": "Local speaker service URL reachable from home-core. "
+    "Start scripts/diarization_server.py in its isolated Python runtime; default port 8790.",
+    "diarization_timeout_seconds": "Maximum time for one conversation's speaker detection. "
+    "Runs separately from transcription and preserves original recordings and transcripts.",
+    "recap_hour": "Evening recap update in your home timezone. Ongoing conversations stay pending.",
+    "recap_interval_minutes": "Refresh the day-so-far recap when completed conversations change. "
+    "Default: 60 minutes; 0 disables daytime updates. Conversation summaries are prepared earlier.",
+    "recap_quiet_minutes": "Observed non-speech needed to close a conversation. "
+    "Default: 5 minutes. "
+    "Missing uploads, empty transcripts and capture interruptions do not prove silence. "
+    "Speech detection is approximate; originals keep their normal retention.",
     "stt_model": "Default transcription model served by your local gateway.",
+    "stt_chunk_seconds": "Maximum audio duration per transcription request, in seconds. "
+    "Longer recordings are split and their transcripts joined. Default: 30. "
+    "Use a duration accepted by every configured STT route; gateway model lists may not "
+    "advertise audio limits. Applies to subsequent recordings without a restart.",
+    "stt_preserve_quiet": "Keep every nonzero recording eligible for speech recognition, "
+    "including faint or overlapping voices. Only exact digital silence is skipped. "
+    "Disable only to opt into the legacy silence threshold, which may miss quiet voices.",
+    "silence_threshold": "Legacy PCM16 RMS floor. Used only when STT preserve quiet is disabled; "
+    "0 disables that gate. A positive floor can skip quiet speech. This is not speech detection.",
+    "stt_max_gain_db": "Maximum uniform amplification for quiet transcription copies (0–24 dB, "
+    "default 12; 0 disables). RMS and peak limits prevent clipping. "
+    "Original playback is unchanged. "
+    "Amplification also raises noise; it cannot separate simultaneous voices.",
+    "stt_boundary_search_seconds": "Look back up to 0.5 seconds for a quiet request boundary. "
+    "Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only.",
+    "stt_enhancement_mode": "on_empty (default) creates a cleanup reading when the original "
+    "transcript is empty; compare also checks nonempty chunks; off disables cleanup. Requires "
+    "FFmpeg on home-core. Cleanup readings always need review before entering search or summaries; "
+    "listen to the original and save a transcript correction. Denoising can suppress quiet voices.",
+    "stt_enhancement_timeout_seconds": "Total optional cleanup budget per recording, including "
+    "FFmpeg and speech requests. Also limited by the remaining inference budget. "
+    "Cleanup failures preserve the original transcript.",
     "stt_base_url": "Local transcription endpoint including /v1, reachable from home-core.",
     "stt_routes": "Override model, endpoint or token per language code (da, en), detector name "
     "(danish), or auto. Blank model/endpoint inherits the defaults. Automatic routing needs "
@@ -64,7 +102,8 @@ DESCRIPTIONS = {
     "data_dir": "Archive path on home-core. Changing it selects that archive after restart; "
     "existing recordings are not moved.",
     "web_dir": "Optional custom web asset directory on home-core. Empty uses bundled assets.",
-    "language": "auto for automatic/mixed speech, or a language code such as da or en.",
+    "summary_language": "Language for summaries, independently of transcription. "
+    "auto follows the source language; use a language code such as da or en to choose one.",
     "timezone": "IANA timezone used for calendar boundaries, for example Europe/Copenhagen.",
     "audio_retention_days": "Days to keep audio. 0 keeps it indefinitely. "
     "Applies to existing audio.",
@@ -86,6 +125,11 @@ def descriptors() -> list[dict]:
         title = key.replace("_", " ").capitalize()
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
+        title = {
+            "diarization_enabled": "Enable speaker detection",
+            "diarization_base_url": "Speaker service address",
+            "diarization_timeout_seconds": "Speaker detection timeout (seconds)",
+        }.get(key, title)
         result.append(
             {
                 "key": key,
@@ -116,6 +160,9 @@ class Configuration:
                 self.overrides = json.loads(self.path.read_text())["overrides"]
                 if not isinstance(self.overrides, dict):
                     raise ValueError
+                # Older installations could force a transcription language. Retire that
+                # preference while preserving all remaining private configuration.
+                self.overrides.pop("language", None)
                 if self.overrides.keys() - Settings.model_fields.keys():
                     raise ValueError
             except (ValueError, KeyError, TypeError) as exc:

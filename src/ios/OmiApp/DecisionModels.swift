@@ -133,6 +133,7 @@ extension BackendClient {
     // Decision content never enters URLCache, LocalCache or the durable capture outbox.
     func decisionRequest<Response: Decodable>(_ path: String, method: String = "GET", query: [String: String] = [:], body: (any Encodable)? = nil) async throws -> Response {
         var request = URLRequest(url: url(path, query: query), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = method
         request.timeoutInterval = path == "v1/decision-extractions" ? 3600 : 180
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
@@ -150,6 +151,7 @@ extension BackendClient {
     }
     func deleteDecision(_ record: DecisionRecord) async throws {
         var request = URLRequest(url: url("v1/decisions/\(record.id)", query: ["expected_version": "\(record.version)"]), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = "DELETE"
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }

@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
-import { errorMessage, post, request } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
-import { AudioForwarding } from "./AudioForwarding";
+import { OmiIntegration } from "./OmiIntegration";
+import { SettingsNavigation, sectionFromHash, matchesSettings, type SettingsSection } from "./SettingsNavigation";
+import "./settings.css";
 import { Configuration } from "./Configuration";
-import type { Settings as SettingsData, Source } from "./types";
+import type { Settings as SettingsData } from "./types";
 import { useResource } from "./useResource";
-import { ErrorState, Loading, Notice } from "./UI";
+import { ErrorState, Loading } from "./UI";
 import { parseThemePreference, setThemePreference, useThemePreference } from "./theme";
 
 type NumberKey = {
-  [K in keyof SettingsData]: SettingsData[K] extends number ? K : never;
+  [K in keyof SettingsData]-?: SettingsData[K] extends number ? K : never;
 }[keyof SettingsData];
 const hintFields: {
   key: NumberKey;
@@ -21,7 +23,7 @@ const hintFields: {
 }[] = [
   {
     key: "marker_cooldown_seconds",
-    label: "Important flag cooldown",
+    label: "Time between important flags",
     options: [0, 15, 30, 60, 120, 300, 600, 1800, 3600],
     zeroLabel: "No cooldown",
     detail: "Wait before accepting another flag. Extra clicks do not extend the wait.",
@@ -44,7 +46,7 @@ const hintFields: {
     key: "meeting_min_seconds",
     label: "Minimum meeting length",
     options: [60, 120, 300, 600, 900, 1800, 3600],
-    detail: "Shorter hints are ignored; recordings remain. Cannot exceed the auto-stop duration.",
+    detail: "Shorter meeting gestures are ignored; recordings are kept. Cannot exceed the auto-stop duration.",
   },
   {
     key: "meeting_context_seconds",
@@ -55,21 +57,22 @@ const hintFields: {
   },
   {
     key: "meeting_max_minutes",
-    label: "Meeting auto stop",
+    label: "Automatically end a meeting after",
     options: [1, 5, 15, 30, 60, 90, 120, 180, 240, 360, 480],
     unit: "minutes",
-    detail: "End a forgotten hint automatically. Cannot be shorter than the minimum meeting length.",
+    detail: "End a meeting gesture if you forget to stop it. Cannot be shorter than the minimum meeting length.",
   },
 ];
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
 const editableSettings: (keyof SettingsData)[] = [
-  "timezone", "language", "meeting_max_minutes", "meeting_min_seconds",
+  "timezone", "summary_language", "meeting_max_minutes", "meeting_min_seconds",
   "meeting_context_seconds", "marker_context_seconds", "marker_after_seconds",
-  "marker_cooldown_seconds", "recap_hour", "capture_paused",
+  "marker_cooldown_seconds", "recap_hour", "recap_interval_minutes", "recap_quiet_minutes", "capture_paused",
   "audio_retention_days", "transcript_retention_days",
 ];
+const serverHiddenFields = [...editableSettings, "language", "audio_forwarding_enabled"];
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
-// ISO 639-1 choices. The local transcription model determines language support.
+// ISO 639-1 choices for summaries and optional transcript translations.
 const languageCodes = (
   "aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
   "da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz " +
@@ -139,10 +142,41 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [connectionRevision, setConnectionRevision] = useState(0);
+  const [configurationRevision, setConfigurationRevision] = useState(0);
+  const [serverDirty, setServerDirty] = useState(false);
+  const [section, setSection] = useState<SettingsSection>(sectionFromHash);
+  const [search, setSearch] = useState("");
+  const [serverMatches, setServerMatches] = useState<{ query: string; count: number }>();
+  const query = search.trim();
+  const onSearchResults = useCallback((count: number) => setServerMatches({ query: search, count }), [search]);
+  function selectSection(next: SettingsSection) {
+    setSearch("");
+    setSaved(false);
+    setSection(next);
+    window.location.hash = `settings/${next}`;
+  }
+  useEffect(() => {
+    const sync = () => { setSection(sectionFromHash()); setSearch(""); };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  const show = (group: string, category: SettingsSection) => query
+    ? matchesSettings(group, query) : section === category;
+  const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
+  const preferencesVisible = show("appearance", "general") || show("daily", "general")
+    || show("gestures", "gestures") || show("storage", "storage");
+  const noMatches = query && !["appearance", "daily", "gestures", "storage", "connections"].some((group) => matchesSettings(group, query))
+    && serverMatches?.query === search && serverMatches.count === 0;
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
     if (resource.data) setDraft(resource.data);
   }, [resource.data]);
+  useEffect(() => {
+    if (!dirty && !serverDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, serverDirty]);
   function update<K extends keyof SettingsData>(
     key: K,
     value: SettingsData[K],
@@ -166,6 +200,8 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
         }),
       );
       setSaved(true);
+      setConfigurationRevision((value) => value + 1);
+      window.dispatchEvent(new Event("omi:settings-changed"));
       onSaved();
     } catch (error) {
       setError(errorMessage(error));
@@ -178,9 +214,24 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
     ...(draft ? [draft.timezone] : []),
   ])].sort();
   return (
-    <div className="settings-content">
+    <div className="settings-content settings-layout">
+      <SettingsNavigation section={section} search={search} onSearch={setSearch} onSelect={selectSection}
+        preferencesDirty={dirty} serverDirty={serverDirty} />
+      <div className="settings-panels">
+      {dirty && !preferencesVisible ? <div className="notice">
+        <span>You have unsaved preferences in another category.</span>
+        <button type="button" className="text-button" onClick={() => selectSection("general")}>Review preferences</button>
+      </div> : null}
+      {query ? <div className="settings-section-heading"><h2>Search results</h2>
+        <p>Settings matching “{query}” across all categories.</p></div> : null}
+      {noMatches ? <div className="settings-empty" role="status"><Icon name="search" size={28} />
+        <h2>No settings found</h2><p>Try “language”, “audio”, “recap”, or “model”.</p>
+        <button type="button" className="button" onClick={() => setSearch("")}>Clear search</button></div> : null}
+      <section hidden={!show("appearance", "general")}>
+      {!query ? <div className="settings-section-heading"><h2>Daily preferences</h2>
+        <p>Make Omi fit your routine, from appearance to your daily recap.</p></div> : null}
       <fieldset>
-        <legend>Appearance</legend>
+        <legend>Appearance <span className="settings-badge">Saves automatically</span></legend>
         <label className="setting-field" htmlFor="appearance">
           <span id="appearance-label">Theme</span>
           <select
@@ -199,6 +250,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           <small id="appearance-hint">Saved on this device. System follows your device’s appearance.</small>
         </label>
       </fieldset>
+      </section>
       {resource.error ? (
         <ErrorState message={resource.error} retry={resource.refresh} />
       ) : null}
@@ -207,9 +259,9 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           <Loading>Loading settings…</Loading>
         ) : null
       ) : (
-        <form className="settings-form" onSubmit={save} aria-busy={busy}>
-          <fieldset disabled={busy}>
-            <legend>Capture & diary</legend>
+        <form id="preferences-form" className="settings-form" onSubmit={save} aria-busy={busy}>
+          <fieldset disabled={busy} hidden={!show("daily", "general")}>
+            <legend>Recording & daily recap</legend>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="timezone">
                 <span id="timezone-label">Home timezone</span>
@@ -230,29 +282,33 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   Dates, diary boundaries, and daily recaps use this timezone.
                 </small>
               </label>
-              <label className="setting-field" htmlFor="language">
-                <span id="language-label">Transcription language</span>
+              <div className="setting-field">
+                <span>Transcription</span>
+                <small>Spoken languages are detected automatically. Original transcripts keep the languages used in the conversation.</small>
+              </div>
+              <label className="setting-field" htmlFor="summary-language">
+                <span id="summary-language-label">Summary language</span>
                 <select
-                  id="language"
-                  value={draft.language}
-                  aria-labelledby="language-label"
-                  aria-describedby="language-hint"
-                  onChange={(event) => update("language", event.target.value)}
+                  id="summary-language"
+                  value={draft.summary_language}
+                  aria-labelledby="summary-language-label"
+                  aria-describedby="summary-language-hint"
+                  onChange={(event) => update("summary_language", event.target.value)}
                 >
-                  <option value="auto">Automatic / mixed languages</option>
-                  {!languageCodes.includes(draft.language) && draft.language !== "auto" ? (
-                    <option value={draft.language}>{languageLabel(draft.language)} (current value)</option>
+                  <option value="auto">Automatic / follow source language</option>
+                  {!languageCodes.includes(draft.summary_language) && draft.summary_language !== "auto" ? (
+                    <option value={draft.summary_language}>{languageLabel(draft.summary_language)} (current value)</option>
                   ) : null}
                   {languages.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
-                <small id="language-hint">
-                  Automatic detects the spoken language. Choose a language supported by your local transcription model.
+                <small id="summary-language-hint">
+                  Choose the language for recaps, summaries, and optional transcript translations. Automatic follows the source language. Transcripts are translated only when you click Translate.
                 </small>
               </label>
               <label className="setting-field" htmlFor="recap-hour">
-                <span id="recap-hour-label">Daily recap hour</span>
+                <span id="recap-hour-label">Evening recap update</span>
                 <NumberSelect
                   id="recap-hour"
                   value={draft.recap_hour}
@@ -261,8 +317,22 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   label={(hour) => `${String(hour).padStart(2, "0")}:00`}
                 />
                 <small id="recap-hour-hint">
-                  In your home timezone. The worker begins saving today’s recap at this time and catches up on earlier days.
+                  Update today’s recap at this time in your home timezone. Later completed conversations are added automatically, and earlier days are caught up.
                 </small>
+              </label>
+              <label className="setting-field" htmlFor="recap-interval">
+                <span id="recap-interval-label">Daytime recap updates</span>
+                <NumberSelect id="recap-interval" value={draft.recap_interval_minutes ?? 60}
+                  options={[0, 15, 30, 60, 120, 180]} onChange={(value) => update("recap_interval_minutes", value)}
+                  label={(minutes) => minutes === 0 ? "Evening only" : `Every ${durationLabel(minutes * 60)}`} />
+                <small id="recap-interval-hint">Refresh your day so far when completed conversations change. Silence and background noise alone do not create new recaps.</small>
+              </label>
+              <label className="setting-field" htmlFor="recap-quiet">
+                <span id="recap-quiet-label">Wait after speech before including a conversation</span>
+                <NumberSelect id="recap-quiet" value={draft.recap_quiet_minutes ?? 5}
+                  options={[1, 2, 5, 10, 15, 30]} onChange={(value) => update("recap_quiet_minutes", value)}
+                  label={(minutes) => durationLabel(minutes * 60)} />
+                <small id="recap-quiet-hint">Keep the whole current conversation out until it finishes. A pause can end a conversation; missing uploads are not treated as observed silence. Original audio, including silence and noise, follows your retention settings.</small>
               </label>
               <label className="capture-toggle">
                 <input
@@ -282,14 +352,17 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
               </label>
             </div>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>Approximate hints</legend>
+          <fieldset disabled={busy} hidden={!show("gestures", "gestures")}>
+            <legend>Flags & meetings</legend>
             <p className="muted settings-description">
-              Flags and meeting gestures guide interpretation of nearby speech.
-              They do not define exact recording boundaries.
+              Mark an important moment or a meeting to help Omi understand nearby speech.
+              These gestures provide context; they do not trim your recordings.
             </p>
+            {[{ title: "Important flags", fields: hintFields.slice(0, 3) },
+              { title: "Meeting gestures", fields: hintFields.slice(3) }].map((group) => <div className="settings-subgroup" key={group.title}>
+            <h3>{group.title}</h3>
             <div className="settings-grid">
-              {hintFields.map((field) => (
+              {group.fields.map((field) => (
                 <label
                   className="setting-field"
                   htmlFor={field.key}
@@ -317,10 +390,11 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   <small id={`${field.key}-hint`}>{field.detail}</small>
                 </label>
               ))}
-            </div>
+            </div></div>)}
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>Local archive</legend>
+          <fieldset disabled={busy} hidden={!show("storage", "storage")}>
+            <legend>Storage & privacy</legend>
+            <p className="settings-description muted">Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.</p>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="audio-retention">
                 <span id="audio-retention-label">Keep original audio</span>
@@ -348,116 +422,39 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
               </label>
             </div>
             <p className="caption access-note">
-              This app has no sign-in. Anyone who can reach your home-core
+              This app has no sign-in. Anyone who can reach your server
               address can access this archive.
             </p>
           </fieldset>
+        </form>
+      )}
+      <div hidden={!showServer}>
+        <Configuration search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
+          onSearchResults={onSearchResults}
+          onSaved={() => { setConnectionRevision((value) => value + 1); onSaved(); }}
+          hiddenFields={serverHiddenFields} />
+      </div>
+      <div hidden={!show("connections", "connections")}>
+        <OmiIntegration refreshRevision={connectionRevision} search={search}
+          onConfigure={() => { setSection("server"); setSearch("Omi connections"); }}
+          onSaved={() => { setConfigurationRevision((value) => value + 1); onSaved(); }} />
+      </div>
           {error ? <ErrorState message={error} /> : null}
-          <div className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
+          <div hidden={!preferencesVisible || (!dirty && !busy && !saved)} className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
             <p className="caption settings-save-status" role="status">
-              {busy ? "Saving your preferences…" : saved ? "Settings saved on home-core." : dirty ? "You have unsaved changes." : "Your preferences are up to date."}
+              {busy ? "Saving your preferences…" : saved ? "Preferences saved on your server." : dirty ? "Unsaved preferences." : "Your preferences are up to date."}
             </p>
             {dirty ? <button type="button" className="button" disabled={busy} onClick={() => {
               setDraft(resource.data);
               setError("");
               setSaved(false);
             }}>Discard changes</button> : null}
-            <button className="button dark" disabled={busy || !dirty}>
+            <button form="preferences-form" className="button dark" disabled={busy || !dirty}>
               <Icon name="check" size={18} />
-              {busy ? "Saving…" : "Save changes"}
+              {busy ? "Saving…" : "Save preferences"}
             </button>
           </div>
-        </form>
-      )}
-      <Configuration onSaved={() => { setConnectionRevision((value) => value + 1); onSaved(); }} hiddenFields={editableSettings} />
-      <OmiIntegration key={connectionRevision} onSaved={onSaved} />
-    </div>
-  );
-}
-
-type OmiImportResult = {
-  imported: number;
-  existing: number;
-  skipped: number;
-  has_more: boolean;
-  next_offset: number;
-  items: Source[];
-};
-
-function OmiIntegration({ onSaved }: { onSaved: () => void }) {
-  const resource = useResource<{ configured: boolean }>("/v1/integrations/omi");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<OmiImportResult>();
-  const [nextPage, setNextPage] = useState<{ end: string; offset: number }>();
-  const unavailable = busy || resource.loading || Boolean(resource.error) || !resource.data?.configured;
-  async function importPage(next = false) {
-    if (unavailable || (next && !nextPage)) return;
-    const page = next && nextPage ? nextPage : { end: new Date().toISOString(), offset: 0 };
-    setBusy(true);
-    setError("");
-    setResult(undefined);
-    if (!next) setNextPage(undefined);
-    try {
-      const imported = await post<OmiImportResult>("/v1/integrations/omi/import", {
-        end_date: page.end,
-        limit: 25,
-        offset: page.offset,
-      });
-      setResult(imported);
-      setNextPage(imported.has_more ? { end: page.end, offset: imported.next_offset } : undefined);
-      window.dispatchEvent(new Event("omi:archive-changed"));
-      onSaved();
-    } catch (error) {
-      setError(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <fieldset>
-      <legend>Omi connection</legend>
-      <AudioForwarding onSaved={onSaved} />
-      <p className="muted settings-description">
-        Connect your Omi to the iPhone app over Bluetooth for local audio capture.
-        This path does not need an Omi API key.
-      </p>
-      <p className="muted settings-description">
-        Optionally import existing conversations from Omi’s cloud into your local
-        archive. Imports include transcripts only, without original audio.
-      </p>
-      {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
-      {resource.loading ? <Loading>Checking Omi API connection…</Loading> : resource.data ? (
-        <p className="caption">
-          {resource.data.configured
-            ? "Omi API is configured on your server. Import up to 25 conversations at a time, newest first."
-            : <>To enable cloud import, save your Omi API key in Models, keys &amp; server settings → Omi connections.
-              Saved keys stay on home-core and are never displayed here.</>}
-        </p>
-      ) : null}
-      {error ? <ErrorState message={error} /> : null}
-      {result ? (
-        <Notice tone="success">
-          Last page: {result.imported} imported, {result.existing} already in your archive,
-          {" "}{result.skipped} skipped.
-          {!result.has_more ? " No more conversations in this import." : " More conversations are available."}
-        </Notice>
-      ) : null}
-      <div className="button-row">
-        <button type="button" className="button" disabled={unavailable}
-          onClick={() => void importPage()}>
-          {busy ? "Importing…" : "Import latest conversations"}
-        </button>
-        {nextPage ? (
-          <button type="button" className="button" disabled={unavailable}
-            onClick={() => void importPage(true)}>
-            Load next 25
-          </button>
-        ) : null}
-        {!resource.loading && !resource.error && !resource.data?.configured ? (
-          <button type="button" className="text-button" onClick={resource.refresh}>Check connection again</button>
-        ) : null}
       </div>
-    </fieldset>
+    </div>
   );
 }

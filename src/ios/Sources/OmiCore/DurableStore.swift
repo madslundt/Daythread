@@ -6,6 +6,8 @@ public struct OutboxItem: Codable, Identifiable {
     public let kind: Kind
     public let deviceID: String
     public let capturedAt: Date
+    public var profileID: String?
+    public var resolvedProfileID: String { profileID ?? "default" }
     public var endedAt: Date?
     public var codec: Int?
     public var clock: CaptureClock?
@@ -27,6 +29,7 @@ public struct OutboxItem: Codable, Identifiable {
 public final class DurableStore {
     public let directory: URL
     public private(set) var items: [OutboxItem]
+    public var profileID = "default"
     public var maximumBytes: Int64 = 1_000_000_000
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -100,6 +103,7 @@ public final class DurableStore {
         guard usedBytes + 2_000_000 < maximumBytes else { throw CaptureError.storageFull }
         let id = UUID()
         var item = OutboxItem(id: id, kind: .audio, deviceID: deviceID, capturedAt: clock.wall)
+        item.profileID = profileID
         item.codec = codec; item.clock = clock
         try commit(items + [item])
         let url = file(id, extension: "frames")
@@ -174,7 +178,9 @@ public final class DurableStore {
         if item.kind == .gap, let cause = item.cause { body["cause"] = cause }
         return try JSONSerialization.data(withJSONObject: body)
     }
-    private func appendMetadata(_ item: OutboxItem) throws -> UUID {
+    private func appendMetadata(_ original: OutboxItem) throws -> UUID {
+        var item = original
+        item.profileID = profileID
         let body = try metadata(item)
         let updated = items + [item]
         let indexBytes = try encoder.encode(updated).count
@@ -251,7 +257,7 @@ public final class DurableStore {
     public func rewind(minutes: Int, end: Date) throws -> (url: URL, gaps: Int) {
         let duration = max(1, min(60, minutes)) * 60
         let start = end.addingTimeInterval(-Double(duration))
-        let audio = items.filter { $0.kind == .audio && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start }
+        let audio = items.filter { $0.resolvedProfileID == profileID && $0.kind == .audio && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start }
         guard !audio.isEmpty else { throw CaptureError.invalidAudio("No local audio in this window") }
         var output = Data(count: duration * 32000); var spans: [(Date, Date)] = []
         for item in audio {

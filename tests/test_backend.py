@@ -260,20 +260,22 @@ async def test_diary_refreshes_for_late_hint_outside_calendar_day(store, setting
 
         async def summarize(self, sources, purpose):
             self.calls += 1
-            return f"important={sources[0]['important']}"
+            return f"important={sources[0]['important']} [{sources[0]['id']}]"
 
     ai = FakeInference()
     memory = Memory(store, settings.model_copy(update={"timezone": "UTC"}), ai)
     midnight, _ = memory.day_window(AT.date())
     key = uuid4()
-    store.ingest(key, "omi", midnight + timedelta(seconds=20), wav([1]), 1 / 16000)
+    store.ingest(
+        key, "omi", midnight + timedelta(seconds=20), wav([1]), 1 / 16000, source_kind="omi_api"
+    )
     store.complete(str(key), "Speech shortly after midnight")
     event(store, midnight - timedelta(seconds=10), "mark")
-    assert (await memory.recap(AT.date()))["summary"] == "important=True"
+    assert (await memory.recap(AT.date()))["summary"] == f"important=True [{key}]"
     # This earlier accepted flag suppresses the later one and its context ends before this speech.
     event(store, midnight - timedelta(seconds=50), "mark")
-    assert (await memory.recap(AT.date()))["summary"] == "important=False"
-    assert ai.calls == 2
+    assert (await memory.recap(AT.date()))["summary"] == f"important=False [{key}]"
+    assert ai.calls == 4  # Conversation preparation and daily synthesis, before and after the hint.
 
 
 def test_rewind_audio_clips_chunks_and_preserves_gap_timing(store):
@@ -293,28 +295,34 @@ def test_rewind_audio_clips_chunks_and_preserves_gap_timing(store):
 
 
 @pytest.mark.anyio
-async def test_diary_uses_local_calendar_boundaries_and_refreshes_after_late_audio(store, settings):
+async def test_diary_uses_local_calendar_boundaries_and_refreshes_after_late_audio(
+    store, settings, monkeypatch
+):
     class FakeInference:
         calls = 0
 
         async def summarize(self, sources, purpose):
             self.calls += 1
-            return f"Diary version {self.calls}"
+            return f"Diary version {self.calls} [{sources[0]['id']}]"
 
     ai = FakeInference()
     memory = Memory(store, settings, ai)
     # Copenhagen's 2026-10-25 is 25 hours long because daylight saving ends.
     start, end = memory.day_window(date(2026, 10, 25))
     assert end - start == timedelta(hours=25)
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: end + timedelta(hours=1))
     key = uuid4()
-    store.ingest(key, "omi", start, wav([1]), 1 / 16000)
+    store.ingest(key, "omi", start, wav([1]), 1 / 16000, source_kind="manual_upload")
     store.complete(str(key), "Morning conversation")
     first = await memory.recap(date(2026, 10, 25))
     assert (await memory.recap(date(2026, 10, 25)))["summary"] == first["summary"]
     late = uuid4()
-    store.ingest(late, "omi", end - timedelta(minutes=1), wav([1]), 1 / 16000)
+    store.ingest(
+        late, "omi", end - timedelta(minutes=1), wav([1]), 1 / 16000, source_kind="manual_upload"
+    )
     store.complete(str(late), "Late upload")
-    assert (await memory.recap(date(2026, 10, 25)))["summary"] == "Diary version 2"
+    assert (await memory.recap(date(2026, 10, 25)))["summary"] == f"Diary version 4 [{key}]"
+    assert ai.calls == 4  # The unchanged first conversation preparation is reused.
     assert (store.diary_dir / "2026-10-25.md").exists()
 
 
@@ -360,7 +368,7 @@ async def test_complete_audio_to_local_diary_and_chat_flow(store, settings):
         )
 
     key = uuid4()
-    store.ingest(key, "omi", AT, wav([1] * 16000), 1)
+    store.ingest(key, "omi", AT, wav([1] * 16000), 1, source_kind="manual_upload")
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         memory = Memory(store, settings, Inference(settings, http))
         assert await process_one(memory)
@@ -418,7 +426,7 @@ async def test_provider_failure_stays_queued_and_does_not_leak_response_body(sto
 def test_local_settings_reject_remote_providers(settings):
     with pytest.raises(ValueError):
         Settings(llm_base_url="https://example.com/v1", _env_file=None)
-    assert Settings(_env_file=None).language == "auto"
+    assert "language" not in Settings.model_fields
 
 
 @pytest.fixture

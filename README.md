@@ -19,6 +19,7 @@ Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. 
 ## Features
 
 - **Capture:** durable offline phone queue, retryable uploads, pause/resume, capture-gap tracking, and optional Wi-Fi-only uploads.
+- **Import audio:** add recordings from other phones, computers, and voice recorders through the web app, preserving original start times and filenames.
 - **Recall:** transcript search and correction, audio rewind, and persistent chat grounded in recorded sources.
 - **Diary:** automatic daily recaps, meeting notes, history, and Markdown export.
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.
@@ -167,6 +168,18 @@ Open **http://localhost:8787** or `http://<server-LAN-address>:8787` from anothe
 
 Configure models, language/task routes, local endpoints, API keys, embeddings, forwarding and processing options from **web Settings → Models, keys & server settings** or **iPhone Settings → Transcription → Models, keys & all server settings**. Keys are write-only: keep, replace or clear them without displaying the saved value. STT/LLM/key changes apply immediately; embedding, worker and archive-path changes are marked for backend restart. The clients expose all backend `Settings` fields.
 
+Speech processing preserves faint audio by default, applies capped gain to transcription copies,
+and retains every sample when splitting requests. Optional local FFmpeg cleanup produces a
+separate reading for review beside original playback; candidates never enter search or summaries
+until corrected. See [processing settings and acoustic evaluation](docs/README.md#speech-processing-and-cleanup-review)
+and the [reviewed plan](docs/audio-processing-plan.md). Simultaneous-speaker separation remains
+unimplemented; preserving all voices in the recording does not guarantee their transcription.
+
+Optional [local speaker detection](docs/README.md#speaker-detection-and-names) labels speakers
+A, B, C across a meeting or conversation. On web and iPhone, listen to a speaker's turns,
+assign a conversation-specific name, and correct or merge assignments. It requires the
+separate local model service described in [the configuration example](config/omi.env.example).
+
 Environment variables remain available as initial defaults; the example gateway/model names are specific to the original home network:
 
 | Setting | Purpose |
@@ -218,6 +231,8 @@ Keep the backend awake and port 8787 reachable. Away from the server, recordings
 ## First use and operation
 
 Check `curl --fail http://localhost:8787/v1/status`, then upload a short recording with its actual start time. Confirm transcription, generate a recap, and ask a question. Status alone does not test model connectivity.
+
+To add audio from another device, use **Today → Upload** on the web and drop a file into the upload dialog or choose it from your device. For Voice Memos, share the recording to Files first. Select an audio file (for example WAV, M4A, or MP3) and enter when it stopped or began in the timezone shown. The default is **Recording ended** at the current date and time; its start is calculated from the audio duration. Each file can be up to 100 MB and two hours long, subject to the audio formats supported by your browser. Conversion and splitting happen locally before the existing transcription worker processes the uploaded audio. Keep the upload dialog open until it finishes. Source details retain the filename and distinguish imported audio from pendant capture.
 
 Run **one backend process per archive**. For a source installation:
 

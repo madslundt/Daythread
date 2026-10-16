@@ -9,6 +9,7 @@ from .audio import contains_speech_energy
 from .domain import utc_now
 from .inbox_jobs import InboxJobs
 from .service import Memory
+from .voice_activity import analyze_voice
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,19 @@ async def process_one(memory: Memory) -> bool:
         return False
     try:
         data = await asyncio.to_thread(Path(row["path"]).read_bytes)
-        if not contains_speech_energy(data, memory.settings.silence_threshold):
+        voice = await asyncio.to_thread(analyze_voice, data)
+        memory.store.save_recap_activity(row["id"], row["digest"], voice)
+        threshold = (
+            None if memory.settings.stt_preserve_quiet else memory.settings.silence_threshold
+        )
+        if not contains_speech_energy(data, threshold):
             memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate")
         elif hasattr(memory.inference, "transcribe_result"):
             result = await memory.inference.transcribe_result(data)
-            memory.store.complete(row["id"], result["text"], result["segments"], claimed=True)
+            memory.store.complete(
+                row["id"], result["text"], result["segments"], claimed=True,
+                details=result.get("processing"),
+            )
         else:
             memory.store.complete(row["id"], await memory.inference.transcribe(data), claimed=True)
     except Exception as exc:
@@ -39,8 +48,12 @@ async def process_one(memory: Memory) -> bool:
 
 async def scheduled_recaps(memory: Memory) -> None:
     now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
+    async with memory.recap_lock:
+        await memory.recaps.prepare(now)
     latest = (
-        now.date() if now.hour >= memory.settings.recap_hour else now.date() - timedelta(days=1)
+        now.date()
+        if memory.settings.recap_interval_minutes or now.hour >= memory.settings.recap_hour
+        else now.date() - timedelta(days=1)
     )
     days: set[date] = set()
     for row in memory.store.recorded_intervals():
@@ -51,6 +64,12 @@ async def scheduled_recaps(memory: Memory) -> None:
             days.add(first)
             first += timedelta(days=1)
     for day in sorted(days):
+        if day == now.date() and now.hour < memory.settings.recap_hour:
+            saved = memory.store.diary(day.isoformat())
+            if saved:
+                generated = datetime.fromisoformat(saved["created_at"])
+                if (now - generated).total_seconds() < memory.settings.recap_interval_minutes * 60:
+                    continue
         await memory.recap(day)
 
 

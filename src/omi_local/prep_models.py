@@ -76,6 +76,7 @@ class PrepSource(PrepModel):
     processed_at: str | None = None
     error_code: str | None = Field(default=None, max_length=80)
     transcription_outcome: str | None = Field(default=None, max_length=80)
+    transcription_details: dict = Field(default_factory=dict)
     audio_availability: Literal["available", "missing", "expired", "transcript_only"] | None = None
 
 

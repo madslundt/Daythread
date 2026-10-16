@@ -53,14 +53,15 @@ export function ImportantBadge({ target }: { target: ImportanceTarget }) {
   return marks?.has(importanceKey(target)) ? <span className="important-badge" title="Marked important" aria-label="Important"><Icon name="star" size={15} /></span> : null;
 }
 
-export function ImportanceButton({ target, label }: { target: ImportanceTarget; label: string }) {
+export function ImportanceButton({ target, label, compact = false }: { target: ImportanceTarget; label: string; compact?: boolean }) {
   const { marks, pending, error: loadError, retry, save } = useContext(ImportanceContext);
   const [error, setError] = useState("");
   const important = marks?.has(importanceKey(target)) ?? false;
   const busy = pending.has(importanceKey(target));
   return <span className="importance-control">
-    <button type="button" className={`text-button importance-button ${important ? "is-important" : ""}`}
+    <button type="button" className={`text-button importance-button ${compact ? "importance-icon" : ""} ${important ? "is-important" : ""}`}
       aria-label={`${important ? "Remove importance from" : "Mark as important:"} ${label}`}
+      title={`${important ? "Remove importance from" : "Mark as important:"} ${label}`}
       aria-pressed={important} disabled={busy || (!marks && !loadError)}
       onClick={async () => {
         if (!marks) { retry(); return; }
@@ -69,7 +70,7 @@ export function ImportanceButton({ target, label }: { target: ImportanceTarget; 
         catch (reason) { setError(errorMessage(reason)); }
       }}>
       <Icon name="star" size={16} />
-      {busy ? "Saving…" : !marks && loadError ? "Retry importance" : important ? "Important" : "Mark important"}
+      {compact ? <span className="sr-only">{busy ? "Saving…" : !marks && loadError ? "Retry importance" : important ? "Important" : "Mark important"}</span> : busy ? "Saving…" : !marks && loadError ? "Retry importance" : important ? "Important" : "Mark important"}
     </button>
     {error || (!marks && loadError) ? <span className="caption" role="alert">{error || loadError}</span> : null}
   </span>;

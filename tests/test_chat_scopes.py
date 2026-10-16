@@ -39,10 +39,10 @@ def client(config):
         yield client
 
 
-def insert(client, at=AT, text="Kitchen discussion", duration=1):
+def insert(client, at=AT, text="Kitchen discussion", duration=1, *, source_kind=""):
     key = uuid4()
     store = client.app.state.memory.store
-    store.ingest(key, "omi", at, b"test audio", duration)
+    store.ingest(key, "omi", at, b"test audio", duration, source_kind=source_kind)
     store.complete(str(key), text)
     return str(key)
 
@@ -133,8 +133,8 @@ def test_scope_validation_and_conflicts_do_not_create_invalid_sessions(client):
 
 
 def test_all_diaries_retrieves_recaps_and_transcripts_across_days(client):
-    first = insert(client)
-    second = insert(client, AT - timedelta(days=1))
+    first = insert(client, source_kind="manual_upload")
+    second = insert(client, AT - timedelta(days=1), source_kind="manual_upload")
     for day in ("2026-10-14", "2026-10-15"):
         assert client.post(f"/v1/recaps/{day}").status_code == 200
     broad = client.post("/v1/chat", json={"question": "Summarize all diaries"})
@@ -317,9 +317,9 @@ def test_inclusive_date_range_uses_local_dst_boundaries_and_survives_restart(cli
 
 
 def test_date_range_includes_only_relevant_recaps_and_accepts_empty_same_day(client):
-    first = insert(client, AT - timedelta(days=1))
-    last = insert(client)
-    insert(client, AT - timedelta(days=2))
+    first = insert(client, AT - timedelta(days=1), source_kind="manual_upload")
+    last = insert(client, source_kind="manual_upload")
+    insert(client, AT - timedelta(days=2), source_kind="manual_upload")
     for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
         assert client.post(f"/v1/recaps/{day}").status_code == 200
     result = client.post(

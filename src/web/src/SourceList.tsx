@@ -5,6 +5,9 @@ import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
 import { FeedbackForm } from "./FeedbackForm";
 import { DecisionEditor } from "./DecisionEditor";
+import { TranscriptionReview } from "./TranscriptionReview";
+import { TranscriptTranslation } from "./TranscriptTranslation";
+import { Speakers } from "./Speakers";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
@@ -66,6 +69,7 @@ function SourceRow({
   index: number;
 }) {
   const [creatingDecision, setCreatingDecision] = useState(false);
+  const [open, setOpen] = useState(expanded);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(source.text || "");
   const [saved, setSaved] = useState<string>();
@@ -137,6 +141,9 @@ function SourceRow({
       className="source-row"
       open={expanded || undefined}
       id={`${idPrefix}-${source.id}`}
+      onToggle={(event) => {
+        if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
+      }}
     >
       <summary>
         <span className="source-time">
@@ -173,7 +180,11 @@ function SourceRow({
           The archive expects audio but the file is missing.
         </p>
       ) : null}
-      {source.state === "blocked" || source.error_code ? (
+      {source.state === "blocked" || source.error_code || (
+        source.state === "done" && !text &&
+        ["silence_gate", "empty_stt"].includes(source.transcription_outcome || "") &&
+        source.audio_available !== false
+      ) ? (
         <button
           className="text-button"
           onClick={async () => {
@@ -185,7 +196,9 @@ function SourceRow({
             }
           }}
         >
-          Retry transcription after resolving the problem
+          {source.state === "done"
+            ? "Retry empty transcription with current settings"
+            : "Retry transcription after resolving the problem"}
         </button>
       ) : null}
       <div className="source-detail">
@@ -196,6 +209,10 @@ function SourceRow({
           </span>
           <span>{source.state === "done" ? "Transcribed" : source.state}</span>
         </div>
+        {source.source_kind === "manual_upload" ? <p className="caption">
+          Manually uploaded recording{source.source_id ? ` · ${source.source_id}` : ""}.
+          Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.
+        </p> : null}
         {source.source_kind === "omi_audio_webhook" ? <p className="caption">
           Forwarded from the official Omi integration · account identity supplied by the sender, pendant identity unknown.
           Times estimate a chunk ending at server receipt, not actual capture time. Each POST is separate; overlap, gaps and delivery order are uncertain.
@@ -234,7 +251,10 @@ function SourceRow({
           </div>
         ) : (
           <>
-            <p className="transcript-text">
+            {open && text ? <TranscriptTranslation
+              key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
+              sourceId={source.id} original={text}
+            /> : <p className="transcript-text">
               {text ||
                 (source.state === "done"
                   ? "Processing completed without transcript text; this does not prove no speech occurred."
@@ -243,7 +263,7 @@ function SourceRow({
                     : source.state === "blocked"
                       ? "Transcription blocked. Resolve the problem and retry."
                       : "This recording is waiting for transcription.")}
-            </p>
+            </p>}
             <button
               className="text-button"
               onClick={() => {
@@ -255,6 +275,11 @@ function SourceRow({
             </button>
           </>
         )}
+        <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
+          setDraft(text || "");
+          setEditing(true);
+        }} />
+        {open ? <Speakers kind="source" id={source.id} /> : null}
         {error ? <ErrorState message={error} /> : null}
         {source.audio_available === false ||
         source.audio_availability === "missing" ? (
@@ -285,7 +310,7 @@ function SourceRow({
               href={audioUrl(source.id)}
               download
             >
-              {source.source_kind === "omi_audio_webhook" ? "Download archived audio" : "Download original audio"}
+              {source.source_kind === "omi_audio_webhook" || source.source_kind === "manual_upload" ? "Download archived audio" : "Download original audio"}
             </a>
           </>
         )}

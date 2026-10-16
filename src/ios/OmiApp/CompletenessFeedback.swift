@@ -19,15 +19,15 @@ struct EvidenceFeedbackView: View {
                 ErrorNote(message: error)
                 NavigationLink("Report incorrect or missing information") { FeedbackEditor(outputID: outputID, outputText: outputText) }
             } else { Text("No saved evidence diagnostics for this older output.").font(.caption).foregroundStyle(.secondary) }
-        }.task(id: model.backendAddress + outputID) {
+        }.task(id: model.archiveIdentity + outputID) {
             current = .null
             guard !outputID.isEmpty else { return }
-            let address = model.backendAddress
+            let address = model.archiveIdentity
             do {
                 let result = try await model.client().request("v1/outputs/\(outputID)/evidence")
-                guard !Task.isCancelled, model.backendAddress == address else { return }
+                guard !Task.isCancelled, model.archiveIdentity == address else { return }
                 current = result; error = nil
-            } catch { if !Task.isCancelled, model.backendAddress == address { self.error = error.localizedDescription } }
+            } catch { if !Task.isCancelled, model.archiveIdentity == address { self.error = error.localizedDescription } }
         }
     }
 }
@@ -76,7 +76,7 @@ struct FeedbackEditor: View {
     @State private var message: String?
     @State private var draftKey = ""
     @State private var submittedSignature = ""
-    private var key: String { model.backendAddress + ".feedback-draft." + sourceID + outputID + start + end }
+    private var key: String { model.archiveIdentity + ".feedback-draft." + sourceID + outputID + start + end }
     var body: some View {
         Form {
             Picker("Problem", selection: $issue) { Text("Incorrect information").tag("incorrect"); Text("Missing information").tag("missing") }
@@ -112,13 +112,13 @@ struct FeedbackEditor: View {
         }
     }
     private func searchRecordings() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         busy = true; defer { busy = false }
         do {
             let result = try await model.client().request("v1/transcripts", query: ["q": String(search.prefix(200)), "limit": "10"])
-            guard model.backendAddress == address else { return }
+            guard model.archiveIdentity == address else { return }
             recordings = result["items"].array; message = nil
-        } catch { if model.backendAddress == address { message = error.localizedDescription } }
+        } catch { if model.archiveIdentity == address { message = error.localizedDescription } }
     }
     private func saveDraft() {
         LocalCache.save(.object(["id": .string(id), "issue": .string(issue), "stage": .string(stage), "note": .string(String(note.prefix(2000))), "excerpt": .string(String(excerpt.prefix(1000))), "expected": .string(String(expected.prefix(1200))), "submitted_signature": .string(submittedSignature)]), key: key)
@@ -133,13 +133,13 @@ struct FeedbackEditor: View {
         if !sourceID.isEmpty { body["source_id"] = sourceID }
         if !outputID.isEmpty { body["output_id"] = outputID }
         if !start.isEmpty { body["start"] = start; body["end"] = end }
-        let address = model.backendAddress, savedKey = key
+        let address = model.archiveIdentity, savedKey = key
         do {
             let receipt = try await model.client().request("v1/feedback/\(id)", method: "PUT", body: body)
             guard UUID(uuidString: receipt["id"].text) == UUID(uuidString: id) else { throw BackendFailure(message: "Backend did not confirm this report") }
             UserDefaults.standard.removeObject(forKey: "cache." + savedKey)
-            if model.backendAddress == address { message = "Received by backend. Review it from Capture → Feedback and repairs." }
-        } catch { if model.backendAddress == address { message = "Saved on phone; backend receipt not confirmed. Retry safely: \(error.localizedDescription)" } }
+            if model.archiveIdentity == address { message = "Received by backend. Review it from Capture → Feedback and repairs." }
+        } catch { if model.archiveIdentity == address { message = "Saved on phone; backend receipt not confirmed. Retry safely: \(error.localizedDescription)" } }
     }
 }
 
@@ -155,16 +155,16 @@ struct FeedbackReviewView: View {
                 FeedbackReviewRow(item: item) { await load() }.id(item["id"].text)
             }
             if items.isEmpty { Text("No saved reports") }
-        }.navigationTitle("Feedback and repairs").task(id: model.backendAddress) { items = []; error = nil; await load() }.refreshable { await load() }
+        }.navigationTitle("Feedback and repairs").task(id: model.archiveIdentity) { items = []; error = nil; await load() }.refreshable { await load() }
     }
     private func load() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         do {
             let result = try await model.client().request("v1/feedback")
-            guard model.backendAddress == address, !Task.isCancelled else { return }
+            guard model.archiveIdentity == address, !Task.isCancelled else { return }
             items = result["items"].array; error = nil
         }
-        catch { if model.backendAddress == address, !Task.isCancelled { self.error = error.localizedDescription } }
+        catch { if model.archiveIdentity == address, !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 
@@ -201,22 +201,22 @@ private struct FeedbackReviewRow: View {
             .sheet(item: $source) { selection in SourceDetail(source: selection.source) }
     }
     private func inspectSource() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         busy = true; defer { busy = false }
         do {
             let result = try await model.client().request("v1/sources/\(item["source_id"].text)")
-            guard model.backendAddress == address else { return }
+            guard model.archiveIdentity == address else { return }
             source = SourceSelection(source: result); error = nil
-        } catch { if model.backendAddress == address { self.error = error.localizedDescription } }
+        } catch { if model.archiveIdentity == address { self.error = error.localizedDescription } }
     }
     private func update(remove: Bool = false) async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         busy = true; defer { busy = false }
         do {
             if remove { _ = try await model.client().request("v1/feedback/\(item["id"].text)", method: "DELETE") }
             else { _ = try await model.client().request("v1/feedback/\(item["id"].text)/events", method: "POST", body: ["event_id": UUID().uuidString, "status": item["status"].text == "open" ? "resolved" : "open", "stage": stage, "note": note]) }
-            guard model.backendAddress == address else { return }
+            guard model.archiveIdentity == address else { return }
             error = nil; await refresh()
-        } catch { if model.backendAddress == address { self.error = error.localizedDescription } }
+        } catch { if model.archiveIdentity == address { self.error = error.localizedDescription } }
     }
 }

@@ -33,18 +33,18 @@ struct LabelsView: View {
             }
             ErrorNote(message: error)
         }.listStyle(.insetGrouped).omiScreen().navigationTitle("People & projects").navigationBarTitleDisplayMode(.inline).searchable(text: $query, prompt: "Find a person or project")
-            .task(id: model.backendAddress + model.labelRevision) { await load() }.refreshable { await load() }
+            .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(isPresented: $creating) {
                 NavigationStack { LabelEditView(entity: nil, revision: directory?.revision ?? "", onSaved: { Task { await load() } }) }
             }
     }
     private func load() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         do {
             let result: LabelDirectory = try await model.client().labels()
-            guard address == model.backendAddress, !Task.isCancelled else { return }
+            guard address == model.archiveIdentity, !Task.isCancelled else { return }
             directory = result; error = nil
-        } catch { if address == model.backendAddress { self.error = error.localizedDescription } }
+        } catch { if address == model.archiveIdentity { self.error = error.localizedDescription } }
     }
 }
 
@@ -102,7 +102,7 @@ struct LabelTimelineView: View {
             ErrorNote(message: error ?? writer.error)
             Text("Recordings retain source-level precision. Imported Omi speaker names and numbers are unverified and do not establish identity across sources.").font(.caption).foregroundStyle(.secondary)
         }.omiScreen().navigationTitle("Timeline").navigationBarTitleDisplayMode(.inline)
-            .task(id: model.backendAddress + model.labelRevision) { await load() }.refreshable { await load() }
+            .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(item: $editing, onDismiss: { Task { await load() } }) { selection in
                 NavigationStack { LabelEditView(entity: selection.entity, revision: selection.revision, onSaved: {}) }
             }
@@ -114,7 +114,7 @@ struct LabelTimelineView: View {
         guard !more || !loading else { return }
         let token = epoch.replace()
         if !more { response = nil; entries = [] }
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         loading = true; error = nil
         defer { if epoch.accepts(token) { loading = false } }
         do {
@@ -122,9 +122,9 @@ struct LabelTimelineView: View {
             if !start.isEmpty { query["start_day"] = start }; if !end.isEmpty { query["end_day"] = end }
             if more, let response { query["offset"] = String(entries.count); query["revision"] = response.revision }
             let result: LabelTimelineResponse = try await model.client().labels("v1/labels/\(entityID)/timeline", query: query)
-            guard address == model.backendAddress, !Task.isCancelled, epoch.accepts(token) else { return }
+            guard address == model.archiveIdentity, !Task.isCancelled, epoch.accepts(token) else { return }
             response = result; entries = more ? entries + result.items : result.items
-        } catch { if address == model.backendAddress, epoch.accepts(token), !Task.isCancelled { self.error = error.localizedDescription; if !more { response = nil; entries = [] } } }
+        } catch { if address == model.archiveIdentity, epoch.accepts(token), !Task.isCancelled { self.error = error.localizedDescription; if !more { response = nil; entries = [] } } }
     }
     private func confirm(_ entry: LabelTimelineEntry) async {
         guard let response, let source = entry.sources.first else { return }

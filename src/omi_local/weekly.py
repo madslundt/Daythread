@@ -72,6 +72,12 @@ class WeeklyReviews:
         settings = self.memory.settings
         saved = db.execute("SELECT value FROM runtime_settings WHERE key='timezone'").fetchone()
         zone = json.loads(saved["value"]) if saved else settings.timezone
+        saved_language = db.execute(
+            "SELECT value FROM runtime_settings WHERE key='summary_language'"
+        ).fetchone()
+        summary_language = (
+            json.loads(saved_language["value"]) if saved_language else settings.summary_language
+        ).lower()
         before, start, end = week_bounds(day, zone)
         now = utc_now()
         if start > now:
@@ -125,6 +131,7 @@ class WeeklyReviews:
         identity = {
             "week_start": day.isoformat(),
             "timezone": zone,
+            "summary_language": summary_language,
             "start": stamp(start),
             "end": stamp(end),
             "comparison_start": stamp(before),
@@ -149,6 +156,7 @@ class WeeklyReviews:
         return {
             "week_start": day.isoformat(),
             "timezone": zone,
+            "summary_language": summary_language,
             "start": stamp(start),
             "end": stamp(end),
             "comparison_start": stamp(before),
@@ -202,6 +210,7 @@ class WeeklyReviews:
                 snapshot["sources"],
                 snapshot["timezone"],
                 lambda: self.store.progress(job["id"]),
+                summary_language=snapshot["summary_language"],
             )
             version = ReviewVersion.model_validate(
                 {

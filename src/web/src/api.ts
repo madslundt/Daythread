@@ -1,3 +1,5 @@
+import { profileRequestOptions, profileResourceUrl, profileScope, type ProfileScope } from "./profiles";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -11,19 +13,17 @@ export class ApiError extends Error {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  scope: ProfileScope = profileScope(),
 ): Promise<T> {
+  const prepared = profileRequestOptions(path, options, scope);
+  const headers = new Headers(prepared.headers);
+  if (options.body && !(options.body instanceof Blob) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  prepared.headers = headers;
+  prepared.signal?.throwIfAborted();
   let response: Response;
   try {
-    response = await fetch(path, {
-      ...(path.startsWith("/v1/decisions") || path.startsWith("/v1/decision-extractions") || path.startsWith("/v1/transcripts/") || path.startsWith("/v1/configuration") ? { cache: "no-store" as const } : {}),
-      ...options,
-      headers: {
-        ...(options.body && !(options.body instanceof Blob)
-          ? { "Content-Type": "application/json" }
-          : {}),
-        ...options.headers,
-      },
-    });
+    response = await fetch(path, prepared);
+    prepared.signal?.throwIfAborted();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
       throw error;
@@ -47,9 +47,9 @@ export async function request<T>(
           : `The request could not be completed (${response.status}). Please try again.`;
     throw new ApiError(message, response.status);
   }
-  return response.status === 204
-    ? (undefined as T)
-    : (response.json() as Promise<T>);
+  const result = response.status === 204 ? undefined : await response.json();
+  prepared.signal?.throwIfAborted();
+  return result as T;
 }
 
 export function post<T>(path: string, data: unknown = {}): Promise<T> {
@@ -57,11 +57,11 @@ export function post<T>(path: string, data: unknown = {}): Promise<T> {
 }
 
 export function audioUrl(id: string): string {
-  return `/v1/audio/${encodeURIComponent(id)}`;
+  return profileResourceUrl(`/v1/audio/${encodeURIComponent(id)}`);
 }
 
 export function rewindAudioUrl(minutes: number, end: string): string {
-  return `/v1/rewind/audio?${new URLSearchParams({ minutes: String(minutes), end })}`;
+  return profileResourceUrl(`/v1/rewind/audio?${new URLSearchParams({ minutes: String(minutes), end })}`);
 }
 
 export function errorMessage(error: unknown): string {

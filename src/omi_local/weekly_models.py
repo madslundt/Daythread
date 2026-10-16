@@ -66,6 +66,7 @@ class ReviewVersion(StrictModel):
     id: UUID
     week_start: date
     timezone: str
+    summary_language: str = "auto"
     start: datetime
     end: datetime
     comparison_start: datetime
@@ -96,6 +97,7 @@ class ReviewJob(StrictModel):
 class ReviewRead(StrictModel):
     week_start: date
     timezone: str
+    summary_language: str = "auto"
     start: datetime
     end: datetime
     comparison_start: datetime

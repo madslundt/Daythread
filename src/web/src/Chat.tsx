@@ -1,3 +1,4 @@
+import { profileStorageKey } from "./profiles";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "./api";
 import { exchangeMessages, streamChat } from "./chatStream";
@@ -14,7 +15,7 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 
 function savedSession(): string | undefined {
   try {
-    return localStorage.getItem("omi.chat-session.v1") || undefined;
+    return localStorage.getItem(profileStorageKey("omi.chat-session.v1")) || undefined;
   } catch {
     return undefined;
   }
@@ -30,6 +31,7 @@ function sessionScope(session?: ChatSession): ChatScope {
 }
 
 export function Chat({ timezone, initialScope, initialQuestion }: { timezone: string; initialScope?: ChatScope; initialQuestion?: string }) {
+  const storageKey = useRef(profileStorageKey("omi.chat-session.v1")).current;
   const [sessionId, setSessionId] = useState<string | undefined>(() => initialScope ? undefined : savedSession());
   const [draftScope, setDraftScope] = useState<ChatScope>(initialScope ?? { kind: "all" });
   const sessions = useResource<{ items: ChatSession[] }>("/v1/chat/sessions");
@@ -77,12 +79,12 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       : "All diaries (all days)";
   useEffect(() => {
     try {
-      if (sessionId) localStorage.setItem("omi.chat-session.v1", sessionId);
-      else localStorage.removeItem("omi.chat-session.v1");
+      if (sessionId) localStorage.setItem(storageKey, sessionId);
+      else localStorage.removeItem(storageKey);
     } catch {
       /* Storage may be disabled; sessions still persist on the backend. */
     }
-  }, [sessionId]);
+  }, [sessionId, storageKey]);
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({
       block: "nearest",

@@ -1,3 +1,4 @@
+import { profileResourceUrl } from "./profiles";
 import { useEffect, useState } from "react";
 import { errorMessage, newId, post } from "./api";
 import { dateRangeForShortcut, dateTimeLabel, dayLabel, localDay, shiftDay } from "./format";
@@ -142,7 +143,7 @@ export function WeeklyReview({ timezone, onChat }: {
             onClick={() => void generate(false)}>{busy ? "Requesting…" : running ? "Generating…" : version ? data.stale ? "Refresh review" : "Use saved review" : "Generate review"}</button>
           {version ? <>
             <button className="button" disabled={busy || running} onClick={() => void generate(true)}>Regenerate</button>
-            <a className="button" href={`${path}.md${selectedVersion ? `?version_id=${selectedVersion}` : ""}`} download>Export Markdown</a>
+            <a className="button" href={profileResourceUrl(`${path}.md${selectedVersion ? `?version_id=${selectedVersion}` : ""}`)} download>Export Markdown</a>
           </> : null}
           <button className="button" onClick={() => onChat({ kind: "range", start_day: week, end_day: shiftDay(week, 6) })}>Chat about this week</button>
           <button className="text-button" onClick={() => setShowHistory((value) => !value)}>Review history</button>

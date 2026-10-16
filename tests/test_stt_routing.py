@@ -25,7 +25,9 @@ def anyio_backend():
 
 
 def config(tmp_path, **kwargs):
-    return Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None, **kwargs)
+    return Settings(
+        data_dir=tmp_path, worker_enabled=False, _env_file=None, stt_max_gain_db=0, **kwargs
+    )
 
 
 def audio():
@@ -81,10 +83,11 @@ def test_invalid_stt_routes_are_rejected(tmp_path, routes):
 
 
 @pytest.mark.anyio
-async def test_explicit_language_uses_specialist_without_detection(tmp_path):
+async def test_legacy_language_argument_cannot_force_transcription_or_routing(tmp_path):
     settings = config(
         tmp_path,
         language="DA-dk",
+        stt_model="multilingual",
         inference_token="shared",
         stt_routes={
             "da": {"model": "danish"},
@@ -96,21 +99,21 @@ async def test_explicit_language_uses_specialist_without_detection(tmp_path):
     def handler(request):
         calls.append(request)
         form = fields(request)
-        assert str(request.url) == "http://danish.local/v1/audio/transcriptions"
-        assert "authorization" not in request.headers
-        assert form["model"] == b"regional"
-        assert form["language"] == b"da-dk"
-        assert form["response_format"] == b"json"
+        assert str(request.url) == f"{settings.stt_base_url}/audio/transcriptions"
+        assert request.headers["authorization"] == "Bearer shared"
+        assert form["model"] == b"multilingual"
+        assert "language" not in form
+        assert form["response_format"] == b"verbose_json"
         assert form["file"] == audio()
-        return httpx.Response(200, json={"text": "Hej"})
+        return httpx.Response(200, json={"text": "Hej. Hello.", "language": "mixed"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await Inference(settings, client).transcribe(audio()) == "Hej"
+        assert await Inference(settings, client).transcribe(audio()) == "Hej. Hello."
     assert len(calls) == 1
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("detected", ["da", "Danish", " DA "])
+@pytest.mark.parametrize("detected", ["da", "da-DK", "Danish", " DA "])
 async def test_auto_detection_routes_codes_or_configured_provider_names(tmp_path, detected):
     settings = config(
         tmp_path,
@@ -138,12 +141,13 @@ async def test_auto_detection_routes_codes_or_configured_provider_names(tmp_path
         assert form["model"] == b"danish"
         assert str(request.url) == "http://danish.local/v1/audio/transcriptions"
         assert request.headers["authorization"] == "Bearer specialist"
-        assert form.get("language") == (None if detected == "Danish" else b"da")
+        assert "language" not in form
         return httpx.Response(200, json={"text": "Hej", "language": "en", "segments": segments})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await Inference(settings, client).transcribe_result(audio())
-    assert result == {"text": "Hej", "segments": segments}
+    assert result["text"] == "Hej"
+    assert result["segments"] == segments
     assert len(calls) == 2  # Never route recursively on the specialist's response.
 
 
@@ -216,19 +220,32 @@ async def test_detection_and_specialist_share_total_deadline(tmp_path):
     assert len(calls) == 2
 
 
-def test_saved_language_selects_worker_route_after_restart(tmp_path):
-    settings = config(tmp_path, stt_routes={"da": {"model": "danish"}})
+def test_legacy_saved_and_environment_languages_do_not_force_worker_after_restart(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OMI_LANGUAGE", "da")
+    settings = config(tmp_path, stt_model="multilingual", stt_routes={"da": {"model": "danish"}})
+    (tmp_path / ".private-settings.json").write_text(
+        json.dumps({"version": 1, "overrides": {"language": "da", "stt_chunk_seconds": 20}})
+    )
     with TestClient(create_app(settings)) as client:
-        assert client.patch("/v1/settings", json={"language": "da"}).status_code == 200
+        client.app.state.memory.store.save_settings({"language": "da"})
+        assert client.patch("/v1/settings", json={"language": "da"}).status_code == 422
+        view = client.get("/v1/configuration").json()
+        assert "language" not in view["values"]
+        assert not any(field["key"] == "language" for field in view["fields"])
+        assert client.patch(
+            "/v1/configuration", json={"revision": view["revision"], "changes": {"language": "da"}}
+        ).status_code == 422
     with TestClient(create_app(settings)) as client:
         memory = client.app.state.memory
         key = uuid4()
         memory.store.ingest(key, "omi", datetime.now(UTC), audio(), 1)
 
         def handler(request):
-            assert fields(request)["model"] == b"danish"
-            assert fields(request)["language"] == b"da"
-            return httpx.Response(200, json={"text": "Hej"})
+            assert fields(request)["model"] == b"multilingual"
+            assert "language" not in fields(request)
+            return httpx.Response(200, json={"text": "Hej. Hello.", "language": "mixed"})
 
         async def transcribe():
             async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
@@ -236,6 +253,8 @@ def test_saved_language_selects_worker_route_after_restart(tmp_path):
                 assert await process_one(memory)
 
         asyncio.run(transcribe())
-        assert memory.store.get_audio(str(key))["text"] == "Hej"
+        assert memory.store.get_audio(str(key))["text"] == "Hej. Hello."
+        assert memory.settings.stt_chunk_seconds == 20
+        assert "language" not in client.get("/v1/settings").json()
         assert "stt_routes" not in client.get("/v1/settings").json()
         assert "stt_routes" not in json.dumps(memory.store.runtime_settings())

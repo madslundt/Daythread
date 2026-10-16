@@ -324,3 +324,18 @@ h3 { font-size: 21px; line-height: 1.3; margin-bottom: 7px; }
 .configuration-fields { margin-top: 1rem; display: grid; gap: 1.25rem; }
 .model-route { margin-block: 1rem; min-width: 0; }
 .server-configuration input, .server-configuration select { min-width: 0; max-width: 100%; }
+
+.profile-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 22px; min-width: 0; }
+.profile-toolbar > label { font-size: 13px; color: var(--muted); }
+.profile-toolbar > select { width: 180px; max-width: 45vw; text-overflow: ellipsis; }
+.profile-toolbar > button { min-height: 44px; white-space: nowrap; }
+.profile-dialog { width: min(480px, calc(100% - 32px)); padding: 24px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; }
+.profile-dialog::backdrop { background: #1118; }
+.profile-dialog p { margin: 18px 0; }
+.profile-dialog label { display: block; margin-bottom: 7px; }
+.profile-dialog input { width: 100%; margin-bottom: 20px; }
+.profile-loading { max-width: 600px; margin: 12vh auto; padding: 24px; }
+@media (max-width: 760px) {
+  .profile-toolbar { justify-content: flex-start; gap: 10px; margin-bottom: 16px; }
+  .profile-toolbar > select { flex: 1; width: 0; max-width: none; }
+}

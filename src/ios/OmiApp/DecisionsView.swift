@@ -45,7 +45,7 @@ struct DecisionsSection: View {
             if busy { ProgressView("Reading decisions…") }
             ErrorNote(message: error)
         }
-        .task(id: "\(model.backendAddress).\(day).\(showDismissed).\(revision)") { await load() }
+        .task(id: "\(model.archiveIdentity).\(day).\(showDismissed).\(revision)") { await load() }
         .onChange(of: phase) { _, value in
             if value == .active { revision += 1 }
             else { requestID = UUID(); items = []; extraction = nil }
@@ -173,7 +173,7 @@ struct DecisionDetail: View {
             Button("Refresh record") { Task { await load() } }.disabled(busy)
         }
         .navigationTitle("Decision").navigationBarTitleDisplayMode(.inline)
-        .task(id: model.backendAddress + id) { await load() }
+        .task(id: model.archiveIdentity + id) { await load() }
         .refreshable { await load() }
         .sheet(item: $editor, onDismiss: { Task { await load() } }) { selection in
             NavigationStack { DecisionEditor(record: selection.record, source: nil) }
@@ -309,7 +309,7 @@ struct DecisionPredecessorPicker: View {
             if error != nil { Button("Retry earlier decisions") { Task { await load(reset: false) } }.disabled(busy) }
         }.navigationTitle("Earlier decision").searchable(text: $query)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .task(id: model.backendAddress + query) { await load(reset: true) }
+            .task(id: model.archiveIdentity + query) { await load(reset: true) }
             .onDisappear { requestID = UUID(); items = []; total = 0; busy = false }
     }
     private func load(reset: Bool) async {

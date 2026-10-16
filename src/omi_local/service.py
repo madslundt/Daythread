@@ -16,8 +16,10 @@ from .completeness import audio_availability, revision
 from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
 from .hybrid import HybridRetriever, bound_sources
 from .inference import Inference, InferenceError, validate_citations
+from .recaps import Recaps
 from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
+from .speakers import Speakers
 from .store import Store
 
 
@@ -34,6 +36,7 @@ def public_source(row: dict) -> dict:
         "receipt_end_estimate" if row.get("source_kind") == "omi_audio_webhook" else "capture"
     )
     result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
+    result["transcription_details"] = json.loads(row.get("transcription_details", "{}"))
     for key in (
         "received_at",
         "processing_started_at",
@@ -57,6 +60,9 @@ class Memory:
         self.settings = settings
         self.inference = inference
         self.recap_lock = asyncio.Lock()
+        self.recaps = Recaps(self)
+        self.translation_lock = asyncio.Lock()
+        self.speakers = Speakers(self)
         self.decision_lock = asyncio.Lock()
         self.retriever = HybridRetriever(store, settings)
 
@@ -84,6 +90,9 @@ class Memory:
         sources = [public_source(row) for row in rows]
         hints = self.hints(start, end)
         for source in sources:
+            if source.get("source_kind") == "manual_upload":
+                source.update(important=False, meeting_hint_ids=[])
+                continue
             source["important"] = any(
                 source["started_at"] < mark["context_end"]
                 and source["ended_at"] > mark["context_start"]
@@ -206,6 +215,7 @@ class Memory:
                     "gaps": self.store.capture_gaps(start, end),
                     "model": self.settings.llm_route("summary").identity,
                     "timezone": self.settings.timezone,
+                    "summary_language": self.settings.summary_language.lower(),
                     "prompt_version": 3,
                 },
                 sort_keys=True,
@@ -213,42 +223,18 @@ class Memory:
         ).hexdigest()
 
     def cached_recap(self, day: date) -> dict:
-        start, end = self.day_window(day)
-        row = self.store.diary(day.isoformat())
-        if row:
-            return json.loads(row["content"]) | {
-                "stale": row["fingerprint"] != self.fingerprint(start, end),
-                "completeness": self.store.completeness(start, end),
-            }
-        return self.window_data(start, end) | {
-            "day": day.isoformat(),
-            "timezone": self.settings.timezone,
-            "generated_at": None,
-            "stale": False,
-        }
+        return self.recaps.cached(day, utc_now())
+
+    def cached_recaps(self, days: list[date]) -> list[dict]:
+        if not days:
+            return []
+        now = utc_now()
+        groups = self.recaps.groups(now)
+        return [self.recaps.cached(day, now, groups) for day in days]
 
     async def recap(self, day: date) -> dict:
         async with self.recap_lock:
-            start, end = self.day_window(day)
-            fingerprint = self.fingerprint(start, end)
-            existing = self.store.diary(day.isoformat())
-            if existing and existing["fingerprint"] == fingerprint:
-                result = json.loads(existing["content"])
-                result["completeness"] = self.store.completeness(start, end)
-                self.store.export_diary(day.isoformat(), result)
-                return result
-            result = await self.window(
-                start, end, f"a diary recap for {day.isoformat()}", kind="recap"
-            )
-            result.update(
-                day=day.isoformat(),
-                timezone=self.settings.timezone,
-                model=self.settings.llm_route("summary").model,
-                generated_at=stamp(utc_now()),
-            )
-            if result["summary"] is not None:
-                self.store.save_diary(day.isoformat(), fingerprint, result)
-            return result
+            return await self.recaps.generate(day, utc_now())
 
     def timeline(self) -> dict:
         return project_events(self.store.events(), utc_now()) | {
@@ -274,10 +260,13 @@ class Memory:
         """Retrieve recaps alongside their current, citable transcript dependencies."""
         words = set(re.findall(r"\w+", query.lower()))
         diaries = []
+        scoped_days = []
         for diary in self.store.diaries():
             day_start, day_end = self.day_window(date.fromisoformat(diary["day"]))
             if start and end and (day_start >= end or day_end <= start):
                 continue
+            scoped_days.append(date.fromisoformat(diary["day"]))
+        for diary in self.cached_recaps(scoped_days):
             summary = diary.get("summary") or ""
             relevant = (
                 not words

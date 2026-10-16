@@ -93,7 +93,7 @@ def test_concurrent_settings_updates_preserve_both_phone_changes(tmp_path, monke
         first_entered, second_finished = Event(), Event()
 
         def delayed_save(changes):
-            if "language" in changes:
+            if "summary_language" in changes:
                 first_entered.set()
                 second_finished.wait(0.25)
             save(changes)
@@ -106,15 +106,15 @@ def test_concurrent_settings_updates_preserve_both_phone_changes(tmp_path, monke
             return result
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            first = pool.submit(client.patch, "/v1/settings", json={"language": "da"})
+            first = pool.submit(client.patch, "/v1/settings", json={"summary_language": "da"})
             assert first_entered.wait(2)
             second = pool.submit(change_hour)
             assert first.result(timeout=5).status_code == 200
             assert second.result(timeout=5).status_code == 200
         current = client.get("/v1/settings").json()
-        assert current["language"] == "da"
+        assert current["summary_language"] == "da"
         assert current["recap_hour"] == 20
-        assert store.runtime_settings() == {"language": "da", "recap_hour": 20}
+        assert store.runtime_settings() == {"summary_language": "da", "recap_hour": 20}
 
 
 @pytest.mark.parametrize("operation", ["retention", "delete"])

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "quiet-danish-example",
+    "audio": "fixtures/quiet-danish.wav",
+    "category": "quiet",
+    "language": "da",
+    "reference": "Vi mødes på fredag klokken ti.",
+    "required_phrases": ["fredag", "klokken ti"]
+  },
+  {
+    "id": "overlap-english-example",
+    "audio": "fixtures/overlap-english.wav",
+    "category": "overlap",
+    "language": "en",
+    "reference": "Alex will call on Monday. Sam will send the draft on Tuesday.",
+    "required_phrases": ["Alex", "Monday", "Sam", "Tuesday"]
+  },
+  {
+    "id": "noise-only-example",
+    "audio": "fixtures/noise-only.wav",
+    "category": "noise_only",
+    "language": "none",
+    "reference": "",
+    "required_phrases": []
+  }
+]

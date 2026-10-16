@@ -65,6 +65,7 @@ enum Theme {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @State private var creatingProfile = false
     var body: some View {
         TabView {
             NavigationStack { DayView() }.tabItem { Label("Day", systemImage: "book.closed") }
@@ -73,6 +74,26 @@ struct RootView: View {
             NavigationStack { ChatView() }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
         }
+        .id(model.archiveIdentity)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack {
+                Menu {
+                    ForEach(model.profiles) { profile in
+                        Button { model.selectProfile(profile) } label: {
+                            if profile.id == model.selectedProfileID { Label(profile.name, systemImage: "checkmark") }
+                            else { Text(profile.name) }
+                        }
+                    }
+                    Divider()
+                    Button("Create profile", systemImage: "person.badge.plus") { creatingProfile = true }
+                } label: {
+                    Label(model.selectedProfileName, systemImage: "person.crop.circle")
+                        .font(.subheadline.weight(.medium))
+                }.accessibilityLabel("Select profile").accessibilityIdentifier("profiles.select")
+                Spacer()
+            }.padding(.horizontal, 20).padding(.vertical, 8).background(Theme.canvas)
+        }
+        .sheet(isPresented: $creatingProfile) { CreateProfileView() }
         .task {
             await model.refreshStatus()
             while !Task.isCancelled {
@@ -87,6 +108,40 @@ struct RootView: View {
         .alert("Omi Local", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
+    }
+}
+
+struct CreateProfileView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var saving = false
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Profile name", text: $name)
+                        .textContentType(.nickname).accessibilityIdentifier("profiles.name")
+                } footer: {
+                    Text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this app can select a profile.")
+                }
+                ErrorNote(message: error)
+            }.navigationTitle("Create profile").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(saving ? "Creating…" : "Create") {
+                            saving = true
+                            Task {
+                                defer { saving = false }
+                                do { try await model.createProfile(name: name); dismiss() }
+                                catch { self.error = error.localizedDescription }
+                            }
+                        }.disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
+                    }
+                }
+        }
     }
 }
 
@@ -191,6 +246,7 @@ struct SourceDetail: View {
     let source: JSONValue
     var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var fresh: JSONValue?
     private var evidence: JSONValue { fresh ?? source }
@@ -211,10 +267,14 @@ struct SourceDetail: View {
                     NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
                     ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: "recording").disabled(evidence == .null)
-                    Text(evidence["text"].text.isEmpty ? "No transcript text · \(evidence["transcription_outcome"].text) · \(evidence["state"].text)" : evidence["text"].text).textSelection(.enabled)
+                    SourceTranscriptView(source: evidence, editing: editing)
                     Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label("People & projects", systemImage: "person.2") }.disabled(evidence == .null)
+                NavigationLink {
+                    SpeakersView(kind: "source", conversationID: evidence["id"].text)
+                } label: { Label("Speakers · listen & name", systemImage: "person.wave.2") }
+                    .disabled(evidence == .null).accessibilityIdentifier("source.speakers")
                 NavigationLink("Create decision from this source") {
                     SourceDecisionCreation(sourceID: evidence["id"].text)
                 }.disabled(evidence["text"].text.isEmpty)
@@ -222,14 +282,15 @@ struct SourceDetail: View {
                     if editing {
                         TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel("Correct transcript")
                         Button("Save correction") {
-                            let address = model.backendAddress
+                            let address = model.archiveIdentity
                             loading = true
                             Task {
                                 defer { loading = false }
                                 do {
-                                    guard model.backendAddress == address else { return }
-                                    _ = try await model.client().request("v1/transcripts/\(evidence["id"].text)", method: "PATCH", body: ["text": draft])
-                                    guard !Task.isCancelled, model.backendAddress == address else { return }
+                                    guard model.archiveIdentity == address else { return }
+                                    let corrected = try await model.client().request("v1/transcripts/\(evidence["id"].text)", method: "PATCH", body: ["text": draft])
+                                    guard !Task.isCancelled, model.archiveIdentity == address else { return }
+                                    fresh = corrected
                                     onCorrect?(); dismiss()
                                 } catch { self.error = error.localizedDescription }
                             }
@@ -251,19 +312,26 @@ struct SourceDetail: View {
                     loading = true
                     Task {
                         defer { loading = false }
-                        do { model.play(try await model.client().download("v1/audio/\(evidence["id"].text)", query: [:])) }
+                        do {
+                            let identity = model.archiveIdentity
+                            let audio = try await model.client().download("v1/audio/\(evidence["id"].text)", query: [:])
+                            guard model.archiveIdentity == identity, !Task.isCancelled else { return }
+                            model.play(audio)
+                        }
                         catch { self.error = error.localizedDescription }
                     }
                 } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || evidence["audio_availability"].text == "missing")
                 }
                 ErrorNote(message: error)
-            }.task(id: model.archiveRevision + model.backendAddress) {
+            }.task(id: model.archiveRevision + model.archiveIdentity + String(describing: scenePhase)) {
+                guard scenePhase == .active else { return }
+                let identity = model.archiveIdentity
                 do {
                     let result = try await model.client().request("v1/transcripts/\(source["id"].text)")
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, model.archiveIdentity == identity else { return }
                     fresh = result; error = nil
                 } catch {
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, model.archiveIdentity == identity else { return }
                     self.error = error.localizedDescription
                     if (error as? BackendFailure)?.status == 404 { fresh = .null }
                 }
@@ -311,7 +379,7 @@ struct ImportanceButton: View {
             .accessibilityValue(important ? "Important" : "Not marked important")
             .disabled(busy || (!model.importanceLoaded && model.importanceError == nil))
             ErrorNote(message: error ?? (!model.importanceLoaded ? model.importanceError : nil))
-        }.task(id: model.backendAddress) { await model.loadImportance() }
+        }.task(id: model.archiveIdentity) { await model.loadImportance() }
     }
 }
 

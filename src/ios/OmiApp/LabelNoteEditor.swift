@@ -67,12 +67,12 @@ struct LabelNoteEditor: View {
             }
     }
     private func search(requestedPage: Int = 0) async {
-        let token = searchEpoch.replace(), address = model.backendAddress, requestedQuery = query
+        let token = searchEpoch.replace(), address = model.archiveIdentity, requestedQuery = query
         searching = true; available = []
         defer { if searchEpoch.accepts(token) { searching = false } }
         do {
             let result = try await model.client().request("v1/transcripts", query: ["q": requestedQuery, "limit": "50", "offset": String(requestedPage * 50)])
-            guard !Task.isCancelled, searchEpoch.accepts(token), address == model.backendAddress else { return }
+            guard !Task.isCancelled, searchEpoch.accepts(token), address == model.archiveIdentity else { return }
             available = try JSONDecoder().decode([LabelSource].self, from: JSONEncoder().encode(result["items"]))
             page = requestedPage; total = result["total"].integer; error = nil
         } catch { if searchEpoch.accepts(token), !Task.isCancelled { self.error = error.localizedDescription } }

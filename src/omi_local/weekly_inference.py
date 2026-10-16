@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from .inference import InferenceError
+from .inference import InferenceError, summary_language_instruction
 from .weekly_models import (
     BATCH_CHARS,
     MAX_INPUT_CHARS,
@@ -95,7 +95,15 @@ def batches(records: list[dict]) -> list[list[dict]]:
     return groups
 
 
-async def generate_items(inference, sources: list[dict], timezone: str, progress) -> list[dict]:
+async def generate_items(
+    inference, sources: list[dict], timezone: str, progress, summary_language: str = "auto"
+) -> list[dict]:
+    language_instruction = summary_language_instruction(summary_language)
+    rules = (
+        RULES.replace("Use the transcript language.", language_instruction.strip())
+        if language_instruction
+        else RULES
+    )
     total = sum(len(source["text"]) for source in sources)
     if total > MAX_INPUT_CHARS:
         raise InferenceError("Weekly evidence exceeds the configured processing budget")
@@ -124,7 +132,7 @@ async def generate_items(inference, sources: list[dict], timezone: str, progress
         if calls > MAX_MODEL_CALLS:
             raise InferenceError("Weekly model-call budget exceeded; no partial review saved")
         raw = await inference.generate_json(
-            RULES + "\nTimezone: " + timezone + "\n" + task,
+            rules + "\nTimezone: " + timezone + "\n" + task,
             json.dumps(records, ensure_ascii=False),
         )
         progress()

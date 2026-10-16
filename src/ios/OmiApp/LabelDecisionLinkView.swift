@@ -28,7 +28,7 @@ struct LabelDecisionLinkView: View {
             ErrorNote(message: error ?? writer.error)
         }.navigationTitle("Link decision").searchable(text: $query)
             .onChange(of: query) { _, _ in page = 0 }
-            .task(id: model.backendAddress + query + String(page)) {
+            .task(id: model.archiveIdentity + query + String(page)) {
                 response = nil
                 do {
                     let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["q": query, "limit": "30", "offset": String(page * 30)])

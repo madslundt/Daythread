@@ -128,7 +128,7 @@ async def test_chat_and_recap_provenance_and_cache_use_the_right_models(tmp_path
     store = Store(settings.data_dir)
     key = uuid4()
     at = datetime(2026, 10, 15, 12, tzinfo=UTC)
-    store.ingest(key, "omi", at, b"test audio", 30)
+    store.ingest(key, "omi", at, b"test audio", 30, source_kind="manual_upload")
     store.complete(str(key), "Kitchen discussion")
 
     def handler(request):

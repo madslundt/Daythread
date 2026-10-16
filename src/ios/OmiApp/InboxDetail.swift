@@ -84,7 +84,7 @@ struct InboxDetail: View {
                 Button("Retry") { Task { await load() } }
             }
         }.omiScreen().disabled(busy).navigationTitle("Review item").navigationBarTitleDisplayMode(.inline)
-            .task(id: model.backendAddress) { base = nil; latest = nil; await load(); alternatives = (try? await model.client().decoded("v1/inbox", query: ["limit": "200"], as: InboxPage.self).items) ?? [] }
+            .task(id: model.archiveIdentity) { base = nil; latest = nil; await load(); alternatives = (try? await model.client().decoded("v1/inbox", query: ["limit": "200"], as: InboxPage.self).items) ?? [] }
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
             .refreshable { await load() }
             .onChange(of: title) { _, value in if value != base?.proposal.title { resets.remove("title") } }
@@ -101,10 +101,10 @@ struct InboxDetail: View {
         timezone = item.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC"
     }
     private func load() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         do {
             let item = try await model.client().decoded("v1/inbox/\(id)", as: InboxItem.self)
-            guard !Task.isCancelled, address == model.backendAddress else { return }
+            guard !Task.isCancelled, address == model.archiveIdentity else { return }
             latest = item
             if base == nil { base = item; fill(item) }
         } catch {

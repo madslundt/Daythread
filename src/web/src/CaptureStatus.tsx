@@ -1,12 +1,15 @@
 import type { Status } from "./types";
 import { ErrorState } from "./UI";
+import { Icon } from "./Icon";
 
 export function CaptureStatus({
   status,
   error,
+  compact = false,
 }: {
   status?: Status;
   error?: string;
+  compact?: boolean;
 }) {
   const when = (at?: string | null) =>
     at ? new Date(at).toLocaleString() : "unknown";
@@ -14,6 +17,22 @@ export function CaptureStatus({
   const stale =
     !!error ||
     (!!status?.as_of && Date.now() - Date.parse(status.as_of) > 120_000);
+  if (compact) {
+    const phone = !stale && status?.phones?.find((item) => item.fresh);
+    return (
+      <details className="capture-overview">
+        <summary>
+          <span className="capture-overview-title">Capture & sync<Icon name="chevron-right" size={16} /></span>
+          <span className="capture-glance"><span className={`status-dot ${status && !stale ? "online" : ""}`} />{stale ? "Status needs a refresh" : status ? "Backend connected" : "Connecting to backend…"}</span>
+          <span className="caption">{phone ? `Phone: ${phone.capture_state.replaceAll("_", " ")}` : "Live capture unknown"}</span>
+          {processing && (processing.queued > 0 || processing.transcribing > 0) ? <span className="caption">{processing.queued} queued · {processing.transcribing} processing</span> : null}
+          {processing?.blocked ? <span className="status-warning caption">{processing.blocked} blocked · needs attention</span> : null}
+          {status && !status.worker_running ? <span className="status-warning caption">Transcription {status.worker_enabled ? "worker is not running" : "is disabled"}.</span> : null}
+        </summary>
+        <CaptureStatus status={status} error={error} />
+      </details>
+    );
+  }
   return (
     <section className="capture-status">
       <h2>Capture status</h2>

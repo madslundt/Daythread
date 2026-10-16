@@ -8,7 +8,7 @@ struct SettingsView: View {
     @State private var error: String?
     @State private var status: String?
     @State private var loading = false
-    @State private var language = "auto"
+    @State private var summaryLanguage = "auto"
     @State private var timeout = 120
     @State private var audioRetentionDays = 7
     @State private var transcriptRetentionDays = 30
@@ -18,7 +18,7 @@ struct SettingsView: View {
         @Bindable var model = model
         Form {
             Section {
-                EditorialTitle(eyebrow: "Make it yours", title: "Your space.", subtitle: "Your connection, preferences, and recordings.")
+                EditorialTitle(eyebrow: "Make it yours", title: "Your space.", subtitle: "Connection and preferences shared by every profile.")
                     .editorialRow()
             }
             Section {
@@ -61,13 +61,21 @@ struct SettingsView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Section("Transcription") {
-                Picker("Language", selection: $language) {
-                    Text("Automatic / mixed").tag("auto")
-                    Text("Danish").tag("da")
-                    Text("English").tag("en")
-                }
-                Button("Save transcription language") { Task { await saveLanguage() } }.disabled(loading)
+                Text("Transcription automatically keeps the languages spoken in each conversation.")
+                    .font(.callout).foregroundStyle(.secondary)
                 NavigationLink("Models, keys & all server settings") { ServerConfigurationView() }
+            }
+            Section {
+                Picker("Summary language", selection: $summaryLanguage) {
+                    Text("Automatic / follow source language").tag("auto")
+                    ForEach(summaryLanguageChoices, id: \.self) { code in
+                        Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    }
+                }.accessibilityIdentifier("settings.summaryLanguage")
+                Button("Save summary language") { Task { await saveSummaryLanguage() } }
+                    .disabled(loading).accessibilityIdentifier("settings.saveSummaryLanguage")
+            } header: { Text("Summaries") } footer: {
+                Text("Choose the language for recaps, summaries and translations you request. Automatic follows the source language; select a language to enable transcript translation.")
             }
             Section("Pendant information") {
                 LabeledContent("Model", value: model.bluetooth.model)
@@ -124,7 +132,7 @@ struct SettingsView: View {
     private func saveConnection() async {
         error = nil; status = nil; loading = true; defer { loading = false }
         do {
-            let client = try BackendClient(address: address)
+            let client = try BackendClient(address: address, profileID: model.selectedProfileID)
             model.backendAddress = client.base.absoluteString; model.reconnectBackend()
             _ = try await client.request("v1/status"); status = "Connected to home-core"
             await loadSettings(); await model.refreshStatus()
@@ -137,7 +145,7 @@ struct SettingsView: View {
             if settings["meeting_max_minutes"].integer > 0 {
                 model.meetingMinutes = settings["meeting_max_minutes"].integer; timeout = model.meetingMinutes
             }
-            if !settings["language"].text.isEmpty { language = settings["language"].text }
+            if !settings["summary_language"].text.isEmpty { summaryLanguage = settings["summary_language"].text }
             if case .number = settings["audio_retention_days"],
                case .number = settings["transcript_retention_days"] {
                 audioRetentionDays = settings["audio_retention_days"].integer
@@ -167,10 +175,25 @@ struct SettingsView: View {
             status = "Meeting timeout saved"
         } catch { self.error = error.localizedDescription }
     }
-    private func saveLanguage() async {
-        loading = true; error = nil; defer { loading = false }
-        do { _ = try await model.client().request("v1/settings", method: "PATCH", body: ["language": language]); status = "Transcription language saved" }
-        catch { self.error = error.localizedDescription }
+    private var summaryLanguageChoices: [String] {
+        let codes = ("aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
+            "da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz " +
+            "ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv " +
+            "mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt " +
+            "qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr " +
+            "ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu").split(separator: " ").map(String.init)
+        return Set(codes + (summaryLanguage == "auto" ? [] : [summaryLanguage])).sorted {
+            (Locale.current.localizedString(forLanguageCode: $0) ?? $0)
+                .localizedStandardCompare(Locale.current.localizedString(forLanguageCode: $1) ?? $1) == .orderedAscending
+        }
+    }
+    private func saveSummaryLanguage() async {
+        loading = true; error = nil; status = nil; defer { loading = false }
+        do {
+            let settings = try await model.client().request("v1/settings", method: "PATCH", body: ["summary_language": summaryLanguage])
+            summaryLanguage = settings["summary_language"].text
+            status = "Summary language saved"
+        } catch { self.error = error.localizedDescription }
     }
 }
 

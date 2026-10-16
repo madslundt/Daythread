@@ -9,13 +9,13 @@ struct InboxLink: View {
         NavigationLink { InboxView() } label: {
             Label(count.map { "Inbox · \($0) pending across days" } ?? "Inbox · across all days", systemImage: "checklist")
         }.onAppear { Task { await refresh() } }
-            .onChange(of: model.backendAddress) { _, _ in Task { await refresh() } }
+            .onChange(of: model.archiveIdentity) { _, _ in Task { await refresh() } }
     }
     private func refresh() async {
-        let address = model.backendAddress, request = UUID()
+        let address = model.archiveIdentity, request = UUID()
         countRequest = request
         let updated = try? await model.client().decoded("v1/inbox", query: ["limit": "1"], as: InboxPage.self).pending
-        guard !Task.isCancelled, address == model.backendAddress, countRequest == request else { return }
+        guard !Task.isCancelled, address == model.archiveIdentity, countRequest == request else { return }
         count = updated
     }
 }
@@ -34,7 +34,7 @@ struct InboxView: View {
     @State private var end = Date()
     @State private var message: String?
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
-    private var queryKey: String { "\(model.backendAddress)|\(status)|\(kind)|\(due)|\(offset)" }
+    private var queryKey: String { "\(model.archiveIdentity)|\(status)|\(kind)|\(due)|\(offset)" }
 
     var body: some View {
         List {

@@ -48,7 +48,7 @@ struct LabelManagementView: View {
             ErrorNote(message: error ?? writer.error)
             Button("Reload labels and assignments") { Task { await load() } }.disabled(writer.busy)
         }.navigationTitle("Manage label").navigationBarTitleDisplayMode(.inline)
-            .task(id: model.backendAddress) { await load() }
+            .task(id: model.archiveIdentity) { await load() }
             .task(id: target) {
                 preview = nil
                 guard !target.isEmpty else { return }
@@ -59,7 +59,7 @@ struct LabelManagementView: View {
             .confirmationDialog("Delete label and attached annotations? Recordings are kept.", isPresented: $confirmingDelete, titleVisibility: .visible) { Button("Delete label", role: .destructive) { Task { await remove() } } }
     }
     private func load() async {
-        let address = model.backendAddress
+        let address = model.archiveIdentity
         do {
             let client = try model.client()
             let first: LabelTimelineResponse = try await client.labels("v1/labels/\(entityID)/timeline", query: ["limit": "200"])
@@ -69,9 +69,9 @@ struct LabelManagementView: View {
                 all += next.items
             }
             let labels: LabelDirectory = try await client.labels()
-            guard address == model.backendAddress, !Task.isCancelled else { return }
+            guard address == model.archiveIdentity, !Task.isCancelled else { return }
             response = first; entries = all; directory = labels; splitDraft.kind = first.entity.kind; error = nil
-        } catch { if address == model.backendAddress { self.error = error.localizedDescription } }
+        } catch { if address == model.archiveIdentity { self.error = error.localizedDescription } }
     }
     private func merge() async {
         guard let response else { return }

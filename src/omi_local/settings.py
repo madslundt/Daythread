@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     audio_forwarding_token: SecretStr = SecretStr("")
     omi_api_key: SecretStr = SecretStr("")
     stt_model: str = "stt-danish"
+    stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
+    stt_preserve_quiet: bool = True
+    stt_max_gain_db: float = Field(default=12, ge=0, le=24)
+    stt_boundary_search_seconds: float = Field(default=0.5, ge=0, le=0.5)
+    stt_enhancement_mode: Literal["off", "on_empty", "compare"] = "on_empty"
+    stt_enhancement_timeout_seconds: float = Field(default=15, gt=0, le=60)
     stt_routes: dict[str, ModelRouteOverride] = Field(default_factory=dict)
     llm_model: str = "home"
     llm_enable_thinking: bool | None = None
@@ -113,7 +119,9 @@ class Settings(BaseSettings):
     embedding_query_cache_seconds: int = Field(default=300, ge=0, le=3600)
     embedding_query_retry_seconds: float = Field(default=15, ge=0, le=300)
     embedding_min_score: float = Field(default=0.5, ge=-1, le=1)
-    language: str = Field(default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
+    summary_language: str = Field(
+        default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
+    )
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)
     marker_after_seconds: int = Field(default=60, ge=0, le=600)
@@ -121,6 +129,8 @@ class Settings(BaseSettings):
     meeting_min_seconds: int = Field(default=60, ge=60, le=3600)
     meeting_context_seconds: int = Field(default=60, ge=0, le=600)
     recap_hour: int = Field(default=22, ge=0, le=23)
+    recap_interval_minutes: int = Field(default=60, ge=0, le=1440)
+    recap_quiet_minutes: int = Field(default=5, ge=1, le=30)
     worker_enabled: bool = True
     capture_paused: bool = False
     audio_retention_days: int = Field(default=7, ge=0, le=36500)
@@ -130,6 +140,9 @@ class Settings(BaseSettings):
     chat_query_expansion_timeout_seconds: float = Field(default=5, gt=0, le=60)
     silence_threshold: int = Field(default=35, ge=0, le=32767)
     stt_segment_timestamps: bool = False
+    diarization_enabled: bool = False
+    diarization_base_url: str = "http://127.0.0.1:8790"
+    diarization_timeout_seconds: int = Field(default=600, ge=1, le=3600)
     web_dir: Path | None = None
 
     @field_validator("stt_routes", mode="before")
@@ -226,7 +239,7 @@ class Settings(BaseSettings):
             raise ValueError("Use an IANA timezone such as Europe/Copenhagen") from exc
         return value
 
-    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url")
+    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url", "diarization_base_url")
     @classmethod
     def local_endpoint(cls, value: str) -> str:
         return local_endpoint(value)
@@ -242,7 +255,9 @@ RUNTIME_FIELDS = (
     "marker_after_seconds",
     "marker_cooldown_seconds",
     "recap_hour",
-    "language",
+    "recap_interval_minutes",
+    "recap_quiet_minutes",
+    "summary_language",
     "capture_paused",
     "audio_retention_days",
     "transcript_retention_days",

@@ -117,6 +117,36 @@ Capture and archive settings are editable in the web app and persisted in SQLite
 
 If meeting controls are mixed between the web app and an offline phone, the phone's meeting indicator can temporarily differ from the server while local toggles wait to sync. The server replays received events by their original timestamps; refresh after the queue drains to confirm the reconciled meeting state. Exact offline reconciliation across both control surfaces is still outstanding.
 
+## Speaker detection and names
+
+Open **Speakers** on a meeting or expand a recording on web; on iPhone, open a source
+or the meeting's **Speakers** link. Choose **Detect speakers**, listen to each detected
+speaker's turns, and replace A/B/C with a name such as Mads. All turns then use that
+name within the conversation. Source controls resolve to the containing meeting when
+available, otherwise the projected conversation; contiguous chunks of a browser upload
+are grouped by capture time and filename. Names are shared across those chunks and do
+not automatically identify someone in other conversations or update People labels.
+
+Enable **Speaker detection** in advanced server settings and set its local service
+address (default `http://127.0.0.1:8790`). Run
+`uv run --no-project --python 3.12 scripts/diarization_server.py` in a separate process.
+The [configuration example](../config/omi.env.example) explains initial Community-1
+model access, exported runtime variables, offline weights and Docker host addressing.
+Model loading is lazy; `/health` distinguishes configured, loaded and busy states.
+Detection is requested explicitly, runs locally, and supports up to eight hours of
+retained audio. The optional runtime has its own Python/PyTorch dependencies.
+
+Playback joins the selected speaker's original speaking turns in order; overlapping
+voices can remain audible. Names and assignments can be corrected, merged or reset.
+Text is shown beside turns only when existing transcript timestamps support an
+unambiguous assignment; enable `OMI_STT_SEGMENT_TIMESTAMPS` with a compatible STT
+provider to request timestamps for future recordings. The original transcript stays intact.
+Transcript edits and late
+chunks mark assignments stale. Detecting again explicitly replaces labels and names.
+Audio expiry disables playback; transcript expiry or source deletion removes associated
+speaker metadata. Profile isolation and archive backup apply to these records too.
+Real recording accuracy still needs evaluation; detection can miscount or confuse speakers.
+
 ## People, projects and manual timelines
 
 Open **People** on web, or **Day → People & projects** on iPhone. Create people/projects with names, aliases and a distinguishing description; duplicate names are allowed. Open a source's **People & projects** controls to add an explicit association. For people, choose Related (no participation claim), Mentioned, or Participant (confirmed by you). Projects use About project. Imported speaker names/numbers remain unverified Omi metadata, and speaker numbers apply only to their source.
@@ -146,6 +176,8 @@ The example uses the inspected HomeCompute repository configuration:
 | Language | `auto` omits a forced STT language |
 
 Configure `OMI_STT_BASE_URL`, `OMI_LLM_BASE_URL`, `OMI_STT_MODEL`, and `OMI_LLM_MODEL` in `.env`. `OMI_INFERENCE_TOKEN` is optional authentication for your own inference gateway and is never an app login credential. Endpoints accept private IPs and local DNS/service names. There is no cloud fallback or redirect following.
+
+**STT chunk seconds** in the **Transcription** settings group controls maximum audio duration per model request (1–120 seconds, default 30). Changes apply to subsequent processing without restarting. Set `OMI_STT_CHUNK_SECONDS` for an environment default. Choose a duration every configured speech route accepts; gateway model lists may expose only token limits, so audio duration is not discovered automatically. Longer recordings are split internally, their text joined in order and segment timestamps adjusted; the archived audio, source identity and capture times stay intact. All pieces share one inference deadline, and no partial transcript is published if a piece fails.
 
 STT can use a different model/server for each language. Use the **Transcription** group in either client's server settings to edit the default model/endpoint and add language routes. Alternatively, configure initial environment routes and restart:
 
@@ -187,7 +219,73 @@ Streams send `Cache-Control: no-store` and `X-Accel-Buffering: no`; a private re
 
 Adapters use HTTP `/audio/transcriptions` and `/chat/completions`; the existing home-core Wyoming service on port 10300 needs an HTTP bridge before it can be used here. The configured gateway and previous `192.168.30.122:18080` address were unreachable from this Mac during validation, so real STT/LLM quality and latency have not been verified. When models are unreachable, audio remains queued and summary/chat errors remain visible.
 
-Optional `OMI_STT_SEGMENT_TIMESTAMPS=true` requests verbose segment timestamps from compatible providers. A conservative local audio-energy silence gate avoids transcribing quiet chunks; it is not a diarization model. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and speaker identification is not implemented. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
+Optional `OMI_STT_SEGMENT_TIMESTAMPS=true` requests verbose segment timestamps from compatible providers. Recall-first processing skips only exact digital silence by default; faint audio and noise remain eligible. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and speaker identification is not implemented. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
+
+### Speech processing and cleanup review
+
+Transcription preserves original archive files, hashes, capture times and playback. By default,
+`OMI_STT_PRESERVE_QUIET=true` skips only recordings made entirely of digital zero samples.
+This avoids rejecting faint voices using a volume threshold. Noise-only recordings may reach
+STT too; model output still needs checking. To restore the old RMS gate explicitly, disable
+preserve quiet and set `OMI_SILENCE_THRESHOLD` (35 by default; 0 disables that legacy gate).
+
+Quiet transcription copies receive uniform amplification toward -25 dBFS RMS, with peak
+headroom and at most `OMI_STT_MAX_GAIN_DB=12` dB. Set 0 to disable. This changes amplitude,
+not signal-to-noise ratio, and cannot uncover a quieter voice masked by a louder one. For
+internal STT request splits, `OMI_STT_BOUNDARY_SEARCH_SECONDS=0.5` searches for a 100 ms quiet
+gap near the boundary; 0 restores fixed cuts. Every sample is retained exactly once. Phone
+chunk boundaries and existing captured gaps are unchanged; there is no cross-source context
+or word deduplication.
+
+`OMI_STT_ENHANCEMENT_MODE=on_empty` creates a cleanup **review reading** only when a chunk's
+original pass is empty. Choose `compare` to also compare noisy nonempty transcriptions, or
+`off` to disable. FFmpeg must be installed on home-core and on its process `PATH`; the Docker
+image includes it. On a standalone Mac, an existing Homebrew installation can supply it with
+`brew install ffmpeg`. The fixed local profile applies mild FFT noise reduction plus bounded
+leveling, compensates its delay, and retains the exact sample count. It uses raw in-memory
+pipes, no temporary audio files, no downloaded models and no hosted fallback. Missing FFmpeg,
+invalid output or provider failures leave the original transcript usable and disclose cleanup
+unavailability. Each filter process has a five-second limit; the entire optional pass shares
+`OMI_STT_ENHANCEMENT_TIMEOUT_SECONDS=15` seconds and the remaining inference budget. All
+required original passes finish first. `compare` can roughly double speech-model requests
+(including language detection/specialist calls); it is not enabled by default.
+
+In the **web recording details**, open **Alternative cleanup reading · needs review**, listen
+to the original recording, then use **Review and correct transcript** to save verified wording.
+Even an empty-original recovery is only a candidate: it never enters FTS/semantic search,
+recaps or chat automatically. The iPhone currently shows the canonical transcript; use the
+web app for candidate comparison. Corrections clear stale candidates and use existing revision
+history/invalidation. Candidate text follows transcript retention, deletion and archive backups;
+audio retention alone keeps it as transcript data. Raw pauses and noise remain in playback.
+Old recordings are not automatically reprocessed. Retained empty/silence-gated recordings
+offer **Retry empty transcription with current settings** in the web source details; corrected
+or nonempty completed transcripts cannot be overwritten through this retry action.
+
+No speech detector discards nonzero audio, no denoiser removes a presumed background speaker
+from the canonical pass, and no speaker names are invented. Optional diarization is available
+through [speaker detection](#speaker-detection-and-names); reliable simultaneous-speaker
+separation is not implemented. See the [research](audio-processing-research.md)
+and [reviewed implementation plan](audio-processing-plan.md) for the model-service acceptance
+work still needed. Synthetic tests establish timing/preservation, not recognition accuracy.
+
+To compare actual labeled local WAV recordings (16 kHz mono PCM16, up to 120 seconds each),
+copy [the manifest example](audio-evaluation.example.json), supply your own fixture paths,
+references and required phrases, then run:
+
+```sh
+OMI_STT_BASE_URL=http://your-stt.local/v1 OMI_STT_MODEL=your-model \
+  uv run python scripts/evaluate_audio.py /path/to/manifest.json --live > /tmp/omi-audio-evaluation.json
+```
+
+The command reads explicit `OMI_*` environment configuration, not `.env`, private settings or
+the live archive. It contacts only configured local STT, with no model/fixture downloads.
+Results separate raw baseline, gain/boundary processing and unreviewed cleanup; unavailable
+cleanup is counted rather than scored as a success. Reports include WER, deletion rate,
+required-phrase recall, false speech on empty references and per-category/language results,
+plus p95 total processing/review latency. Reports contain metrics and fixture IDs, not speech
+text. Measure heldout clean, quiet, noisy, overlapping and noise-only fixtures; check names,
+dates and each simultaneous speaker by listening. WER alone depends on the arbitrary ordering
+of overlapping words. Do not claim accuracy gains before these checks pass on real audio.
 
 For a private TLS CA, export `SSL_CERT_FILE=/path/to/trusted-ca-bundle.pem` into the process environment, or mount/set it in Compose. Certificate verification remains enabled.
 
@@ -226,6 +324,12 @@ The initial **keyword-only fictional baseline** retrieved 71.7% of labeled sourc
 ## Archive and backup
 
 The default `data/` directory holds SQLite WAL, WAV recordings, and generated `diary/YYYY-MM-DD.md` files. Weekly review versions and durable jobs live in SQLite; backups also render immutable `weekly/<version-uuid>.md` projections. Keep one backend worker. Transcription retries survive restart; daily generation uses the configured local calendar, including DST boundaries, and catches up after downtime. Late evidence and corrections invalidate derived recaps. Transcript corrections and generated diary versions are auditable; chat sessions persist locally.
+
+Daily recaps refresh hourly when completed evidence changes, with an evening update at `OMI_RECAP_HOUR` (default 22:00). `OMI_RECAP_INTERVAL_MINUTES=0` disables daytime synthesis; completed conversation notes are still prepared in advance. Live conversations stay pending until five minutes of contiguous observed non-speech (`OMI_RECAP_QUIET_MINUTES`), followed by a 30-second settling buffer. Local WebRTC speech detection is advisory: it never filters transcription or deletes original audio. Empty transcripts, missing uploads, failed detection and capture gaps do not prove silence. A manually open meeting defers its stream; meeting hints cannot force closure. Boundaries remain approximate, and TV/radio speech can count as activity. Imported finished Omi conversations and manually uploaded files provide explicit file boundaries; an uploaded file may contain only part of a real conversation.
+
+Raw Omi audio webhooks carry receipt-time estimates without capture ordering or stream continuity. Their quiet payloads cannot prove a conversation ended, so use finished Omi conversation imports for recaps; raw webhook transcripts/audio remain searchable and playable.
+
+Each completed conversation is summarized once per source/model/language/policy version, preserving original citations. Fillers and unsupported fragments can produce a cached no-content result; short meaningful answers remain in context. Daily synthesis uses these independent notes rather than repeatedly rewriting the previous recap. The apps show the included cutoff and pending conversations. Late evidence can reopen a conversation and suppress its old current recap until safe regeneration, including across midnight. Transcript corrections, deletion and transcript expiry clear prepared summaries. Silence/noise recordings keep the same audio retention as speech (seven days by default).
 
 Audio and transcript retention are separate, configurable in web and iPhone Settings. Defaults are **7 days for audio** and **30 days for transcripts**; **0 keeps data indefinitely**. Saved runtime settings override environment defaults, and existing explicit settings are preserved on upgrade. Shorter periods apply to existing recordings when saved. Audio expiry removes playback while retained transcripts remain searchable; transcript expiry also removes dependent summaries, notes and related inbox history. Earlier backups retain their own copies. No backup includes `.env` or inference credentials.
 
@@ -343,7 +447,7 @@ Keep one archive owner and one backend process for a data directory. The app/API
 |---|---|
 | `GET /v1/labels`, `/v1/labels/{uuid}/timeline`, `/v1/labels/sources/{uuid}` | Manual directory, dated timeline, source association/evidence state |
 | `POST /v1/labels/mutations` | Typed manual create/edit/delete/merge/split commands; revision checks and idempotent mutation IDs |
-| `PUT /v1/audio/{uuid}?device_id=...&started_at=...` | Idempotent raw PCM16 mono16k WAV upload, up to 120 seconds/4 MB |
+| `PUT /v1/audio/{uuid}?device_id=...&started_at=...` | Idempotent raw PCM16 mono16k WAV upload, up to 120 seconds/4 MB. Optional `source_kind=manual_upload` and `source_id=<original filename>` (up to 255 characters) preserve manual import provenance and must remain identical on retries. |
 | `GET/DELETE /v1/audio/{uuid}` | Source playback or archive deletion |
 | `POST /v1/events`, `POST /v1/gaps` | Durable gestures and capture gaps |
 | `GET /v1/status`, `GET /v1/timeline` | Queue/worker/provider state and contextual hints |

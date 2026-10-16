@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import httpx
@@ -36,21 +36,22 @@ from .domain import (
     utc_now,
     wav_duration,
 )
-from .embeddings import Embeddings, run_embedding_worker
 from .importance import router as importance_router
 from .inbox_api import inbox_router
-from .inference import Inference, InferenceError
+from .inference import InferenceError
 from .label_api import router as label_router
 from .label_models import LabelError
-from .omi_api import ImportRequest, OmiAPI, OmiAPIError
+from .model_connections import model_connection_routes
+from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
+from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
+from .speaker_api import speaker_routes
 from .store import Store
-from .weekly import WeeklyReviews
+from .translation import translation_routes
 from .weekly_api import weekly_routes
-from .worker import run_worker
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -67,36 +68,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with httpx.AsyncClient(
             timeout=config.inference_timeout_seconds, follow_redirects=False
         ) as client:
-            memory = Memory(store, config, Inference(config, client))
-            memory.retriever.embeddings = Embeddings(config, client)
-            app.state.memory = memory
-            app.state.weekly = WeeklyReviews(memory)
-            weekly_task = asyncio.create_task(app.state.weekly.run())
-            app.state.weekly_worker = weekly_task
-            app.state.omi = OmiAPI(config, client, store)
-            task = None
-            if config.worker_enabled:
-                store.recover()
-                task = asyncio.create_task(run_worker(memory))
-            app.state.worker = task
-            embedding_task = None
-            if config.worker_enabled and memory.retriever.set_id:
-                embedding_task = asyncio.create_task(
-                    run_embedding_worker(
-                        store,
-                        memory.retriever.embeddings,
-                        memory.retriever.set_id,
-                    )
-                )
-            app.state.embedding_worker = embedding_task
+            app.state.profiles = Profiles(config.data_dir, client)
             try:
+                default = app.state.profiles.start(DEFAULT_PROFILE, config, store)
+                for field in (
+                    "memory", "weekly", "omi", "worker", "weekly_worker", "embedding_worker"
+                ):
+                    setattr(app.state, field, getattr(default, field))
+                for profile in app.state.profiles.list():
+                    app.state.profiles.start(profile["id"], config)
                 yield
             finally:
-                for running in (task, embedding_task, weekly_task):
-                    if running:
-                        running.cancel()
-                        with suppress(asyncio.CancelledError):
-                            await running
+                await app.state.profiles.close()
 
     app = FastAPI(
         title="Omi Local",
@@ -108,11 +91,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.middleware("http")
-    async def label_no_store(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path.startswith(("/v1/labels", "/v1/configuration")):
+    async def profile_scope(request: Request, call_next):
+        if not request.url.path.startswith("/v1/"):
+            return await call_next(request)
+        headers = request.headers.getlist("x-omi-profile")
+        query = request.query_params.getlist("profile_id")
+        if request.url.path in ("/v1/profiles", "/v1/settings") or (
+            request.url.path == "/v1/configuration"
+            or request.url.path.startswith("/v1/configuration/")
+        ):
+            headers, query = [], []
+        if len(headers) > 1 or len(query) > 1 or (headers and query and headers != query):
+            return JSONResponse(
+                status_code=422, content={"detail": "Supply one matching profile ID"}
+            )
+        profile_id = (headers or query or [DEFAULT_PROFILE])[0]
+        if profile_id not in app.state.profiles.runtimes:
+            return JSONResponse(status_code=404, content={"detail": "Profile not found"})
+        token = selected_profile.set(profile_id)
+        request.state.memory = memory()
+        try:
+            response = await call_next(request)
             response.headers["Cache-Control"] = "no-store"
-        return response
+            response.headers["X-Omi-Profile"] = profile_id
+            return response
+        finally:
+            selected_profile.reset(token)
 
     app.include_router(label_router)
     app.include_router(importance_router)
@@ -124,11 +128,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RedactForwardingToken)
 
     def memory() -> Memory:
-        return app.state.memory
+        return runtime().memory
+
+    def runtime():
+        return app.state.profiles.runtimes[selected_profile.get()]
+
+    @app.get("/v1/profiles")
+    def profiles() -> dict:
+        return {"profiles": app.state.profiles.list(), "default_profile_id": DEFAULT_PROFILE}
+
+    @app.post("/v1/profiles", status_code=201)
+    async def create_profile(body: NewProfile) -> dict:
+        with settings_lock:
+            try:
+                profile = app.state.profiles.create(body)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            app.state.profiles.start(profile["id"], config)
+        return profile
 
     app.include_router(forwarding_routes(memory))
     app.include_router(decision_routes(memory))
     app.include_router(inbox_router(memory))
+    app.include_router(translation_routes(memory))
+    app.include_router(speaker_routes(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:
@@ -136,11 +159,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/integrations/omi")
     def omi_status() -> dict:
-        return app.state.omi.status()
+        return runtime().omi.status()
 
     @app.post("/v1/integrations/omi/import")
     async def omi_import(body: ImportRequest) -> dict:
-        result = await app.state.omi.import_page(body)
+        result = await runtime().omi.import_page(body)
         memory().store.apply_retention(
             config.audio_retention_days, config.transcript_retention_days
         )
@@ -175,8 +198,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "label_revision": memory().store.label_revision(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
-            "weekly_worker_running": not app.state.weekly_worker.done(),
-            "worker_running": bool(app.state.worker and not app.state.worker.done()),
+            "weekly_worker_running": not runtime().weekly_worker.done(),
+            "worker_running": bool(runtime().worker and not runtime().worker.done()),
             "meeting_max_minutes": config.meeting_max_minutes,
             "hint_policy": config.hint_policy.model_dump(),
             "capture_paused": config.capture_paused,
@@ -185,7 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "embeddings": memory().retriever.status()
             | {
                 "worker_running": bool(
-                    app.state.embedding_worker and not app.state.embedding_worker.done()
+                    runtime().embedding_worker and not runtime().embedding_worker.done()
                 ),
             },
         }
@@ -260,21 +283,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def activate_settings(revised: Settings, changes: dict) -> None:
         nonlocal config
         config = revised
-        memory().settings = revised
-        memory().inference.settings = revised
-        app.state.omi.key = revised.omi_api_key.get_secret_value().strip()
-        if "timezone" in changes:
-            memory().store.save_decision_timezone(config.timezone)
-            memory().store.invalidate_diaries()
-        if {"audio_retention_days", "transcript_retention_days"} & changes.keys():
-            memory().store.apply_retention(
-                config.audio_retention_days, config.transcript_retention_days
-            )
+        for profile in app.state.profiles.runtimes.values():
+            profile.memory.settings = revised
+            profile.memory.inference.settings = revised
+            profile.omi.key = revised.omi_api_key.get_secret_value().strip()
+            if profile.memory is not app.state.memory:
+                profile.memory.store.save_settings({
+                    key: getattr(revised, key) for key in changes if key in RUNTIME_FIELDS
+                })
+            if "timezone" in changes:
+                profile.memory.store.save_decision_timezone(config.timezone)
+                profile.memory.store.invalidate_diaries()
+            if {"audio_retention_days", "transcript_retention_days"} & changes.keys():
+                profile.memory.store.apply_retention(
+                    config.audio_retention_days, config.transcript_retention_days
+                )
 
     @app.get("/v1/configuration")
     def get_configuration() -> dict:
         with settings_lock:
             return configuration.view(config)
+
+    def preview_connection(changes: dict) -> Settings:
+        with settings_lock:
+            return configuration.prepare(config, changes)
+
+    app.include_router(
+        model_connection_routes(preview_connection, lambda: memory().inference.client)
+    )
 
     @app.patch("/v1/configuration")
     def update_configuration(body: dict) -> dict:
@@ -299,7 +335,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (ValueError, TypeError, AttributeError) as exc:
                 raise HTTPException(422, "Invalid configuration settings or model routes") from exc
             configuration.save(desired, changes.keys())
-            memory().store.save_settings({
+            app.state.memory.store.save_settings({
                 key: getattr(desired, key) for key in changes if key in RUNTIME_FIELDS
             })
             activate_settings(revised, changes)
@@ -315,7 +351,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 revised = Settings.model_validate(config.model_dump() | changes)
             except ValidationError as exc:
                 raise HTTPException(422, "Invalid setting value") from exc
-            memory().store.save_settings(changes)
+            app.state.memory.store.save_settings(changes)
             activate_settings(revised, changes)
             configuration.revision = str(uuid4())
             return public_settings(config)
@@ -330,6 +366,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device_id: Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[\w-]+$")],
         started_at: AwareDatetime,
+        source_kind: Literal["", "manual_upload"] = "",
+        source_id: Annotated[str, Query(max_length=255)] = "",
     ) -> dict:
         if started_at > utc_now() + timedelta(seconds=30):
             raise HTTPException(422, "Capture time is in the future; check phone clock")
@@ -344,7 +382,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         try:
-            row = memory().store.ingest(audio_id, device_id, started_at, data, duration)
+            row = memory().store.ingest(
+                audio_id, device_id, started_at, data, duration,
+                source_kind=source_kind, source_id=source_id,
+            )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         return public_source(row)
@@ -369,12 +410,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             row = db.execute("SELECT * FROM audio WHERE id=?", (str(audio_id),)).fetchone()
             if not row:
                 raise HTTPException(404, "Source unavailable")
-            if row["state"] not in ("blocked", "queued") or not row["audio_available"]:
-                raise HTTPException(409, "Only pending recordings can retry")
+            empty_completed = row["state"] == "done" and not row["text"] and (
+                row["transcription_outcome"] in ("silence_gate", "empty_stt")
+            )
+            if (
+                row["state"] not in ("blocked", "queued") and not empty_completed
+            ) or not row["audio_available"]:
+                raise HTTPException(409, "Only pending or empty automatic transcripts can retry")
             if not Path(row["path"]).is_file():
                 raise HTTPException(409, "Restore the missing audio file before retrying")
             db.execute(
-                "UPDATE audio SET state='queued',retry_at='',error=NULL,error_code=NULL WHERE id=?",
+                "UPDATE audio SET state='queued',retry_at='',error=NULL,error_code=NULL,"
+                "transcription_details='{}' WHERE id=?",
                 (str(audio_id),),
             )
         return {"id": str(audio_id), "state": "queued"}
@@ -495,7 +542,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "items": [
                 {key: row.get(key) for key in ("day", "summary", "generated_at", "pending_chunks")}
-                for row in memory().store.diaries()
+                for row in memory().cached_recaps([
+                    date.fromisoformat(saved["day"]) for saved in memory().store.diaries()
+                ])
             ]
         }
 
@@ -520,7 +569,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             start, end = memory().day_window(day)
             if not memory().store.decisions(start, end)["total"]:
                 raise HTTPException(404, "Generate a recap or create decisions first")
-        content = json.loads(record["content"]) if record else memory().cached_recap(day)
+        content = memory().cached_recap(day)
         memory().store.export_diary(day.isoformat(), content)
         return FileResponse(
             memory().store.diary_dir / f"{day}.md", media_type="text/markdown", filename=f"{day}.md"
@@ -671,7 +720,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Chat session not found")
         return session
 
-    app.include_router(weekly_routes(lambda: app.state.weekly))
+    app.include_router(weekly_routes(lambda: runtime().weekly))
 
     @app.get("/{path:path}", include_in_schema=False)
     def web(path: str) -> FileResponse:

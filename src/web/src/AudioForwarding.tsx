@@ -1,3 +1,4 @@
+import { profileResourceUrl } from "./profiles";
 import { useState } from "react";
 import { errorMessage, request } from "./api";
 import { useResource } from "./useResource";
@@ -36,7 +37,7 @@ export function AudioForwarding({ onSaved }: { onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [base, setBase] = useState(() => window.location.origin);
-  const template = `${base.replace(/\/$/, "")}/v1/integrations/omi/audio?token=REPLACE_WITH_SERVER_TOKEN`;
+  const template = `${base.replace(/\/$/, "")}${profileResourceUrl("/v1/integrations/omi/audio?token=REPLACE_WITH_SERVER_TOKEN")}`;
   async function toggle() {
     if (!resource.data) return;
     setBusy(true);
@@ -60,26 +61,33 @@ export function AudioForwarding({ onSaved }: { onSaved: () => void }) {
     </p>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.data ? <ForwardingDetails status={resource.data} /> : null}
-    <p className="caption">
-      Save Audio forwarding token under Models, keys &amp; server settings → Omi connections. Use a random URL-safe secret of at least 32 characters.
+    <ol className="forwarding-steps">
+    <li><strong>Set up a server token</strong><p className="caption">
+      Save Audio forwarding token under Models &amp; server → Omi connections. Use a random URL-safe secret of at least 32 characters.
       The secret is never returned here. Use a dedicated HTTPS ingress that permits only this POST route if you later choose hosted delivery;
       keep the archive UI and other API routes private.
     </p>
+    </li>
+    <li><strong>Choose the receiver address</strong>
     <label className="setting-field" htmlFor="forwarding-base">
       <span>Receiver origin reachable by the sender</span>
       <input id="forwarding-base" type="url" value={base} onChange={(event) => setBase(event.target.value)} />
     </label>
     <p className="caption">URL template (replace the token privately in the official app; do not add sample_rate or uid):</p>
     <code style={{ overflowWrap: "anywhere" }}>{template}</code>
-    <p className="caption">
+    <p className="caption">This URL sends recordings to the selected profile. Save a different profile’s URL in the sender to change its destination. The receiver token and enable switch are shared by all profiles.</p>
+    </li>
+    <li><strong>Connect the official Omi app</strong><p className="caption">
       Save the URL, set Every x seconds to 10, and enable Realtime audio bytes in Omi.
       Upstream may send one-second requests in bursts. Supported input is PCM16 mono at 8 or 16 kHz, up to 120 seconds per request.
       Webhook times are receipt estimates; missing capture, ordering, offline replay and device identity remain unknown.
       Speak a test phrase, refresh status, then check playback and transcript in Rewind.
       If nothing arrives, check the sender’s network route, Omi’s toggle, saved URL/token, and server/proxy errors. Repeated failures may disable upstream delivery.
     </p>
+    </li></ol>
     <p className="caption">Capture pause also rejects new webhooks. Previously accepted audio keeps processing. Native capture and cloud transcript import remain available separately.</p>
     {error ? <ErrorState message={error} /> : null}
+    <p className="caption">Enabling or disabling the receiver saves immediately.</p>
     <div className="button-row">
       <button type="button" className="button" disabled={busy || !resource.data || (!resource.data.configured && !resource.data.enabled)} onClick={() => void toggle()}>
         {busy ? "Saving…" : resource.data?.enabled ? "Disable audio receiver" : "Enable audio receiver"}

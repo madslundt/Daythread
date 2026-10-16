@@ -30,10 +30,10 @@ def client(tmp_path):
         yield client
 
 
-def insert(client, start=AT, duration=60, text="Kitchen delivery Friday"):
+def insert(client, start=AT, duration=60, text="Kitchen delivery Friday", *, source_kind=""):
     store = client.app.state.memory.store
     key = str(uuid4())
-    store.ingest(key, "omi", start, audio_data(), duration)
+    store.ingest(key, "omi", start, audio_data(), duration, source_kind=source_kind)
     if text is not None:
         store.complete(key, text)
     return key
@@ -304,7 +304,7 @@ def test_audio_only_retention_preserves_transcript_evidence_and_feedback(client)
 
 
 def test_recap_version_id_matches_output_and_survives_backup(client, tmp_path):
-    insert(client)
+    insert(client, source_kind="manual_upload")
     recap = client.post("/v1/recaps/2026-10-15").json()
     versions = client.get("/v1/diary/2026-10-15/versions").json()["items"]
     assert versions[0]["id"] == recap["output_id"]
@@ -401,8 +401,8 @@ def test_resend_repairs_missing_file_without_refreshing_ingestion_or_reversing_r
 
 
 def test_pending_completion_during_generation_obeys_stronger_archive_version_guards(client):
-    key = insert(client)
-    pending = insert(client, AT + timedelta(minutes=2), text=None)
+    key = insert(client, source_kind="manual_upload")
+    pending = insert(client, AT + timedelta(minutes=2), text=None, source_kind="manual_upload")
     memory = client.app.state.memory
 
     class CompleteDuringSummary(FakeInference):
@@ -412,7 +412,7 @@ def test_pending_completion_during_generation_obeys_stronger_archive_version_gua
             if not self.finished:
                 memory.store.complete(pending, "Late transcript")
                 self.finished = True
-            return f"Recap [{key}]"
+            return "Recap " + " ".join(f"[{source['id']}]" for source in sources)
 
     memory.inference = CompleteDuringSummary()
     assert client.post("/v1/recaps/2026-10-15").status_code == 409
@@ -426,13 +426,13 @@ def test_pending_completion_during_generation_obeys_stronger_archive_version_gua
 
 
 def test_deletion_during_generation_cannot_leave_evidence_or_feedback(client):
-    key = insert(client)
+    key = insert(client, source_kind="manual_upload")
     memory = client.app.state.memory
 
     class DeleteDuringSummary(FakeInference):
         async def summarize(self, sources, purpose):
             memory.store.delete_audio(key)
-            return f"Recap [{key}]"
+            return "Recap " + " ".join(f"[{source['id']}]" for source in sources)
 
     memory.inference = DeleteDuringSummary()
     assert client.post("/v1/recaps/2026-10-15").status_code == 409

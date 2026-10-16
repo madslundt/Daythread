@@ -7,6 +7,8 @@ COPY src/web ./
 RUN npm run build
 
 FROM python:3.15.0-slim-trixie AS build
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY pyproject.toml uv.lock ./
 COPY src/omi_local ./src/omi_local
@@ -14,6 +16,8 @@ COPY --from=web /web/dist ./src/omi_local/web
 RUN pip install --no-cache-dir uv==0.13.1 && uv sync --frozen --no-dev --no-editable
 
 FROM python:3.15.0-slim-trixie
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --create-home omi && mkdir /data && chown omi:omi /data
 COPY --from=build /build/.venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" OMI_DATA_DIR=/data

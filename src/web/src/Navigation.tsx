@@ -49,8 +49,8 @@ export const pages: {
     id: "settings",
     label: "Settings",
     icon: "settings",
-    title: "Make room for your day.",
-    subtitle: "A few settings for your own memory.",
+    title: "Settings",
+    subtitle: "Preferences, connections, and local AI shared by all profiles.",
   },
 ];
 

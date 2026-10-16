@@ -177,6 +177,27 @@ def test_concurrent_requests_coalesce(weekly):
     assert first["job"]["id"] == second["job"]["id"]
 
 
+@pytest.mark.parametrize("during_inference", [False, True])
+def test_summary_language_change_rejects_queued_or_running_review(weekly, during_inference):
+    insert(weekly.memory.store)
+    queued = weekly.enqueue(WEEK, str(uuid4()), False)
+
+    def change_language():
+        # Publication must see the persisted write even before live settings activate.
+        weekly.memory.store.save_settings({"summary_language": "da"})
+
+    if during_inference:
+        weekly.memory.inference.mutate = change_language
+    else:
+        change_language()
+    asyncio.run(weekly.process_one())
+    job = weekly.store.job(queued["job"]["id"])
+    assert job["state"] == "failed"
+    assert weekly.store.versions(WEEK.isoformat()) == []
+    if not during_inference:
+        assert weekly.memory.inference.calls == []
+
+
 @pytest.mark.parametrize("offset", [0, -7])
 def test_late_arrivals_in_either_window_invalidate_saved_review(weekly, offset):
     insert(weekly.memory.store)

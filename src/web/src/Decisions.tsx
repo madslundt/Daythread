@@ -134,7 +134,7 @@ export function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: stri
   </article>;
 }
 
-export function Decisions({ day, timezone }: { day: string; timezone: string }) {
+export function Decisions({ day, timezone, compact = false }: { day: string; timezone: string; compact?: boolean }) {
   const [allDays, setAllDays] = useState(false);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -169,27 +169,30 @@ export function Decisions({ day, timezone }: { day: string; timezone: string }) 
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(false); }
   }
-  return <section className="decisions-section">
-    <div className="section-heading"><h2>Decisions</h2><button className="button" disabled={busy} onClick={() => void extract()}>{busy ? "Finding decisions…" : extraction?.next_run_id ? "Continue finding decisions" : "Find decisions for this day"}</button></div>
-    <p className="caption">Evidence-backed records, reviewed by you. Create one from a source recording, or ask the local model for proposals.</p>
-    {extraction ? <Notice>
-      Processed {extraction.processed_sources} of {extraction.total_sources} transcript sources. {extraction.processed_source_offset ? `Also processed ${extraction.processed_source_offset.toLocaleString()} characters of the next source. ` : ""}{extraction.pending_chunks} recording(s) pending transcription; {extraction.gaps} capture gap(s).
-      {extraction.suppressed_sources ? ` ${extraction.suppressed_sources} previously removed source(s) excluded from automatic extraction. Explicit manual records remain available.` : ""}
-      {extraction.next_run_id ? " More sources remain; continue to process the next batch." : extraction.status === "complete" ? " Available transcripts processed. Missing audio or pending transcripts can leave decisions undiscovered." : ` Extraction is ${extraction.status}; start again with current evidence.`}
-    </Notice> : null}
-    {error || resource.error ? <ErrorState message={error || resource.error} retry={resource.refresh} /> : null}
+  const filters = <>
     <form className="search-form" onSubmit={(event) => { event.preventDefault(); setSubmitted(query); setPage(0); }}><input maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search decisions" placeholder="Search decisions" /><button className="text-button">Search</button></form>
     <div className="button-row decision-filters">
       <label className="checkbox-label"><input type="checkbox" checked={allDays} onChange={(event) => { setAllDays(event.target.checked); setPage(0); }} />Across all days</label>
       <label><span className="caption">Review status </span><select value={review} onChange={(event) => { setReview(event.target.value); setPage(0); }} aria-label="Filter decision review status"><option value="">Active records</option><option value="proposed">Proposed</option><option value="confirmed">Confirmed</option><option value="dismissed">Dismissed</option></select></label>
       <button className="text-button" onClick={resource.refresh} type="button">Refresh</button>
     </div>
+  </>;
+  return <section className={`decisions-section ${compact ? "decisions-compact" : ""}`}>
+    <div className="section-heading"><div><h2>Decisions</h2>{compact ? <p className="section-description">Evidence-backed choices, reviewed by you.</p> : null}</div><button className="button" disabled={busy} onClick={() => void extract()}>{busy ? "Finding decisions…" : extraction?.next_run_id ? "Continue finding decisions" : compact ? "Find decisions" : "Find decisions for this day"}</button></div>
+    {!compact ? <p className="caption">Evidence-backed records, reviewed by you. Create one from a source recording, or ask the local model for proposals.</p> : null}
+    {extraction ? <Notice>
+      Processed {extraction.processed_sources} of {extraction.total_sources} transcript sources. {extraction.processed_source_offset ? `Also processed ${extraction.processed_source_offset.toLocaleString()} characters of the next source. ` : ""}{extraction.pending_chunks} recording(s) pending transcription; {extraction.gaps} capture gap(s).
+      {extraction.suppressed_sources ? ` ${extraction.suppressed_sources} previously removed source(s) excluded from automatic extraction. Explicit manual records remain available.` : ""}
+      {extraction.next_run_id ? " More sources remain; continue to process the next batch." : extraction.status === "complete" ? " Available transcripts processed. Missing audio or pending transcripts can leave decisions undiscovered." : ` Extraction is ${extraction.status}; start again with current evidence.`}
+    </Notice> : null}
+    {error || resource.error ? <ErrorState message={error || resource.error} retry={resource.refresh} /> : null}
+    {compact ? <details className="decision-search"><summary>Search & filter{submitted || allDays || review ? " · filters active" : ""}</summary>{filters}</details> : filters}
     {resource.loading && !resource.data ? <Loading>Loading decisions…</Loading> : resource.data?.items.length ? <div className="decision-list">
       {resource.data.items.map((decision) => <button key={decision.id} className={`decision-row ${selected === decision.id ? "selected" : ""}`} onClick={() => setSelected(decision.id)}>
         <span>{decision.content?.choice.text || "Content removed"}</span><small>{dateTimeLabel(decision.started_at, timezone)} · {decision.display_state} · {decision.review_status}{decision.evidence_condition !== "current" ? ` · evidence ${decision.evidence_condition}` : ""}</small>
       </button>)}
       <p className="caption">Showing {page * 30 + 1}–{page * 30 + resource.data.items.length} of {resource.data.total} records{allDays ? " across all days" : " for this day"}.</p>
-    </div> : <p className="caption">No matching decision records. Model proposals require your review before confirmation.</p>}
+    </div> : <div className={compact ? "decision-empty" : ""}><p className="caption">{compact && !submitted && !allDays && !review ? "No decisions saved for this day." : "No matching decision records."} <span>Model proposals require your review before confirmation.</span></p></div>}
     {resource.data && resource.data.total > 30 ? <div className="pagination"><button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous decisions</button><button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>Next decisions</button></div> : null}
     {selected ? <DecisionDetail key={selected} id={selected} timezone={timezone} onClose={() => setSelected(undefined)} onNavigate={setSelected} /> : null}
   </section>;

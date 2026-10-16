@@ -65,7 +65,7 @@ struct ChatView: View {
         _scope = State(initialValue: initialScope ?? .all)
     }
 
-    private var cacheKey: String { model.backendAddress + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
+    private var cacheKey: String { model.archiveIdentity + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
     private var canSend: Bool { !loading && scope.isReady && !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var meetings: [JSONValue] {

@@ -26,6 +26,16 @@ const status: Status = {
 };
 
 describe("truthful capture observations", () => {
+  it("keeps processing problems visible while compact diagnostics are closed", () => {
+    const html = renderToStaticMarkup(<CaptureStatus status={{ ...status, worker_running: false }} compact />);
+    const summary = html.split("</summary>")[0];
+    expect(summary).toContain("1 blocked · needs attention");
+    expect(summary).toContain("2 queued · 1 processing");
+    expect(summary).toContain("Transcription worker is not running");
+    expect(summary).toContain("Live capture unknown");
+    expect(html).not.toContain('<details class="capture-overview" open=');
+  });
+
   it("never treats old or imported archive counts as continuous capture", () => {
     const html = renderToStaticMarkup(<CaptureStatus status={status} />);
     expect(html).toContain("phone connectivity is unknown");

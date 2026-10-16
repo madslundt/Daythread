@@ -1,3 +1,5 @@
+import { savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
+import { ProfileSelector } from "./ProfileSelector";
 import { useEffect, useRef, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
 import { Labels } from "./Labels";
@@ -15,7 +17,7 @@ import { Icon } from "./Icon";
 import { Navigation, pages, type Page } from "./Navigation";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { Notice } from "./UI";
+import { ErrorState, Loading, Notice } from "./UI";
 
 function pageFromHash(): Page {
   const key = window.location.hash.slice(1).split("/")[0];
@@ -23,6 +25,37 @@ function pageFromHash(): Page {
 }
 
 export default function App() {
+  const directory = useResource<ProfileDirectory>("/v1/profiles");
+  const [selected, setSelected] = useState<string>();
+  useEffect(() => {
+    if (!directory.data || selected) return;
+    const saved = savedProfile();
+    const id = directory.data.profiles.some((profile) => profile.id === saved)
+      ? saved! : directory.data.default_profile_id;
+    selectProfile(id);
+    setSelected(id);
+  }, [directory.data, selected]);
+  function choose(id: string) {
+    selectProfile(id);
+    setSelected(id);
+  }
+  function created(profile: Profile) {
+    directory.setData((current) => current ? { ...current, profiles: [...current.profiles, profile] } : current);
+    choose(profile.id);
+  }
+  if (!selected || !directory.data) return <div className="profile-loading">
+    <h1>omi</h1>
+    {directory.error ? <ErrorState message={directory.error} retry={directory.refresh} /> : <Loading>Loading profiles…</Loading>}
+  </div>;
+  return <ProfileApp key={selected} profiles={directory.data.profiles} selected={selected} onSelect={choose} onCreate={created} />;
+}
+
+function ProfileApp({ profiles, selected, onSelect, onCreate }: {
+  profiles: Profile[];
+  selected: string;
+  onSelect: (id: string) => void;
+  onCreate: (profile: Profile) => void;
+}) {
   const status = useResource<Status>("/v1/status", 30_000);
   const timeline = useResource<Timeline>("/v1/timeline", 15_000);
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -116,7 +149,11 @@ export default function App() {
         </div>
       </aside>
       <main className="main-canvas" data-page={page} id="main-content" tabIndex={-1}>
-        <header className="page-header">
+        <ProfileSelector profiles={profiles} selected={selected} onSelect={(id) => {
+          if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
+          onSelect(id);
+        }} onCreate={onCreate} beforeCreate={() => !prepOpen || !prepDirty || window.confirm("Discard this preparation and unsaved context?")} />
+        <header className={`page-header ${page === "today" && !prepOpen ? "today-header" : ""}`}>
           <div className="topbar">
             <a
               className="brand mobile-brand"
@@ -146,9 +183,9 @@ export default function App() {
             ) : null}
           </div>
           <div className="intro">
-            <span className="eyebrow intro-eyebrow">{prepOpen ? "Look ahead" : current.label === "Today" ? "A space for your everyday" : current.label}</span>
-            <h1>{prepOpen ? "Prepare for what comes next." : current.title}</h1>
-            <p>{prepOpen ? "A little context, with the evidence beside it." : current.subtitle}</p>
+            {page !== "today" || prepOpen ? <span className="eyebrow intro-eyebrow">{prepOpen ? "Look ahead" : current.label}</span> : null}
+            <h1>{prepOpen ? "Prepare for what comes next." : page === "today" ? day === localDay(timezone) ? "Today" : "Your day" : current.title}</h1>
+            <p>{prepOpen ? "A little context, with the evidence beside it." : page === "today" ? "Your recordings and the moments that matter." : current.subtitle}</p>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">

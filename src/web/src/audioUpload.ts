@@ -29,9 +29,44 @@ export function encodeWav(samples: Float32Array): ArrayBuffer {
   return result;
 }
 
-export async function decodeRecording(file: File): Promise<Float32Array> {
+export function selectRecording(files: ArrayLike<File>): File {
+  if (files.length !== 1)
+    throw new Error("Choose one recording at a time.");
+  const file = files[0];
+  if (!file.type.startsWith("audio/") && !/\.(wav|wave|m4a|mp3|mp4|ogg|oga|opus|flac|aac|aiff?|caf|webm)$/i.test(file.name))
+    throw new Error("Choose an audio file, such as WAV, M4A, or MP3.");
+  if (!file.size) throw new Error("The recording is empty. Choose another file.");
   if (file.size > 100_000_000)
-    throw new Error("Choose a recording smaller than 100 MB.");
+    throw new Error("Choose a recording no larger than 100 MB.");
+  if ([...file.name].length > 255)
+    throw new Error("Rename this file to a name of 255 characters or fewer before uploading.");
+  return file;
+}
+
+export type RecordingTimeReference = "start" | "end";
+
+export function recordingTimes(
+  timestamp: string,
+  sampleCount: number,
+  reference: RecordingTimeReference = "end",
+  now = Date.now(),
+): { startedAt: Date; endedAt: Date } {
+  const selected = new Date(timestamp).getTime();
+  if (!Number.isFinite(selected))
+    throw new Error("Choose a valid recording date and time.");
+  if (!Number.isFinite(sampleCount) || sampleCount <= 0)
+    throw new Error("The recording contains no audio.");
+  const duration = sampleCount / 16;
+  const end = reference === "end" ? selected : selected + duration;
+  if (end > now + 30_000)
+    throw new Error(reference === "end"
+      ? "Choose when the recording stopped, at or before now."
+      : "This recording would end in the future. Set when it began, or choose Recording ended to enter when it stopped.");
+  return { startedAt: new Date(end - duration), endedAt: new Date(end) };
+}
+
+export async function decodeRecording(file: File): Promise<Float32Array> {
+  selectRecording([file]);
   const decoder = new AudioContext();
   try {
     const decoded = await decoder.decodeAudioData(await file.arrayBuffer());
@@ -56,5 +91,26 @@ export async function decodeRecording(file: File): Promise<Float32Array> {
     );
   } finally {
     await decoder.close();
+  }
+}
+
+export function validateUploadReceipt(
+  receipt: unknown,
+  expected: { id: string; device_id: string; started_at: string; ended_at: string },
+): void {
+  const actual = receipt as Record<string, unknown> | null;
+  if (
+    !actual ||
+    actual.id !== expected.id ||
+    actual.device_id !== expected.device_id ||
+    typeof actual.started_at !== "string" ||
+    Date.parse(actual.started_at) !== Date.parse(expected.started_at) ||
+    typeof actual.ended_at !== "string" ||
+    !Number.isFinite(Date.parse(actual.ended_at)) ||
+    Date.parse(actual.ended_at) !== Date.parse(expected.ended_at)
+  ) {
+    throw new Error(
+      "The server returned a mismatched upload receipt. Retry to confirm this part before continuing.",
+    );
   }
 }

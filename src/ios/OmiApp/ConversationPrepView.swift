@@ -93,7 +93,7 @@ struct ConversationPrepView: View {
                 .onChange(of: through) { _, _ in invalidate() }
                 .onChange(of: context) { _, _ in cancel(); result = nil }
                 .onChange(of: latest) { _, _ in cancel(); result = nil }
-                .onChange(of: model.backendAddress) { _, _ in changedEvidence() }
+                .onChange(of: model.archiveIdentity) { _, _ in changedEvidence() }
                 .onChange(of: model.serverTimeZoneIdentifier) { _, _ in launch { await validate() } }
                 .onChange(of: scenePhase) { _, phase in if phase == .active { launch { await validate() } } }
                 .onDisappear { cancel() }
@@ -137,12 +137,12 @@ struct ConversationPrepView: View {
     private func changedEvidence() { invalidate(); error = "Evidence or backend changed. Find discussions again; your draft is retained." }
     private func launch(_ action: @escaping @MainActor () async -> Void) { cancel(); task = Task { await action() } }
     private func perform(_ operation: (BackendClient) async throws -> Void) async {
-        let id = UUID(), address = model.backendAddress
+        let id = UUID(), address = model.archiveIdentity
         requestID = id; busy = true; error = nil
         defer { if requestID == id { busy = false; checking = false } }
         do { try await operation(model.client()) }
         catch {
-            guard !Task.isCancelled, requestID == id, model.backendAddress == address else { return }
+            guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
             self.error = error.localizedDescription
             if let failure = error as? BackendFailure, failure.status == 409 { found = nil; result = nil; selected = []; latest = "" }
         }
@@ -153,9 +153,9 @@ struct ConversationPrepView: View {
         query.aliases = aliases.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         query.start_day = from.isEmpty ? nil : from; query.end_day = through.isEmpty ? nil : through; query.offset = offset
         await perform { client in
-            let id = requestID, address = model.backendAddress
+            let id = requestID, address = model.archiveIdentity
             let value: PrepSearchResult = try await client.prep("search", body: query)
-            guard !Task.isCancelled, requestID == id, model.backendAddress == address else { return }
+            guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
             if found?.snapshot != value.snapshot { selected = []; latest = "" }
             found = value
         }
@@ -165,9 +165,9 @@ struct ConversationPrepView: View {
         result = nil
         let body = PrepGenerate(search: found.search, snapshot: found.snapshot, selected: selected.map { PrepSelection(id: $0.id, version: $0.version) }, latest_source_id: latest, user_context: context)
         await perform { client in
-            let id = requestID, address = model.backendAddress
+            let id = requestID, address = model.archiveIdentity
             let value: PrepResult = try await client.prep("generate", body: body)
-            guard !Task.isCancelled, requestID == id, model.backendAddress == address else { return }
+            guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
             result = value
         }
     }
@@ -176,13 +176,13 @@ struct ConversationPrepView: View {
         source = nil
         await perform { client in
             checking = true
-            let id = requestID, address = model.backendAddress
+            let id = requestID, address = model.archiveIdentity
             do {
                 let value: PrepValidity = try await client.prep("validate", body: PrepValidation(search: found.search, snapshot: found.snapshot))
-                guard !Task.isCancelled, requestID == id, model.backendAddress == address else { return }
+                guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
                 if !value.valid { changedEvidence() }
             } catch {
-                guard !Task.isCancelled, requestID == id, model.backendAddress == address else { return }
+                guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
                 changedEvidence(); self.error = "Could not verify current evidence. Find discussions again. \(error.localizedDescription)"
             }
         }

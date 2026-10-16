@@ -1,7 +1,8 @@
+import { selectProfile } from "./profiles";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamChat } from "./chatStream";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { selectProfile("default"); vi.unstubAllGlobals(); });
 
 const completed = {
   session_id: "session", answer: "Søren betaler", sources: [], message_id: "assistant",
@@ -18,6 +19,22 @@ function response(events: unknown[], incomplete = false) {
 }
 
 describe("streamed chat protocol", () => {
+  it("routes streamed answers to the selected profile", async () => {
+    const fetch = vi.fn().mockResolvedValue(response([{ type: "done", result: completed }]));
+    vi.stubGlobal("fetch", fetch);
+    selectProfile("alice");
+    await streamChat({}, () => {}, new AbortController().signal);
+    const options = fetch.mock.calls[0][1] as RequestInit;
+    expect(new Headers(options.headers).get("X-Omi-Profile")).toBe("alice");
+    expect(options.cache).toBe("no-store");
+  });
+  it("discards a streamed answer after the profile changes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([
+      { type: "delta", text: "Old profile" }, { type: "done", result: completed },
+    ])));
+    selectProfile("alice");
+    await expect(streamChat({}, () => selectProfile("bob"), new AbortController().signal)).rejects.toMatchObject({ name: "AbortError" });
+  });
   it("delivers provisional Unicode text before returning the validated final answer", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([
       { type: "status", stage: "searching" },

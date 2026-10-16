@@ -65,7 +65,8 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
             guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)),
                   let item = store.items.first(where: { $0.id == id }) else { continue }
             let expected = uploadURL(for: item, client: client)
-            if task.originalRequest?.url != expected {
+            let originalProfile = task.originalRequest?.value(forHTTPHeaderField: "X-Omi-Profile") ?? "default"
+            if task.originalRequest?.url != expected || originalProfile != item.resolvedProfileID {
                 policyCancellations.insert(task.taskIdentifier)
                 task.cancel()
             }
@@ -96,6 +97,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
             onError?(error.localizedDescription); Self.scheduleRetry(); return
         }
         var request = URLRequest(url: uploadURL(for: item, client: client))
+        request.setValue(item.resolvedProfileID, forHTTPHeaderField: "X-Omi-Profile")
         request.allowsCellularAccess = !uploadWiFiOnly
         request.httpMethod = item.kind == .audio || item.kind == .captureState ? "PUT" : "POST"
         request.setValue(item.kind == .audio ? "audio/wav" : "application/json", forHTTPHeaderField: "Content-Type")

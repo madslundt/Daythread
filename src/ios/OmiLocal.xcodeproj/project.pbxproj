@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B81CF360273D4D21B5F45818 /* SpeakersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B81CF360273D4D21B5F45819 /* SpeakersView.swift */; };
+		B81CF360273D4D21B5F45816 /* SourceTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B81CF360273D4D21B5F45817 /* SourceTranscriptView.swift */; };
 		032E529509B3B5754CE48B7F /* LabelManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4DA08F95FCF7424E6F2FCC /* LabelManagementView.swift */; };
 		13535FA1821C675C35033E36 /* DecisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F6DE1ABD7080468B48F589A /* DecisionModels.swift */; };
 		338972066E29E13D899F0D93 /* RewindView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB103EC0D947AF259813AF67 /* RewindView.swift */; };
@@ -36,6 +38,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B81CF360273D4D21B5F45819 /* SpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakersView.swift; sourceTree = "<group>"; };
+		B81CF360273D4D21B5F45817 /* SourceTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceTranscriptView.swift; sourceTree = "<group>"; };
 		0BAB8DB32118BFF5635E7A65 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		16D1609947E22F81415CA125 /* DecisionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionEditor.swift; sourceTree = "<group>"; };
 		1818FF06883A2F5D597897F4 /* SourceLabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLabelsView.swift; sourceTree = "<group>"; };
@@ -115,6 +119,8 @@
 				FB103EC0D947AF259813AF67 /* RewindView.swift */,
 				96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */,
 				1818FF06883A2F5D597897F4 /* SourceLabelsView.swift */,
+				B81CF360273D4D21B5F45817 /* SourceTranscriptView.swift */,
+				B81CF360273D4D21B5F45819 /* SpeakersView.swift */,
 			);
 			path = OmiApp;
 			sourceTree = "<group>";
@@ -211,6 +217,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B81CF360273D4D21B5F45816 /* SourceTranscriptView.swift in Sources */,
+				B81CF360273D4D21B5F45818 /* SpeakersView.swift in Sources */,
 				F56EA0F2970F74B82031361F /* AppModel.swift in Sources */,
 				EAF4AE1FBA11AB23CD07C46C /* BackendClient.swift in Sources */,
 				9A209B1529C4C7F9940BC405 /* BackgroundUploader.swift in Sources */,

@@ -1,0 +1,23 @@
+.speakers-panel { margin-block: 18px; padding-block: 16px; border-block: 1px solid var(--line); min-width: 0; }
+.speaker-heading, .speaker-name-form, .speaker-merge-form, .speaker-turn-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.speaker-heading h3 { margin: 0 auto 0 0; font-size: 15px; }
+.speaker-heading strong { overflow-wrap: anywhere; }
+.speaker-list { display: grid; gap: 12px; margin-block: 14px; }
+.speaker-card { padding: 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.speaker-name-form, .speaker-merge-form { margin-top: 12px; align-items: end; }
+.speaker-name-form label, .speaker-merge-form label { display: grid; gap: 5px; font-size: 12px; min-width: 0; }
+.speaker-name-form label { flex: 1 1 180px; }
+.speaker-name-form input, .speaker-merge-form select, .speaker-turn-heading select { max-width: 100%; min-width: 0; }
+.speaker-playback audio { width: 100%; }
+.speaker-turns > summary { cursor: pointer; font-size: 13px; }
+.speaker-turns ol { list-style: none; padding: 0; max-height: 420px; overflow-y: auto; }
+.speaker-turns li { padding-block: 12px; border-bottom: 1px solid var(--line); }
+.speaker-turn-heading { font-size: 12px; }
+.speaker-turn-heading label { margin-left: auto; }
+.speaker-turns .transcript-text { margin-block: 8px 0; display: block; color: var(--ink); }
+.meeting-speakers > summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+@media (max-width: 760px) {
+  .speaker-name-form input, .speaker-merge-form select, .speaker-turn-heading select { font-size: 16px; }
+  .speaker-card { padding: 10px; }
+  .speaker-heading .button { margin-left: auto; }
+}

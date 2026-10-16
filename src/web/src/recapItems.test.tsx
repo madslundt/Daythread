@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RecapContent } from "./RecapContent";
-import { itemSources, recapParts } from "./recapItems";
+import { itemSources, recapGroups, recapParts, recapReadingText } from "./recapItems";
 import type { Source } from "./types";
 
 const sources: Source[] = [
@@ -11,6 +11,35 @@ const sources: Source[] = [
 ];
 
 describe("day recap interactions", () => {
+  it("groups Markdown and bold section headings without changing saved point keys", () => {
+    const text = `## Diary Recap: 2026-10-16\n\n**Highlights**\n- **Gym** — A workout [${sources[0].id}].\n\n## Follow-ups\n- Call Sam`;
+    const parts = recapParts(text);
+    const groups = recapGroups(parts, "2026-10-16");
+    expect(groups.map((group) => group.title)).toEqual(["**Highlights**", "Follow-ups"]);
+    expect(groups[0].parts[0]).toBe(parts[2]);
+    expect(itemSources(groups[0].parts[0].text, sources).sources).toEqual([sources[0]]);
+    expect(recapReadingText(groups[0].parts[0].text)).toBe("**Gym** — A workout.");
+    expect(groups[1].parts).toEqual([{ kind: "item", text: "Call Sam", action: true }]);
+  });
+
+  it("preserves introductions, nonredundant titles, and ordinary bracketed text", () => {
+    expect(recapGroups(recapParts("A short introduction.\n## Highlights\n- A point"), "2026-10-16")[0]).toEqual({ parts: [{ kind: "text", text: "A short introduction." }] });
+    expect(recapGroups(recapParts("## A memorable day\n- A point"), "2026-10-16")[0].title).toBe("A memorable day");
+    expect(recapReadingText("Bring [the original] notes.")).toBe("Bring [the original] notes.");
+  });
+
+  it("renders recap groups and full accessible point names in the compact reading view", () => {
+    const html = renderToStaticMarkup(<RecapContent
+      text={`**Highlights**\n- **Gym** — A workout [${sources[0].id}].\n## Follow-ups\n- Call Sam`}
+      day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact
+    />);
+    expect(html.match(/class="recap-group"/g)).toHaveLength(2);
+    expect(html.match(/class="recap-group" open=""/g)).toHaveLength(2);
+    expect(html).toContain("aria-expanded=\"false\"");
+    expect(html).toContain("A workout.");
+    expect(html).not.toContain(sources[0].id);
+  });
+
   it("turns the sample's inline follow-ups into individual optional tasks", () => {
     const parts = recapParts("- **Gym · 07:15** — Strength session.\n- **Work · 09:30** — Test the prototype.\n\n**To follow up:** share the prototype, call the bike shop, bring the photo album, and confirm game night. Completion is not recorded.");
     expect(parts.filter((part) => part.kind === "item" && part.action).map((part) => part.text)).toEqual([

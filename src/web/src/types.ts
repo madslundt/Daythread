@@ -13,11 +13,24 @@ export type Source = {
   source_metadata?: { input_sample_rate?: number; archive_sample_rate?: number };
   audio_availability?: string;
   transcription_outcome?: string;
+  transcription_details?: TranscriptionDetails;
   error_code?: string;
   source_id?: string | null;
   transcript_version?: string;
   matches?: { text: string; start_offset: number; end_offset: number; timing: string }[];
   meeting_hint_ids?: string[];
+};
+export type TranscriptionDetails = {
+  version?: number;
+  enhancement_mode?: string;
+  preserve_quiet?: boolean;
+  chunks?: {
+    start: number;
+    end: number;
+    gain_db: number;
+    enhancement_status: string;
+    candidate?: { text: string; differs: boolean };
+  }[];
 };
 export type Marker = {
   event_id: string;
@@ -103,6 +116,11 @@ export type Recap = Partial<MemoryWindow> & {
   generated_at?: string;
   stale?: boolean;
   pending_chunks?: number;
+  included_through?: string | null;
+  deferred_conversations?: number;
+  deferred_sources?: number;
+  boundary_note?: string;
+  no_recap_content?: boolean;
 };
 export type CalendarDay = {
   day: string;
@@ -141,6 +159,7 @@ export type Conversation = ChatSession & { messages: ChatMessage[] };
 export type Settings = {
   timezone: string;
   language: string;
+  summary_language: string;
   meeting_max_minutes: number;
   meeting_min_seconds: number;
   meeting_context_seconds: number;
@@ -148,6 +167,8 @@ export type Settings = {
   marker_after_seconds: number;
   marker_cooldown_seconds: number;
   recap_hour: number;
+  recap_interval_minutes?: number;
+  recap_quiet_minutes?: number;
   capture_paused: boolean;
   audio_retention_days: number;
   transcript_retention_days: number;

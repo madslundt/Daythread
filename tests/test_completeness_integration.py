@@ -11,7 +11,6 @@ from test_decisions import create as create_decision
 from test_extended import FakeInference, audio_data
 from test_inbox import listing, proposal, run
 from test_semantic import drain, indexed_memory
-from test_semantic import insert as semantic_insert
 from test_weekly import FakeInference as WeeklyModel
 
 from omi_local.api import create_app
@@ -52,7 +51,10 @@ async def test_actual_hybrid_and_diary_inputs_match_saved_evidence_and_stable_ch
     model = CapturingModel()
     memory.inference = model
     try:
-        key = semantic_insert(memory.store, "Søren betaler fakturaen.")
+        # This workflow needs a completed source so the saved diary joins hybrid retrieval.
+        key = str(uuid4())
+        memory.store.ingest(key, "omi", AT, b"audio", 30, source_kind="manual_upload")
+        memory.store.complete(key, "Søren betaler fakturaen.")
         await drain(memory)
         await memory.recap(date(2026, 10, 15))
         result = await memory.chat("Who handles billing?", 2, day=date(2026, 10, 15))

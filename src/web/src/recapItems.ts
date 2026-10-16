@@ -5,6 +5,27 @@ export type RecapPart =
   | { kind: "heading"; text: string }
   | { kind: "item"; text: string; action: boolean };
 
+// Group the reading view without rewriting saved text or its importance keys.
+export function recapGroups(parts: RecapPart[], day: string) {
+  const groups: { title?: string; parts: RecapPart[] }[] = [];
+  for (const part of parts) {
+    const title = part.text.replace(/\*\*/g, "").trim();
+    const isHeading = part.kind === "heading" || (part.kind === "text" && /^\*\*[^*]+\*\*:?$/.test(part.text));
+    if (isHeading) {
+      if (!groups.length && new RegExp(`^(?:diary recap|day recap|daily recap|recap)\\s*[:·—-]?\\s*${day}$`, "i").test(title)) continue;
+      groups.push({ title: part.text, parts: [] });
+    } else {
+      if (!groups.length) groups.push({ parts: [] });
+      groups[groups.length - 1].parts.push(part);
+    }
+  }
+  return groups;
+}
+
+export function recapReadingText(text: string) {
+  return text.replace(/\[[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\]/gi, "").replace(/ +([.,;!?])/g, "$1").trim();
+}
+
 const actionHeading = /^(?:to follow[ -]?up|follow[ -]?ups?|action (?:items?|points?)|next steps?|to[ -]?dos?|tasks?)$/i;
 
 // Parse only presentation structure. Completion always comes from the user's checks.

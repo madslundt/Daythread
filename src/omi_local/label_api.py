@@ -24,18 +24,18 @@ def directory(
     q: str = Query(default="", max_length=200),
     kind: Literal["person", "project"] | None = None,
 ) -> DirectoryResponse:
-    return DirectoryResponse.model_validate(request.app.state.memory.store.label_directory(q, kind))
+    return DirectoryResponse.model_validate(request.state.memory.store.label_directory(q, kind))
 
 
 @router.post("/mutations", response_model=MutationResponse)
 def mutate(request: Request, body: LabelMutation) -> MutationResponse:
-    return MutationResponse.model_validate(request.app.state.memory.store.label_mutate(body))
+    return MutationResponse.model_validate(request.state.memory.store.label_mutate(body))
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)
 def source(request: Request, source_id: UUID) -> SourceResponse:
     return SourceResponse.model_validate(
-        request.app.state.memory.store.label_source(str(source_id))
+        request.state.memory.store.label_source(str(source_id))
     )
 
 
@@ -49,7 +49,7 @@ def timeline(
     limit: int = Query(default=50, ge=1, le=200),
     revision: str | None = Query(default=None, max_length=32),
 ) -> TimelineResponse:
-    memory = request.app.state.memory
+    memory = request.state.memory
     if start_day and end_day and end_day < start_day:
         raise HTTPException(422, "End date must follow start date")
     start = memory.day_window(start_day)[0] if start_day else None

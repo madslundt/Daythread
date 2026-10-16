@@ -25,6 +25,11 @@ export function CompletenessDetails({ value }: { value?: Completeness }) {
         · {minutes("reported_interruption")} reported interruptions. Overlaps
         are counted once per track.
       </p>
+      {value.counts.webhook_receipt_estimates ? <p className="caption">
+        {value.counts.webhook_receipt_estimates} official audio chunks use receipt estimates:
+        {" "}{minutes("estimated_audio")} playable audio and {minutes("estimated_transcript")} transcript estimates.
+        These do not establish capture coverage or remove unknown intervals.
+      </p> : null}
       <p className="caption">
         {value.counts.pending} awaiting transcription · {value.counts.blocked}{" "}
         blocked · {value.counts.transcript_only_imports} transcript-only imports

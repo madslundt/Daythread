@@ -14,7 +14,8 @@ SYSTEM = (
     "brackets. Distinguish commitments from suggestions. Respond in the user's language. "
     "You have no tools or external knowledge source. Diary recaps are derived navigation notes; "
     "support factual claims with the original transcript excerpts. Excerpts may omit context; "
-    "do not claim exhaustive recall."
+    "do not claim exhaustive recall. Sources marked omi_audio_webhook have receipt-based time "
+    "estimates, not capture timestamps; their ordering, device identity and continuity are unknown."
     " Important flags and meeting labels are contextual hints around button presses, never "
     "proof of exact boundaries or that a meeting happened. Interpret surrounding speech; "
     "do not omit relevant context or invent a meeting from a hint alone."
@@ -176,6 +177,7 @@ class Inference:
             for offset in range(0, len(text), 8000):
                 pieces.append(
                     f"[{source['id']}] {source['started_at']} "
+                    f"source_kind={source.get('source_kind', '')} "
                     f"important_hint={source.get('important', False)} "
                     f"meeting_hint_ids={source.get('meeting_hint_ids', [])} "
                     + text[offset : offset + 8000]
@@ -229,6 +231,7 @@ class Inference:
             item = {
                 "id": row["id"],
                 "at": row["started_at"],
+                "source_kind": row.get("source_kind", ""),
                 "text": (
                     "\n".join(match["text"] for match in row["matches"])
                     if "matches" in row

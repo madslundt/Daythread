@@ -193,6 +193,11 @@ function SourceRow({
           </span>
           <span>{source.state === "done" ? "Transcribed" : source.state}</span>
         </div>
+        {source.source_kind === "omi_audio_webhook" ? <p className="caption">
+          Forwarded from the official Omi integration · account identity supplied by the sender, pendant identity unknown.
+          Times estimate a chunk ending at server receipt, not actual capture time. Each POST is separate; overlap, gaps and delivery order are uncertain.
+          Input {source.source_metadata?.input_sample_rate || "unknown"} Hz, archived as mono PCM16 at 16000 Hz.
+        </p> : null}
         {source.matches?.length ? <p className="caption">Search excerpt · full transcript below. Timing covers the recording interval.</p> : null}
         {editing ? (
           <div className="transcript-editor">
@@ -277,7 +282,7 @@ function SourceRow({
               href={audioUrl(source.id)}
               download
             >
-              Download original audio
+              {source.source_kind === "omi_audio_webhook" ? "Download archived audio" : "Download original audio"}
             </a>
           </>
         )}

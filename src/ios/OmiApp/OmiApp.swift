@@ -50,7 +50,16 @@ enum Theme {
             ? UIColor(red: 0.90, green: 0.62, blue: 0.50, alpha: 1)
             : UIColor(red: 0.60, green: 0.32, blue: 0.24, alpha: 1)
     })
-    static let canvas = Color(uiColor: .systemGroupedBackground)
+    static let canvas = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.09, green: 0.085, blue: 0.08, alpha: 1)
+            : UIColor(red: 0.97, green: 0.955, blue: 0.93, alpha: 1)
+    })
+    static let onAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.17, green: 0.10, blue: 0.08, alpha: 1)
+            : .white
+    })
 }
 
 struct RootView: View {
@@ -58,9 +67,9 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         TabView {
-            NavigationStack { CaptureView() }.tabItem { Label("Capture", systemImage: "waveform") }
             NavigationStack { DayView() }.tabItem { Label("Day", systemImage: "book.closed") }
             NavigationStack { RewindView() }.tabItem { Label("Rewind", systemImage: "gobackward.10") }
+            NavigationStack { CaptureView() }.tabItem { Label("Capture", systemImage: "waveform") }
             NavigationStack { ChatView() }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
         }
@@ -84,11 +93,51 @@ struct RootView: View {
 struct EditorialTitle: View {
     let eyebrow: String
     let title: String
+    var subtitle: String? = nil
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(eyebrow.uppercased()).font(.caption.weight(.semibold)).tracking(2).foregroundStyle(Theme.accent)
-            Text(title).font(.system(size: 36, weight: .regular, design: .serif)).foregroundStyle(.primary)
-        }.padding(.vertical, 12).accessibilityElement(children: .combine)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(eyebrow.uppercased()).font(.caption.weight(.semibold)).tracking(1.8).foregroundStyle(Theme.accent)
+            Text(title).font(.system(.largeTitle, design: .serif)).foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            if let subtitle {
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
+    }
+}
+
+/// Keeps reading and form controls comfortable on iPad while filling narrow windows.
+struct OmiScreenStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: 860)
+            .frame(maxWidth: .infinity)
+            .background(Theme.canvas)
+            .toolbarBackground(Theme.canvas, for: .navigationBar)
+    }
+}
+
+extension View {
+    func omiScreen() -> some View { modifier(OmiScreenStyle()) }
+    func editorialRow() -> some View {
+        listRowBackground(Color.clear).listRowSeparator(.hidden)
+    }
+}
+
+struct PrimaryActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .foregroundStyle(isEnabled ? Theme.onAccent : Color.secondary)
+            .background(isEnabled ? Theme.accent : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+            .opacity(configuration.isPressed ? 0.8 : 1)
     }
 }
 

@@ -64,7 +64,8 @@ class CompletenessStore:
             times = dict(
                 db.execute(
                     "SELECT max(received_at) AS last_received_at,"
-                    "max(ended_at) AS last_captured_at "
+                    "max(CASE WHEN source_kind!='omi_audio_webhook' THEN ended_at END) "
+                    "AS last_captured_at "
                     f"FROM audio WHERE {local}"
                 ).fetchone()
             )
@@ -244,15 +245,29 @@ class CompletenessStore:
                 pauses.append((left, right))
             elif event["state"] in ("disconnected", "blocked"):
                 interruptions.append((left, right))
+        estimated = [r for r in rows if r["source_kind"] == "omi_audio_webhook"]
         tracks = {
-            "available_audio": intervals(available),
-            "transcript": intervals(text),
+            "available_audio": intervals(
+                [r for r in available if r["source_kind"] != "omi_audio_webhook"]
+            ),
+            "estimated_audio": intervals(
+                [r for r in available if r["source_kind"] == "omi_audio_webhook"]
+            ),
+            "transcript": intervals([r for r in text if r["source_kind"] != "omi_audio_webhook"]),
+            "estimated_transcript": intervals(
+                [r for r in text if r["source_kind"] == "omi_audio_webhook"]
+            ),
             "intentional_pause": pauses,
             "reported_interruption": interruptions + intervals(gaps),
         }
         durations = {key: union_seconds(value, start, end)[0] for key, value in tracks.items()}
         # Even receipt of every transcript does not establish continuous audio capture.
-        known = intervals(rows) + pauses + interruptions + intervals(gaps)
+        known = (
+            intervals([r for r in rows if r["source_kind"] != "omi_audio_webhook"])
+            + pauses
+            + interruptions
+            + intervals(gaps)
+        )
         _, merged = union_seconds(known, start, end)
         unknown = []
         cursor = start
@@ -263,6 +278,7 @@ class CompletenessStore:
         if cursor < end:
             unknown.append({"start": stamp(cursor), "end": stamp(end)})
         categories = {
+            "webhook_receipt_estimates": len(estimated),
             "pending": sum(r["state"] in ("queued", "transcribing") for r in rows),
             "blocked": sum(r["state"] == "blocked" for r in rows),
             "expired_transcripts": sum(r["state"] == "expired" for r in rows),

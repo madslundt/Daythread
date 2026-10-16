@@ -9,6 +9,8 @@ export type Source = {
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;
+  timestamp_basis?: string;
+  source_metadata?: { input_sample_rate?: number; archive_sample_rate?: number };
   audio_availability?: string;
   transcription_outcome?: string;
   error_code?: string;

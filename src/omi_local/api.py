@@ -15,6 +15,7 @@ from pydantic import AwareDatetime, ValidationError
 
 from . import conversation_prep
 from .audio import render_window
+from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .decision_api import decision_routes
 from .domain import (
     ButtonEvent,
@@ -115,9 +116,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def label_error(request: Request, exc: LabelError) -> Response:
         return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
 
+    app.add_middleware(RedactForwardingToken)
+
     def memory() -> Memory:
         return app.state.memory
 
+    app.include_router(forwarding_routes(memory))
     app.include_router(decision_routes(memory))
     app.include_router(inbox_router(memory))
 

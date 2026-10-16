@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { errorMessage, post, request } from "./api";
 import { Icon } from "./Icon";
+import { AudioForwarding } from "./AudioForwarding";
 import type { Settings as SettingsData, Source } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
@@ -60,6 +61,12 @@ const hintFields: {
   },
 ];
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
+const editableSettings: (keyof SettingsData)[] = [
+  "timezone", "language", "meeting_max_minutes", "meeting_min_seconds",
+  "meeting_context_seconds", "marker_context_seconds", "marker_after_seconds",
+  "marker_cooldown_seconds", "recap_hour", "capture_paused",
+  "audio_retention_days", "transcript_retention_days",
+];
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 // ISO 639-1 choices. The local transcription model determines language support.
 const languageCodes = (
@@ -130,6 +137,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
     if (resource.data) setDraft(resource.data);
   }, [resource.data]);
@@ -139,29 +147,16 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   ) {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
     setSaved(false);
+    setError("");
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (!draft) return;
+    if (!draft || busy || !dirty) return;
     setBusy(true);
     setError("");
     setSaved(false);
     try {
-      const keys: (keyof SettingsData)[] = [
-        "timezone",
-        "language",
-        "meeting_max_minutes",
-        "meeting_min_seconds",
-        "meeting_context_seconds",
-        "marker_context_seconds",
-        "marker_after_seconds",
-        "marker_cooldown_seconds",
-        "recap_hour",
-        "capture_paused",
-        "audio_retention_days",
-        "transcript_retention_days",
-      ];
-      const changes = Object.fromEntries(keys.map((key) => [key, draft[key]]));
+      const changes = Object.fromEntries(editableSettings.map((key) => [key, draft[key]]));
       resource.setData(
         await request<SettingsData>("/v1/settings", {
           method: "PATCH",
@@ -202,7 +197,6 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           <small id="appearance-hint">Saved on this device. System follows your device’s appearance.</small>
         </label>
       </fieldset>
-      <OmiIntegration onSaved={onSaved} />
       {resource.error ? (
         <ErrorState message={resource.error} retry={resource.refresh} />
       ) : null}
@@ -211,7 +205,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           <Loading>Loading settings…</Loading>
         ) : null
       ) : (
-        <form onSubmit={save}>
+        <form className="settings-form" onSubmit={save} aria-busy={busy}>
           <fieldset disabled={busy}>
             <legend>Capture & diary</legend>
             <div className="settings-grid">
@@ -357,17 +351,23 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
             </p>
           </fieldset>
           {error ? <ErrorState message={error} /> : null}
-          {saved ? (
-            <Notice tone="success">Settings saved on home-core.</Notice>
-          ) : null}
-          <div className="settings-actions">
-            <button className="button dark" disabled={busy}>
+          <div className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
+            <p className="caption settings-save-status" role="status">
+              {busy ? "Saving your preferences…" : saved ? "Settings saved on home-core." : dirty ? "You have unsaved changes." : "Your preferences are up to date."}
+            </p>
+            {dirty ? <button type="button" className="button" disabled={busy} onClick={() => {
+              setDraft(resource.data);
+              setError("");
+              setSaved(false);
+            }}>Discard changes</button> : null}
+            <button className="button dark" disabled={busy || !dirty}>
               <Icon name="check" size={18} />
               {busy ? "Saving…" : "Save changes"}
             </button>
           </div>
         </form>
       )}
+      <OmiIntegration onSaved={onSaved} />
     </div>
   );
 }
@@ -414,6 +414,7 @@ function OmiIntegration({ onSaved }: { onSaved: () => void }) {
   return (
     <fieldset>
       <legend>Omi connection</legend>
+      <AudioForwarding onSaved={onSaved} />
       <p className="muted settings-description">
         Connect your Omi to the iPhone app over Bluetooth for local audio capture.
         This path does not need an Omi API key.

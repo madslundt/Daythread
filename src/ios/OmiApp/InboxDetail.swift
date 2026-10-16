@@ -83,7 +83,7 @@ struct InboxDetail: View {
                 ProgressView("Loading inbox item…"); ErrorNote(message: error)
                 Button("Retry") { Task { await load() } }
             }
-        }.disabled(busy).navigationTitle("Review item").navigationBarTitleDisplayMode(.inline)
+        }.omiScreen().disabled(busy).navigationTitle("Review item").navigationBarTitleDisplayMode(.inline)
             .task(id: model.backendAddress) { base = nil; latest = nil; await load(); alternatives = (try? await model.client().decoded("v1/inbox", query: ["limit": "200"], as: InboxPage.self).items) ?? [] }
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
             .refreshable { await load() }

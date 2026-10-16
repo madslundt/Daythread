@@ -52,6 +52,7 @@ struct ChatView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var cached = false
+    @State private var scopeExpanded = false
     @State private var requestID = UUID()
     @FocusState private var focused: Bool
 
@@ -61,6 +62,7 @@ struct ChatView: View {
     }
 
     private var cacheKey: String { model.backendAddress + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
+    private var canSend: Bool { !loading && scope.isReady && !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var meetings: [JSONValue] {
         model.serverTimeline["meetings"].array.filter { !$0["id"].text.isEmpty }
@@ -78,7 +80,10 @@ struct ChatView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Personal recall", title: "Ask your days.")
+                EditorialTitle(eyebrow: "Personal recall", title: "Ask your days.", subtitle: "A little help finding what you remember.")
+                    .editorialRow()
+            }
+            Section {
                 Menu {
                     Button("New conversation") { newConversation(scope) }
                     ForEach(Array(sessions.enumerated()), id: \.offset) { _, session in
@@ -86,13 +91,28 @@ struct ChatView: View {
                             Task { await select(session["id"].text) }
                         }
                     }
-                } label: { Label(sessionID == nil ? "New conversation" : "Conversations", systemImage: "clock.arrow.circlepath") }.disabled(loading)
+                } label: { Label("Conversation history", systemImage: "clock.arrow.circlepath") }.disabled(loading)
                 if cached { Text("Saved conversation on this iPhone; source availability and corrections may have changed").font(.caption).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
             }
             scopeControls
             if messages.isEmpty {
-                Section { Text("Ask about a conversation, decision, or commitment within the selected scope. Answers link back to the recorded evidence.").foregroundStyle(.secondary) }
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "bubble.left.and.text.bubble.right").font(.title).foregroundStyle(Theme.accent).accessibilityHidden(true)
+                        Text("Start with a question.").font(.headline)
+                        Text("Explore a conversation, decision, or commitment. Answers link back to your recorded evidence.").font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(.vertical, 8)
+                    ForEach(["What did we decide?", "What did I say I would follow up on?"], id: \.self) { suggestion in
+                        Button { question = suggestion; focused = true } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                Text(suggestion).multilineTextAlignment(.leading)
+                                Spacer(minLength: 0)
+                                Image(systemName: "arrow.up.left").accessibilityHidden(true)
+                            }.frame(minHeight: 36)
+                        }.disabled(loading)
+                    }
+                }
             }
             ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                 Section(message["role"].text == "user" ? "You" : "Omi Local") {
@@ -108,15 +128,24 @@ struct ChatView: View {
                 }
             }
             if loading { Section { ProgressView("Reading recorded evidence…") } }
-        }.navigationTitle("Chat").navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Chat").navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
                 HStack(alignment: .bottom, spacing: 12) {
                     TextField("Ask about your recordings", text: $question, axis: .vertical)
-                        .lineLimit(1...5).focused($focused).textFieldStyle(.roundedBorder).accessibilityIdentifier("chat.question")
-                    Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title) }
-                        .disabled(loading || !scope.isReady || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .lineLimit(1...5).focused($focused).padding(.horizontal, 14).padding(.vertical, 12)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+                        .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.accent.opacity(focused ? 0.6 : 0.18), lineWidth: 1) }
+                        .accessibilityLabel("Question about your recordings").accessibilityIdentifier("chat.question")
+                    Button { Task { await send() } } label: {
+                        Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold))
+                            .frame(width: 48, height: 48)
+                            .foregroundStyle(canSend ? Theme.onAccent : Color.secondary)
+                            .background(canSend ? Theme.accent : Color.secondary.opacity(0.12), in: Circle())
+                    }.buttonStyle(.plain).disabled(!canSend)
                         .accessibilityLabel("Send question").accessibilityIdentifier("chat.send")
-                }.padding().background(.bar)
+                }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 860)
+                    .frame(maxWidth: .infinity).background(.bar)
             }
             .task(id: cacheKey + model.archiveRevision) { await load(restore: true) }.refreshable { await load(restore: false) }
             .onDisappear { requestID = UUID(); loading = false }
@@ -124,6 +153,7 @@ struct ChatView: View {
 
     private var scopeControls: some View {
         Section {
+            DisclosureGroup(isExpanded: $scopeExpanded) {
             Picker("Chat with", selection: Binding(get: { scope.kind }, set: changeKind)) {
                 Text("All diaries").tag("all")
                 Text("Date").tag("day")
@@ -160,7 +190,14 @@ struct ChatView: View {
                     .accessibilityIdentifier("chat.meeting").disabled(loading || meetings.isEmpty)
                 if meetings.isEmpty { Text("No recorded meetings are available yet.").font(.caption).foregroundStyle(.secondary) }
             }
-        } header: { Text("Conversation scope") }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Search within").font(.caption).foregroundStyle(.secondary)
+                    Text(scopeTitle).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.vertical, 4)
+            }
+        }
         footer: { Text("Changing scope starts a new conversation. Saved conversations keep their original scope.") }
     }
 

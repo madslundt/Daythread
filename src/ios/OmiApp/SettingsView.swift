@@ -13,6 +13,24 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var model = model
         Form {
+            Section {
+                EditorialTitle(eyebrow: "Make it yours", title: "Your space.", subtitle: "Your connection, preferences, and recordings.")
+                    .editorialRow()
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Backend address").font(.subheadline.weight(.medium))
+                    TextField("http://home-core.local:8787", text: $address)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .accessibilityLabel("Backend address").accessibilityIdentifier("settings.backend")
+                }.padding(.vertical, 4)
+                Button { Task { await saveConnection() } } label: { Label("Save & test connection", systemImage: "network") }
+                    .buttonStyle(PrimaryActionStyle()).disabled(loading)
+                if loading { ProgressView("Connecting…") }
+                if let status { Label(status, systemImage: "checkmark.circle").font(.callout).foregroundStyle(.secondary) }
+                ErrorNote(message: error)
+                if let url = try? model.client().base { Link(destination: url) { Label("Open web app", systemImage: "arrow.up.right.square") } }
+            } header: { Text("Home-core") } footer: { Text("Use your home-core LAN address or private VPN. No account or authentication is required.") }
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { option in
@@ -20,15 +38,6 @@ struct SettingsView: View {
                     }
                 }.accessibilityIdentifier("settings.appearance")
             }
-            Section {
-                TextField("http://home-core.local:8787", text: $address)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("settings.backend")
-                Button("Save & test connection") { Task { await saveConnection() } }.disabled(loading)
-                if loading { ProgressView() }
-                if let status { Text(status).font(.callout).foregroundStyle(.secondary) }
-                ErrorNote(message: error)
-                if let url = try? model.client().base { Link("Open web app", destination: url) }
-            } header: { Text("Home-core") } footer: { Text("Use your home-core LAN address or private VPN. No account or authentication is required.") }
             Section {
                 Toggle("Upload only on Wi-Fi", isOn: $model.uploadWiFiOnly)
                     .accessibilityIdentifier("settings.uploadWiFiOnly")
@@ -74,7 +83,8 @@ struct SettingsView: View {
                 Text("Capture can continue without home-core. Summaries and chat use your backend's local models. Pendant recordings and button events while Bluetooth is disconnected require separate, verified device storage support.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-        }.navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+        }.omiScreen().navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .task { address = model.backendAddress; timeout = model.meetingMinutes; await loadSettings() }
     }
     private func saveConnection() async {

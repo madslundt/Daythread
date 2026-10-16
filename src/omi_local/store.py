@@ -14,6 +14,8 @@ from .completeness import CompletenessStore
 from .decision_export import diary_markdown
 from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
+from .forwarding_store import SCHEMA as FORWARDING_SCHEMA
+from .forwarding_store import ForwardingStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
@@ -41,7 +43,9 @@ CREATE TABLE IF NOT EXISTS diary (
 """
 
 
-class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, LabelStore):
+class Store(
+    ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, LabelStore, ForwardingStore
+):
     def __init__(self, root: Path):
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -51,6 +55,7 @@ class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, Label
         self.diary_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as db:
             db.executescript(SCHEMA)
+            db.executescript(FORWARDING_SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
             db.executescript(WEEKLY_SCHEMA)
@@ -65,6 +70,10 @@ class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore, Label
             if "audio_available" not in audio_columns:
                 db.execute(
                     "ALTER TABLE audio ADD COLUMN audio_available INTEGER NOT NULL DEFAULT 1"
+                )
+            if "source_metadata" not in audio_columns:
+                db.execute(
+                    "ALTER TABLE audio ADD COLUMN source_metadata TEXT NOT NULL DEFAULT '{}'"
                 )
             for column in ("source_kind", "source_id"):
                 if column not in audio_columns:

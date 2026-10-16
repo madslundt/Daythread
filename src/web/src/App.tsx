@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
 import { Labels } from "./Labels";
 import { Chat } from "./Chat";
-import { Inbox, InboxEntry } from "./Inbox";
+import { Inbox } from "./Inbox";
 import { DateNavigator } from "./Calendar";
 import { Diary } from "./Diary";
 import { Rewind, type RewindIntent } from "./Rewind";
@@ -11,63 +11,12 @@ import { Today } from "./Today";
 import { UploadDialog } from "./UploadDialog";
 import { errorMessage, newId, post } from "./api";
 import { localDay, remainingCooldown, timeLabel } from "./format";
-import { Icon, type IconName } from "./Icon";
+import { Icon } from "./Icon";
+import { Navigation, pages, type Page } from "./Navigation";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Notice } from "./UI";
 
-type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings" | "labels";
-const pages: {
-  id: Page;
-  label: string;
-  icon: IconName;
-  title: string;
-  subtitle: string;
-}[] = [
-  {
-    id: "today",
-    label: "Today",
-    icon: "home",
-    title: "Your day, remembered.",
-    subtitle: "A little context for everything you heard.",
-  },
-  {
-    id: "rewind",
-    label: "Rewind",
-    icon: "rewind",
-    title: "Come back to a moment.",
-    subtitle: "Listen again, with a little context.",
-  },
-  {
-    id: "diary",
-    label: "Diary",
-    icon: "diary",
-    title: "The days add up.",
-    subtitle: "Your daily notes, kept for what comes next.",
-  },
-  {
-    id: "chat",
-    label: "Chat",
-    icon: "chat",
-    title: "A conversation with your days.",
-    subtitle: "Ask a question. Follow it back to the source.",
-  },
-  { id: "labels", label: "People", icon: "people", title: "People & projects.", subtitle: "Follow related recordings across your days." },
-  {
-    id: "inbox",
-    label: "Inbox",
-    icon: "diary",
-    title: "Follow through.",
-    subtitle: "Promises and open questions, across your days.",
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    icon: "settings",
-    title: "Make room for your day.",
-    subtitle: "A few settings for your own memory.",
-  },
-];
 function pageFromHash(): Page {
   const key = window.location.hash.slice(1).split("/")[0];
   return pages.some((page) => page.id === key) ? (key as Page) : "today";
@@ -139,8 +88,11 @@ export default function App() {
   }
   const current = pages.find((item) => item.id === page)!;
   const showDate = page === "today" || page === "diary";
+  useEffect(() => { window.scrollTo(0, 0); }, [page]);
+  useEffect(() => { document.title = `${prepOpen ? "Prepare" : current.label} · omi`; }, [current.label, prepOpen]);
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to content</a>
       <aside className="sidebar">
         <a
           className="brand"
@@ -148,7 +100,7 @@ export default function App() {
           onClick={(event) => { event.preventDefault(); navigate("today"); }}
           aria-label="omi home"
         >
-          omi
+          omi<span className="brand-caption">A little more remembered.</span>
         </a>
         <Navigation page={page} navigate={navigate} />
         <div className="backend-indicator">
@@ -162,7 +114,7 @@ export default function App() {
               : "Connecting…"}
         </div>
       </aside>
-      <main className="main-canvas">
+      <main className="main-canvas" data-page={page} id="main-content" tabIndex={-1}>
         <header className="page-header">
           <div className="topbar">
             <a
@@ -179,7 +131,7 @@ export default function App() {
                 onDay={selectDay}
               />
             ) : (
-              <span className="desktop-spacer" />
+              <span className="desktop-spacer eyebrow">Your private memory / {current.label}</span>
             )}
             {page === "today" ? (
               <div className="desktop-actions">
@@ -193,6 +145,7 @@ export default function App() {
             ) : null}
           </div>
           <div className="intro">
+            <span className="eyebrow intro-eyebrow">{prepOpen ? "Look ahead" : current.label === "Today" ? "A space for your everyday" : current.label}</span>
             <h1>{prepOpen ? "Prepare for what comes next." : current.title}</h1>
             <p>{prepOpen ? "A little context, with the evidence beside it." : current.subtitle}</p>
           </div>
@@ -220,11 +173,6 @@ export default function App() {
         ) : null}
         {timeline.data?.active_meeting ? (
           <ActiveMeeting timeline={timeline.data} timezone={timezone} />
-        ) : null}
-        {page === "today" && !prepOpen ? (
-          <div className="day-chat-action">
-            <InboxEntry />
-          </div>
         ) : null}
         {prepOpen ? (
           <ConversationPrep timezone={timezone} onDirtyChange={setPrepDirty} onClose={() => { setPrepOpen(false); setPrepDirty(false); }} />
@@ -277,36 +225,6 @@ export default function App() {
         />
       ) : null}
     </div>
-  );
-}
-
-function Navigation({
-  page,
-  navigate,
-  mobile = false,
-}: {
-  page: Page;
-  navigate: (page: Page) => void;
-  mobile?: boolean;
-}) {
-  return (
-    <nav
-      className={mobile ? "mobile-nav" : "desktop-nav"}
-      aria-label={mobile ? "Mobile navigation" : "Main navigation"}
-    >
-      {pages.map((item) => (
-        <a
-          href={`#${item.id}`}
-          key={item.id}
-          onClick={(event) => { event.preventDefault(); navigate(item.id); }}
-          className={page === item.id ? "active" : ""}
-          aria-current={page === item.id ? "page" : undefined}
-        >
-          <Icon name={item.icon} size={22} />
-          <span>{item.label}</span>
-        </a>
-      ))}
-    </nav>
   );
 }
 

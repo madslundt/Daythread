@@ -3,7 +3,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: config/Dockerfile
+      dockerfile: Dockerfile
     env_file: ../.env
     environment:
       OMI_DATA_DIR: /data

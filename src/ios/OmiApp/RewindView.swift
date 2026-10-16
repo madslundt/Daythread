@@ -12,11 +12,14 @@ struct RewindView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Catch up", title: "What did I miss?")
+                EditorialTitle(eyebrow: "Catch up", title: "What did I miss?", subtitle: "Return to the last few minutes, at your own pace.")
+                    .editorialRow()
+            }
+            Section {
                 Stepper("Last \(minutes) minutes", value: $minutes, in: 1...60).disabled(loading)
                 Button { Task { await rewind() } } label: { Label("Rewind & summarize", systemImage: "gobackward") }
-                    .disabled(loading).accessibilityIdentifier("rewind.generate")
-                Button("Play phone buffer") { playLocal() }
+                    .buttonStyle(PrimaryActionStyle()).disabled(loading).accessibilityIdentifier("rewind.generate")
+                Button { playLocal() } label: { Label("Play phone buffer", systemImage: "play.circle") }
                 if loading { ProgressView("Asking home-core…") }
                 ErrorNote(message: error)
                 if let localMessage { Text(localMessage).font(.callout).foregroundStyle(.secondary) }
@@ -38,7 +41,7 @@ struct RewindView: View {
                 }
                 Section("Recorded evidence") { SourceList(sources: result["sources"].array) }
             }
-        }.navigationTitle("Rewind").navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Rewind").navigationBarTitleDisplayMode(.inline)
             .onChange(of: minutes) { _, _ in result = .null; windowEnd = nil; localMessage = nil; error = nil }
     }
     private func rewind() async {

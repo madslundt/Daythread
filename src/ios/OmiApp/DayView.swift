@@ -30,43 +30,54 @@ struct DayView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink { LabelsView() } label: { Label("People & projects", systemImage: "person.2") }
-                EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.")
-                InboxLink()
-                MonthCalendar(diary: diary, month: $month, day: day, today: model.now, days: days, select: select)
-                HStack(spacing: 6) {
-                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
-                    Text("Saved summary").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if calendarLoading { ProgressView().accessibilityLabel("Loading calendar summaries") }
-                }
-                if let calendarError {
-                    ErrorNote(message: calendarError)
-                    Button("Retry calendar") { calendarRevision += 1 }
-                }
+                EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.", subtitle: "Return to your conversations, ideas, and little details.")
+                    .editorialRow()
+            }
+            Section {
                 DatePicker("Selected day", selection: Binding(get: { day }, set: { select($0) }), in: ...model.now, displayedComponents: .date)
                     .environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
-                Text("Dates in \(diary.calendar.timeZone.identifier)").font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup {
+                    MonthCalendar(diary: diary, month: $month, day: day, today: model.now, days: days, select: select)
+                    HStack(spacing: 6) {
+                        Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                        Text("Saved summary").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        if calendarLoading { ProgressView().accessibilityLabel("Loading calendar summaries") }
+                    }
+                    if let calendarError {
+                        ErrorNote(message: calendarError)
+                        Button("Retry calendar") { calendarRevision += 1 }
+                    }
+                } label: { Label("Browse your calendar", systemImage: "calendar") }
+                if cached { Label("Saved on this iPhone · refresh to update", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
+                if loading { ProgressView("Reading your day…") }
+                ErrorNote(message: error)
+            } footer: { Text("Dates in \(diary.calendar.timeZone.identifier)") }
+            Section("Daily recap · \(diary.label(day, template: "d MMM yyyy"))") {
+                if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
+                if !recap["summary"].text.isEmpty {
+                    Text(.init(recap["summary"].text)).textSelection(.enabled)
+                    EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
+                    if !recap["generated_at"].text.isEmpty { Text("Generated \(recap["generated_at"].text)").font(.caption).foregroundStyle(.secondary) }
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Image(systemName: "book.pages").font(.title2).foregroundStyle(Theme.accent).accessibilityHidden(true)
+                        Text("Your day, in a few words.").font(.headline)
+                        Text("After your recordings are transcribed, turn them into a recap you can return to.").foregroundStyle(.secondary)
+                    }.padding(.vertical, 8)
+                }
+                Button { Task { await generate() } } label: { Label(recap["summary"].text.isEmpty ? "Generate daily recap" : "Regenerate daily recap", systemImage: "sparkle") }
+                    .buttonStyle(PrimaryActionStyle()).disabled(loading)
+                CompletenessView(value: recap["completeness"])
+            }
+            Section("Make space for what’s next") {
+                InboxLink()
+                NavigationLink { LabelsView() } label: { Label("People & projects", systemImage: "person.2") }
                 NavigationLink {
                     ChatView(initialScope: .day(dayKey)).id(dayKey)
                 } label: { Label("Chat with this day", systemImage: "bubble.left.and.bubble.right") }
                     .accessibilityIdentifier("day.chat")
                 Button { prepOpen = true } label: { Label("Prepare for a conversation", systemImage: "person.crop.rectangle") }
-                if cached { Label("Saved on this iPhone · refresh to update", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
-                if loading { ProgressView("Reading your day…") }
-                ErrorNote(message: error)
-            }
-            Section {
-                CompletenessView(value: recap["completeness"])
-                if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
-            }
-            Section("Daily recap · \(diary.label(day, template: "d MMM yyyy"))") {
-                if !recap["summary"].text.isEmpty {
-                    Text(.init(recap["summary"].text)).textSelection(.enabled)
-                    EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
-                    if !recap["generated_at"].text.isEmpty { Text("Generated \(recap["generated_at"].text)").font(.caption).foregroundStyle(.secondary) }
-                } else { Text("Generate a recap after audio has been transcribed. Your diary stays on home-core.").foregroundStyle(.secondary) }
-                Button { Task { await generate() } } label: { Label("Generate daily recap", systemImage: "sparkle") }.disabled(loading)
             }
             DecisionsSection(day: dayKey).id(model.backendAddress + dayKey + model.archiveRevision)
             if !dayMeetings.isEmpty {
@@ -87,7 +98,7 @@ struct DayView: View {
                     Button("Load more") { Task { await loadMore() } }.disabled(loading)
                 }
             }
-        }.listStyle(.insetGrouped).navigationTitle("Day").navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Day").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $prepOpen) { ConversationPrepView() }
 
             .task(id: cacheKey + model.archiveRevision) { await load() }
@@ -198,6 +209,7 @@ private struct CalendarDay {
 }
 
 private struct MonthCalendar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let diary: DiaryCalendar
     @Binding var month: Date
     let day: Date
@@ -209,22 +221,29 @@ private struct MonthCalendar: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            Text(diary.label(month, template: "MMMM yyyy")).font(.headline).frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.isHeader)
             HStack {
-                Button { month = diary.month(month, offset: -1) } label: { Image(systemName: "chevron.left").frame(minWidth: 32, minHeight: 36) }
+                Button { month = diary.month(month, offset: -1) } label: { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
                     .accessibilityLabel("Previous month")
-                Text(diary.label(month, template: "MMMM yyyy")).font(.headline).accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
-                Button("Today") { select(today) }.font(.subheadline)
-                Button { month = diary.month(month, offset: 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 32, minHeight: 36) }
+                Button("Today") { select(today) }.font(.subheadline).frame(minHeight: 44)
+                Spacer(minLength: 0)
+                Button { month = diary.month(month, offset: 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
                     .disabled(diary.monthKey(month) >= diary.monthKey(today)).accessibilityLabel("Next month")
             }.buttonStyle(.borderless)
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(Array(diary.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol).font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity).accessibilityHidden(true)
+            if dynamicTypeSize >= .xxLarge {
+                ForEach(diary.cells(in: month).compactMap { $0 }, id: \.self) { date in
+                    accessibleDay(date)
                 }
-                ForEach(Array(diary.cells(in: month).enumerated()), id: \.offset) { _, date in
-                    if let date { cell(date) }
-                    else { Color.clear.frame(height: 44).accessibilityHidden(true) }
+            } else {
+                LazyVGrid(columns: columns, spacing: 4) {
+                    ForEach(Array(diary.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                        Text(symbol).font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity).accessibilityHidden(true)
+                    }
+                    ForEach(Array(diary.cells(in: month).enumerated()), id: \.offset) { _, date in
+                        if let date { cell(date) }
+                        else { Color.clear.frame(height: 44).accessibilityHidden(true) }
+                    }
                 }
             }
         }.padding(.vertical, 4)
@@ -238,15 +257,27 @@ private struct MonthCalendar: View {
         return Button { select(date) } label: {
             VStack(spacing: 4) {
                 Text("\(diary.calendar.component(.day, from: date))").font(.body.monospacedDigit()).fontWeight(key == todayKey ? .bold : .regular)
-                Circle().fill(summary ? (selected ? Color.white : Theme.accent) : Color.clear).frame(width: 5, height: 5)
+                Circle().fill(summary ? (selected ? Theme.onAccent : Theme.accent) : Color.clear).frame(width: 5, height: 5)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(selected ? Color.white : future ? Color.secondary.opacity(0.45) : Color.primary)
+            .foregroundStyle(selected ? Theme.onAccent : future ? Color.secondary.opacity(0.45) : Color.primary)
             .background(selected ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 10))
             .overlay { if key == todayKey && !selected { RoundedRectangle(cornerRadius: 10).stroke(Theme.accent, lineWidth: 1) } }
             .contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(future)
             .accessibilityLabel(diary.label(date, template: "EEEE d MMMM yyyy") + (key == todayKey ? ", today" : "") + (summary ? ", saved summary" : ""))
             .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func accessibleDay(_ date: Date) -> some View {
+        let key = diary.dayKey(date)
+        return Button { select(date) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(diary.label(date, template: "EEEE d MMMM"))
+                if days[key]?.hasSummary == true { Label("Saved summary", systemImage: "circle.fill").font(.caption) }
+            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(8)
+                .background(key == diary.dayKey(day) ? Theme.accent.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain).disabled(key > todayKey)
+            .accessibilityAddTraits(key == diary.dayKey(day) ? .isSelected : [])
     }
 }

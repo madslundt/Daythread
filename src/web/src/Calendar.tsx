@@ -14,11 +14,16 @@ type CalendarProps = {
 
 export function MonthCalendar({ day, today, onDay }: CalendarProps) {
   const [month, setMonth] = useState(day.slice(0, 7));
+  const [activeDay, setActiveDay] = useState(day);
   const resource = useResource<CalendarMonth>(`/v1/calendar?month=${month}`, 30_000);
   const grid = useRef<HTMLTableElement>(null);
   const focusDay = useRef<string | null>(null);
   const heading = useId();
+  const keyboardHint = useId();
   const days = monthDays(month);
+  const tabDay = activeDay.startsWith(month) && activeDay <= today
+    ? activeDay
+    : day.startsWith(month) && day <= today ? day : days.find((value) => value !== null);
   const summaries = new Set(
     resource.data?.month === month
       ? resource.data.days.filter((entry) => entry.has_summary).map((entry) => entry.day)
@@ -29,6 +34,10 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
     return () => window.removeEventListener("omi:archive-changed", resource.refresh);
   }, [resource.refresh]);
   useEffect(() => {
+    setMonth(day.slice(0, 7));
+    setActiveDay(day);
+  }, [day]);
+  useEffect(() => {
     if (focusDay.current) {
       grid.current?.querySelector<HTMLButtonElement>(`[data-day="${focusDay.current}"]`)?.focus();
       focusDay.current = null;
@@ -37,6 +46,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
   function moveFocus(value: string, offset: number) {
     const target = shiftDay(value, offset);
     if (target < "0001-01-01" || target > today) return;
+    setActiveDay(target);
     if (target.slice(0, 7) !== month) {
       focusDay.current = target;
       setMonth(target.slice(0, 7));
@@ -47,7 +57,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
   return (
     <section className="month-calendar" aria-labelledby={heading}>
       <div className="calendar-heading">
-        <button className="icon-button" aria-label="Previous month" disabled={month <= "0001-01"}
+        <button type="button" className="icon-button" aria-label="Previous month" disabled={month <= "0001-01"}
           onClick={() => setMonth(shiftMonth(month, -1))}>
           <Icon name="chevron-left" size={18} />
         </button>
@@ -59,26 +69,38 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
               if (/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(value) && value <= today.slice(0, 7)) setMonth(value);
             }} />
         </label>
-        <button className="icon-button" aria-label="Next month" disabled={month >= today.slice(0, 7)}
+        <button type="button" className="icon-button" aria-label="Next month" disabled={month >= today.slice(0, 7)}
           onClick={() => setMonth(shiftMonth(month, 1))}>
           <Icon name="chevron-right" size={18} />
         </button>
       </div>
-      <table ref={grid} className="calendar-grid" aria-label={monthLabel(month)}>
+      <p id={keyboardHint} className="sr-only">Use arrow keys to move between days. Home and End move to the start and end of a week. Press Enter to choose a day.</p>
+      <table ref={grid} className="calendar-grid" aria-label={monthLabel(month)} aria-describedby={keyboardHint}>
         <thead><tr>{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
           <th key={weekday} scope="col">{weekday}</th>
         ))}</tr></thead>
         <tbody>{Array.from({ length: days.length / 7 }, (_, week) => (
           <tr key={week}>{days.slice(week * 7, week * 7 + 7).map((value, index) => (
             <td key={value || index}>{value ? (
-              <button className={`calendar-day ${value === day ? "selected" : ""} ${value === today ? "is-today" : ""}`}
+              <button type="button" className={`calendar-day ${value === day ? "selected" : ""} ${value === today ? "is-today" : ""}`}
                 data-day={value} disabled={value > today} aria-pressed={value === day}
+                tabIndex={value === tabDay ? 0 : -1}
                 aria-current={value === today ? "date" : undefined}
-                aria-label={`${dayLabel(value)}${summaries.has(value) ? ", summary available" : ""}`}
+                aria-label={`${dayLabel(value, true)}${summaries.has(value) ? ", summary available" : ""}`}
+                onFocus={() => setActiveDay(value)}
                 onClick={() => onDay(value)}
                 onKeyDown={(event) => {
                   const offset = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
                   if (offset !== undefined) { event.preventDefault(); moveFocus(value, offset); }
+                  else if (event.key === "Home" || event.key === "End") {
+                    event.preventDefault();
+                    const weekday = days.indexOf(value) % 7;
+                    const weekOffset = event.key === "Home" ? -weekday : 6 - weekday;
+                    const target = shiftDay(value, weekOffset);
+                    if (target > today) {
+                      grid.current?.querySelector<HTMLButtonElement>(`[data-day="${today}"]`)?.focus();
+                    } else moveFocus(value, weekOffset);
+                  }
                 }}>
                 <span>{Number(value.slice(-2))}</span>
                 <span className="calendar-indicators" aria-hidden="true">
@@ -91,7 +113,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
       </table>
       <div className="calendar-footer">
         <span className="calendar-legend"><span className="summary-dot" /> Saved summary</span>
-        <button className="text-button" onClick={() => { setMonth(today.slice(0, 7)); onDay(today); }}>Today</button>
+        <button type="button" className="text-button" onClick={() => { setMonth(today.slice(0, 7)); onDay(today); }}>Today</button>
       </div>
       <div className="calendar-status" aria-live="polite">
         {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} />
@@ -106,15 +128,15 @@ export function DateNavigator({ day, today, onDay }: CalendarProps) {
   const [open, setOpen] = useState(false);
   return (
     <div className="date-navigator">
-      <button className="icon-button" onClick={() => onDay(shiftDay(day, -1))}
+      <button type="button" className="icon-button" onClick={() => onDay(shiftDay(day, -1))}
         disabled={day <= "0001-01-01"} aria-label="Previous day">
         <Icon name="chevron-left" size={19} />
       </button>
-      <button className="date-picker calendar-trigger" aria-label={`Choose day, ${dayLabel(day)}`}
+      <button type="button" className="date-picker calendar-trigger" aria-label={`Choose day, ${dayLabel(day)}`}
         aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
         <span>{dayLabel(day)}</span>
       </button>
-      <button className="icon-button" onClick={() => onDay(shiftDay(day, 1))}
+      <button type="button" className="icon-button" onClick={() => onDay(shiftDay(day, 1))}
         disabled={day >= today} aria-label="Next day">
         <Icon name="chevron-right" size={19} />
       </button>
@@ -130,18 +152,19 @@ function CalendarDialog({ day, today, onDay, onClose }: CalendarProps & { onClos
     const element = dialog.current;
     const previousFocus = document.activeElement;
     element?.showModal();
+    element?.querySelector<HTMLButtonElement>('.calendar-day[aria-pressed="true"]')?.focus();
     return () => {
       element?.close();
-      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
   }, []);
   return (
-    <dialog ref={dialog} className="calendar-dialog" aria-labelledby={heading} onCancel={onClose}
+    <dialog ref={dialog} className="calendar-dialog" aria-labelledby={heading} onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => { if (event.target === dialog.current) onClose(); }}>
       <div className="calendar-dialog-content">
         <div className="section-heading">
           <h2 id={heading}>Choose a day</h2>
-          <button className="icon-button" aria-label="Close calendar" onClick={onClose}><Icon name="close" /></button>
+          <button type="button" className="icon-button" aria-label="Close calendar" onClick={onClose}><Icon name="close" /></button>
         </div>
         <MonthCalendar day={day} today={today} onDay={(value) => { onDay(value); onClose(); }} />
       </div>

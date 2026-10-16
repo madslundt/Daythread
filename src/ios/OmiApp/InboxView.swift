@@ -39,7 +39,9 @@ struct InboxView: View {
     var body: some View {
         List {
             Section {
-                Text("Promises, deadlines and unanswered questions across all days. Model proposals need review.").font(.callout)
+                EditorialTitle(eyebrow: "Follow through", title: "Keep things moving.", subtitle: "Promises, deadlines, and open questions across your days. Review suggestions against the evidence.").editorialRow()
+            }
+            Section("Show in your inbox") {
                 Picker("Status", selection: $status) {
                     Text("Pending").tag("pending"); Text("Completed / answered").tag("completed"); Text("Dismissed").tag("dismissed")
                 }
@@ -85,7 +87,7 @@ struct InboxView: View {
                 Text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running.").font(.caption).foregroundStyle(.secondary)
                 Button("Scan / retry failed work") { Task { await scan() } }.disabled(busy)
             }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
-        }.navigationTitle("Inbox")
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Inbox").navigationBarTitleDisplayMode(.inline)
             .task(id: queryKey) { await load() }
             .task { while !Task.isCancelled { try? await Task.sleep(for: .seconds(10)); if !Task.isCancelled { await load() } } }
             .refreshable { await load() }

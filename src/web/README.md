@@ -2,7 +2,7 @@
 
 The React app talks to the backend on the same origin. It has no sign-in, remote fonts, analytics, or cloud dependencies. The backend serves the built app at `/`.
 
-Use Node.js 22.12 or later (24 or 26 recommended):
+Use Node.js 26.12.0 (pinned in the root `.node-version`) or newer, with npm 12.2.0 or newer. The Docker build uses these exact versions. Upgrade npm with `npm install --global npm@12.2.0`, then run from this directory:
 
 ```sh
 npm ci

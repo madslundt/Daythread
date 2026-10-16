@@ -106,6 +106,10 @@ export function Rewind({
           </div>
           {result.sources.length ? (
             <>
+              {result.sources.some((source) => source.source_kind === "omi_audio_webhook") ? <Notice>
+                Official audio times estimate server receipt. Bursts or multiple senders can overlap in combined playback.
+                Play individual sources below to hear every accepted chunk; this timeline does not establish continuous capture.
+              </Notice> : null}
               {hasAudio ? <div className="playback-panel">
                 <div>
                   <h3>Listen back</h3>

@@ -37,6 +37,7 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
   const [sending, setSending] = useState("");
   const [error, setError] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const scope = sessionId
     ? sessionScope(conversation.data ?? sessions.data?.items.find((session) => session.id === sessionId))
     : draftScope;
@@ -61,13 +62,14 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({
       block: "nearest",
-      behavior: "smooth",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   }, [conversation.data?.messages.length, sending]);
   async function send(event: React.FormEvent) {
     event.preventDefault();
     const value = question.trim();
     if (!value || sending || conversation.loading || (sessionId && !conversation.data)) return;
+    composer.current?.focus();
     setSending(value);
     setError("");
     try {
@@ -97,17 +99,22 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
     setSessionId(id);
     setError("");
     setQuestion("");
+    if (!id) composer.current?.focus();
   }
   function changeScope(next: ChatScope) {
     setDraftScope(next);
     setSessionId(undefined);
     setError("");
-    setQuestion("");
   }
   return (
     <div className="chat-layout">
       <aside className="chat-index">
+        <div className="chat-index-heading">
+          <h2>Conversations</h2>
+          {sessions.data?.items.length ? <span aria-label={`${sessions.data.items.length} saved conversations`}>{sessions.data.items.length}</span> : null}
+        </div>
         <button
+          type="button"
           className="button"
           onClick={() => select()}
           disabled={Boolean(sending)}
@@ -118,10 +125,13 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
         {sessions.error ? (
           <ErrorState message={sessions.error} retry={sessions.refresh} />
         ) : null}
+        {sessions.loading && !sessions.data ? <Loading>Loading conversations…</Loading> : null}
         <nav aria-label="Saved conversations">
           {sessions.data?.items.map((session) => (
             <button
+              type="button"
               className={`conversation-link ${sessionId === session.id ? "selected" : ""}`}
+              aria-current={sessionId === session.id ? "true" : undefined}
               key={session.id}
               onClick={() => select(session.id)}
               disabled={Boolean(sending)}
@@ -134,8 +144,8 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
             </button>
           ))}
         </nav>
-        {!sessions.loading && !sessions.data?.items.length ? (
-          <p className="caption">Your conversations stay on home-core.</p>
+        {!sessions.loading && !sessions.error && !sessions.data?.items.length ? (
+          <p className="caption">Your conversations will appear here. They stay on your home-core.</p>
         ) : null}
       </aside>
       <section className="conversation-panel" aria-label="Conversation">
@@ -213,11 +223,11 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
               </select>
             </label>
           ) : null}
-          <p className="caption">{scopeLabel}. Changing context starts a new conversation.</p>
+          <p className="caption">{scopeLabel}. Changing context starts a new conversation and keeps your draft question.</p>
           {timeline.error && scope.kind === "meeting" ? <ErrorState message={timeline.error} retry={timeline.refresh} /> : null}
-          {!timeline.loading && !timeline.error && !meetings.length ? <p className="caption">Meetings appear here after a meeting has been recorded.</p> : null}
+          {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">Meetings appear here after a meeting has been recorded.</p> : null}
         </div>
-        <div className="messages" aria-live="polite">
+        <div className="messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
           {conversation.loading && !conversation.data ? (
             <Loading>Loading conversation…</Loading>
           ) : conversation.data?.messages.length ? (
@@ -236,7 +246,7 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
                 {message.sources.length ? (
                   <details className="chat-sources">
                     <summary>
-                      {message.sources.length} source recording(s)
+                      {message.sources.length} source {message.sources.length === 1 ? "recording" : "recordings"}
                     </summary>
                     <SourceList
                       sources={message.sources}
@@ -254,14 +264,22 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
                 ) : null}
               </article>
             ))
-          ) : (
-            <EmptyState icon="chat" title={scope.kind === "day" ? "Ask about this day" : scope.kind === "range" ? "Ask about this date range" : scope.kind === "meeting" ? "Ask about this meeting" : "Ask across your days"}>
+          ) : !sending && !conversation.error ? (
+            <EmptyState icon="chat" title={scope.kind === "day" ? "Ask about this day" : scope.kind === "range" ? "Ask about this date range" : scope.kind === "meeting" ? "Ask about this meeting" : "A little help remembering"}
+              action={<div className="chat-starters" aria-label="Suggested questions">
+                {["What were the key decisions?", "What should I follow up on?", "Summarize the main themes."].map((prompt) => (
+                  <button type="button" className="chat-starter" key={prompt} onClick={() => {
+                    setQuestion(prompt);
+                    composer.current?.focus();
+                  }}>{prompt}<Icon name="chevron-right" size={16} /></button>
+                ))}
+              </div>}>
               {scope.kind === "day" ? "Revisit this date’s diary and recordings."
                 : scope.kind === "range" ? "Explore diary entries and recordings between the selected dates."
                 : scope.kind === "meeting" ? "Explore the recordings around this meeting."
                   : "Find a detail or connect the threads across all your diary entries and recordings."}
             </EmptyState>
-          )}
+          ) : null}
           {sending ? (
             <article className="chat-message user pending">
               <div className="message-label">You</div>
@@ -283,11 +301,13 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
             Ask your memory
           </label>
           <textarea
+            ref={composer}
             id="chat-question"
             placeholder="What would you like to remember?"
             rows={2}
             value={question}
             maxLength={2000}
+            aria-describedby="chat-composer-hint"
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => {
               if (
@@ -299,7 +319,7 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            disabled={Boolean(sending)}
+            readOnly={Boolean(sending)}
           />
           <button
             className="button dark"
@@ -307,14 +327,14 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
               !question.trim() || Boolean(sending) || conversation.loading
               || Boolean(sessionId && !conversation.data)
             }
-            aria-label="Send question"
+            aria-label={sending ? "Asking your memory" : "Send question"}
           >
             <Icon name="send" size={18} />
-            <span>Send</span>
+            <span>{sending ? "Asking…" : "Send"}</span>
           </button>
-          <p className="caption">
-            Answers use the selected context. Open source recordings to
-            check the context.
+          <p className="caption" id="chat-composer-hint">
+            Enter to send · Shift + Enter for a new line. Answers use your selected context;
+            open the sources to check the details.
           </p>
         </form>
       </section>

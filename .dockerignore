@@ -10,5 +10,6 @@ dist
 tests
 .pytest_cache
 .ruff_cache
+.playwright-mcp
 __pycache__
 docs

@@ -24,7 +24,7 @@ function applyTheme(): void {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
-    "content", theme === "dark" ? "#171c21" : "#ffffff",
+    "content", theme === "dark" ? "#171c21" : "#f7f5f0",
   );
 }
 

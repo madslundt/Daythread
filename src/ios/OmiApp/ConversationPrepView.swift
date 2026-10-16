@@ -82,7 +82,7 @@ struct ConversationPrepView: View {
                         }
                     }
                 }
-            }.navigationTitle("Prepare").navigationBarTitleDisplayMode(.inline)
+            }.omiScreen().navigationTitle("Prepare").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { if hasDraft { discard = true } else { dismiss() } } } }
                 .interactiveDismissDisabled(hasDraft)
                 .confirmationDialog("Discard preparation and unsaved context?", isPresented: $discard, titleVisibility: .visible) { Button("Discard", role: .destructive) { dismiss() } }

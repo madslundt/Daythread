@@ -7,14 +7,19 @@ struct LabelsView: View {
     @State private var query = ""
     @State private var error: String?
     @State private var creating = false
+    private var filteredLabels: [MemoryLabel] {
+        (directory?.items ?? []).filter { query.isEmpty || ([$0.name] + $0.aliases).contains(where: { $0.localizedCaseInsensitiveContains(query) }) }
+    }
     var body: some View {
         List {
             Section {
-                Text("Names and aliases can match more than one person. All source associations are chosen by you.").font(.callout).foregroundStyle(.secondary)
-                Button("New person or project") { creating = true }
+                EditorialTitle(eyebrow: "Your library", title: "People & projects.", subtitle: "Keep related conversations close together.").editorialRow()
             }
-            Section("People & projects") {
-                ForEach((directory?.items ?? []).filter { query.isEmpty || ([$0.name] + $0.aliases).contains(where: { $0.localizedCaseInsensitiveContains(query) }) }) { entity in
+            Section {
+                Button { creating = true } label: { Label("New person or project", systemImage: "plus") }.buttonStyle(PrimaryActionStyle())
+            } footer: { Text("Names and aliases can match more than one person. All source associations are chosen by you.") }
+            Section("Your labels") {
+                ForEach(filteredLabels) { entity in
                     NavigationLink { LabelTimelineView(entityID: entity.id) } label: {
                         VStack(alignment: .leading) {
                             Text(entity.name).font(.headline)
@@ -24,9 +29,10 @@ struct LabelsView: View {
                     }
                 }
                 if directory?.items.isEmpty == true { Text("Create a label, then associate recordings from their source details.").foregroundStyle(.secondary) }
+                else if directory != nil && filteredLabels.isEmpty { ContentUnavailableView.search(text: query) }
             }
             ErrorNote(message: error)
-        }.navigationTitle("People & projects").searchable(text: $query)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle("People & projects").navigationBarTitleDisplayMode(.inline).searchable(text: $query, prompt: "Find a person or project")
             .task(id: model.backendAddress + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(isPresented: $creating) {
                 NavigationStack { LabelEditView(entity: nil, revision: directory?.revision ?? "", onSaved: { Task { await load() } }) }
@@ -94,7 +100,7 @@ struct LabelTimelineView: View {
             if loading { ProgressView("Reading timeline…") }
             ErrorNote(message: error ?? writer.error)
             Text("Recordings retain source-level precision. Imported Omi speaker names and numbers are unverified and do not establish identity across sources.").font(.caption).foregroundStyle(.secondary)
-        }.navigationTitle("Timeline").navigationBarTitleDisplayMode(.inline)
+        }.omiScreen().navigationTitle("Timeline").navigationBarTitleDisplayMode(.inline)
             .task(id: model.backendAddress + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(item: $editing, onDismiss: { Task { await load() } }) { selection in
                 NavigationStack { LabelEditView(entity: selection.entity, revision: selection.revision, onSaved: {}) }
@@ -167,7 +173,7 @@ struct LabelEditView: View {
             Text("Metadata edits require a connection. Failed saves keep your draft on this screen.").font(.caption)
             ErrorNote(message: error ?? writer.error)
             Button("Reload metadata version before reviewing draft") { Task { await refreshRevision() } }
-        }.navigationTitle(entity == nil ? "New label" : "Edit label")
+        }.omiScreen().navigationTitle(entity == nil ? "New label" : "Edit label")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(writer.busy) }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(writer.busy || draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentRevision.isEmpty) }

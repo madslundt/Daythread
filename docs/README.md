@@ -4,7 +4,7 @@ A local audio memory system: **Omi → iPhone → your backend and local models 
 
 ## Run web and backend
 
-Requires Python 3.12+, uv, and Node.js 22.12+ (or a supported newer Node release). From `~/Documents/omi`:
+Requires Python 3.15.0+, uv 0.13.1+, Node.js 26.12.0+ and npm 12.2.0+. The repository pins Python/Node in `.python-version` and `.node-version`; upgrade older uv installations before running the scripts. Install npm with `npm install --global npm@12.2.0`. From `~/Documents/omi`:
 
 ```sh
 bash scripts/build.sh
@@ -40,6 +40,12 @@ Each choice, context, rationale and explicitly discussed alternative has its own
 Transcript corrections mark dependent records stale until evidence is explicitly reattached. Source deletion or transcript retention purges dependent records and their content history; audio-only expiry preserves transcript evidence. Deleting a decision retains content-free suppression metadata so extraction retries do not restore it. Exports and backups include a deterministic decision section with review state, provenance and revision IDs, including days without a generated recap. Historical backups retain the data they contained when created.
 
 The iPhone register uses online requests and memory only; decision content is not added to its persistent cache or capture outbox. Optional project/person/commitment/meeting labels do not require those entities to exist and do not identify a speaker or assign a task. Automatic background extraction, semantic duplicate merging, resolved entity relationships, backdated decision-time fields and decision-aware chat are deferred. Original transcripts remain the evidence; local-model classification and rationale quality still require evaluation on real recordings.
+
+## Official app audio forwarding
+
+The optional receiver preserves native capture and cloud transcript import. Set `OMI_AUDIO_FORWARDING_TOKEN` on the backend, restart, and enable it in **Settings → Omi connection**. Configure the official app’s **Settings → Developer Mode → Realtime audio bytes** URL and interval. Accepted raw PCM becomes playable 16 kHz WAV and enters the durable local worker. Receiver status, last receipt and sanitized failures are shown in Settings; source details disclose receipt-estimated times. Last receipt is not proof of complete capture.
+
+Current upstream sends webhooks from **Omi’s backend**, whose SSRF checks reject private destinations. Phone LAN/VPN access alone is insufficient; do not expose this unauthenticated archive publicly. See the [complete walkthrough](official-audio-forwarding.md) for the network prerequisite, token/proxy protection, contract evidence, retry/duplicate/timing policy, away-from-home limitations and pending consumer-hardware acceptance. No public network setup is performed by the feature.
 
 ## iPhone companion
 
@@ -201,6 +207,34 @@ docker compose --env-file .env -f config/compose.yaml logs --tail=50 backend
 ```
 
 The container builds the web client, serves it with the API using one worker, and persists a named volume. Port 8787 binds the LAN by default; set `OMI_BIND_ADDRESS=127.0.0.1` in `.env` when a local reverse proxy owns access. The explicit `--env-file .env` also applies that setting to Compose's port interpolation. Docker loopback refers to the container, so inference must use a reachable LAN/service address. No remote deployment to home-core was performed during implementation.
+
+The repository-root [Dockerfile](../Dockerfile) also supports standalone Docker:
+
+```sh
+docker build -t omi-local .
+docker run -d --name omi-local --restart unless-stopped \
+  --env-file .env --env OMI_DATA_DIR=/data \
+  --publish 8787:8787 --volume omi-local-data:/data omi-local
+```
+
+Keep the explicit `OMI_DATA_DIR=/data` override: the starter `.env` uses `data` for source installs. The image runs as UID 10001; a bind mount used instead of the named volume must be writable by that user. Run a single container per archive volume. Model services run separately and must be reachable from the container.
+
+## Runtime and dependency baseline
+
+Verified on 2026-10-16 against the [Python release page](https://www.python.org/downloads/release/python-3150/), [Node release index](https://nodejs.org/dist/index.json), official Docker [Python](https://github.com/docker-library/official-images/blob/master/library/python) and [Node](https://github.com/docker-library/official-images/blob/master/library/node) tags, [PyPI](https://pypi.org/) and the [npm registry](https://registry.npmjs.org/):
+
+| Component | Selected version |
+|---|---|
+| Python build/runtime | `3.15.0-slim-trixie` |
+| Node web build | `26.12.0-trixie-slim` (Current stable) |
+| Build tooling | uv 0.13.1, npm 12.2.0, Hatchling 1.32.4 |
+| Python direct dependencies | FastAPI 0.143.3, HTTPX 0.28.1, pydantic-settings 2.16.0, tzdata 2026.5, Uvicorn 0.54.0 |
+| Python development tools | HTTPX2 2.13.1 (Starlette test client), pytest 9.1.1, Ruff 0.17.1 |
+| Web | React/React DOM 19.3.1, React types 19.3.0, Vite 8.3.4, React plugin 6.1.2, TypeScript 7.0.2, Vitest 5.0.5 |
+
+Docker uses explicit patch and Debian release tags, with pinned uv/npm installers. `uv.lock` and `src/web/package-lock.json` record the resolved dependencies; builds use frozen/clean installs. Python 3.15 and Node 26 passed the component checks without requiring an older runtime. The development group includes HTTPX2 for Starlette 1.8's test client; application inference continues to use the latest stable HTTPX 0.28.1. Vite 8's Rolldown/Oxc build works with the existing React configuration; TypeScript 7 requires the Vite client declarations for CSS imports, supplied by `src/web/src/vite-env.d.ts`. Vite's default browser floor is Safari 16.4, within the companion's iOS 17+ baseline. See [Vite's migration guide](https://vite.dev/guide/migration).
+
+Upgrade validation: 207 backend tests and Ruff passed on Python 3.15.0; 28 web tests and the TypeScript/Vite production build passed on Node 26.12.0/npm 12.2.0. Clean npm installation reported zero vulnerabilities; npm's default blocking of the optional macOS `fsevents` install script did not affect tests or builds. The Python wheel and source archive both contain the web assets. Docker built on Linux ARM64 and passed API/OpenAPI, bundled asset, upload/playback and settings checks under UID 10001 with a read-only root filesystem, dropped capabilities and no-new-privileges. Audio bytes and settings survived container replacement on a disposable named volume. The default background worker also started with container networking disabled. Desktop (1440×1000) and mobile (390×844) browser checks passed Settings save/reload against the container without console errors or failed requests. Test containers and storage were removed; no deployment, live archive access or real inference calls were performed. iOS was unchanged and its checks were not rerun for this upgrade.
 
 ## Before the pendant arrives
 

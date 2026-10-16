@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
+import { CaptureStatus } from "./CaptureStatus";
+export { CaptureStatus } from "./CaptureStatus";
 import { Icon } from "./Icon";
 import {
   CompletenessDetails,
   EvidenceFeedback,
   FeedbackReview,
 } from "./CompletenessFeedback";
+import { InboxEntry } from "./Inbox";
 import { Decisions } from "./Decisions";
 import { SourceList } from "./SourceList";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
@@ -17,10 +20,12 @@ export function RecapSection({
   day,
   timezone,
   onGenerated,
+  onUpload,
 }: {
   day: string;
   timezone: string;
   onGenerated?: () => void;
+  onUpload?: () => void;
 }) {
   const recap = useResource<Recap>(`/v1/recaps/${day}`);
   const [busy, setBusy] = useState(false);
@@ -130,8 +135,11 @@ export function RecapSection({
           ) : null}
         </div>
       ) : (
-        <div className="recap-empty">
-          Your recap will appear here once audio has been transcribed.
+<div className="recap-empty">
+          <span className="empty-symbol"><Icon name="diary" size={25} /></span>
+          <h3>The story of your day starts here.</h3>
+          <p>Once your recordings are transcribed, generate a recap to bring the important parts together.</p>
+          {onUpload ? <button className="button accent recap-upload" onClick={onUpload}><Icon name="upload" size={17} />Add a recording</button> : null}
         </div>
       )}
     </section>
@@ -189,14 +197,13 @@ export function Today({
     <div className="day-layout">
       <div className="day-main">
         <div className="day-chat-action">
-          <button className="button" onClick={onPrepare}>Prepare for a conversation</button>
+          <button className="button" onClick={onPrepare}><Icon name="people" size={17} />Prepare for a conversation</button>
           <button className="button" onClick={() => onChat({ kind: "day", day })}>
             <Icon name="chat" size={17} />
             Chat with this day
           </button>
         </div>
-        <RecapSection key={day} day={day} timezone={timezone} />
-        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
+        <RecapSection key={day} day={day} timezone={timezone} onUpload={onUpload} />
         <TranscriptTimeline
           day={day}
           timezone={timezone}
@@ -204,9 +211,11 @@ export function Today({
           onUpload={onUpload}
           onChat={onChat}
         />
+        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
       </div>
       <aside className="day-rail">
         <QuickRewind onRewind={onRewind} />
+        <section className="follow-through"><h2>Keep it moving</h2><p className="caption">Promises and open questions, all in one place.</p><InboxEntry /></section>
         <CaptureStatus status={status} error={statusError} />
         <FeedbackReview />
       </aside>
@@ -218,7 +227,8 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
   const [minutes, setMinutes] = useState(10);
   return (
     <section className="quick-rewind">
-      <h2>Rewind</h2>
+      <span className="eyebrow">Pick up where you left off</span>
+      <h2>A moment, again.</h2>
       <label className="select-with-icon">
         <Icon name="clock" size={19} />
         <select
@@ -235,111 +245,9 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
       </label>
       <button className="button dark" onClick={() => onRewind(minutes)}>
         <Icon name="skip-back" size={19} />
-        Rewind
+        Rewind audio
       </button>
       <p className="caption">Listen back or get a quick recap.</p>
-    </section>
-  );
-}
-
-export function CaptureStatus({
-  status,
-  error,
-}: {
-  status?: Status;
-  error?: string;
-}) {
-  const when = (at?: string | null) =>
-    at ? new Date(at).toLocaleString() : "unknown";
-  const processing = status?.processing;
-  const stale =
-    !!error ||
-    (!!status?.as_of && Date.now() - Date.parse(status.as_of) > 120_000);
-  return (
-    <section className="capture-status">
-      <h2>Capture status</h2>
-      {error ? <ErrorState message={error} /> : null}
-      {!status ? (
-        <p className="caption">No current backend observation.</p>
-      ) : (
-        <>
-          <p className="caption">
-            Backend observation {when(status.as_of)}
-            {stale ? " · stale; current state unknown" : ""}
-          </p>
-          <p>
-            Last recording received: {when(status.ingestion?.last_received_at)}
-          </p>
-          <p className="caption">
-            Latest captured endpoint: {when(status.ingestion?.last_captured_at)}
-            . Backlog uploads can arrive later; this does not establish
-            continuous capture.
-          </p>
-          <p className="caption">
-            Shared pause requested: {status.capture_paused ? "yes" : "no"}.
-            Observed phone state is separate.
-          </p>
-          {processing ? (
-            <>
-              <p>
-                {processing.queued} queued ({processing.retrying} retrying) ·{" "}
-                {processing.transcribing} transcribing · {processing.blocked}{" "}
-                blocked
-              </p>
-              <p className="caption">
-                Oldest known pending receipt:{" "}
-                {when(processing.oldest_received_at)}
-                {processing.oldest_age_seconds != null
-                  ? ` · waiting ${Math.round(processing.oldest_age_seconds / 60)} min`
-                  : ""}
-              </p>
-              {processing.recent_errors.map((e) => (
-                <p className="caption" key={e.id}>
-                  {e.id}: {e.error_code} · {e.attempts} attempts
-                </p>
-              ))}
-            </>
-          ) : null}
-          {!status.worker_running ? (
-            <p className="caption">
-              Transcription worker{" "}
-              {status.worker_enabled ? "not running" : "disabled"}.
-            </p>
-          ) : null}
-          {status.phones?.length ? (
-            status.phones.map((phone) => (
-              <div key={phone.phone_id}>
-                <p>
-                  Phone{" "}
-                  {phone.fresh && !stale
-                    ? phone.capture_state
-                    : "state unknown"}
-                </p>
-                <p className="caption">
-                  Reported {when(phone.observed_at)}: {phone.capture_state} (
-                  {phone.cause}). Last decoded audio{" "}
-                  {when(phone.last_decoded_at)}.
-                </p>
-                <p className="caption">
-                  {phone.pending_recordings} recordings waiting ·{" "}
-                  {phone.recovery_items} unfinished/recovery ·{" "}
-                  {Math.round(phone.pending_seconds / 60)} min ·{" "}
-                  {phone.upload_policy.replaceAll("_", " ")} ·{" "}
-                  {phone.upload_state}
-                </p>
-              </div>
-            ))
-          ) : (
-            <p className="caption">
-              No phone report received; phone connectivity is unknown.
-            </p>
-          )}
-          <p className="caption">
-            {status.capture_gaps ?? 0} stored capture interruptions. A saved
-            archive does not prove live capture.
-          </p>
-        </>
-      )}
     </section>
   );
 }
@@ -511,13 +419,14 @@ function TranscriptTimeline({
         </>
       ) : (
         <EmptyState
-          title={submitted ? "No matching recordings" : "No audio yet"}
+          icon={submitted ? "search" : "mic"}
+          title={submitted ? "No matching recordings" : "Make room for your first memory"}
         >
           {submitted
             ? "Try another word or choose a different day."
             : "Connect Omi on your iPhone, or upload a recording."}
           <span className="empty-action">
-            <button className="button" onClick={onUpload}>
+            <button className="button accent" onClick={onUpload}>
               <Icon name="upload" size={18} />
               Upload recording
             </button>

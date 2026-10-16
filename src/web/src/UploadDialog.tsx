@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { decodeRecording, encodeWav } from "./audioUpload";
 import { errorMessage, newId, request } from "./api";
 import { localDateTimeInput } from "./format";
@@ -13,6 +13,8 @@ export function UploadDialog({
   onUploaded: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useId();
+  const description = useId();
   const plan = useRef<
     | {
         file: File;
@@ -27,15 +29,24 @@ export function UploadDialog({
   const [startedAt, setStartedAt] = useState(() => localDateTimeInput());
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number }>();
   const [error, setError] = useState("");
   useEffect(() => {
-    dialog.current?.showModal();
+    const element = dialog.current;
+    const previousFocus = document.activeElement;
+    element?.showModal();
+    element?.querySelector<HTMLInputElement>('input[type="file"]')?.focus();
+    return () => {
+      element?.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
   }, []);
   async function upload(event: React.FormEvent) {
     event.preventDefault();
     if (!file) return;
     setBusy(true);
     setError("");
+    setUploadProgress(undefined);
     setProgress("Preparing audio locally…");
     try {
       const start = new Date(startedAt);
@@ -72,9 +83,10 @@ export function UploadDialog({
           "This recording would end in the future. Set Recording started to when the original recording actually began.",
         );
       }
+      setUploadProgress({ completed: current.completed, total: current.ids.length });
       for (let i = current.completed; i < current.ids.length; i++) {
         const offset = i * chunkLength;
-        setProgress(`Uploading recording ${i + 1} of ${current.ids.length}…`);
+        setProgress(`Uploading part ${i + 1} of ${current.ids.length}… Keep this window open.`);
         const query = new URLSearchParams({
           device_id: "web",
           started_at: new Date(start.getTime() + offset / 16).toISOString(),
@@ -88,6 +100,7 @@ export function UploadDialog({
           ),
         });
         current.completed = i + 1;
+        setUploadProgress({ completed: current.completed, total: current.ids.length });
       }
       onUploaded();
       onClose();
@@ -103,15 +116,17 @@ export function UploadDialog({
   return (
     <dialog
       ref={dialog}
+      aria-labelledby={heading}
+      aria-describedby={description}
       onCancel={(event) => {
-        if (busy) event.preventDefault();
-        else onClose();
+        event.preventDefault();
+        if (!busy) onClose();
       }}
       className="upload-dialog"
     >
-      <form onSubmit={upload}>
+      <form onSubmit={upload} aria-busy={busy}>
         <div className="section-heading">
-          <h2>Upload recording</h2>
+          <h2 id={heading}>Upload recording</h2>
           <button
             className="icon-button"
             type="button"
@@ -122,35 +137,40 @@ export function UploadDialog({
             <Icon name="close" />
           </button>
         </div>
-        <p className="muted">
-          Add audio to your memory. Conversion to mono 16 kHz WAV happens in
-          this browser; longer recordings are split automatically.
+        <p className="muted" id={description}>
+          Bring an existing recording into your memory. Choose an audio file
+          and the time it began. Long recordings are uploaded in parts automatically.
         </p>
         <label htmlFor="audio-file">Audio file</label>
         <input
           id="audio-file"
           type="file"
           accept="audio/*,.wav,.m4a,.mp3,.ogg,.flac"
-          onChange={(event) => setFile(event.target.files?.[0])}
+          aria-describedby="audio-file-hint"
+          onChange={(event) => { setFile(event.target.files?.[0]); setError(""); }}
           required
           disabled={busy}
         />
+        <p className="caption" id="audio-file-hint">WAV, M4A, MP3, OGG, FLAC, or another audio format supported by your browser.</p>
         <label htmlFor="capture-time">Recording started</label>
         <input
           id="capture-time"
           type="datetime-local"
           value={startedAt}
-          onChange={(event) => setStartedAt(event.target.value)}
+          aria-describedby="capture-time-hint"
+          onChange={(event) => { setStartedAt(event.target.value); setError(""); }}
           max={localDateTimeInput()}
           required
           disabled={busy}
         />
-        <p className="caption">
+        <p className="caption" id="capture-time-hint">
           Time on this device:{" "}
           {Intl.DateTimeFormat().resolvedOptions().timeZone}. Choose when the
           original recording began.
         </p>
         {error ? <ErrorState message={error} /> : null}
+        {busy ? <progress className="upload-progress" aria-label="Recording upload progress"
+          value={uploadProgress?.completed} max={uploadProgress?.total ?? 1} /> : null}
         {progress ? (
           <p role="status" className="caption">
             {progress}
@@ -159,7 +179,7 @@ export function UploadDialog({
         <div className="button-row">
           <button className="button accent" disabled={!file || busy}>
             <Icon name="upload" size={18} />
-            {busy ? "Uploading…" : "Upload recording"}
+            {busy ? "Uploading…" : error && plan.current?.completed ? "Resume upload" : "Upload recording"}
           </button>
           <button
             className="button"

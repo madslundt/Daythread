@@ -6,7 +6,7 @@
 .prose h3:first-child { margin-top: 0; }
 .prose ul { padding-left: 21px; margin: 0 0 16px; }
 .prose li { padding-left: 4px; margin-bottom: 5px; }
-.search-form { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; margin: 18px 0 10px; }
+.search-form { background: var(--surface); display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; margin: 18px 0 10px; }
 .search-form > svg { color: var(--muted); }
 .search-form input { width: 100%; min-width: 20px; padding: 11px 0; border: 0; background: transparent; font-size: 13px; }
 .search-form button { flex-shrink: 0; }
@@ -56,24 +56,26 @@
 .diary-index .empty-state { padding-inline: 0; }
 .diary-index .empty-state h3 { font-size: 19px; }
 .diary-index .empty-state p { font-size: 13px; }
-.diary-entry, .conversation-link { display: block; border: 0; border-bottom: 1px solid var(--line); width: 100%; background: var(--canvas); padding: 17px 13px; border-radius: 0; text-align: left; }
+.diary-entry, .conversation-link { display: block; border: 0; border-bottom: 1px solid var(--line); width: 100%; background: transparent; padding: 17px 13px; border-radius: 8px; text-align: left; }
 .diary-entry:hover, .diary-entry.selected, .conversation-link:hover, .conversation-link.selected { background: var(--rail); }
 .diary-entry span { font-size: 14px; }
 .diary-entry p { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 5px 0 0; overflow-wrap: anywhere; }
 .diary-date { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
 .diary-detail .recap-section { margin-bottom: 0; }
-.day-chat-action { display: flex; justify-content: flex-end; margin-bottom: 18px; }
+.day-chat-action { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; margin-bottom: 20px; }
+.day-chat-action .button { background: transparent; border-color: transparent; padding-inline: 0; margin-right: 18px; font-size: 13px; color: var(--secondary); }
+.day-chat-action .button:hover { color: var(--accent); background: transparent; border-color: transparent; text-decoration: underline; text-underline-offset: 4px; }
 .diary-detail > .section-heading { flex-wrap: wrap; gap: 12px; }
 .diary-detail > .section-heading .diary-date { margin: 0; }
 .hint-list p { flex-wrap: wrap; }
-.chat-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 35px; }
+.chat-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; }
 .chat-index > .button { width: 100%; }
 .chat-index nav { margin-top: 15px; }
 .chat-index > .caption { margin-top: 20px; }
 .conversation-link { padding: 14px 12px; }
 .conversation-link span { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-link small { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; }
-.conversation-panel { min-width: 0; display: flex; flex-direction: column; min-height: 480px; max-height: min(750px, calc(100dvh - 220px)); }
+.conversation-panel { min-width: 0; display: flex; flex-direction: column; min-height: 560px; max-height: min(850px, calc(100dvh - 240px)); padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
 .chat-scope { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .chat-scope label { min-width: 0; max-width: 100%; }
 .chat-scope label > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 7px; }
@@ -99,9 +101,9 @@
 .chat-form > .button { align-self: end; height: 43px; }
 .chat-form > .caption { grid-column: 1 / -1; margin-bottom: 0; font-size: 11px; }
 .settings-content { max-width: 950px; }
-.settings-content fieldset { border: 0; margin: 0 0 34px; padding: 0 0 30px; border-bottom: 1px solid var(--line); }
-.settings-content legend { font: 25px/1.3 var(--serif); padding: 0; margin-bottom: 23px; }
-.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px 35px; }
+.settings-content fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); margin: 0 0 28px; padding: 16px 24px 24px; }
+.settings-content legend { font: 25px/1.3 var(--serif); padding: 0 8px; margin-left: -8px; margin-bottom: 8px; }
+.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 25px 35px; }
 .setting-field { display: block; font-size: 14px; }
 .setting-field > span { display: block; margin-bottom: 8px; }
 .setting-field input, .setting-field select { display: block; width: 100%; max-width: 340px; font-size: 14px; }
@@ -112,8 +114,8 @@
 .capture-toggle input { margin: 3px 0 0; }
 .capture-toggle small { margin-top: 8px; }
 .access-note { margin: 26px 0 0; }
-.settings-actions { display: flex; justify-content: flex-end; }
-.upload-dialog { border: 1px solid var(--line); border-radius: 10px; padding: 26px; max-width: min(540px, calc(100vw - 30px)); width: 100%; color: var(--ink); background: var(--canvas); box-shadow: 0 20px 70px #10182830; }
+.settings-actions { position: static; bottom: 16px; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 4px 25px #17261b12; padding: 14px 18px; margin-bottom: 28px; }
+.upload-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; border: 1px solid var(--line); border-radius: 14px; padding: 26px; max-width: min(540px, calc(100vw - 30px)); width: 100%; color: var(--ink); background: var(--canvas); box-shadow: 0 20px 70px #10182830; }
 .upload-dialog::backdrop { background: #1d26366e; backdrop-filter: blur(2px); }
 .upload-dialog .section-heading { margin-bottom: 17px; }
 .upload-dialog h2 { font-size: 27px; }
@@ -123,7 +125,7 @@
 .upload-dialog input[type='file'] { font-size: 13px; }
 .upload-dialog input[type='datetime-local'] { margin-bottom: 6px; }
 .upload-dialog .caption { margin-bottom: 23px; }
-@media (max-width: 1100px) and (min-width: 761px) { .diary-layout { grid-template-columns: 280px minmax(0, 1fr); gap: 25px; } .chat-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 25px; } }
+@media (max-width: 1100px) and (min-width: 761px) { .diary-layout { grid-template-columns: minmax(220px, .8fr) minmax(0, 1fr); gap: 24px; } .chat-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 25px; } }
 @media (max-width: 760px) {
   .prose { font-size: 14px; line-height: 1.75; }
   .source-row > summary { gap: 10px; padding: 14px 0; font-size: 13px; }
@@ -188,7 +190,7 @@
 .calendar-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 42px; border: 1px solid transparent; background: transparent; font-size: 13px; font-variant-numeric: tabular-nums; }
 .calendar-day:hover:not(:disabled) { background: var(--hover); }
 .calendar-day.is-today { border-color: var(--accent); }
-.calendar-day.selected, .calendar-day.selected:hover { background: var(--strong); color: var(--strong-ink); }
+.calendar-day.selected, .calendar-day.selected:hover { background: var(--accent-fill); color: #fff; }
 .calendar-indicators { min-height: 5px; display: flex; gap: 3px; }
 .summary-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .calendar-day.selected .summary-dot { background: currentColor; }
@@ -275,3 +277,81 @@
 @media(max-width: 760px) { .mobile-nav a { min-width: 0; flex: 1; padding-inline: 2px; } .inbox-dialog { padding: 18px; } }
 
 .inbox-fields { display: contents; border: 0; margin: 0; padding: 0; }
+
+/* Comfortable reading surfaces, flexible forms, and clear action feedback. */
+.feature-content, .diary-detail, .diary-index, .chat-index, .chat-scope, .settings-grid > *, .inbox-controls > *, .label-filters > * { min-width: 0; }
+.timeline-section { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; box-shadow: var(--shadow); }
+.decisions-section { margin-top: 30px; }
+.chat-index-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+.chat-index-heading h2 { font-size: 23px; }
+.chat-index-heading span { font-size: 12px; color: var(--muted); }
+.chat-starters { display: grid; gap: 9px; max-width: 460px; margin: 20px auto 8px; }
+.chat-starter { display: flex; justify-content: space-between; align-items: center; gap: 16px; text-align: left; min-height: 48px; padding: 12px 15px; background: var(--canvas); border: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
+.chat-starter:hover { background: var(--hover); border-color: var(--hover-line); }
+.settings-save-status { margin: 0 auto 0 0; font-size: 13px; color: var(--muted); }
+.upload-progress { width: 100%; height: 8px; accent-color: var(--accent); margin-bottom: 18px; }
+.upload-dialog input::file-selector-button { font: inherit; padding: 7px 10px; margin-right: 10px; color: var(--ink); border: 1px solid var(--line); border-radius: 5px; background: var(--rail); cursor: pointer; }
+.rewind-form { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+.inbox-open { padding-inline: 16px; border-radius: 8px; }
+.inbox-open:hover { background: var(--rail); }
+.inbox-controls label { flex: 1 1 160px; }
+.inbox-controls :is(input, select) { width: 100%; }
+.settings-content :is(input, select, textarea), .label-fields :is(input, select, textarea) { scroll-margin-bottom: 160px; }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .chat-index { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .chat-index-heading { margin-bottom: 0; }
+  .chat-index > .button { width: auto; margin-left: auto; }
+  .chat-index nav { width: 100%; display: flex; overflow-x: auto; margin-top: 0; }
+  .chat-index nav .conversation-link { min-width: 180px; max-width: 220px; }
+  .chat-index > .caption { margin: 0; }
+  .conversation-panel { max-height: none; }
+  .diary-layout { grid-template-columns: minmax(0, 1fr); }
+  .diary-index .month-calendar { max-width: 380px; }
+}
+@media (max-width: 760px) {
+  .timeline-section { padding: 16px 18px; }
+  .day-chat-action { gap: 4px 14px; margin-bottom: 16px; }
+  .day-chat-action .button { min-height: 44px; margin-right: 0; font-size: 12px; }
+  .conversation-panel { padding: 18px 14px; min-height: 480px; max-height: none; }
+  .chat-index-heading { width: 100%; margin-bottom: 0; }
+  .chat-index nav { width: 100%; }
+  .chat-index > .button { min-height: 44px; font-size: 13px; }
+  .conversation-link { padding: 10px 12px; min-height: 52px; }
+  .conversation-link span { font-size: 13px; }
+  .chat-form textarea { font-size: 16px; }
+  .settings-content fieldset { padding: 12px 18px 20px; }
+  .settings-actions { bottom: calc(84px + env(safe-area-inset-bottom)); padding: 12px; }
+  .settings-save-status { flex: 1 1 100%; }
+  .settings-actions > .button { width: auto; flex: 1; }
+  .search-form input, .decision-filters select, .transcript-editor textarea { font-size: 16px; }
+  .rewind-form { padding: 20px; }
+  .chat-message.user .prose, .prose { font-size: 15px; }
+  .source-time { font-size: 12px; }
+  .source-row > summary { font-size: 14px; }
+  .transcript-text { font-size: 15px; }
+  .calendar-dialog-content { padding: 14px; }
+  .calendar-heading .icon-button { min-width: 44px; min-height: 44px; }
+  .calendar-grid td { padding: 1px; }
+  .calendar-day { min-height: 44px; }
+  .inbox-controls label { flex-basis: 100%; }
+}
+
+.settings-actions.has-changes { position: sticky; }
+@media (max-width: 760px) {
+  .main-canvas[data-page='chat'] .intro h1 { font-size: 32px; }
+  .main-canvas[data-page='chat'] .intro { margin-top: 18px; }
+  .chat-index { align-items: center; justify-content: space-between; gap: 10px; }
+  .chat-index-heading { width: auto; }
+  .chat-index-heading h2 { font-size: 21px; }
+  .chat-index > .caption { margin-bottom: 0; }
+  .chat-form { position: sticky; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface); padding: 12px 0 8px; }
+  .chat-form > .caption { font-size: 11px; }
+  .chat-starters { margin-top: 16px; }
+}
+
+@media (max-width: 760px) {
+  .conversation-panel:has(.chat-starters) .chat-form { position: static; order: 1; border-top: 0; padding-top: 0; }
+  .conversation-panel:has(.chat-starters) .messages { order: 2; min-height: 0; padding: 0; }
+  .messages > .empty-state { padding-top: 24px; }
+}

@@ -26,6 +26,10 @@ def public_source(row: dict) -> dict:
     result["source_version"] = row.get("source_version", "")
     result["source_kind"] = row.get("source_kind", "")
     result["source_id"] = row.get("source_id", "")
+    result["timestamp_basis"] = (
+        "receipt_end_estimate" if row.get("source_kind") == "omi_audio_webhook" else "capture"
+    )
+    result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
     for key in (
         "received_at",
         "processing_started_at",
@@ -101,7 +105,9 @@ class Memory:
             **hints,
             "hint_timing": "approximate",
             "transcript_boundaries": (
-                "Transcripts cover whole overlapping chunks; audio is clipped."
+                "Transcripts cover whole overlapping chunks; audio is clipped. "
+                "Official webhook times are receipt estimates; overlaps can mask audio in "
+                "combined playback. Inspect individual sources for every accepted chunk."
             ),
         }
         return result

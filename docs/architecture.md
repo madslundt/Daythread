@@ -13,6 +13,7 @@ flowchart LR
     Q -->|TLS over LAN or private VPN| A[home-core API]
     A --> D[(SQLite and audio files)]
     C[Optional Omi Developer API] -->|Transcript snapshot import| A
+    F[Optional official backend webhook] -->|PCM; reachable ingress required| A
     D --> W[Durable transcription worker]
     W --> S[Your local STT]
     S --> D
@@ -58,6 +59,12 @@ The iPhone uses native SwiftUI, CoreBluetooth, libopus and an atomic file-backed
 The phone preserves compressed source frames and uploads decoded 30-second WAV chunks. The backend accepts mono PCM16 WAV at 16 kHz, max 120 seconds and 4 MB. At this format, 12 hours is about 1.38 GB before compressed originals/metadata. The configurable phone budget defaults to 2 GB; it stops safely rather than deleting unsent data when full. Recent local-buffer rewind works while home-core is unreachable. Summarization/chat still require the owner's local model service to be reachable.
 
 Use capture time, not upload time, throughout. The BLE sequence counter detects loss and wraps; it is not a wall clock. Anchor frames to a monotonic phone clock, persist the wall-clock mapping, and do not stitch across missing frames as though speech were continuous. After reconnect, handle hardware storage import only if the actual model supports a confirmed protocol. Disconnected physical button-event preservation is unconfirmed; a phone queue only protects events already received.
+
+## Optional official audio receiver
+
+`POST /v1/integrations/omi/audio` accepts token-protected official PCM webhooks into the existing durable worker/archive. It validates bounded aligned 8/16 kHz input, converts to archive WAV, and commits audio plus a transactional retry receipt before HTTP 200. Each request remains its own source, with `source_kind=omi_audio_webhook`, supplied account UID and sample metadata. Bounds estimate a chunk ending at server receipt; no capture clock/device/session sequence is supplied. Coverage keeps these estimates separate and does not remove unknown capture intervals. Matching `(uid, Idempotency-Key)` retries reuse acceptance, including after retention/deletion; unkeyed requests remain separate. Inference stays outside the request path.
+
+Current upstream sends from Omi’s backend and blocks private destinations. Hosted delivery requires separately provisioned HTTPS access to only this endpoint; phone LAN/VPN reachability alone is insufficient. The archive API/UI stays private and unauthenticated. This task provisions no ingress. See [the verified contract, setup, timing/duplicate/concurrency policies and physical checks](official-audio-forwarding.md). Forwarding does not establish cloud-free operation or continuous capture.
 
 ## Bounded contexts and records
 

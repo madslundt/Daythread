@@ -4,9 +4,17 @@ A private audio memory system: Omi pendant → iPhone → your backend and local
 
 Direct capture needs no Omi account or cloud AI subscription. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
 
-![Omi Local Today dashboard with a sample day recap and recordings from the gym, work, errands, family time, and dinner with friends](docs/images/web-app.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-app.png" alt="Omi Local Today dashboard with a sample day recap and recordings from the gym, work, errands, family time, and dinner with friends"></td>
+<td width="33%" valign="top"><img src="docs/images/web-app-iphone17.png" alt="Today day recap in Safari on iPhone 17, using the same fictional gym, work, errands, family, and friends recordings" width="302"></td>
+</tr>
+</table>
 
-*The Today dashboard with fictional sample recordings from the gym, work, everyday errands, home with family, and time out with friends.*
+*The Today dashboard on desktop and iPhone 17, with the same fictional recordings from the gym, work, everyday errands, home with family, and time out with friends.*
+
+Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. Longer pages are scrolled to show their sample content.
 
 ## Features
 
@@ -17,14 +25,20 @@ Direct capture needs no Omi account or cloud AI subscription. Existing hosted Om
 
 ## More screenshots
 
-These pages use fictional sample data spanning work, family, friends, the gym, and everyday errands. Expand a page to see its screenshot.
+These pages use fictional sample data spanning work, family, friends, the gym, and everyday errands. Expand a page to compare its desktop and iPhone 17 views.
 
 <details>
 <summary>Rewind — revisit plans made over dinner with friends</summary>
 
 A recent audio window, a quick recap, and the original source recordings.
 
-![Rewind page showing a sample dinner conversation, game-night plans, audio playback, and source recordings](docs/images/web-rewind.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-rewind.png" alt="Rewind page showing a sample dinner conversation, game-night plans, audio playback, and source recordings"></td>
+<td width="33%" valign="top"><img src="docs/images/web-rewind-iphone17.png" alt="Rewind in Safari on iPhone 17, showing sample dinner plans, a thirty-minute audio window, and a recap" width="302"></td>
+</tr>
+</table>
 
 </details>
 
@@ -33,7 +47,13 @@ A recent audio window, a quick recap, and the original source recordings.
 
 Saved daily recaps alongside a calendar, covering work, workouts, family time, and social plans.
 
-![Diary page showing five sample daily entries, an October calendar, and a recap spanning gym, work, errands, family, and friends](docs/images/web-diary.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-diary.png" alt="Diary page showing five sample daily entries, an October calendar, and a recap spanning gym, work, errands, family, and friends"></td>
+<td width="33%" valign="top"><img src="docs/images/web-diary-iphone17.png" alt="Diary in Safari on iPhone 17, showing the October calendar and saved sample daily entries" width="302"></td>
+</tr>
+</table>
 
 </details>
 
@@ -42,7 +62,13 @@ Saved daily recaps alongside a calendar, covering work, workouts, family time, a
 
 A sample conversation about weekend plans, with the related recordings available for inspection.
 
-![Chat page showing saved conversations and an answer about a gym session, family plans, and a board-game night](docs/images/web-chat.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-chat.png" alt="Chat page showing saved conversations and an answer about a gym session, family plans, and a board-game night"></td>
+<td width="33%" valign="top"><img src="docs/images/web-chat-iphone17.png" alt="Chat in Safari on iPhone 17, showing the saved weekend question and sample gym, family, and friends plans" width="302"></td>
+</tr>
+</table>
 
 </details>
 
@@ -51,7 +77,13 @@ A sample conversation about weekend plans, with the related recordings available
 
 Example labels for a teammate, a training partner, family, an onboarding project, and game night.
 
-![People and projects directory with fictional labels for Alex, Sam, Mia, onboarding research, a family Sunday, and Friday game night](docs/images/web-people.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-people.png" alt="People and projects directory with fictional labels for Alex, Sam, Mia, onboarding research, a family Sunday, and Friday game night"></td>
+<td width="33%" valign="top"><img src="docs/images/web-people-iphone17.png" alt="People and projects in Safari on iPhone 17, showing Friday game night, Mia, and the onboarding project" width="302"></td>
+</tr>
+</table>
 
 </details>
 
@@ -60,7 +92,13 @@ Example labels for a teammate, a training partner, family, an onboarding project
 
 Sample commitments and an open question from work, the gym, family plans, errands, and friends.
 
-![Inbox page showing six sample follow-ups, including a prototype, interview questions, a workout, a bike service, a photo album, and game-night plans](docs/images/web-inbox.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-inbox.png" alt="Inbox page showing six sample follow-ups, including a prototype, interview questions, a workout, a bike service, a photo album, and game-night plans"></td>
+<td width="33%" valign="top"><img src="docs/images/web-inbox-iphone17.png" alt="Inbox in Safari on iPhone 17, showing sample workout, customer interview, prototype, and bike service follow-ups" width="302"></td>
+</tr>
+</table>
 
 </details>
 
@@ -69,7 +107,13 @@ Sample commitments and an open question from work, the gym, family plans, errand
 
 Example appearance, timezone, transcription, recap, gesture, and retention settings.
 
-![Settings page showing light appearance, Copenhagen timezone, automatic language detection, a daily recap time, gesture settings, and archive retention](docs/images/web-settings.png)
+<table>
+<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr>
+<td width="67%" valign="top"><img src="docs/images/web-settings.png" alt="Settings page showing light appearance, Copenhagen timezone, automatic language detection, a daily recap time, gesture settings, and archive retention"></td>
+<td width="33%" valign="top"><img src="docs/images/web-settings-iphone17.png" alt="Settings in Safari on iPhone 17, showing light appearance and the Copenhagen timezone" width="302"></td>
+</tr>
+</table>
 
 </details>
 

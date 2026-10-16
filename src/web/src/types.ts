@@ -1,6 +1,7 @@
 export type Source = {
   id: string;
   device_id: string;
+  source_version?: string;
   started_at: string;
   ended_at: string;
   state: string;

@@ -15,6 +15,7 @@ export async function request<T>(
   let response: Response;
   try {
     response = await fetch(path, {
+      ...(path.startsWith("/v1/decisions") || path.startsWith("/v1/decision-extractions") || path.startsWith("/v1/transcripts/") ? { cache: "no-store" as const } : {}),
       ...options,
       headers: {
         ...(options.body && !(options.body instanceof Blob)

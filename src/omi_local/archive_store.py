@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
 
 EXTENDED_SCHEMA = """
@@ -125,12 +126,14 @@ class ArchiveStore:
                 (str(uuid4()), audio_id, old["text"], text, stamp(utc_now())),
             )
             db.execute(
-                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL WHERE id=?",
+                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL,"
+                "source_version=lower(hex(randomblob(16))) WHERE id=?",
                 (text, audio_id),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search VALUES(?,?)", (audio_id, text))
             row = dict(db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone())
+            self.invalidate_decision_sources(db, [audio_id], purge=False)
             self._invalidate_diaries(db)
         self._prune_files()
         return row
@@ -270,6 +273,7 @@ class ArchiveStore:
             row = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if not row:
                 return False
+            self.invalidate_decision_sources(db, [key], purge=True)
             db.execute("DELETE FROM audio WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_revisions WHERE audio_id=?", (key,))
@@ -308,9 +312,11 @@ class ArchiveStore:
                     (cutoff,),
                 ).fetchall()
                 removed_transcripts = [row["id"] for row in rows]
+                self.invalidate_decision_sources(db, removed_transcripts, purge=True)
                 for key in removed_transcripts:
                     db.execute(
-                        "UPDATE audio SET text=NULL,segments='[]',state='expired' WHERE id=?",
+                        "UPDATE audio SET text=NULL,segments='[]',state='expired',"
+                        "source_version=lower(hex(randomblob(16))) WHERE id=?",
                         (key,),
                     )
                     db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
@@ -364,16 +370,8 @@ class ArchiveStore:
                     archive.writestr(f"audio/{row['id']}.wav", data)
                     (work / f"{row['id']}.wav").unlink()
                 # Render the snapshot's diary projection; live files may already be newer.
-                for row in db.execute("SELECT day,content FROM diary"):
-                    content = json.loads(row["content"])
-                    markdown = (
-                        f"# {row['day']}\n\n{content['summary']}\n\n## Transcript sources\n\n"
-                    )
-                    markdown += "\n".join(
-                        f"- {source['started_at']} [{source['id']}] {source['text']}"
-                        for source in content["sources"]
-                    )
-                    archive.writestr(f"diary/{row['day']}.md", markdown)
+                for day, content in export_days(db):
+                    archive.writestr(f"diary/{day}.md", diary_markdown(db, day, content))
             snapshot.unlink()
             return output
         except BaseException:

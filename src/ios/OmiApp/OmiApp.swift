@@ -142,6 +142,10 @@ struct SourceDetail: View {
                     Text(source["text"].text.isEmpty ? "Transcription pending" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                NavigationLink("Create decision from this source") {
+                    SourceDecisionCreation(sourceID: source["id"].text)
+                }.disabled(source["text"].text.isEmpty)
+                if source["audio_available"] == .bool(true) {
                 Button {
                     loading = true
                     Task {
@@ -150,6 +154,7 @@ struct SourceDetail: View {
                         catch { self.error = error.localizedDescription }
                     }
                 } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
+                } else { Text("Original audio unavailable").font(.caption).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

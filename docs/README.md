@@ -19,6 +19,16 @@ The web app has Today, Rewind, Diary, Chat, and Settings. It supports recording 
 
 For frontend-only development, run the backend plus `npm --prefix src/web run dev`; Vite forwards `/v1` to port 8787. After frontend changes, rebuild and run `uv run python scripts/package_web.py` to refresh the combined server. `scripts/build.sh` also packages the web assets into the Python wheel/source distribution.
 
+## Decision register
+
+Today and Diary include a separate decision register. Create a record from an original transcript, or choose **Find decisions for this day** to ask the configured local model for proposals. Extraction processes bounded batches; use **Continue** until coverage is complete. Long imported transcripts resume in overlapping fragments. Coverage reports pending transcription and recorded capture gaps; it cannot establish that every real conversation was captured or understood.
+
+Each choice, context, rationale and explicitly discussed alternative has its own exact transcript quotation. Leave unstated rationale empty; use separately attributed owner notes for later interpretation. Review and confirm accuracy explicitly. Confirmation preserves the recorded tentative/final state. To record an actual change of choice, create a new record and select the earlier confirmed decision when confirming it. Revision links preserve both choices across days; later timestamps alone do not establish a revision. Links require ordered capture starts, so choices within one chunk cannot currently be linked as revisions. Wording/evidence edits retain the record ID, create history, and require review again.
+
+Transcript corrections mark dependent records stale until evidence is explicitly reattached. Source deletion or transcript retention purges dependent records and their content history; audio-only expiry preserves transcript evidence. Deleting a decision retains content-free suppression metadata so extraction retries do not restore it. Exports and backups include a deterministic decision section with review state, provenance and revision IDs, including days without a generated recap. Historical backups retain the data they contained when created.
+
+The iPhone register uses online requests and memory only; decision content is not added to its persistent cache or capture outbox. Optional project/person/commitment/meeting labels do not require those entities to exist and do not identify a speaker or assign a task. Automatic background extraction, semantic duplicate merging, resolved entity relationships, backdated decision-time fields and decision-aware chat are deferred. Original transcripts remain the evidence; local-model classification and rationale quality still require evaluation on real recordings.
+
 ## iPhone companion
 
 Open [OmiLocal.xcodeproj](../src/ios/OmiLocal.xcodeproj) in Xcode, choose a signing team and your iPhone, and run. The deployment target is iOS 17+. In app Settings, enter the reachable backend address including **port 8787**. `localhost` on an iPhone refers to the phone itself. There is no mobile API token.

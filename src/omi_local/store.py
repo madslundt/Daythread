@@ -9,6 +9,8 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
+from .decision_export import diary_markdown
+from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
 
 SCHEMA = """
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS diary (
 """
 
 
-class Store(ArchiveStore):
+class Store(ArchiveStore, DecisionStore):
     def __init__(self, root: Path):
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -43,6 +45,7 @@ class Store(ArchiveStore):
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
+            db.executescript(DECISION_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.
             columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
             if "hint_policy" not in columns:
@@ -57,6 +60,16 @@ class Store(ArchiveStore):
             for column in ("source_kind", "source_id"):
                 if column not in audio_columns:
                     db.execute(f"ALTER TABLE audio ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            if "source_version" not in audio_columns:
+                db.execute("ALTER TABLE audio ADD COLUMN source_version TEXT NOT NULL DEFAULT ''")
+            db.execute("UPDATE audio SET source_version=lower(hex(randomblob(16))) "
+                       "WHERE source_version=''")
+            db.executescript("""
+                CREATE TRIGGER IF NOT EXISTS source_insert_version AFTER INSERT ON audio
+                WHEN NEW.source_version='' BEGIN
+                  UPDATE audio SET source_version=lower(hex(randomblob(16))) WHERE id=NEW.id;
+                END;
+            """)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
@@ -135,8 +148,10 @@ class Store(ArchiveStore):
             row = db.execute("SELECT state FROM audio WHERE id=?", (audio_id,)).fetchone()
             if not row or (claimed and row["state"] != "transcribing"):
                 return
+            self.invalidate_decision_sources(db, [audio_id], purge=False)
             db.execute(
-                "UPDATE audio SET state='done',text=?,segments=?,error=NULL WHERE id=?",
+                "UPDATE audio SET state='done',text=?,segments=?,error=NULL,"
+                "source_version=lower(hex(randomblob(16))) WHERE id=?",
                 (text, json.dumps(segments or []), audio_id),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
@@ -287,10 +302,7 @@ class Store(ArchiveStore):
             self.verify_sources(db, content["sources"])
             try:
                 temporary.write_text(
-                    f"# {day}\n\n{content['summary']}\n\n## Transcript sources\n\n"
-                    + "\n".join(
-                        f"- {r['started_at']} [{r['id']}] {r['text']}" for r in content["sources"]
-                    ),
+                    diary_markdown(db, day, content),
                     encoding="utf-8",
                 )
                 temporary.replace(export)

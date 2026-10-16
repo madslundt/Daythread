@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
 import { Icon } from "./Icon";
+import { Decisions } from "./Decisions";
 import { SourceList } from "./SourceList";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
@@ -173,6 +174,7 @@ export function Today({
           </button>
         </div>
         <RecapSection key={day} day={day} timezone={timezone} />
+        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
         <TranscriptTimeline
           day={day}
           timezone={timezone}

@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
+from omi_local.decision_restore import validate_decisions
 from omi_local.settings import Settings
 from omi_local.store import Store
 
@@ -69,6 +70,7 @@ def validate_database(root: Path) -> None:
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("Archive database failed its integrity check")
+        validate_decisions(db)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(audio)")}
         for row in db.execute("SELECT * FROM audio"):
             key = str(UUID(row["id"]))

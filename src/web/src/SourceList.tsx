@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
+import { DecisionEditor } from "./DecisionEditor";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
@@ -56,24 +57,33 @@ function SourceRow({
   showDate: boolean;
   index: number;
 }) {
+  const [creatingDecision, setCreatingDecision] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(source.text || "");
   const [saved, setSaved] = useState<string>();
+  const [currentSource, setCurrentSource] = useState(source);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const text = saved ?? source.text;
+  useEffect(() => { setCurrentSource(source); setSaved(undefined); }, [source]);
+  useEffect(() => {
+    const closeDecision = () => setCreatingDecision(false);
+    window.addEventListener("omi:archive-changed", closeDecision);
+    return () => window.removeEventListener("omi:archive-changed", closeDecision);
+  }, []);
   async function save() {
     setBusy(true);
     setError("");
     try {
-      await request(`/v1/transcripts/${encodeURIComponent(source.id)}`, {
+      const corrected = await request<Source>(`/v1/transcripts/${encodeURIComponent(source.id)}`, {
         method: "PATCH",
         body: JSON.stringify({ text: draft }),
       });
       setSaved(draft);
+      setCurrentSource(corrected);
       setEditing(false);
       onCorrect?.();
       window.dispatchEvent(new Event("omi:archive-changed"));
@@ -86,7 +96,7 @@ function SourceRow({
   async function remove() {
     if (
       !window.confirm(
-        "Delete this recording and transcript? Derived diary entries and chat history will also be cleared because they may contain this recording. This cannot be undone.",
+        "Delete this recording and transcript? Derived decisions, diary entries and chat history will also be cleared because they may contain this recording. This cannot be undone.",
       )
     )
       return;
@@ -108,7 +118,7 @@ function SourceRow({
   if (deleted)
     return (
       <p className="caption" role="status">
-        Recording deleted. Derived diary entries and chat history were cleared.
+        Recording deleted. Dependent decisions, diary entries and chat history were cleared.
       </p>
     );
   return (
@@ -172,8 +182,7 @@ function SourceRow({
               </button>
             </div>
             <p className="caption">
-              Corrections update search and invalidate saved recaps so they can
-              be regenerated.
+              Corrections update search, invalidate saved recaps, and require dependent decision evidence to be reviewed.
             </p>
           </div>
         ) : (
@@ -226,6 +235,8 @@ function SourceRow({
             </a>
           </>
         )}
+        {text && currentSource.source_version ? <button className="button small" onClick={() => setCreatingDecision(true)}>Record a decision from this source</button> : null}
+        {creatingDecision ? <DecisionEditor source={currentSource} onClose={() => setCreatingDecision(false)} onSaved={() => {}} /> : null}
         <div className="source-tools">
           <button
             className="text-button"

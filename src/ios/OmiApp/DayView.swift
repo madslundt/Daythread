@@ -59,6 +59,7 @@ struct DayView: View {
                 } else { Text("Generate a recap after audio has been transcribed. Your diary stays on home-core.").foregroundStyle(.secondary) }
                 Button { Task { await generate() } } label: { Label("Generate daily recap", systemImage: "sparkle") }.disabled(loading)
             }
+            DecisionsSection(day: dayKey).id(model.backendAddress + dayKey)
             if !dayMeetings.isEmpty {
                 Section("Meetings") {
                     ForEach(Array(dayMeetings.enumerated()), id: \.offset) { _, meeting in

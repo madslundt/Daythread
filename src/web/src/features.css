@@ -202,3 +202,45 @@
 .calendar-dialog h2 { font-size: 25px; }
 @media (max-width: 1100px) and (min-width: 761px) { .diary-detail .section-heading { flex-wrap: wrap; } }
 @media (max-width: 760px) { .diary-index .month-calendar { max-width: 380px; margin-inline: auto; } .calendar-day { min-height: 44px; } }
+
+.decisions-section { margin: 28px 0; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.decisions-section > .caption { margin: 14px 0; }
+.decisions-section .section-heading { flex-wrap: wrap; }
+.decision-filters { margin: 15px 0; }
+.decision-filters select { padding: 7px; font-size: 13px; }
+.decision-row { display: block; width: 100%; padding: 15px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--canvas); text-align: left; }
+.decision-row:hover, .decision-row.selected { background: var(--rail); }
+.decision-row span { display: block; overflow-wrap: anywhere; }
+.decision-row small, .decision-meta { display: block; font-size: 12px; color: var(--muted); margin-top: 7px; }
+.decision-detail { border: 1px solid var(--line); border-radius: 8px; padding: 18px; margin-top: 16px; }
+.decision-detail > .text-button { margin: 0 15px 12px 0; }
+.decision-claim { margin: 18px 0; overflow-wrap: anywhere; }
+.decision-claim h4 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 0 0 6px; }
+.decision-claim p { white-space: pre-wrap; margin-bottom: 8px; }
+.decision-evidence summary, .decision-history summary, .decision-claim-editor summary { cursor: pointer; color: var(--secondary); font-size: 13px; margin: 8px 0; }
+.decision-detail blockquote, .decision-dialog blockquote { border-left: 3px solid var(--line); padding-left: 12px; margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.decision-evidence audio { width: 100%; max-width: 450px; }
+.decision-confirm { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.decision-confirm > .button { margin-top: 15px; }
+.decision-history { padding: 14px 0; }
+.decision-history details { margin-left: 12px; }
+.decision-revision-picker { margin-top: 14px; }
+.decision-revision-picker label { display: grid; gap: 7px; font-size: 13px; }
+.decision-revision-picker select { width: 100%; }
+.decision-predecessor { padding: 12px; margin: 12px 0; background: var(--rail); border-radius: 6px; }
+.decision-dialog { max-width: min(740px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.decision-dialog label { margin: 12px 0; }
+.decision-dialog label > span { display: block; margin-bottom: 7px; }
+.decision-dialog textarea, .decision-dialog select { width: 100%; }
+.decision-dialog .caption { margin: 8px 0 14px; }
+.decision-dialog .decision-claim-editor { margin: 18px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+.decision-claim-editor legend { padding: 0 6px; font-size: 14px; }
+.decision-original { max-height: 240px; overflow-y: auto; background: var(--rail); padding: 12px; border-radius: 4px; }
+@media (max-width: 760px) {
+  .decision-detail { padding: 12px; }
+  .decisions-section .section-heading > .button { width: 100%; white-space: normal; }
+  .decision-dialog { padding: 16px; }
+  .decision-filters { align-items: flex-start; flex-direction: column; }
+}
+
+.decision-form-fields { border: 0; margin: 0; padding: 0; min-width: 0; }

@@ -19,6 +19,7 @@ def public_source(row: dict) -> dict:
     }
     result["audio_available"] = bool(row.get("audio_available", True))
     result["segments"] = json.loads(row.get("segments", "[]"))
+    result["source_version"] = row.get("source_version", "")
     result["source_kind"] = row.get("source_kind", "")
     result["source_id"] = row.get("source_id", "")
     return result
@@ -27,9 +28,11 @@ def public_source(row: dict) -> dict:
 class Memory:
     def __init__(self, store: Store, settings: Settings, inference: Inference):
         self.store = store
+        store.save_decision_timezone(settings.timezone)
         self.settings = settings
         self.inference = inference
         self.recap_lock = asyncio.Lock()
+        self.decision_lock = asyncio.Lock()
 
     def day_window(self, day: date) -> tuple[datetime, datetime]:
         zone = ZoneInfo(self.settings.timezone)

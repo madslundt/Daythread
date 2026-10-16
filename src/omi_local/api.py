@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import AwareDatetime, ValidationError
 
 from .audio import render_window
+from .decision_api import decision_routes
 from .domain import (
     ButtonEvent,
     CaptureGap,
@@ -76,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def memory() -> Memory:
         return app.state.memory
+
+    app.include_router(decision_routes(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:
@@ -147,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             memory().settings = revised
             memory().inference.settings = revised
             if "timezone" in changes:
+                memory().store.save_decision_timezone(config.timezone)
                 memory().store.invalidate_diaries()
             memory().store.apply_retention(
                 config.audio_retention_days, config.transcript_retention_days
@@ -205,6 +209,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start, end = memory().day_window(day) if day else (None, None)
         rows, total = memory().store.transcripts(start, end, q, limit, offset)
         return {"items": [public_source(row) for row in rows], "total": total}
+
+    @app.get("/v1/transcripts/{audio_id}")
+    def transcript(audio_id: UUID, response: Response) -> dict:
+        row = memory().store.get_audio(str(audio_id))
+        if row is None:
+            raise HTTPException(404, "Transcript not found")
+        response.headers["Cache-Control"] = "no-store"
+        return public_source(row)
 
     @app.patch("/v1/transcripts/{audio_id}")
     def correct_transcript(audio_id: UUID, body: TranscriptCorrection) -> dict:
@@ -317,8 +329,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def diary_markdown(day: date) -> FileResponse:
         record = memory().store.diary(day.isoformat())
         if not record:
-            raise HTTPException(404, "Generate this day's recap first")
-        memory().store.export_diary(day.isoformat(), json.loads(record["content"]))
+            start, end = memory().day_window(day)
+            if not memory().store.decisions(start, end)["total"]:
+                raise HTTPException(404, "Generate a recap or create decisions first")
+        content = json.loads(record["content"]) if record else memory().cached_recap(day)
+        memory().store.export_diary(day.isoformat(), content)
         return FileResponse(
             memory().store.diary_dir / f"{day}.md", media_type="text/markdown", filename=f"{day}.md"
         )

@@ -30,6 +30,7 @@ enum JSONValue: Codable, Equatable {
 
 struct BackendFailure: LocalizedError {
     let message: String
+    var statusCode: Int? = nil
     var errorDescription: String? { message }
 }
 
@@ -71,7 +72,7 @@ struct BackendClient {
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let detail = (try? JSONDecoder().decode(JSONValue.self, from: data))?["detail"].text
-            throw BackendFailure(message: "Home-core HTTP \(status): \(detail?.isEmpty == false ? detail! : String(data: data.prefix(500), encoding: .utf8) ?? "No response detail")")
+            throw BackendFailure(message: "Home-core HTTP \(status): \(detail?.isEmpty == false ? detail! : String(data: data.prefix(500), encoding: .utf8) ?? "No response detail")", statusCode: status)
         }
     }
 }

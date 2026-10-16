@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .audio import contains_speech_energy
 from .domain import utc_now
+from .inbox_jobs import InboxJobs
 from .service import Memory
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ async def maintenance(memory: Memory) -> None:
 
 async def run_worker(memory: Memory) -> None:
     upkeep = asyncio.create_task(maintenance(memory))
+    inbox = asyncio.create_task(run_inbox(memory))
     try:
         while True:
             try:
@@ -76,6 +78,27 @@ async def run_worker(memory: Memory) -> None:
                 worked = False
             await asyncio.sleep(0.1 if worked else 2)
     finally:
+        inbox.cancel()
+        with suppress(asyncio.CancelledError):
+            await inbox
         upkeep.cancel()
         with suppress(asyncio.CancelledError):
             await upkeep
+
+
+async def run_inbox(memory: Memory) -> None:
+    jobs = InboxJobs(memory.store)
+    with memory.store.connect() as db:
+        db.execute("UPDATE inbox_jobs SET state='queued',claim=NULL WHERE state='running'")
+    while True:
+        try:
+            jobs.discover(
+                memory.settings.timezone,
+                model=memory.settings.llm_model,
+                settled_before=utc_now() - timedelta(seconds=30),
+            )
+            worked = await jobs.process_one(memory.inference)
+        except Exception as exc:
+            logger.warning("Inbox worker will retry (%s)", type(exc).__name__)
+            worked = False
+        await asyncio.sleep(0.2 if worked else 3)

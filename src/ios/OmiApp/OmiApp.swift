@@ -119,7 +119,7 @@ struct SourceList: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(AppModel.date(source["started_at"].text)?.formatted(date: .abbreviated, time: .shortened) ?? source["started_at"].text)
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text)
+                    Text(source["matches"].array.first?["text"].text ?? (source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text))
                         .font(.body).foregroundStyle(.primary).lineLimit(4).multilineTextAlignment(.leading)
                 }.padding(.vertical, 5)
             }
@@ -130,42 +130,43 @@ struct SourceList: View {
 struct SourceSelection: Identifiable { let id = UUID(); let source: JSONValue }
 struct SourceDetail: View {
     let source: JSONValue
+    var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var loading = false
+    @State private var editing = false
     @State private var draft = ""
-    @State private var corrected = false
     var body: some View {
         NavigationStack {
             List {
                 Section("Recorded evidence") {
                     NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: source["id"].text) }
-                    Text(source["started_at"].text).font(.caption).textSelection(.enabled)
+                    Text(sourceDate).font(.caption).textSelection(.enabled)
                     Text(source["text"].text.isEmpty ? "No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                if source["audio_availability"].text != "available" {
-                    Text("Audio: \(source["audio_availability"].text.isEmpty ? "availability unknown" : source["audio_availability"].text)").font(.caption)
-                }
-                Button {
-                    loading = true
-                    Task {
-                        defer { loading = false }
-                        do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
-                        catch { self.error = error.localizedDescription }
-                    }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_available"] == .bool(false) || source["audio_availability"].text == "missing")
-                Section("Correct transcript") {
-                    TextField("Transcript", text: $draft, axis: .vertical).lineLimit(4...12)
-                    Button("Save explicit correction") { Task {
-                        loading = true; defer { loading = false }
-                        do {
-                            _ = try await model.client().request("v1/transcripts/\(source["id"].text)", method: "PATCH", body: ["text": draft])
-                            corrected = true; error = nil
-                        } catch { self.error = error.localizedDescription }
-                    } }.disabled(loading || draft.count > 20000)
-                    if corrected { Text("Correction saved. Refresh the day, then regenerate or ask again.").font(.caption) }
+                NavigationLink("Create decision from this source") {
+                    SourceDecisionCreation(sourceID: source["id"].text)
+                }.disabled(source["text"].text.isEmpty)
+                Section("Transcript correction") {
+                    if editing {
+                        TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel("Correct transcript")
+                        Button("Save correction") {
+                            let address = model.backendAddress
+                            loading = true
+                            Task {
+                                defer { loading = false }
+                                do {
+                                    guard model.backendAddress == address else { return }
+                                    _ = try await model.client().request("v1/transcripts/\(source["id"].text)", method: "PATCH", body: ["text": draft])
+                                    guard !Task.isCancelled, model.backendAddress == address else { return }
+                                    onCorrect?(); dismiss()
+                                } catch { self.error = error.localizedDescription }
+                            }
+                        }.disabled(loading || draft.count > 20000)
+                        Button("Cancel edit") { editing = false }
+                    } else { Button("Correct transcript") { draft = source["text"].text; editing = true } }
                 }
                 if source["state"].text == "blocked" || !source["error_code"].text.isEmpty {
                     Button("Retry transcription after resolving the problem") { Task {
@@ -173,11 +174,29 @@ struct SourceDetail: View {
                         catch { self.error = error.localizedDescription }
                     } }
                 }
+                if source["audio_availability"].text == "missing" { Text("The archive expects audio, but the file is missing.").font(.caption) }
+                if source["audio_available"] == .bool(false) {
+                    Text(source["source_kind"].text == "omi_api" ? "Imported from Omi · transcript only; original audio unavailable." : "Audio expired under retention; transcript remains available.").font(.caption)
+                } else {
+                Button {
+                    loading = true
+                    Task {
+                        defer { loading = false }
+                        do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
+                        catch { self.error = error.localizedDescription }
+                    }
+                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_availability"].text == "missing")
+                }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
-                .task { draft = source["text"].text }
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
+    private var sourceDate: String {
+        guard let date = AppModel.date(source["started_at"].text) else { return source["started_at"].text }
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
+        formatter.dateStyle = .medium; formatter.timeStyle = .short
+        return formatter.string(from: date) + " · " + formatter.timeZone.identifier
+    }
 }
-

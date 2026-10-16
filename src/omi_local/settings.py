@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     omi_api_key: SecretStr = SecretStr("")
     stt_model: str = "stt-danish"
     llm_model: str = "home"
+    llm_revision: str = Field(default="", max_length=200)
+    embedding_enabled: bool = False
+    embedding_base_url: str = "http://127.0.0.1:4000/v1"
+    embedding_token: SecretStr = SecretStr("")
+    embedding_model: str = ""
+    embedding_revision: str = ""
+    embedding_dimension: int = Field(default=0, ge=0, le=8192)
+    embedding_passage_chars: int = Field(default=1000, ge=200, le=4000)
+    embedding_max_input_chars: int = Field(default=4000, ge=200, le=20000)
+    embedding_query_prefix: str = Field(default="", max_length=1000)
+    embedding_document_prefix: str = Field(default="", max_length=1000)
+    embedding_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    embedding_min_score: float = Field(default=0.5, ge=-1, le=1)
     language: str = Field(default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)
@@ -43,6 +56,37 @@ class Settings(BaseSettings):
             raise ValueError("Meeting minimum must not exceed the automatic stop duration")
         return self
 
+    @model_validator(mode="after")
+    def embedding_contract(self):
+        if self.embedding_enabled and not (
+            self.embedding_model.strip()
+            and self.embedding_revision.strip()
+            and self.embedding_dimension > 0
+        ):
+            raise ValueError("Enabled embeddings require model, immutable revision and dimension")
+        if self.embedding_passage_chars + len(self.embedding_document_prefix) > (
+            self.embedding_max_input_chars
+        ):
+            raise ValueError("Embedding passage and prefix exceed input character ceiling")
+        return self
+
+    @property
+    def embedding_manifest(self) -> dict | None:
+        if not self.embedding_enabled:
+            return None
+        return {
+            "model": self.embedding_model,
+            "revision": self.embedding_revision,
+            "dimension": self.embedding_dimension,
+            "metric": "cosine-float32-v1",
+            "splitter": "characters-overlap-v1",
+            "passage_chars": self.embedding_passage_chars,
+            "query_prefix": self.embedding_query_prefix,
+            "document_prefix": self.embedding_document_prefix,
+            # A different endpoint may resolve the same alias to a different model.
+            "endpoint": self.embedding_base_url,
+        }
+
     @property
     def hint_policy(self) -> HintPolicy:
         return HintPolicy(**{key: getattr(self, key) for key in HintPolicy.model_fields})
@@ -56,7 +100,7 @@ class Settings(BaseSettings):
             raise ValueError("Use an IANA timezone such as Europe/Copenhagen") from exc
         return value
 
-    @field_validator("stt_base_url", "llm_base_url")
+    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url")
     @classmethod
     def local_endpoint(cls, value: str) -> str:
         parsed = urlparse(value)

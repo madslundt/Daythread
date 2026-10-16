@@ -8,10 +8,15 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from .archive_store import EXTENDED_SCHEMA, ArchiveStore, diary_markdown
+from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .completeness import SCHEMA as COMPLETENESS_SCHEMA
 from .completeness import CompletenessStore
+from .decision_export import diary_markdown
+from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
+from .inbox_schema import SCHEMA as INBOX_SCHEMA
+from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
+from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -34,7 +39,7 @@ CREATE TABLE IF NOT EXISTS diary (
 """
 
 
-class Store(ArchiveStore, CompletenessStore):
+class Store(ArchiveStore, CompletenessStore, DecisionStore, SemanticStore):
     def __init__(self, root: Path):
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -46,6 +51,8 @@ class Store(ArchiveStore, CompletenessStore):
             db.executescript(SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
+            db.executescript(WEEKLY_SCHEMA)
+            db.executescript(DECISION_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.
             columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
             if "hint_policy" not in columns:
@@ -73,6 +80,29 @@ class Store(ArchiveStore, CompletenessStore):
                 db.execute(
                     "ALTER TABLE capture_gaps ADD COLUMN cause TEXT NOT NULL DEFAULT 'unknown'"
                 )
+            if "source_version" not in audio_columns:
+                db.execute("ALTER TABLE audio ADD COLUMN source_version TEXT NOT NULL DEFAULT ''")
+            db.execute(
+                "UPDATE audio SET source_version=lower(hex(randomblob(16))) WHERE source_version=''"
+            )
+            db.executescript("""
+                CREATE TRIGGER IF NOT EXISTS source_insert_version AFTER INSERT ON audio
+                WHEN NEW.source_version='' BEGIN
+                  UPDATE audio SET source_version=lower(hex(randomblob(16))) WHERE id=NEW.id;
+                END;
+            """)
+            if "transcript_version" not in audio_columns:
+                db.execute(
+                    "ALTER TABLE audio ADD COLUMN transcript_version TEXT NOT NULL DEFAULT ''"
+                )
+                db.execute("UPDATE audio SET transcript_version=lower(hex(randomblob(16)))")
+            db.executescript(SEMANTIC_SCHEMA)
+            message_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(chat_messages)")
+            }
+            if "retrieval_details" not in message_columns:
+                db.execute("ALTER TABLE chat_messages ADD COLUMN retrieval_details TEXT")
+            db.executescript(INBOX_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
@@ -181,9 +211,11 @@ class Store(ArchiveStore, CompletenessStore):
             row = db.execute("SELECT state FROM audio WHERE id=?", (audio_id,)).fetchone()
             if not row or (claimed and row["state"] != "transcribing"):
                 return
+            self.invalidate_decision_sources(db, [audio_id], purge=False)
             db.execute(
                 "UPDATE audio SET state='done',text=?,segments=?,error=NULL,error_code=NULL,"
-                "processed_at=?,transcription_outcome=? WHERE id=?",
+                "processed_at=?,transcription_outcome=?,source_version=lower(hex(randomblob(16))) "
+                "WHERE id=?",
                 (
                     text,
                     json.dumps(segments or []),
@@ -241,17 +273,67 @@ class Store(ArchiveStore, CompletenessStore):
         match = " OR ".join('"' + word + '"' for word in words)
         scope = " AND a.started_at<? AND a.ended_at>?" if start and end else ""
         args = (match, stamp(end), stamp(start), limit) if start and end else (match, limit)
+        # FTS highlight uses the exact unicode61 matching/normalization rules, so accents
+        # and whole tokens retain authoritative offsets into the original transcript.
+        marker = f"<omi-match-{uuid4().hex}>"
+        close = f"</omi-match-{uuid4().hex}>"
         with self.connect() as db:
-            return [
-                dict(row)
-                for row in db.execute(
-                    "SELECT a.* FROM transcript_search f JOIN audio a ON a.id=f.id "
-                    "WHERE transcript_search MATCH ?"
+            rows = db.execute(
+                "SELECT a.*,highlight(transcript_search,1,?,?) AS matched_text "
+                "FROM transcript_search f JOIN audio a ON a.id=f.id "
+                "WHERE transcript_search MATCH ?"
+                + scope
+                + " AND a.state='done' ORDER BY bm25(transcript_search),a.started_at,a.id LIMIT ?",
+                (marker, close, *args),
+            ).fetchall()
+        result = []
+        for row in rows:
+            row = dict(row)
+            highlighted = row.pop("matched_text")
+            if marker not in row["text"] and close not in row["text"]:
+                offset = highlighted.find(marker)
+                if offset >= 0:
+                    row["lexical_offset"] = offset
+            result.append(row)
+        return result
+
+    def contiguous_context(
+        self,
+        source: dict,
+        start: datetime | None,
+        end: datetime | None,
+    ) -> list[dict]:
+        """At most one prior/next local chunk; never cross scope, device or capture gaps."""
+        if source.get("source_kind", ""):
+            return []
+        scope = " AND a.started_at<? AND a.ended_at>?" if start and end else ""
+        scope_args = (stamp(end), stamp(start)) if start and end else ()
+        result = []
+        with self.connect() as db:
+            for boundary, at in (
+                ("ended_at", source["started_at"]),
+                ("started_at", source["ended_at"]),
+            ):
+                row = db.execute(
+                    "SELECT a.* FROM audio a WHERE a.device_id=? AND a.source_kind='' "
+                    "AND a.state='done' AND length(trim(a.text))>0 AND a."
+                    + boundary
+                    + "=?"
                     + scope
-                    + " ORDER BY bm25(transcript_search) LIMIT ?",
-                    args,
-                ).fetchall()
-            ]
+                    + " AND NOT EXISTS (SELECT 1 FROM capture_gaps g "
+                    "WHERE g.device_id=a.device_id AND g.started_at<max(a.ended_at,?) "
+                    "AND g.ended_at>min(a.started_at,?)) ORDER BY a.id LIMIT 1",
+                    (
+                        source["device_id"],
+                        at,
+                        *scope_args,
+                        source["ended_at"],
+                        source["started_at"],
+                    ),
+                ).fetchone()
+                if row:
+                    result.append(dict(row))
+        return result
 
     def append_event(
         self, event: ButtonEvent, max_minutes: int, context: int, policy: HintPolicy | None = None
@@ -322,6 +404,10 @@ class Store(ArchiveStore, CompletenessStore):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             self.verify_sources(db, content["sources"])
+            if content.get("output_id") and content.get("evidence"):
+                self._save_evidence(
+                    db, content["output_id"], content["evidence"], content["sources"]
+                )
             db.execute(
                 "INSERT INTO diary_versions VALUES(?,?,?,?,?)",
                 (
@@ -352,7 +438,7 @@ class Store(ArchiveStore, CompletenessStore):
             self.verify_sources(db, content["sources"])
             try:
                 temporary.write_text(
-                    diary_markdown(day, content),
+                    diary_markdown(db, day, content),
                     encoding="utf-8",
                 )
                 temporary.replace(export)

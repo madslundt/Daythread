@@ -64,7 +64,7 @@ class ChatScopeNotFound(LookupError):
 
 
 class TranscriptCorrection(BaseModel):
-    text: str = Field(max_length=20000)
+    text: str = Field(max_length=200000)
 
 
 class CaptureGap(BaseModel):

@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
+import { WeeklyReview } from "./WeeklyReview";
 import { dayLabel, localDay } from "./format";
+import { Decisions } from "./Decisions";
 import { MonthCalendar } from "./Calendar";
 import { Icon } from "./Icon";
 import { RecapSection } from "./Today";
@@ -17,6 +20,7 @@ export function Diary({
   onDay: (day: string) => void;
   onChat: (scope: ChatScope) => void;
 }) {
+  const [mode, setMode] = useState<"day" | "week">("day");
   const diaries = useResource<{ items: Recap[] }>("/v1/diary");
   useEffect(() => {
     window.addEventListener("omi:archive-changed", diaries.refresh);
@@ -24,7 +28,12 @@ export function Diary({
       window.removeEventListener("omi:archive-changed", diaries.refresh);
   }, [diaries.refresh]);
   return (
-    <div className="diary-layout">
+    <>
+      <div className="button-row" aria-label="Diary view">
+        <button className={`button ${mode === "day" ? "dark" : ""}`} aria-pressed={mode === "day"} onClick={() => setMode("day")}>Days</button>
+        <button className={`button ${mode === "week" ? "dark" : ""}`} aria-pressed={mode === "week"} onClick={() => setMode("week")}>Weeks</button>
+      </div>
+      {mode === "week" ? <WeeklyReview key={timezone} timezone={timezone} onChat={onChat} /> : <div className="diary-layout">
       <aside className="diary-index">
         <div className="section-heading">
           <h2>Your diary</h2>
@@ -83,8 +92,9 @@ export function Diary({
           timezone={timezone}
           onGenerated={diaries.refresh}
         />
+        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
       </div>
-    </div>
+    </div>}
+    </>
   );
 }
-import { useEffect } from "react";

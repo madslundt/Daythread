@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { ConversationPrep } from "./ConversationPrep";
 import { Chat } from "./Chat";
+import { Inbox, InboxEntry } from "./Inbox";
 import { DateNavigator } from "./Calendar";
 import { Diary } from "./Diary";
 import { Rewind, type RewindIntent } from "./Rewind";
@@ -7,17 +9,13 @@ import { Settings } from "./Settings";
 import { Today } from "./Today";
 import { UploadDialog } from "./UploadDialog";
 import { errorMessage, newId, post } from "./api";
-import {
-  localDay,
-  remainingCooldown,
-  timeLabel,
-} from "./format";
+import { localDay, remainingCooldown, timeLabel } from "./format";
 import { Icon, type IconName } from "./Icon";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Notice } from "./UI";
 
-type Page = "today" | "rewind" | "diary" | "chat" | "settings";
+type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings";
 const pages: {
   id: Page;
   label: string;
@@ -54,6 +52,13 @@ const pages: {
     subtitle: "Ask a question. Follow it back to the source.",
   },
   {
+    id: "inbox",
+    label: "Inbox",
+    icon: "diary",
+    title: "Follow through.",
+    subtitle: "Promises and open questions, across your days.",
+  },
+  {
     id: "settings",
     label: "Settings",
     icon: "settings",
@@ -74,10 +79,15 @@ export default function App() {
   const [page, setPage] = useState<Page>(pageFromHash);
   const [day, setDay] = useState(() => localDay(browserTimezone));
   const daySelected = useRef(false);
+  const [prepOpen, setPrepOpen] = useState(false);
+  const [prepDirty, setPrepDirty] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [rewindIntent, setRewindIntent] = useState<RewindIntent>();
-  const [chatIntent, setChatIntent] = useState<{ scope: ChatScope; id: number }>();
+  const [chatIntent, setChatIntent] = useState<{
+    scope: ChatScope;
+    id: number;
+  }>();
   const [notice, setNotice] = useState("");
   useEffect(() => {
     const sync = () => setPage(pageFromHash());
@@ -97,6 +107,8 @@ export default function App() {
     return () => window.removeEventListener("omi:archive-changed", update);
   }, [status.refresh, timeline.refresh]);
   function navigate(next: Page) {
+    if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
+    setPrepOpen(false);
     setChatIntent(undefined);
     setPage(next);
     window.location.hash = next;
@@ -131,7 +143,7 @@ export default function App() {
         <a
           className="brand"
           href="#today"
-          onClick={() => navigate("today")}
+          onClick={(event) => { event.preventDefault(); navigate("today"); }}
           aria-label="omi home"
         >
           omi
@@ -154,7 +166,7 @@ export default function App() {
             <a
               className="brand mobile-brand"
               href="#today"
-              onClick={() => navigate("today")}
+              onClick={(event) => { event.preventDefault(); navigate("today"); }}
             >
               omi
             </a>
@@ -179,8 +191,8 @@ export default function App() {
             ) : null}
           </div>
           <div className="intro">
-            <h1>{current.title}</h1>
-            <p>{current.subtitle}</p>
+            <h1>{prepOpen ? "Prepare for what comes next." : current.title}</h1>
+            <p>{prepOpen ? "A little context, with the evidence beside it." : current.subtitle}</p>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">
@@ -207,7 +219,14 @@ export default function App() {
         {timeline.data?.active_meeting ? (
           <ActiveMeeting timeline={timeline.data} timezone={timezone} />
         ) : null}
-        {page === "today" ? (
+        {page === "today" && !prepOpen ? (
+          <div className="day-chat-action">
+            <InboxEntry />
+          </div>
+        ) : null}
+        {prepOpen ? (
+          <ConversationPrep timezone={timezone} onDirtyChange={setPrepDirty} onClose={() => { setPrepOpen(false); setPrepDirty(false); }} />
+        ) : page === "today" ? (
           <Today
             key={`${day}-${version}`}
             day={day}
@@ -215,6 +234,7 @@ export default function App() {
             status={status.data}
             statusError={status.error}
             timeline={timeline.data}
+            onPrepare={() => setPrepOpen(true)}
             onUpload={() => setUploadOpen(true)}
             onRewind={rewind}
             onChat={openChat}
@@ -222,9 +242,20 @@ export default function App() {
         ) : page === "rewind" ? (
           <Rewind timezone={timezone} intent={rewindIntent} />
         ) : page === "diary" ? (
-          <Diary day={day} timezone={timezone} onDay={selectDay} onChat={openChat} />
+          <Diary
+            day={day}
+            timezone={timezone}
+            onDay={selectDay}
+            onChat={openChat}
+          />
+        ) : page === "inbox" ? (
+          <Inbox timezone={timezone} />
         ) : page === "chat" ? (
-          <Chat key={chatIntent?.id} timezone={timezone} initialScope={chatIntent?.scope} />
+          <Chat
+            key={chatIntent?.id}
+            timezone={timezone}
+            initialScope={chatIntent?.scope}
+          />
         ) : (
           <Settings
             onSaved={() => {
@@ -263,7 +294,7 @@ function Navigation({
         <a
           href={`#${item.id}`}
           key={item.id}
-          onClick={() => navigate(item.id)}
+          onClick={(event) => { event.preventDefault(); navigate(item.id); }}
           className={page === item.id ? "active" : ""}
           aria-current={page === item.id ? "page" : undefined}
         >

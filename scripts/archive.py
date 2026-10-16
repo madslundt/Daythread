@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
+from omi_local.decision_restore import validate_decisions
 from omi_local.settings import Settings
 from omi_local.store import Store
 
@@ -29,6 +30,9 @@ def member_path(name: str) -> PurePosixPath:
     if folder == "audio" and filename.endswith(".wav"):
         if str(UUID(filename[:-4])) != filename[:-4]:
             raise ValueError("Invalid recording ID in archive")
+    elif folder == "weekly" and filename.endswith(".md"):
+        if str(UUID(filename[:-3])) != filename[:-3]:
+            raise ValueError("Invalid weekly review version ID")
     elif folder == "diary" and filename.endswith(".md"):
         if date.fromisoformat(filename[:-3]).isoformat() != filename[:-3]:
             raise ValueError("Invalid diary date in archive")
@@ -69,6 +73,7 @@ def validate_database(root: Path) -> None:
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("Archive database failed its integrity check")
+        validate_decisions(db)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(audio)")}
         for row in db.execute("SELECT * FROM audio"):
             key = str(UUID(row["id"]))

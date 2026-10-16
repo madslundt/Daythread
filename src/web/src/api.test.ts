@@ -49,3 +49,12 @@ describe("API failures", () => {
     expect(first).not.toBe(newId());
   });
 });
+
+describe("decision privacy", () => {
+  it("bypasses browser HTTP caches for online decision content", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], total: 0 })));
+    vi.stubGlobal("fetch", fetch);
+    await request("/v1/decisions?day=2026-10-16");
+    expect(fetch).toHaveBeenCalledWith("/v1/decisions?day=2026-10-16", expect.objectContaining({ cache: "no-store" }));
+  });
+});

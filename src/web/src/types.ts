@@ -1,6 +1,7 @@
 export type Source = {
   id: string;
   device_id: string;
+  source_version?: string;
   started_at: string;
   ended_at: string;
   state: string;
@@ -12,6 +13,8 @@ export type Source = {
   transcription_outcome?: string;
   error_code?: string;
   source_id?: string | null;
+  transcript_version?: string;
+  matches?: { text: string; start_offset: number; end_offset: number; timing: string }[];
   meeting_hint_ids?: string[];
 };
 export type Marker = {
@@ -126,6 +129,8 @@ export type ChatMessage = {
   evidence?: Evidence;
   id: string;
   role: "user" | "assistant";
+  stale?: boolean;
+  retrieval_details?: { notice?: string } | null;
   content: string;
   sources: Source[];
   created_at: string;

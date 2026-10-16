@@ -229,8 +229,10 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
                 <div className="message-label">
                   {message.role === "user" ? "You" : "omi"}
                 </div>
+                {message.stale ? <p className="caption" role="status">Historical answer: its transcript evidence has changed. Ask again for a current answer.</p> : null}
                 <RichText text={message.content} />
                 {message.role === "assistant" ? <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} /> : null}
+                {message.retrieval_details?.notice ? <p className="caption">{message.retrieval_details.notice}</p> : null}
                 {message.sources.length ? (
                   <details className="chat-sources">
                     <summary>

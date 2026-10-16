@@ -7,6 +7,7 @@ import {
   EvidenceFeedback,
   FeedbackReview,
 } from "./CompletenessFeedback";
+import { Decisions } from "./Decisions";
 import { SourceList } from "./SourceList";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
@@ -172,6 +173,7 @@ export function Today({
   onUpload,
   onRewind,
   onChat,
+  onPrepare,
 }: {
   day: string;
   timezone: string;
@@ -179,6 +181,7 @@ export function Today({
   statusError?: string;
   timeline?: Timeline;
   onUpload: () => void;
+  onPrepare: () => void;
   onRewind: (minutes: number) => void;
   onChat: (scope: ChatScope) => void;
 }) {
@@ -186,15 +189,14 @@ export function Today({
     <div className="day-layout">
       <div className="day-main">
         <div className="day-chat-action">
-          <button
-            className="button"
-            onClick={() => onChat({ kind: "day", day })}
-          >
+          <button className="button" onClick={onPrepare}>Prepare for a conversation</button>
+          <button className="button" onClick={() => onChat({ kind: "day", day })}>
             <Icon name="chat" size={17} />
             Chat with this day
           </button>
         </div>
         <RecapSection key={day} day={day} timezone={timezone} />
+        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
         <TranscriptTimeline
           day={day}
           timezone={timezone}

@@ -69,6 +69,7 @@ export function timeLabel(value: string, timeZone: string): string {
 
 export function dateTimeLabel(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
     timeZone,
     month: "short",
     day: "numeric",

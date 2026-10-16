@@ -14,7 +14,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from .completeness import audio_availability
+from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
+from .weekly_models import markdown as weekly_markdown
 
 EXTENDED_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runtime_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -42,36 +44,29 @@ CREATE TABLE IF NOT EXISTS capture_gaps (
 """
 
 
-def diary_markdown(day: str, content: dict) -> str:
-    evidence = content.get("evidence")
-    diagnostic = ""
-    if evidence:
-        diagnostic = (
-            f"Output: {content.get('output_id', 'unknown')} · "
-            f"generated {evidence['generated_at']}\n\n"
-            f"Evidence: {len(evidence['selected'])} selected / "
-            f"{evidence['eligible_transcripts']} eligible "
-            f"transcript sources; {evidence['pending_chunks']} pending and "
-            f"{evidence['blocked_chunks']} blocked at selection. "
-            "Selection and citations do not verify accuracy.\n\n"
-        )
-    return (
-        f"# {day}\n\n{content['summary']}\n\n"
-        + diagnostic
-        + "## Transcript sources\n\n"
-        + "\n".join(f"- {r['started_at']} [{r['id']}] {r['text']}" for r in content["sources"])
-    )
-
-
 class ArchiveStore:
     """SQLite helpers mixed into Store; paths remain controlled by the archive."""
 
     @staticmethod
     def verify_sources(db: sqlite3.Connection, sources: list[dict]) -> None:
         for source in sources:
-            current = db.execute("SELECT text FROM audio WHERE id=?", (source["id"],)).fetchone()
-            if not current or (
-                source.get("text") is not None and current["text"] != source["text"]
+            current = db.execute(
+                "SELECT text,transcript_version,source_version FROM audio WHERE id=?",
+                (source["id"],),
+            ).fetchone()
+            if (
+                not current
+                or (source.get("text") is not None and current["text"] != source["text"])
+                or (
+                    source.get("source_version") is not None
+                    and current["source_version"] != source["source_version"]
+                )
+                or (
+                    source.get("transcript_version") is not None
+                    and (
+                        not current or current["transcript_version"] != source["transcript_version"]
+                    )
+                )
             ):
                 raise EvidenceChanged("Recorded evidence changed; retry the request")
 
@@ -149,12 +144,14 @@ class ArchiveStore:
             )
             db.execute(
                 "UPDATE audio SET text=?,state='done',segments='[]',error=NULL,error_code=NULL,"
-                "transcription_outcome='corrected' WHERE id=?",
+                "transcription_outcome='corrected',source_version=lower(hex(randomblob(16))) "
+                "WHERE id=?",
                 (text, audio_id),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search VALUES(?,?)", (audio_id, text))
             row = dict(db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone())
+            self.invalidate_decision_sources(db, [audio_id], purge=False)
             self._invalidate_diaries(db)
         self._prune_files()
         return row
@@ -185,6 +182,12 @@ class ArchiveStore:
                     "SELECT 1 FROM audio WHERE path=? AND audio_available=1", (path,)
                 ).fetchone():
                     Path(path).unlink(missing_ok=True)
+            # Restored backup projections must obey the same purge as the SQLite records.
+            for path in (self.root / "weekly").glob("*.md"):
+                if not db.execute(
+                    "SELECT 1 FROM weekly_versions WHERE id=?", (path.stem,)
+                ).fetchone():
+                    path.unlink(missing_ok=True)
             for path in self.diary_dir.glob("*.md"):
                 if not db.execute("SELECT 1 FROM diary WHERE day=?", (path.stem,)).fetchone():
                     path.unlink(missing_ok=True)
@@ -298,10 +301,20 @@ class ArchiveStore:
                 | {
                     "sources": message["sources"],
                     "evidence": self.evidence(message["id"]),
+                    "retrieval_details": json.loads(message["retrieval_details"] or "null"),
+                    "stale": self.sources_stale(message["sources"]),
                 }
                 for message in messages
             ]
         }
+
+    def sources_stale(self, sources: list[dict]) -> bool:
+        try:
+            with self.connect() as db:
+                self.verify_sources(db, sources)
+        except EvidenceChanged:
+            return True
+        return False
 
     def save_exchange(
         self,
@@ -309,6 +322,7 @@ class ArchiveStore:
         question: str,
         answer: str,
         sources: list[dict],
+        retrieval_details: dict | None = None,
         evidence: dict | None = None,
         output_id: str | None = None,
     ) -> dict:
@@ -324,7 +338,9 @@ class ArchiveStore:
                 ("assistant", answer, sources),
             ):
                 db.execute(
-                    "INSERT INTO chat_messages VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO chat_messages "
+                    "(id,session_id,role,content,sources,created_at,retrieval_details) "
+                    "VALUES(?,?,?,?,?,?,?)",
                     (
                         ids[role],
                         session_id,
@@ -332,6 +348,7 @@ class ArchiveStore:
                         content,
                         json.dumps(message_sources),
                         stamp(utc_now()),
+                        json.dumps(retrieval_details) if role == "assistant" else None,
                     ),
                 )
             db.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
@@ -345,6 +362,7 @@ class ArchiveStore:
             row = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if not row:
                 return False
+            self.invalidate_decision_sources(db, [key], purge=True)
             db.execute("DELETE FROM audio WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_revisions WHERE audio_id=?", (key,))
@@ -371,7 +389,7 @@ class ArchiveStore:
                 for row in rows:
                     db.execute(
                         "UPDATE audio SET audio_available=0, "
-                        "state=CASE WHEN state IN ('queued','transcribing') "
+                        "state=CASE WHEN state IN ('queued','transcribing','blocked') "
                         "THEN 'expired' ELSE state END WHERE id=?",
                         (row["id"],),
                     )
@@ -384,9 +402,11 @@ class ArchiveStore:
                     (cutoff,),
                 ).fetchall()
                 removed_transcripts = [row["id"] for row in rows]
+                self.invalidate_decision_sources(db, removed_transcripts, purge=True)
                 for key in removed_transcripts:
                     db.execute(
-                        "UPDATE audio SET text=NULL,segments='[]',state='expired' WHERE id=?",
+                        "UPDATE audio SET text=NULL,segments='[]',state='expired',"
+                        "source_version=lower(hex(randomblob(16))) WHERE id=?",
                         (key,),
                     )
                     db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
@@ -442,10 +462,13 @@ class ArchiveStore:
                     archive.writestr(f"audio/{row['id']}.wav", data)
                     (work / f"{row['id']}.wav").unlink()
                 # Render the snapshot's diary projection; live files may already be newer.
-                for row in db.execute("SELECT day,content FROM diary"):
-                    content = json.loads(row["content"])
-                    markdown = diary_markdown(row["day"], content)
-                    archive.writestr(f"diary/{row['day']}.md", markdown)
+                for day, content in export_days(db):
+                    archive.writestr(f"diary/{day}.md", diary_markdown(db, day, content))
+                for row in db.execute("SELECT id,content FROM weekly_versions"):
+                    archive.writestr(
+                        f"weekly/{row['id']}.md",
+                        weekly_markdown(json.loads(row["content"]), stale=True),
+                    )
             snapshot.unlink()
             return output
         except BaseException:

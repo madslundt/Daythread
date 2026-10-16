@@ -400,21 +400,28 @@ def test_resend_repairs_missing_file_without_refreshing_ingestion_or_reversing_r
     assert not Path(retained["path"]).exists()
 
 
-def test_pending_count_is_from_selection_even_if_transcription_finishes_during_generation(client):
+def test_pending_completion_during_generation_obeys_stronger_archive_version_guards(client):
     key = insert(client)
     pending = insert(client, AT + timedelta(minutes=2), text=None)
     memory = client.app.state.memory
 
     class CompleteDuringSummary(FakeInference):
+        finished = False
+
         async def summarize(self, sources, purpose):
-            memory.store.complete(pending, "Late transcript")
+            if not self.finished:
+                memory.store.complete(pending, "Late transcript")
+                self.finished = True
             return f"Recap [{key}]"
 
     memory.inference = CompleteDuringSummary()
+    assert client.post("/v1/recaps/2026-10-15").status_code == 409
+    with memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM output_evidence").fetchone()[0] == 0
     result = client.post("/v1/recaps/2026-10-15").json()
-    assert result["evidence"]["eligible_transcripts"] == 1
-    assert result["evidence"]["pending_chunks"] == 1
-    assert [r["id"] for r in result["evidence"]["selected"]] == [key]
+    assert result["evidence"]["eligible_transcripts"] == 2
+    assert result["evidence"]["pending_chunks"] == 0
+    assert {r["id"] for r in result["evidence"]["selected"]} == {key, pending}
     assert client.get("/v1/status").json()["processing"]["queued"] == 0
 
 

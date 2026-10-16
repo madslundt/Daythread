@@ -82,6 +82,7 @@ class CompletenessStore:
                 dict(row)
                 for row in db.execute(
                     "SELECT id,error_code,attempts,retry_at FROM audio WHERE error IS NOT NULL "
+                    "AND state IN ('queued','transcribing','blocked') "
                     "ORDER BY received_at DESC LIMIT 5"
                 )
             ]
@@ -326,9 +327,21 @@ class CompletenessStore:
             changed = []
             for source in result["selected"]:
                 current = db.execute(
-                    "SELECT text FROM audio WHERE id=?", (source["id"],)
+                    "SELECT text,transcript_version,source_version FROM audio WHERE id=?",
+                    (source["id"],),
                 ).fetchone()
-                if not current or revision(dict(current)) != source["revision"]:
+                if (
+                    not current
+                    or revision(dict(current)) != source["revision"]
+                    or (
+                        source.get("source_version") is not None
+                        and source["source_version"] != current["source_version"]
+                    )
+                    or (
+                        source.get("transcript_version") is not None
+                        and source["transcript_version"] != current["transcript_version"]
+                    )
+                ):
                     changed.append(source["id"])
         return result | {"changed_source_ids": changed}
 

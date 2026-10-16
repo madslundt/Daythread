@@ -1,0 +1,271 @@
+import SwiftUI
+import OmiCore
+
+enum ChatScope: Equatable {
+    case all, day(String), range(String, String), meeting(String)
+
+    init(_ value: JSONValue) {
+        if !value["meeting_id"].text.isEmpty { self = .meeting(value["meeting_id"].text) }
+        else if !value["day"].text.isEmpty { self = .day(value["day"].text) }
+        else if !value["start_day"].text.isEmpty && !value["end_day"].text.isEmpty {
+            self = .range(value["start_day"].text, value["end_day"].text)
+        }
+        else { self = .all }
+    }
+
+    var kind: String {
+        switch self { case .all: "all"; case .day: "day"; case .range: "range"; case .meeting: "meeting" }
+    }
+    var fields: [String: String] {
+        switch self {
+        case .all: [:]
+        case .day(let day): ["day": day]
+        case .range(let start, let end): ["start_day": start, "end_day": end]
+        case .meeting(let id): ["meeting_id": id]
+        }
+    }
+    var isReady: Bool {
+        switch self {
+        case .meeting(let id): !id.isEmpty
+        case .range(let start, let end): !start.isEmpty && !end.isEmpty && start <= end
+        default: true
+        }
+    }
+    var cacheSuffix: String {
+        switch self {
+        case .all: "all"
+        case .day(let day): "day." + day
+        case .range(let start, let end): "range." + start + "." + end
+        case .meeting(let id): "meeting." + id
+        }
+    }
+}
+
+struct ChatView: View {
+    @Environment(AppModel.self) private var model
+    let initialScope: ChatScope?
+    @State private var scope: ChatScope
+    @State private var question = ""
+    @State private var sessions: [JSONValue] = []
+    @State private var sessionID: String?
+    @State private var messages: [JSONValue] = []
+    @State private var loading = false
+    @State private var error: String?
+    @State private var cached = false
+    @State private var requestID = UUID()
+    @FocusState private var focused: Bool
+
+    init(initialScope: ChatScope? = nil) {
+        self.initialScope = initialScope
+        _scope = State(initialValue: initialScope ?? .all)
+    }
+
+    private var cacheKey: String { model.backendAddress + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
+    private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
+    private var meetings: [JSONValue] {
+        model.serverTimeline["meetings"].array.filter { !$0["id"].text.isEmpty }
+            .sorted { $0["started_at"].text > $1["started_at"].text }
+    }
+    private var scopeTitle: String {
+        switch scope {
+        case .all: "All diaries · all days"
+        case .day(let day): "Diary · " + day
+        case .range(let start, let end): "Diaries · " + start + " – " + end
+        case .meeting(let id): meetings.first(where: { $0["id"].text == id }).map(meetingTitle) ?? (id.isEmpty ? "Choose a meeting" : "Selected meeting")
+        }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                EditorialTitle(eyebrow: "Personal recall", title: "Ask your days.")
+                Menu {
+                    Button("New conversation") { newConversation(scope) }
+                    ForEach(Array(sessions.enumerated()), id: \.offset) { _, session in
+                        Button(session["title"].text.isEmpty ? "Conversation" : session["title"].text) {
+                            Task { await select(session["id"].text) }
+                        }
+                    }
+                } label: { Label(sessionID == nil ? "New conversation" : "Conversations", systemImage: "clock.arrow.circlepath") }.disabled(loading)
+                if cached { Text("Saved conversation on this iPhone").font(.caption).foregroundStyle(.secondary) }
+                ErrorNote(message: error)
+            }
+            scopeControls
+            if messages.isEmpty {
+                Section { Text("Ask about a conversation, decision, or commitment within the selected scope. Answers link back to the recorded evidence.").foregroundStyle(.secondary) }
+            }
+            ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                Section(message["role"].text == "user" ? "You" : "Omi Local") {
+                    Text(.init(message["content"].text)).textSelection(.enabled)
+                    if !message["sources"].array.isEmpty { SourceList(sources: message["sources"].array) }
+                }
+            }
+            if loading { Section { ProgressView("Reading recorded evidence…") } }
+        }.navigationTitle("Chat").navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                HStack(alignment: .bottom, spacing: 12) {
+                    TextField("Ask about your recordings", text: $question, axis: .vertical)
+                        .lineLimit(1...5).focused($focused).textFieldStyle(.roundedBorder).accessibilityIdentifier("chat.question")
+                    Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title) }
+                        .disabled(loading || !scope.isReady || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel("Send question").accessibilityIdentifier("chat.send")
+                }.padding().background(.bar)
+            }
+            .task(id: cacheKey) { await load(restore: true) }.refreshable { await load(restore: false) }
+            .onDisappear { requestID = UUID(); loading = false }
+    }
+
+    private var scopeControls: some View {
+        Section {
+            Picker("Chat with", selection: Binding(get: { scope.kind }, set: changeKind)) {
+                Text("All diaries").tag("all")
+                Text("Date").tag("day")
+                Text("Date range").tag("range")
+                Text("Meeting").tag("meeting")
+            }.accessibilityIdentifier("chat.scope").disabled(loading)
+            Menu {
+                ForEach([false, true], id: \.self) { previous in
+                    Section(previous ? "Previous period" : "Current period") {
+                        ForEach(DiaryPeriod.allCases, id: \.self) { period in
+                            Button("\(previous ? "Last" : "This") \(period.rawValue)") { selectPeriod(period, previous: previous) }
+                        }
+                    }
+                }
+            } label: { Label("Date shortcuts", systemImage: "calendar.badge.clock") }
+                .accessibilityIdentifier("chat.dateShortcuts").disabled(loading)
+            switch scope {
+            case .all:
+                Text("All days are available to this conversation.").font(.caption).foregroundStyle(.secondary)
+            case .day(let key):
+                DatePicker("Diary date", selection: Binding(get: { diary.date(for: key) ?? model.now }, set: { newConversation(.day(diary.dayKey($0))) }), displayedComponents: .date)
+                    .environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
+                    .accessibilityIdentifier("chat.day").disabled(loading)
+                Text("Dates in \(diary.calendar.timeZone.identifier)").font(.caption).foregroundStyle(.secondary)
+            case .range(let start, let end):
+                rangeControls(start: start, end: end)
+            case .meeting:
+                Menu {
+                    ForEach(Array(meetings.enumerated()), id: \.offset) { _, meeting in
+                        Button(meetingTitle(meeting)) { newConversation(.meeting(meeting["id"].text)) }
+                    }
+                } label: { Label(scopeTitle, systemImage: "person.2") }
+                    .accessibilityLabel("Choose meeting").accessibilityValue(scopeTitle)
+                    .accessibilityIdentifier("chat.meeting").disabled(loading || meetings.isEmpty)
+                if meetings.isEmpty { Text("No recorded meetings are available yet.").font(.caption).foregroundStyle(.secondary) }
+            }
+        } header: { Text("Conversation scope") }
+        footer: { Text("Changing scope starts a new conversation. Saved conversations keep their original scope.") }
+    }
+
+    private func rangeControls(start: String, end: String) -> some View {
+        let startDate = diary.date(for: start) ?? model.now
+        let endDate = diary.date(for: end) ?? startDate
+        return Group {
+            DatePicker("Start date", selection: Binding(get: { startDate }, set: { newConversation(.range(diary.dayKey($0), end)) }), in: ...endDate, displayedComponents: .date)
+                .accessibilityIdentifier("chat.startDay")
+            DatePicker("End date", selection: Binding(get: { endDate }, set: { newConversation(.range(start, diary.dayKey($0))) }), in: startDate..., displayedComponents: .date)
+                .accessibilityIdentifier("chat.endDay")
+            Text("\(start) – \(end) · both dates included").font(.caption).foregroundStyle(.secondary)
+            Text("Dates in \(diary.calendar.timeZone.identifier)").font(.caption).foregroundStyle(.secondary)
+        }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone).disabled(loading)
+    }
+
+    private func selectPeriod(_ period: DiaryPeriod, previous: Bool) {
+        let dates = diary.dateRange(for: period, containing: model.now, previous: previous)
+        newConversation(.range(diary.dayKey(dates.lowerBound), diary.dayKey(dates.upperBound)))
+    }
+
+    private func meetingTitle(_ meeting: JSONValue) -> String {
+        guard let date = AppModel.date(meeting["started_at"].text) else { return "Meeting · " + meeting["id"].text }
+        return "Meeting · " + diary.label(date, template: "d MMM yyyy HHmm")
+    }
+
+    private func changeKind(_ kind: String) {
+        guard kind != scope.kind else { return }
+        switch kind {
+        case "day": newConversation(.day(diary.dayKey(model.now)))
+        case "range":
+            let today = diary.dayKey(model.now)
+            newConversation(.range(today, today))
+        case "meeting": newConversation(.meeting(meetings.first?["id"].text ?? ""))
+        default: newConversation(.all)
+        }
+    }
+
+    private func newConversation(_ selection: ChatScope) {
+        scope = selection; sessionID = nil; messages = []; question = ""; error = nil; cached = false; save()
+    }
+
+    private func load(restore: Bool) async {
+        guard restore || !loading else { return }
+        let key = cacheKey, request = UUID()
+        requestID = request; loading = true; error = nil
+        if restore {
+            scope = initialScope ?? .all; sessionID = nil; messages = []; sessions = []; question = ""; cached = false
+            if let value = LocalCache.load(key) {
+                sessions = value["sessions"].array
+                let savedScope = ChatScope(value)
+                if initialScope == nil || initialScope == savedScope {
+                    messages = value["messages"].array; scope = savedScope
+                    sessionID = value["session_id"].text.isEmpty ? nil : value["session_id"].text; cached = true
+                }
+            }
+        }
+        defer { if requestID == request { loading = false } }
+        do {
+            let result = try await model.client().request("v1/chat/sessions")
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            sessions = result["items"].array; save()
+        } catch {
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func select(_ id: String) async {
+        let key = cacheKey, request = UUID()
+        requestID = request; loading = true; error = nil
+        defer { if requestID == request { loading = false } }
+        do {
+            let result = try await model.client().request("v1/chat/sessions/\(id)")
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            scope = ChatScope(result); sessionID = id; messages = result["messages"].array; question = ""; cached = false; save()
+        } catch {
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func send() async {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !loading, scope.isReady else { return }
+        guard !text.isEmpty, text.count <= 2000 else { error = "Keep questions under 2,000 characters."; return }
+        let key = cacheKey, request = UUID(), client: BackendClient
+        do { client = try model.client() } catch { self.error = error.localizedDescription; return }
+        requestID = request; focused = false; loading = true; error = nil
+        defer { if requestID == request { loading = false } }
+        var body: [String: Any] = ["question": text]
+        if let sessionID { body["session_id"] = sessionID }
+        else { for (field, value) in scope.fields { body[field] = value } }
+        do {
+            let result = try await client.request("v1/chat", method: "POST", body: body)
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            messages.append(.object(["role": .string("user"), "content": .string(text)]))
+            messages.append(.object(["role": .string("assistant"), "content": result["answer"], "sources": result["sources"]]))
+            if !result["session_id"].text.isEmpty { sessionID = result["session_id"].text }
+            question = ""; cached = false; save()
+            let resultSessions = try await client.request("v1/chat/sessions")
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            sessions = resultSessions["items"].array; save()
+        } catch {
+            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func save() {
+        var value: [String: JSONValue] = ["sessions": .array(sessions), "messages": .array(messages), "session_id": sessionID.map(JSONValue.string) ?? .null]
+        for (field, text) in scope.fields { value[field] = .string(text) }
+        LocalCache.save(.object(value), key: cacheKey)
+    }
+}

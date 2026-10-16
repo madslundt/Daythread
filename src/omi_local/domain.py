@@ -1,0 +1,161 @@
+import io
+import wave
+from datetime import UTC, date, datetime, timedelta
+from typing import Literal
+from uuid import UUID
+
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def stamp(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="microseconds")
+
+
+class EvidenceChanged(Exception):
+    """Recorded sources changed while local inference was running."""
+
+
+class ButtonEvent(BaseModel):
+    event_id: UUID
+    device_id: str = Field(min_length=1, max_length=80, pattern=r"^[\w-]+$")
+    occurred_at: AwareDatetime
+    action: Literal["mark", "meeting_toggle"]
+    meeting_max_minutes: int | None = Field(default=None, ge=1, le=480, strict=True)
+    meeting_min_seconds: int | None = Field(default=None, ge=60, le=3600, strict=True)
+    marker_cooldown_seconds: int | None = Field(default=None, ge=0, le=3600, strict=True)
+
+
+class RewindRequest(BaseModel):
+    minutes: int = Field(default=10, ge=1, le=60)
+    end: AwareDatetime | None = None
+    summarize: bool = True
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=12, ge=1, le=30)
+    session_id: UUID | None = None
+    day: date | None = None
+    meeting_id: UUID | None = None
+    start_day: date | None = None
+    end_day: date | None = None
+
+    @model_validator(mode="after")
+    def exclusive_scope(self):
+        if (self.start_day is None) != (self.end_day is None):
+            raise ValueError("Provide both start_day and end_day")
+        if self.start_day is not None and self.start_day > self.end_day:
+            raise ValueError("start_day must be on or before end_day")
+        if sum(value is not None for value in (self.day, self.meeting_id, self.start_day)) > 1:
+            raise ValueError("Choose a date, a date range, or a meeting")
+        return self
+
+
+class ChatScopeConflict(ValueError):
+    """An existing chat cannot change its recorded-evidence scope."""
+
+
+class ChatScopeNotFound(LookupError):
+    """The selected date or meeting does not exist."""
+
+
+class TranscriptCorrection(BaseModel):
+    text: str = Field(max_length=20000)
+
+
+class CaptureGap(BaseModel):
+    gap_id: UUID
+    device_id: str = Field(min_length=1, max_length=80, pattern=r"^[\w-]+$")
+    started_at: AwareDatetime
+    ended_at: AwareDatetime
+    reason: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.ended_at <= self.started_at:
+            raise ValueError("Gap end must follow its start")
+        return self
+
+
+class HintPolicy(BaseModel):
+    marker_cooldown_seconds: int = Field(default=60, ge=0, le=3600)
+    marker_after_seconds: int = Field(default=60, ge=0, le=600)
+    meeting_min_seconds: int = Field(default=60, ge=60, le=3600)
+    meeting_context_seconds: int = Field(default=60, ge=0, le=600)
+
+
+def wav_duration(data: bytes) -> float:
+    try:
+        with wave.open(io.BytesIO(data)) as wav:
+            if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, 16000):
+                raise ValueError("Audio must be mono PCM16 WAV at 16000 Hz")
+            frames = wav.getnframes()
+            actual = wav.readframes(frames)
+            if not 0 < frames <= 16000 * 120 or len(actual) != frames * 2:
+                raise ValueError("Audio must contain 0–120 seconds of complete PCM frames")
+            return frames / 16000
+    except (wave.Error, EOFError) as exc:
+        raise ValueError("Invalid PCM WAV file") from exc
+
+
+def project_events(events: list[dict], now: datetime) -> dict:
+    """Replay raw capture events into approximate hints, suppressing accidental gestures."""
+    meetings: list[dict] = []
+    markers: list[dict] = []
+    active: dict | None = None
+    next_marker_at: datetime | None = None
+    for event in sorted(events, key=lambda event: (event["occurred_at"], event["event_id"])):
+        at = datetime.fromisoformat(event["occurred_at"])
+        if at > now:
+            continue
+        if active and at >= datetime.fromisoformat(active["auto_stop_at"]):
+            active.update(ended_at=active["auto_stop_at"], end_reason="timeout")
+            active = None
+        policy = HintPolicy.model_validate_json(event.get("hint_policy", "{}"))
+        if event["action"] == "mark":
+            if next_marker_at is not None and at < next_marker_at:
+                continue
+            markers.append(
+                {key: value for key, value in event.items() if key != "hint_policy"}
+                | {
+                    "context_start": stamp(at - timedelta(seconds=event["context_seconds"])),
+                    "context_end": stamp(at + timedelta(seconds=policy.marker_after_seconds)),
+                    "timing": "approximate",
+                }
+            )
+            next_marker_at = at + timedelta(seconds=policy.marker_cooldown_seconds)
+        elif active:
+            active.update(ended_at=stamp(at), end_reason="button")
+            active = None
+        else:
+            active = {
+                "id": event["event_id"],
+                "started_at": stamp(at),
+                "auto_stop_at": stamp(at + timedelta(minutes=event["max_minutes"])),
+                "ended_at": None,
+                "end_reason": None,
+                "qualifies_at": stamp(at + timedelta(seconds=policy.meeting_min_seconds)),
+                "context_padding_seconds": policy.meeting_context_seconds,
+                "timing": "approximate",
+            }
+            meetings.append(active)
+    if active and now >= datetime.fromisoformat(active["auto_stop_at"]):
+        active.update(ended_at=active["auto_stop_at"], end_reason="timeout")
+        active = None
+    accepted = []
+    for meeting in meetings:
+        end = datetime.fromisoformat(meeting["ended_at"]) if meeting["ended_at"] else now
+        qualified = end >= datetime.fromisoformat(meeting["qualifies_at"])
+        meeting["status"] = (
+            ("closed" if meeting["ended_at"] else "active") if qualified else "provisional"
+        )
+        padding = timedelta(seconds=meeting["context_padding_seconds"])
+        meeting["context_start"] = stamp(datetime.fromisoformat(meeting["started_at"]) - padding)
+        meeting["context_end"] = stamp(end + padding)
+        if qualified:
+            accepted.append(meeting)
+    return {"meetings": accepted, "markers": markers, "active_meeting": active}

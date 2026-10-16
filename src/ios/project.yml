@@ -1,0 +1,45 @@
+name: OmiLocal
+options:
+  bundleIdPrefix: local.omi
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  OmiCore:
+    path: .
+targets:
+  OmiLocal:
+    type: application
+    platform: iOS
+    sources: [OmiApp]
+    dependencies:
+      - package: OmiCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.omi.companion
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+    info:
+      path: OmiApp/Info.plist
+      properties:
+        CFBundleDisplayName: Omi Local
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        NSBluetoothAlwaysUsageDescription: Omi Local connects to your pendant to save audio and button hints on your iPhone and home-core.
+        NSLocalNetworkUsageDescription: Omi Local sends recordings to your own home-core on your local network.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        UIBackgroundModes: [bluetooth-central, audio, processing]
+        BGTaskSchedulerPermittedIdentifiers: [local.omi.sync]
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+schemes:
+  OmiLocal:
+    build:
+      targets:
+        OmiLocal: all

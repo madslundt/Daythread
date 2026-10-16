@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#25292c" />
+    <script>
+      {
+        let preference = "system";
+        try { preference = localStorage.getItem("omi:appearance:v1") || "system"; } catch {}
+        const theme = preference === "light" || preference === "dark" ? preference
+          : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#171c21" : "#ffffff";
+      }
+    </script>
+    <meta name="description" content="Your private audio memory, on your own home server." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>omi · Your day, remembered</title>
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>

@@ -57,6 +57,10 @@ def decision_markdown(db: sqlite3.Connection, day: str, zone: str) -> str:
             (f"Explicit alternative {i + 1}", claim)
             for i, claim in enumerate(content["alternatives"])
         )
+        claims.extend(
+            (f"Contradictory evidence for {claim.get('field', 'choice')} {i + 1}", claim)
+            for i, claim in enumerate(content.get("contradictions", []))
+        )
         for label, claim in claims:
             lines.append(f"\n{label}: {claim['text'] if claim else 'Not stated.'}")
             for anchor in claim["evidence"] if claim else []:
@@ -107,11 +111,17 @@ def export_days(db: sqlite3.Connection) -> list[tuple[str, dict]]:
     if metadata:
         zone = metadata["value"]
     for row in db.execute(
-        "SELECT started_at FROM decisions WHERE evidence_condition='current' "
+        "SELECT started_at,ended_at FROM decisions WHERE evidence_condition='current' "
         "AND review_status!='dismissed'"
     ):
-        day = (
-            datetime.fromisoformat(row["started_at"]).astimezone(ZoneInfo(zone)).date().isoformat()
-        )
-        diaries.setdefault(day, {"summary": None, "sources": [], "timezone": zone})
+        start = datetime.fromisoformat(row["started_at"])
+        end = datetime.fromisoformat(row["ended_at"])
+        day = start.astimezone(ZoneInfo(zone)).date()
+        # Endpoints are exclusive. Subtract before timezone conversion to respect DST folds.
+        last_day = (end - timedelta(microseconds=1)).astimezone(ZoneInfo(zone)).date()
+        while day <= last_day:
+            diaries.setdefault(day.isoformat(), {"summary": None, "sources": [], "timezone": zone})
+            if day == date.max:
+                break
+            day += timedelta(days=1)
     return sorted(diaries.items())

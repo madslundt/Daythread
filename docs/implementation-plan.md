@@ -15,9 +15,11 @@ Reviewed 2026-10-16 for the expanded scope: finish the backend, native iPhone co
 
 Backend, native companion, responsive web client, combined packaging, shared settings/archive/chat APIs, durable capture/gaps, retention, and backup/restore are implemented. The hardware-readiness review on 2026-10-16 passes **167 backend tests, 39 native core tests, and 26 web tests**. It fixes interrupted-frame capture pauses, duplicate packet timestamps, failed outbox saves, storage reservations, exact upload receipts, pause synchronization races, concurrent settings updates and backup/retention races. Launchers explicitly select one backend worker. See [current validation and installation](README.md) for build checks and rollout order.
 
+The combined semantic-retrieval and editable-inbox integration passes **258 backend tests, 41 native core tests, and 28 web tests**, Ruff, the production web build, an unsigned iOS Simulator build and Python packaging checks. These tests use controlled inference, not a verified embedding model.
+
 Earlier desktop/mobile web interactions and uploads were tested against the backend; populated flows used a separate disposable archive and simulated inference. The Python wheel was inspected to verify that it contains the web assets. Physical pairing and all-day screen-locked endurance remain unverified. Mixing web meeting controls with queued offline phone toggles can temporarily display an incorrect local meeting indicator until synchronization and refresh; exact offline reconciliation needs a richer server event snapshot.
 
-The steps below remain the acceptance criteria for the delivered code and its hardware rollout. Actual pendant/iPhone pairing, screen-locked all-day endurance, local model quality, and deployment to home-core require the physical devices and a reachable home network. Optional embeddings, speaker identity and pendant storage import are not enabled speculatively.
+The steps below remain the acceptance criteria for the delivered code and its hardware rollout. Actual pendant/iPhone pairing, screen-locked all-day endurance, local model quality, and deployment to home-core require the physical devices and a reachable home network. Optional embeddings now have an implemented, disabled-by-default local adapter/index/retrieval path. Speaker identity and pendant storage import remain unimplemented; no embedding model is chosen speculatively.
 
 ## 1. Backend foundation — implemented
 
@@ -66,9 +68,11 @@ Acceptance: a complete day produces a readable diary with decisions, commitments
 
 ## 6. Long-term knowledge and conversational recall
 
-Add date-aware retrieval, meeting/marker filters, local embeddings with hybrid search, and persistent chat sessions. Retrieve from summaries for navigation and original transcripts for final evidence. Link each answer to a timestamp and audio source; reject unknown citation IDs. Keep personal facts distinct from inferred or uncertain claims and make correction possible.
+Date-aware day/range/meeting/session retrieval, persistent chat and optional local embeddings with hybrid search are implemented. Marker-only filters remain future work. Bounded contiguous local neighbors now fill spare topical source slots within the same scope/device and without crossing capture gaps. The initial embedding release uses versioned SQLite passages, independent bounded backfill, exact scoped vector scans, keyword fallback, bounded excerpt evidence and additive client provenance. New model sets backfill with partial coverage; no model is enabled by default. Retrieve from summaries for navigation and original transcripts for final evidence. Link each answer to a timestamp and audio source; reject unknown citation IDs. Keep personal facts distinct from inferred or uncertain claims and make correction possible.
 
 Acceptance: answer questions across days, resolve “yesterday/last Tuesday,” find the exact source for a commitment, and abstain when evidence is missing. Test misleading transcript instructions as data. Evaluate retrieval separately from LLM answer quality. Do not claim a fact was learned merely because it appears in a model-generated summary.
+
+The retrieval implementation is validated with controlled vectors and mock HTTP, long-tail broad reduction, degraded-evaluation rejection, FTS-normalized excerpts, history revalidation, adjacent-source bounds, a fictional 24-scenario/36-query baseline, the existing scope/DST regression suite and correction/deletion races. Real semantic quality, cosine calibration, target-machine scale benchmarks and answer-quality evaluation remain acceptance gates. Run [the independent retrieval evaluation](README.md#optional-local-semantic-retrieval) before enabling a selected model.
 
 ## 7. Responsive web app and operation
 
@@ -76,8 +80,14 @@ Implement Today, Rewind, Diary, Chat, and Settings with the same real backend as
 
 Acceptance: test actual controls and settings persistence in desktop and phone-sized viewports, inspect console/runtime errors, test model-unavailable and empty states, and compare the rendered UI to the design concept. Provide build/run scripts, a container recipe, and tested backup/restore without copying credentials. Native code must compile and its packet/outbox core must pass host-runnable tests.
 
-The configured local gateway `ai.home.arpa:18080` and previous `192.168.30.122:18080` address were unreachable from this Mac during implementation. Real local STT/LLM quality and all-day Omi/iPhone background reliability require the acceptance checks above. Optional speaker diarization/semantic embeddings should use explicit local services; hardware storage import requires a verified model protocol and no speculative destructive commands.
+The configured local gateway `ai.home.arpa:18080` and previous `192.168.30.122:18080` address were unreachable from this Mac during implementation. Real local STT/LLM quality and all-day Omi/iPhone background reliability require the acceptance checks above. Optional speaker diarization and the implemented semantic adapter require explicit local services; hardware storage import requires a verified model protocol and no speculative destructive commands.
 
 ## Borrow selectively
 
 [Open-source inspiration](open-source-inspiration.md) identifies code and patterns to examine before implementing each phase. Keep this backend small: borrow capture contracts, reliability patterns, and retrieval ideas first. Evaluate licenses before copying code; no third-party implementation has been vendored here.
+
+## 8. Editable inbox — implemented
+
+The shared backend, responsive web Inbox and native Day → Inbox now support evidenced commitment/deadline/question proposals, cross-day status, manual edits/resets, duplicate dismissal, bounded historical scans and progress. Independent durable extraction jobs cover STT and Omi transcript imports. Transcript revisions, exact-span validation, conservative date resolution, overlap reconciliation, optimistic mutation IDs, correction/retention/deletion propagation, truncation splitting and backup/restore are covered by software tests. Weekly reviews, project histories, briefings and external task synchronization remain future work.
+
+Acceptance includes durable explicit-null overrides/status after re-extraction, no stale results after source correction/deletion/expiry, original capture-relative dates and timezone precision, bounded complete coverage of long transcripts, recovery/retry without duplicating items, and shared web/native contracts. Real Danish/English/mixed-language model precision/recall, owner/date accuracy, duplicate rate and throughput still need evaluation on the configured local model before relying on automatic proposals. Existing physical capture acceptance remains unchanged.

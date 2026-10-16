@@ -37,6 +37,10 @@ class Claim(Boundary):
         return value.strip()
 
 
+class Contradiction(Claim):
+    field: Literal["choice", "context", "rationale", "alternatives"] = "choice"
+
+
 class Relationship(Boundary):
     kind: Literal["project", "person", "commitment", "meeting"]
     label: str = Field(min_length=1, max_length=200)
@@ -48,11 +52,18 @@ class DecisionContent(Boundary):
     context: Claim | None = None
     rationale: Claim | None = None
     alternatives: list[Claim] = Field(default_factory=list, max_length=20)
+    contradictions: list[Contradiction] = Field(default_factory=list, max_length=20)
     owner_notes: str = Field(default="", max_length=8000)
     relationships: list[Relationship] = Field(default_factory=list, max_length=30)
 
     def anchors(self) -> list[Anchor]:
-        claims = [self.choice, self.context, self.rationale, *self.alternatives]
+        claims = [
+            self.choice,
+            self.context,
+            self.rationale,
+            *self.alternatives,
+            *self.contradictions,
+        ]
         return [anchor for claim in claims if claim for anchor in claim.evidence]
 
 

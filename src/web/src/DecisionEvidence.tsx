@@ -6,7 +6,7 @@ import type { Source } from "./types";
 import { ErrorState, Loading, Notice } from "./UI";
 import { useResource } from "./useResource";
 
-export function DecisionEvidence({ anchor, historical }: { anchor: DecisionAnchor; historical: boolean }) {
+export function DecisionEvidence({ anchor, historical, opposing = false }: { anchor: DecisionAnchor; historical: boolean; opposing?: boolean }) {
   const [open, setOpen] = useState(false);
   const [audioError, setAudioError] = useState(false);
   const resource = useResource<Source>(open ? `/v1/transcripts/${encodeURIComponent(anchor.source_id)}` : null);
@@ -19,7 +19,7 @@ export function DecisionEvidence({ anchor, historical }: { anchor: DecisionAncho
   const source = resource.data;
   const passage = source ? evidencePassage(source, anchor) : null;
   return <details className="decision-evidence" onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary>Supporting passage · source {anchor.source_id.slice(0, 8)}</summary>
+    <summary>{opposing ? "Opposing passage" : "Supporting passage"} · source {anchor.source_id.slice(0, 8)}</summary>
     <blockquote>{anchor.quote}</blockquote>
     <p className="caption">Transcript characters {anchor.start}–{anchor.end}. {historical ? "Historical evidence; inspect the current transcript below." : "Check the quotation in its original context before confirming."}</p>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}

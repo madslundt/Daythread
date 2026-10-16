@@ -5,6 +5,7 @@ struct DecisionsSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @State private var items: [DecisionRecord] = []
+    @State private var total = 0
     @State private var extraction: DecisionExtraction?
     @State private var error: String?
     @State private var busy = false
@@ -21,10 +22,17 @@ struct DecisionsSection: View {
             ForEach(items) { item in
                 NavigationLink { DecisionDetail(id: item.id) } label: { DecisionRow(record: item) }
             }
+            Text("Showing \(items.count) of \(total) records").font(.caption).foregroundStyle(.secondary)
+            if items.count < total {
+                Button("Load more decisions") { Task { await loadMore() } }.disabled(busy)
+            }
             if items.isEmpty && !busy { Text("No decision records for this day.").foregroundStyle(.secondary) }
             if let extraction {
                 Text("\(extraction.processed_sources)/\(extraction.total_sources) sources reviewed · \(extraction.pending_chunks) pending · \(extraction.gaps) capture gaps")
                     .font(.caption).foregroundStyle(.secondary)
+                if let count = extraction.suppressed_sources, count > 0 {
+                    Text("\(count) previously removed sources excluded from automatic extraction. You can still create an explicit manual record.").font(.caption).foregroundStyle(.secondary)
+                }
                 if let offset = extraction.processed_source_offset, offset > 0 {
                     Text("Current source: \(offset.formatted()) characters reviewed").font(.caption).foregroundStyle(.secondary)
                 }
@@ -45,12 +53,23 @@ struct DecisionsSection: View {
         .onDisappear { requestID = UUID(); items = []; extraction = nil }
     }
     private func load() async {
-        let token = UUID(); requestID = token; busy = true; error = nil; items = []; extraction = nil
+        let token = UUID(); requestID = token; busy = true; error = nil; items = []; total = 0; extraction = nil
         defer { if requestID == token { busy = false } }
         do {
-            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)"])
+            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)", "limit": "50", "offset": "0"])
             guard !Task.isCancelled, requestID == token else { return }
-            items = result.items
+            items = result.items; total = result.total
+        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
+    }
+    private func loadMore() async {
+        guard !busy, items.count < total else { return }
+        let token = requestID; busy = true; error = nil
+        defer { if requestID == token { busy = false } }
+        do {
+            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)", "limit": "50", "offset": "\(items.count)"])
+            guard !Task.isCancelled, requestID == token else { return }
+            let existing = Set(items.map(\.id))
+            items.append(contentsOf: result.items.filter { !existing.contains($0.id) }); total = result.total
         } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
     }
     private func extract(continuing: Bool) async {
@@ -65,9 +84,9 @@ struct DecisionsSection: View {
             let result: DecisionExtraction = try await model.client().decisionRequest("v1/decision-extractions", method: "POST", body: body)
             guard !Task.isCancelled, requestID == token else { return }
             extraction = result; extractionRequest = nil
-            let records: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)"])
+            let records: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)", "limit": "50", "offset": "0"])
             guard !Task.isCancelled, requestID == token else { return }
-            items = records.items
+            items = records.items; total = records.total
         } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
     }
 }
@@ -220,6 +239,7 @@ struct DecisionClaims: View {
         if let rationale = content.rationale { claim("Recorded rationale", rationale) }
         else { Section("Recorded rationale") { Text("Not stated").foregroundStyle(.secondary) } }
         ForEach(Array(content.alternatives.enumerated()), id: \.offset) { index, alternative in claim("Discussed alternative \(index + 1)", alternative) }
+        ForEach(Array(content.contradictions.enumerated()), id: \.offset) { _, opposing in claim("Contradictory evidence for \(opposing.field)", opposing.claim) }
         if !content.relationships.isEmpty {
             Section("Related labels") {
                 ForEach(Array(content.relationships.enumerated()), id: \.offset) { _, relation in Text("\(relation.kind.capitalized): \(relation.label)") }
@@ -269,6 +289,9 @@ struct DecisionPredecessorPicker: View {
     @State private var query = ""
     @State private var items: [DecisionRecord] = []
     @State private var error: String?
+    @State private var total = 0
+    @State private var busy = false
+    @State private var requestID = UUID()
     var body: some View {
         List {
             Text("Select the earlier choice this decision explicitly replaces. Check the source and date; later capture alone is insufficient.").font(.caption)
@@ -279,16 +302,27 @@ struct DecisionPredecessorPicker: View {
                     Button("Use this earlier decision") { selection = record; dismiss() }
                 }
             }
+            Text("Checked \(items.count) of \(total) matching records").font(.caption).foregroundStyle(.secondary)
+            if items.count < total { Button("Load more earlier decisions") { Task { await load(reset: false) } }.disabled(busy) }
+            if busy { ProgressView("Finding earlier decisions…") }
             ErrorNote(message: error)
+            if error != nil { Button("Retry earlier decisions") { Task { await load(reset: false) } }.disabled(busy) }
         }.navigationTitle("Earlier decision").searchable(text: $query)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .task(id: query) {
-                items = []; error = nil
-                do {
-                    try await Task.sleep(for: .milliseconds(250))
-                    let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["q": query, "review_status": "confirmed"])
-                    guard !Task.isCancelled else { return }; items = result.items
-                } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
-            }.onDisappear { items = [] }
+            .task(id: model.backendAddress + query) { await load(reset: true) }
+            .onDisappear { requestID = UUID(); items = []; total = 0; busy = false }
+    }
+    private func load(reset: Bool) async {
+        guard reset || !busy else { return }
+        let token = UUID(); requestID = token; busy = true; error = nil
+        if reset { items = []; total = 0 }
+        defer { if requestID == token { busy = false } }
+        do {
+            if reset { try await Task.sleep(for: .milliseconds(250)) }
+            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["q": query, "review_status": "confirmed", "limit": "50", "offset": "\(items.count)"])
+            guard !Task.isCancelled, requestID == token else { return }
+            let existing = Set(items.map(\.id))
+            items.append(contentsOf: result.items.filter { !existing.contains($0.id) }); total = result.total
+        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
     }
 }

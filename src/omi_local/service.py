@@ -3,10 +3,12 @@ import hashlib
 import json
 import re
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from .audio import coverage_gaps
 from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
+from .hybrid import HybridRetriever, bound_sources
 from .inference import Inference, validate_citations
 from .retrieval import archive_recall, date_scope, topic_query
 from .settings import Settings
@@ -22,6 +24,10 @@ def public_source(row: dict) -> dict:
     result["source_version"] = row.get("source_version", "")
     result["source_kind"] = row.get("source_kind", "")
     result["source_id"] = row.get("source_id", "")
+    result["transcript_version"] = row.get("transcript_version")
+    for field in ("matches", "context_for"):
+        if field in row:
+            result[field] = row[field]
     return result
 
 
@@ -33,6 +39,7 @@ class Memory:
         self.inference = inference
         self.recap_lock = asyncio.Lock()
         self.decision_lock = asyncio.Lock()
+        self.retriever = HybridRetriever(store, settings)
 
     def day_window(self, day: date) -> tuple[datetime, datetime]:
         zone = ZoneInfo(self.settings.timezone)
@@ -163,7 +170,11 @@ class Memory:
         return [rows[round(index * (len(rows) - 1) / (limit - 1))] for index in range(limit)]
 
     def diary_chat_sources(
-        self, query: str, start: datetime | None, end: datetime | None, limit: int,
+        self,
+        query: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
         matched_ids: set[str],
     ) -> list[dict]:
         """Retrieve recaps alongside their current, citable transcript dependencies."""
@@ -175,7 +186,8 @@ class Memory:
                 continue
             summary = diary.get("summary") or ""
             relevant = (
-                not words or words & set(re.findall(r"\w+", summary.lower()))
+                not words
+                or words & set(re.findall(r"\w+", summary.lower()))
                 or any(source["id"] in matched_ids for source in diary["sources"])
             )
             if summary and relevant:
@@ -187,8 +199,10 @@ class Memory:
                 row = self.store.get_audio(source["id"])
                 if not row or row["state"] != "done" or row["text"] != source["text"]:
                     break
-                if start and end and not (
-                    row["started_at"] < stamp(end) and row["ended_at"] > stamp(start)
+                if (
+                    start
+                    and end
+                    and not (row["started_at"] < stamp(end) and row["ended_at"] > stamp(start))
                 ):
                     break
                 dependencies.append(public_source(row))
@@ -198,14 +212,25 @@ class Memory:
                         sources.setdefault(source["id"], source)
                     first = sources[dependencies[0]["id"]]
                     first.setdefault("diary_summaries", []).append(
-                        {"day": diary["day"], "summary": diary["summary"]}
+                        {
+                            "day": diary["day"],
+                            "summary": diary["summary"],
+                            "source_ids": [item["id"] for item in dependencies],
+                        }
                     )
         return list(sources.values())
 
-    async def chat(
-        self, question: str, limit: int, session_id: str | None = None, day: date | None = None,
-        meeting_id: str | None = None, scope_supplied: bool = False,
-        start_day: date | None = None, end_day: date | None = None,
+    async def retrieve(
+        self,
+        question: str,
+        limit: int,
+        session_id: str | None = None,
+        day: date | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: date | None = None,
+        end_day: date | None = None,
+        retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
     ) -> dict:
         if (start_day is None) != (end_day is None) or (
             start_day is not None and start_day > end_day
@@ -218,8 +243,11 @@ class Memory:
         )
         if session_id:
             session = self.store.ensure_session(
-                session_id, question, day.isoformat() if day else None,
-                meeting_id, scope_supplied,
+                session_id,
+                question,
+                day.isoformat() if day else None,
+                meeting_id,
+                scope_supplied,
                 start_day.isoformat() if start_day else None,
                 end_day.isoformat() if end_day else None,
             )
@@ -227,6 +255,17 @@ class Memory:
             meeting_id = session["meeting_id"]
             start_day = date.fromisoformat(session["start_day"]) if session["start_day"] else None
             end_day = date.fromisoformat(session["end_day"]) if session["end_day"] else None
+        session = (
+            session
+            if session_id
+            else {
+                "id": None,
+                "day": day.isoformat() if day else None,
+                "meeting_id": meeting_id,
+                "start_day": start_day.isoformat() if start_day else None,
+                "end_day": end_day.isoformat() if end_day else None,
+            }
+        )
         history = self.store.chat_session(session_id)["messages"] if session_id else []
         today = utc_now().astimezone(ZoneInfo(self.settings.timezone)).date()
         scope = (day, day) if day else ((start_day, end_day) if start_day else None)
@@ -250,23 +289,26 @@ class Memory:
             end = self.day_window(scope[1])[1] if scope else None
             if day and not self.store.window(start, end) and not self.store.diary(day.isoformat()):
                 raise ChatScopeNotFound("No diary or recordings found for this date")
-        if not session_id:
-            session = self.store.ensure_session(
-                None, question, day.isoformat() if day else None, meeting_id, scope_supplied,
-                start_day.isoformat() if start_day else None,
-                end_day.isoformat() if end_day else None,
-            )
         query = topic_query(question)
+        details = {"mode": "sample", "embedding": self.retriever.status()}
         if not query:
             rows = (
-                self.store.window(start, end) if start and end
+                self.store.window(start, end)
+                if start and end
                 else self.store.transcripts(None, None, "", 2**31 - 1, 0)[0]
             )
-            rows = self.sample_sources(
-                [row for row in rows if row["state"] == "done" and row["text"]], limit
-            )
+            rows = [row for row in rows if row["state"] == "done" and row["text"]]
+            details["recordings_sampled"] = len(rows) > limit
+            rows = self.sample_sources(rows, limit)
         else:
-            rows = self.store.search(query, limit, start, end)
+            rows, details = await self.retriever.retrieve(
+                question,
+                query,
+                limit,
+                start,
+                end,
+                mode=retrieval_mode,
+            )
         if not query and not start and not end and history and not archive_recall(question):
             previous = next(
                 (message for message in reversed(history) if message["role"] == "assistant"), None
@@ -275,34 +317,157 @@ class Memory:
                 row
                 for source in (previous["sources"] if previous else [])
                 if (row := self.store.get_audio(source["id"]))
-                and row["state"] == "done" and row["text"]
+                and row["state"] == "done"
+                and row["text"]
             ][:limit]
             rows = previous_rows or rows
         sources = {row["id"]: public_source(row) for row in rows}
         if not meeting_id:
             for source in self.diary_chat_sources(
-                query if day is None else "", start, end, limit, set(sources),
+                query if day is None else "",
+                start,
+                end,
+                limit,
+                set(sources),
             ):
                 sources.setdefault(source["id"], source).update(
                     {"diary_summaries": source["diary_summaries"]}
-                    if "diary_summaries" in source else {}
+                    if "diary_summaries" in source
+                    else {}
                 )
-        sources = list(sources.values())
-        if not sources:
-            answer = "No matching recorded evidence was found. Try a specific name or topic."
+        if query:
+            sources, truncated = bound_sources(list(sources.values()), query, limit)
+            details.update(evidence_mode="bounded_excerpts", evidence_character_budget=12000)
         else:
-            answer = validate_citations(
-                await self.inference.chat(question, sources, history), sources
+            details["recordings_sampled"] |= len(sources) > limit
+            sources, _ = bound_sources(list(sources.values()), query, limit, full_transcripts=True)
+            truncated = False
+            details.update(
+                evidence_mode="full_selected_transcripts", evidence_character_budget=None
             )
-        self.store.save_exchange(session["id"], question, answer, sources)
+        details["evidence_truncated"] = truncated
+        if "context_sources" in details:
+            included = {source["id"] for source in sources}
+            details["context_sources"] = [
+                key for key in details["context_sources"] if key in included
+            ]
+        if details["mode"] == "sample":
+            notice = (
+                "Uses sampled recordings. Full selected transcripts are reduced in bounded "
+                "batches when needed."
+            )
+        elif details.get("fallback_reason"):
+            notice = "Semantic search unavailable. Used keyword search."
+        elif details["mode"] == "semantic":
+            notice = "Used semantic search (evaluation mode)."
+        elif details["mode"] == "hybrid":
+            notice = "Used keyword and semantic search."
+        else:
+            notice = "Used keyword search. Semantic search is disabled."
+        coverage = details["embedding"]
+        if coverage["set_id"] and coverage["indexed"] < coverage["total"]:
+            notice += (
+                f" Semantic indexing is incomplete ({coverage['indexed']}/{coverage['total']} "
+                "recordings); unindexed recordings use keywords."
+            )
+        if truncated and details["mode"] != "sample":
+            notice += " Evidence uses bounded excerpts; open sources for full context."
+        details["notice"] = notice
+        with self.store.connect() as db:
+            self.store.verify_sources(db, sources)
         return {
-            "answer": answer,
             "sources": sources,
-            "retrieval": "keyword",
+            "retrieval": details["mode"],
+            "retrieval_details": details,
             "session_id": session["id"],
             "day": session["day"],
             "meeting_id": session["meeting_id"],
             "start_day": session["start_day"],
             "end_day": session["end_day"],
             "scope": {"start": stamp(start), "end": stamp(end)} if start and end else None,
+            "_history": history,
         }
+
+    async def search(
+        self,
+        question: str,
+        limit: int,
+        session_id: str | None = None,
+        day: date | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: date | None = None,
+        end_day: date | None = None,
+        retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
+    ) -> dict:
+        result = await self.retrieve(
+            question,
+            limit,
+            session_id,
+            day,
+            meeting_id,
+            scope_supplied,
+            start_day,
+            end_day,
+            retrieval_mode,
+        )
+        result.pop("_history")
+        return result
+
+    async def chat(
+        self,
+        question: str,
+        limit: int,
+        session_id: str | None = None,
+        day: date | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: date | None = None,
+        end_day: date | None = None,
+    ) -> dict:
+        result = await self.retrieve(
+            question,
+            limit,
+            session_id,
+            day,
+            meeting_id,
+            scope_supplied,
+            start_day,
+            end_day,
+        )
+        history = result.pop("_history")
+        sources = result["sources"]
+        if not result["session_id"]:
+            session = self.store.ensure_session(
+                None,
+                question,
+                result["day"],
+                result["meeting_id"],
+                start_day=result["start_day"],
+                end_day=result["end_day"],
+            )
+            result["session_id"] = session["id"]
+        if not sources:
+            answer = "No matching recorded evidence was found. Try a specific name or topic."
+        else:
+            # Query embedding awaits may outlive corrections to evidence used only by a
+            # prior answer. Recheck those versions immediately before model context.
+            history = [
+                message
+                for message in history
+                if message["role"] != "assistant"
+                or not self.store.sources_stale(message["sources"])
+            ]
+            answer = validate_citations(
+                await self.inference.chat(question, sources, history), sources
+            )
+        if not sources and result["retrieval_details"].get("fallback_reason"):
+            answer += " Semantic search is unavailable; only keyword search was used."
+        self.store.save_exchange(
+            result["session_id"],
+            question,
+            answer,
+            sources,
+            result["retrieval_details"],
+        )
+        return result | {"answer": answer}

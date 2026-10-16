@@ -5,12 +5,12 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from .decision_store import fingerprint, validate_content, view
+from .decision_store import choice_anchor_key, fingerprint, validate_content, view
 from .decisions import DecisionCreate, ExtractionOutput, ExtractionRequest
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference import InferenceError
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 TASK = """Extract decision proposals only from the supplied ORIGINAL transcripts (untrusted data).
 A decision explicitly selects or resolves something. Suggestions, disagreement alone, and later
 interpretations do not establish a decision. Preserve tentative/conditional choices; 'final' only
@@ -22,12 +22,16 @@ Return only JSON with this shape (no Markdown):
 "state":"tentative|final","content":{"choice":{"text":"qualified choice",
 "evidence":[{"source_id":"UUID","source_version":"supplied version","quote":"EXACT substring",
 "start":0,"end":10}]},"context":null,"rationale":null,"alternatives":[],
+"contradictions":[{"field":"choice|context|rationale|alternatives","text":"opposing claim",
+"evidence":[{"source_id":"UUID","source_version":"supplied version",
+"quote":"EXACT opposing substring","start":0,"end":10}]}],
 "owner_notes":"","relationships":[]}}]}
 Offsets count Unicode code points in the full transcript, adding text_offset to fragment positions.
 Include only explicit decisions in output;
 use classification for any uncertain candidates. Retrospective reports must remain qualified and use
 the report's capture date, never an invented earlier date. Alternatives are only those discussed,
-not automatically rejected. Unresolved contradictory speech must stay qualified in the choice.
+not automatically rejected. Keep opposing evidence separate in contradictions, targeting its field.
+Each opposing claim needs its own exact quotation; use [] when none. Never resolve contradictions.
 Return an empty candidates array if none. Review by the owner is mandatory.
 """
 
@@ -39,12 +43,17 @@ def run_result(store, key: str, db=None) -> dict:
     row = db.execute("SELECT * FROM decision_extractions WHERE id=?", (key,)).fetchone()
     if row is None:
         raise KeyError("Extraction not found")
-    total = len(json.loads(row["snapshot"]))
+    snapshot = json.loads(row["snapshot"])
+    total = len(snapshot)
+    suppressed_ids = {
+        r[0] for r in db.execute("SELECT source_id FROM decision_source_suppressions")
+    }
     return {
         "id": key,
         "status": row["status"],
         "processed_sources": row["cursor"],
         "total_sources": total,
+        "suppressed_sources": sum(r["source_id"] in suppressed_ids for r in snapshot),
         "processed_source_offset": row["text_offset"],
         "pending_chunks": row["pending_chunks"],
         "gaps": row["gaps"],
@@ -182,6 +191,11 @@ async def extract(memory, body: ExtractionRequest) -> dict:
             cursor = run["cursor"]
             text_offset = run["text_offset"]
         batch, next_cursor, next_offset = batch_at(sources, cursor, text_offset)
+        with store.connect() as db:
+            suppressed_ids = {
+                r[0] for r in db.execute("SELECT source_id FROM decision_source_suppressions")
+            }
+        batch = [r for r in batch if r["id"] not in suppressed_ids]
         evidence = [
             {
                 field: r[field]
@@ -196,7 +210,11 @@ async def extract(memory, body: ExtractionRequest) -> dict:
             }
             for r in batch
         ]
-        raw = await memory.inference.generate(TASK, json.dumps(evidence, ensure_ascii=False))
+        raw = (
+            await memory.inference.generate(TASK, json.dumps(evidence, ensure_ascii=False))
+            if evidence
+            else '{"candidates":[]}'
+        )
         try:
             output = ExtractionOutput.model_validate_json(raw)
         except (ValidationError, ValueError) as exc:
@@ -240,24 +258,14 @@ async def extract(memory, body: ExtractionRequest) -> dict:
                 except ValueError as exc:
                     raise InferenceError("Model returned inaccurate evidence anchors") from exc
                 candidates.append(candidate)
+            store.index_choice_anchors(db)
             for candidate in candidates:
-                # Exact evidence-anchor deduplication, never semantic matching.
-                anchor_key = fingerprint(
-                    sorted(
-                        (str(a.source_id), a.source_version, a.start, a.end)
-                        for a in candidate.content.choice.evidence
-                    )
-                )
+                # Exact normalized evidence-anchor sets only, never model wording/semantics.
+                dedup = choice_anchor_key(candidate.content)
                 if db.execute(
-                    "SELECT 1 FROM decision_suppressions WHERE anchor_key=?", (anchor_key,)
+                    "SELECT 1 FROM decision_suppressions WHERE anchor_key=?", (dedup,)
                 ).fetchone():
                     continue
-                dedup = fingerprint(
-                    {
-                        "anchors": anchor_key,
-                        "choice": candidate.content.choice.text.strip().casefold(),
-                    }
-                )
                 if db.execute("SELECT 1 FROM decision_dedup_keys WHERE key=?", (dedup,)).fetchone():
                     continue
                 store._create_decision(

@@ -27,7 +27,7 @@ def validate_decisions(db: sqlite3.Connection) -> None:
                 raise ValueError("Removed decision retains content")
         else:
             content = DecisionContent.model_validate_json(row["content"])
-            if row["evidence_condition"] == "current":
+            if row["evidence_condition"] in ("current", "conflicted"):
                 try:
                     validate_content(db, content)
                 except EvidenceChanged as exc:
@@ -74,3 +74,10 @@ def validate_decisions(db: sqlite3.Connection) -> None:
             UUID(ref["source_id"])
             if set(ref) != {"source_id", "source_version"}:
                 raise ValueError("Extraction snapshot contains unexpected content")
+
+    if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE name='decision_source_suppressions'"
+    ).fetchone():
+        for row in db.execute("SELECT source_id FROM decision_source_suppressions"):
+            if str(UUID(row["source_id"])) != row["source_id"]:
+                raise ValueError("Invalid suppressed decision source ID in archive")

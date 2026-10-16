@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, newId, post, request } from "./api";
 import { blankDecisionContent, decisionAnchor } from "./decisionModels";
-import type { Decision, DecisionClaim, DecisionContent } from "./decisionModels";
+import type { Decision, DecisionClaim, DecisionContent, DecisionContradiction } from "./decisionModels";
 import type { Source } from "./types";
 import { ErrorState, Loading } from "./UI";
 
@@ -49,15 +49,17 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pendingCommand = useRef<{ key: string; id: string } | null>(null);
-  const [content, setContent] = useState<DecisionContent>(() => decision?.content ? structuredClone(decision.content) : blankDecisionContent());
+  const [content, setContent] = useState<DecisionContent>(() => decision?.content ? { ...structuredClone(decision.content), contradictions: structuredClone(decision.content.contradictions || []) } : blankDecisionContent());
   const [state, setState] = useState<"tentative" | "final">(decision?.state || "tentative");
   const [sources, setSources] = useState<Source[]>(source ? [source] : []);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [additionalSourceId, setAdditionalSourceId] = useState("");
+  const [addingSource, setAddingSource] = useState(false);
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
-    const claims = decision?.content ? [decision.content.choice, decision.content.context, decision.content.rationale, ...decision.content.alternatives] : [];
+    const claims = decision?.content ? [decision.content.choice, decision.content.context, decision.content.rationale, ...decision.content.alternatives, ...(decision.content.contradictions || [])] : [];
     const ids = source ? [source.id] : [...new Set(claims.flatMap((claim) => claim?.evidence.map((anchor) => anchor.source_id) || []))];
     const controller = new AbortController();
     Promise.all(ids.map((id) => request<Source>(`/v1/transcripts/${encodeURIComponent(id)}`, { signal: controller.signal, cache: "no-store" })))
@@ -69,7 +71,7 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    const claims = [content.choice, content.context, content.rationale, ...content.alternatives].filter((value) => value !== null);
+    const claims = [content.choice, content.context, content.rationale, ...content.alternatives, ...content.contradictions].filter((value) => value !== null);
     if (!content.choice.text.trim() || claims.some((claim) => !claim.text.trim() || !claim.evidence.length)) {
       setError("Every recorded statement needs a supporting quotation. Leave unstated context or rationale empty."); return;
     }
@@ -88,12 +90,26 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(false); }
   }
+  async function addSource() {
+    setAddingSource(true); setError("");
+    try {
+      const item = await request<Source>(`/v1/transcripts/${encodeURIComponent(additionalSourceId.trim())}`, { cache: "no-store" });
+      if (item.state !== "done" || !item.text || !item.source_version) throw new Error("Choose a source with a current transcript.");
+      setSources((items) => [...items.filter((source) => source.id !== item.id), item]);
+      setAdditionalSourceId("");
+    } catch (error) { setError(errorMessage(error)); }
+    finally { setAddingSource(false); }
+  }
   return <dialog ref={dialog} className="upload-dialog decision-dialog" onCancel={(event) => { if (busy) event.preventDefault(); else onClose(); }}>
     <form onSubmit={save}><fieldset className="decision-form-fields" disabled={busy}>
       <div className="section-heading"><h2>{decision ? "Edit decision record" : "Record a decision"}</h2>
         <button type="button" className="text-button" disabled={busy} onClick={onClose}>Close</button></div>
       <p className="caption">Record an explicit choice. Suggestions and disagreement alone do not establish a decision. Saving creates a proposal for review.</p>
       {loading ? <Loading>Loading original evidence…</Loading> : null}
+      <details><summary>Add another source for context or opposing evidence</summary>
+        <label><span>Additional source UUID</span><input value={additionalSourceId} onChange={(event) => setAdditionalSourceId(event.target.value)} maxLength={36} /></label>
+        <button type="button" className="button small" disabled={loading || addingSource || !additionalSourceId.trim()} onClick={() => void addSource()}>{addingSource ? "Loading source…" : "Load additional source"}</button>
+      </details>
       <label className="decision-state"><span>State expressed in the recording</span><select value={state} onChange={(event) => setState(event.target.value as "tentative" | "final")}>
         <option value="tentative">Tentative</option><option value="final">Final</option>
       </select></label>
@@ -105,6 +121,15 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
         <button type="button" className="text-button" onClick={() => setContent({ ...content, alternatives: content.alternatives.filter((_, i) => i !== index) })}>Remove alternative</button>
       </div>)}
       <button className="text-button" type="button" onClick={() => setContent({ ...content, alternatives: [...content.alternatives, { text: "", evidence: [] }] })}>Add explicitly discussed alternative</button>
+      {content.contradictions.map((opposing, index) => <div key={`opposing-${index}`}>
+        <label><span>Contradicted field</span><select value={opposing.field} onChange={(event) => setContent({ ...content, contradictions: content.contradictions.map((item, i) => i === index ? { ...item, field: event.target.value as DecisionContradiction["field"] } : item) })}>
+          <option value="choice">Choice</option><option value="context">Context</option><option value="rationale">Rationale</option><option value="alternatives">Alternatives</option>
+        </select></label>
+        <ClaimEditor label={`Opposing statement ${index + 1}`} claim={opposing} sources={sources} onChange={(claim) => setContent({ ...content, contradictions: content.contradictions.map((item, i) => i === index ? { ...(claim || { text: "", evidence: [] }), field: item.field } : item) })} />
+        <button type="button" className="text-button" onClick={() => setContent({ ...content, contradictions: content.contradictions.filter((_, i) => i !== index) })}>Remove opposing statement</button>
+      </div>)}
+      <button className="text-button" type="button" onClick={() => setContent({ ...content, contradictions: [...content.contradictions, { field: "choice", text: "", evidence: [] }] })}>Add contradictory evidence</button>
+      {content.contradictions.length ? <p className="caption">Save the opposing passages, explain your resolution in owner notes, then explicitly resolve the conflict after review. The passages remain in the record.</p> : null}
       <label><span>Owner notes — your interpretation, entered now</span><textarea rows={3} maxLength={8000} value={content.owner_notes} onChange={(event) => setContent({ ...content, owner_notes: event.target.value })} /></label>
       <p className="caption">Use notes for your own explanation. They are not attributed to the recording.</p>
       <fieldset className="decision-claim-editor"><legend>Optional links</legend>
@@ -119,7 +144,7 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
         <button type="button" className="text-button" onClick={() => setContent({ ...content, relationships: [...content.relationships, { kind: "project", label: "", target_id: null }] })}>Add local label</button>
       </fieldset>
       {error ? <ErrorState message={error} /> : null}
-      <div className="button-row"><button className="button dark" disabled={busy || loading}>{busy ? "Saving…" : "Save proposal"}</button>
+      <div className="button-row"><button className="button dark" disabled={busy || loading || addingSource}>{busy ? "Saving…" : "Save proposal"}</button>
         <button type="button" className="button" disabled={busy} onClick={onClose}>Cancel</button></div>
     </fieldset></form>
   </dialog>;

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS decision_dependencies (
 CREATE INDEX IF NOT EXISTS decision_source ON decision_dependencies(source_id);
 CREATE TABLE IF NOT EXISTS decision_metadata (key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS decision_suppressions (anchor_key TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS decision_source_suppressions (source_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS decision_extractions (
  id TEXT PRIMARY KEY, fingerprint TEXT UNIQUE NOT NULL, status TEXT NOT NULL,
  snapshot TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0,
@@ -49,6 +50,15 @@ CREATE TABLE IF NOT EXISTS extraction_requests (
 
 def fingerprint(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def choice_anchor_key(content: DecisionContent) -> str:
+    """An exact set of source-version/character anchors; generated wording is irrelevant."""
+    return fingerprint(
+        sorted(
+            {(str(a.source_id), a.source_version, a.start, a.end) for a in content.choice.evidence}
+        )
+    )
 
 
 def view(row: sqlite3.Row) -> dict:
@@ -117,14 +127,24 @@ class DecisionStore:
         )
 
     def _remember_choice(self, db: sqlite3.Connection, key: str, content: DecisionContent) -> None:
-        anchors = fingerprint(
-            sorted(
-                (str(a.source_id), a.source_version, a.start, a.end)
-                for a in content.choice.evidence
-            )
+        db.execute(
+            "INSERT OR IGNORE INTO decision_dedup_keys VALUES(?,?)",
+            (choice_anchor_key(content), key),
         )
-        dedup = fingerprint({"anchors": anchors, "choice": content.choice.text.strip().casefold()})
-        db.execute("INSERT OR IGNORE INTO decision_dedup_keys VALUES(?,?)", (dedup, key))
+
+    def index_choice_anchors(self, db: sqlite3.Connection) -> None:
+        """Upgrade wording-dependent keys using retained content, without rewriting history."""
+        if db.execute("SELECT 1 FROM decision_metadata WHERE key='anchor_dedup_v2'").fetchone():
+            return
+        for row in db.execute(
+            "SELECT id,content FROM decisions WHERE content IS NOT NULL "
+            "UNION ALL SELECT decision_id,content FROM decision_events "
+            "WHERE content IS NOT NULL"
+        ).fetchall():
+            self._remember_choice(
+                db, row["id"], DecisionContent.model_validate_json(row["content"])
+            )
+        db.execute("INSERT INTO decision_metadata VALUES('anchor_dedup_v2','1')")
 
     def _create_decision(
         self,
@@ -137,11 +157,12 @@ class DecisionStore:
         start, end = validate_content(db, body.content)
         key, now = str(uuid4()), stamp(utc_now())
         db.execute(
-            "INSERT INTO decisions VALUES(?,?,1,?,'proposed','current',?,?,?,?,?,NULL,NULL,?,?)",
+            "INSERT INTO decisions VALUES(?,?,1,?,'proposed',?,?,?,?,?,?,NULL,NULL,?,?)",
             (
                 key,
                 key,
                 body.state,
+                "conflicted" if body.content.contradictions else "current",
                 body.content.model_dump_json(),
                 start,
                 end,
@@ -161,7 +182,13 @@ class DecisionStore:
             "SELECT * FROM decision_commands WHERE id=?", (command_id,)
         ).fetchone()
         if existing:
-            if existing["fingerprint"] != fingerprint(payload):
+            signatures = {fingerprint(payload)}
+            content = payload.get("content")
+            if isinstance(content, dict) and content.get("contradictions") == []:
+                # Adding an optional field must not invalidate a pre-upgrade command retry.
+                legacy_content = {k: v for k, v in content.items() if k != "contradictions"}
+                signatures.add(fingerprint(payload | {"content": legacy_content}))
+            if existing["fingerprint"] not in signatures:
                 raise EvidenceChanged("Command ID already used with different content")
             return self._detail(db, existing["decision_id"])
         return None
@@ -262,7 +289,7 @@ class DecisionStore:
                     started_at=start,
                     ended_at=end,
                     review_status="proposed",
-                    evidence_condition="current",
+                    evidence_condition="conflicted" if body.content.contradictions else "current",
                     state=body.state or old["state"],
                 )
                 self._dependencies(
@@ -325,12 +352,10 @@ class DecisionStore:
 
     def _purge_decision(self, db: sqlite3.Connection, key: str, event: str) -> None:
         # Privacy deletion is an explicit exception to retaining content in event history.
+        self.index_choice_anchors(db)
         previous = self._decision(db, key)
         if previous["content"]:
-            claim = DecisionContent.model_validate_json(previous["content"]).choice
-            anchor_key = fingerprint(
-                sorted((str(a.source_id), a.source_version, a.start, a.end) for a in claim.evidence)
-            )
+            anchor_key = choice_anchor_key(DecisionContent.model_validate_json(previous["content"]))
             db.execute("INSERT OR IGNORE INTO decision_suppressions VALUES(?)", (anchor_key,))
         db.execute(
             "UPDATE decisions SET content=NULL,evidence_condition='removed',"
@@ -355,6 +380,11 @@ class DecisionStore:
     def invalidate_decision_sources(
         self, db: sqlite3.Connection, keys: list[str], purge: bool
     ) -> None:
+        if purge:
+            db.executemany(
+                "INSERT OR IGNORE INTO decision_source_suppressions VALUES(?)",
+                [(key,) for key in keys],
+            )
         affected = set()
         for key in keys:
             affected.update(

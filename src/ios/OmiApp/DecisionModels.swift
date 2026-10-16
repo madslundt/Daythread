@@ -11,6 +11,15 @@ struct DecisionClaim: Codable, Equatable {
     var text: String
     var evidence: [DecisionAnchor]
 }
+struct DecisionContradiction: Codable, Equatable {
+    var field = "choice"
+    var text = ""
+    var evidence: [DecisionAnchor] = []
+    var claim: DecisionClaim {
+        get { DecisionClaim(text: text, evidence: evidence) }
+        set { text = newValue.text; evidence = newValue.evidence }
+    }
+}
 struct DecisionRelationship: Codable, Equatable {
     var kind: String
     var label: String
@@ -21,8 +30,21 @@ struct DecisionContent: Codable, Equatable {
     var context: DecisionClaim?
     var rationale: DecisionClaim?
     var alternatives: [DecisionClaim] = []
+    var contradictions: [DecisionContradiction] = []
     var owner_notes = ""
     var relationships: [DecisionRelationship] = []
+}
+extension DecisionContent {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        choice = try values.decode(DecisionClaim.self, forKey: .choice)
+        context = try values.decodeIfPresent(DecisionClaim.self, forKey: .context)
+        rationale = try values.decodeIfPresent(DecisionClaim.self, forKey: .rationale)
+        alternatives = try values.decodeIfPresent([DecisionClaim].self, forKey: .alternatives) ?? []
+        contradictions = try values.decodeIfPresent([DecisionContradiction].self, forKey: .contradictions) ?? []
+        owner_notes = try values.decodeIfPresent(String.self, forKey: .owner_notes) ?? ""
+        relationships = try values.decodeIfPresent([DecisionRelationship].self, forKey: .relationships) ?? []
+    }
 }
 struct DecisionRecord: Codable, Identifiable {
     let id: String
@@ -57,6 +79,7 @@ struct DecisionExtraction: Decodable {
     let total_sources: Int
     let pending_chunks: Int
     let gaps: Int
+    let suppressed_sources: Int?
     let items: [DecisionRecord]
     let next_run_id: String?
 }
@@ -136,5 +159,5 @@ extension BackendClient {
 }
 
 extension BackendFailure {
-    var requiresDecisionReload: Bool { statusCode == 404 || statusCode == 409 }
+    var requiresDecisionReload: Bool { status == 404 || status == 409 }
 }

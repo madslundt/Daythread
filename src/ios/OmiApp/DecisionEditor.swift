@@ -45,6 +45,17 @@ struct DecisionEditor: View {
                 Button("Remove alternative \(index + 1)", role: .destructive) { content.alternatives.remove(at: index) }
             }
             Button("Add explicitly discussed alternative") { content.alternatives.append(DecisionClaim(text: "", evidence: [])) }
+            ForEach(content.contradictions.indices, id: \.self) { index in
+                Picker("Contradicted field", selection: $content.contradictions[index].field) {
+                    ForEach(["choice", "context", "rationale", "alternatives"], id: \.self) { field in Text(field.capitalized).tag(field) }
+                }
+                DecisionClaimEditor(title: "Opposing statement \(index + 1)", claim: $content.contradictions[index].claim, initialSource: source)
+                Button("Remove opposing statement \(index + 1)", role: .destructive) { content.contradictions.remove(at: index) }
+            }
+            Button("Add contradictory evidence") { content.contradictions.append(DecisionContradiction()) }
+            if !content.contradictions.isEmpty {
+                Text("Save the opposing passages, explain the resolution in owner notes, then explicitly resolve the conflict after review. The passages remain in the record.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Owner note · not recorded speech") { TextField("Your explanation", text: $content.owner_notes, axis: .vertical).lineLimit(3...10) }
             Section("Optional related labels") {
                 ForEach(content.relationships.indices, id: \.self) { index in
@@ -68,11 +79,11 @@ struct DecisionEditor: View {
             .onChange(of: phase) { _, value in if value != .active { dismiss() } }
     }
     private var valid: Bool {
-        let claims = [content.choice] + [content.context, content.rationale].compactMap { $0 } + content.alternatives
+        let claims = [content.choice] + [content.context, content.rationale].compactMap { $0 } + content.alternatives + content.contradictions.map(\.claim)
         return claims.allSatisfy {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.unicodeScalars.count <= 4_000
                 && !$0.evidence.isEmpty && $0.evidence.count <= 20
-        } && content.alternatives.count <= 20 && content.owner_notes.unicodeScalars.count <= 8_000
+        } && content.alternatives.count <= 20 && content.contradictions.count <= 20 && content.owner_notes.unicodeScalars.count <= 8_000
             && content.relationships.count <= 30 && content.relationships.allSatisfy {
                 !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.label.unicodeScalars.count <= 200
             }

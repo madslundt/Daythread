@@ -30,7 +30,7 @@ enum JSONValue: Codable, Equatable {
 
 struct BackendFailure: LocalizedError {
     let message: String
-    var statusCode: Int? = nil
+    var status: Int? = nil
     var errorDescription: String? { message }
 }
 
@@ -61,6 +61,10 @@ struct BackendClient {
         try Self.validate(response, data: data)
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
+    func decoded<T: Decodable>(_ path: String, method: String = "GET", query: [String: String] = [:], body: [String: Any]? = nil, as type: T.Type) async throws -> T {
+        let value = try await request(path, method: method, query: query, body: body)
+        return try JSONDecoder().decode(type, from: JSONEncoder().encode(value))
+    }
     func download(_ path: String, query: [String: String]) async throws -> URL {
         let (temporary, response) = try await URLSession.shared.download(from: url(path, query: query))
         try Self.validate(response, data: (try? Data(contentsOf: temporary)) ?? Data())
@@ -72,7 +76,7 @@ struct BackendClient {
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let detail = (try? JSONDecoder().decode(JSONValue.self, from: data))?["detail"].text
-            throw BackendFailure(message: "Home-core HTTP \(status): \(detail?.isEmpty == false ? detail! : String(data: data.prefix(500), encoding: .utf8) ?? "No response detail")", statusCode: status)
+            throw BackendFailure(message: "Home-core HTTP \(status): \(detail?.isEmpty == false ? detail! : String(data: data.prefix(500), encoding: .utf8) ?? "No response detail")", status: status)
         }
     }
 }

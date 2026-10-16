@@ -30,6 +30,7 @@ struct DayView: View {
         List {
             Section {
                 EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.")
+                InboxLink()
                 MonthCalendar(diary: diary, month: $month, day: day, today: model.now, days: days, select: select)
                 HStack(spacing: 6) {
                     Circle().fill(Theme.accent).frame(width: 6, height: 6)

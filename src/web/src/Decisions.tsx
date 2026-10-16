@@ -24,10 +24,10 @@ function useDecisions<T>(path: string | null) {
   return resource;
 }
 
-function Claim({ label, claim, historical = false }: { label: string; claim: DecisionClaim | null; historical?: boolean }) {
+function Claim({ label, claim, historical = false, opposing = false }: { label: string; claim: DecisionClaim | null; historical?: boolean; opposing?: boolean }) {
   return <div className="decision-claim"><h4>{label}</h4>
     <p>{claim?.text || "Not stated"}</p>
-    {claim?.evidence.map((anchor, index) => <DecisionEvidence key={index} anchor={anchor} historical={historical} />)}
+    {claim?.evidence.map((anchor, index) => <DecisionEvidence key={index} anchor={anchor} historical={historical} opposing={opposing} />)}
   </div>;
 }
 
@@ -37,6 +37,7 @@ function Contents({ content, historical = false }: { content: DecisionContent; h
     <Claim label="Context" claim={content.context} historical={historical} />
     <Claim label="Rationale" claim={content.rationale} historical={historical} />
     {content.alternatives.map((claim, index) => <Claim key={index} label={`Explicitly discussed alternative ${index + 1}`} claim={claim} historical={historical} />)}
+    {(content.contradictions || []).map((claim, index) => <Claim key={`opposing-${index}`} label={`Contradictory evidence for ${claim.field}`} claim={claim} historical={historical} opposing />)}
     {content.owner_notes ? <div className="decision-claim"><h4>Owner notes</h4><p>{content.owner_notes}</p><p className="caption">Owner interpretation; not recorded speech.</p></div> : null}
     {content.relationships.length ? <p className="caption">Links: {content.relationships.map((link) => `${link.kind}: ${link.label}${link.target_id ? "" : " (local label)"}`).join(" · ")}</p> : null}
   </>;
@@ -173,6 +174,7 @@ export function Decisions({ day, timezone }: { day: string; timezone: string }) 
     <p className="caption">Evidence-backed records, reviewed by you. Create one from a source recording, or ask the local model for proposals.</p>
     {extraction ? <Notice>
       Processed {extraction.processed_sources} of {extraction.total_sources} transcript sources. {extraction.processed_source_offset ? `Also processed ${extraction.processed_source_offset.toLocaleString()} characters of the next source. ` : ""}{extraction.pending_chunks} recording(s) pending transcription; {extraction.gaps} capture gap(s).
+      {extraction.suppressed_sources ? ` ${extraction.suppressed_sources} previously removed source(s) excluded from automatic extraction. Explicit manual records remain available.` : ""}
       {extraction.next_run_id ? " More sources remain; continue to process the next batch." : extraction.status === "complete" ? " Available transcripts processed. Missing audio or pending transcripts can leave decisions undiscovered." : ` Extraction is ${extraction.status}; start again with current evidence.`}
     </Notice> : null}
     {error || resource.error ? <ErrorState message={error || resource.error} retry={resource.refresh} /> : null}

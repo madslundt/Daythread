@@ -119,7 +119,7 @@ struct SourceList: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(AppModel.date(source["started_at"].text)?.formatted(date: .abbreviated, time: .shortened) ?? source["started_at"].text)
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text)
+                    Text(source["matches"].array.first?["text"].text ?? (source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text))
                         .font(.body).foregroundStyle(.primary).lineLimit(4).multilineTextAlignment(.leading)
                 }.padding(.vertical, 5)
             }
@@ -145,7 +145,7 @@ struct SourceDetail: View {
                 NavigationLink("Create decision from this source") {
                     SourceDecisionCreation(sourceID: source["id"].text)
                 }.disabled(source["text"].text.isEmpty)
-                if source["audio_available"] == .bool(true) {
+                if source["audio_available"] != .bool(false) {
                 Button {
                     loading = true
                     Task {
@@ -154,7 +154,7 @@ struct SourceDetail: View {
                         catch { self.error = error.localizedDescription }
                     }
                 } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
-                } else { Text("Original audio unavailable").font(.caption).foregroundStyle(.secondary) }
+                } else { Text("Transcript only. Original audio is unavailable.").font(.caption).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

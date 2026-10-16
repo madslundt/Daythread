@@ -4,11 +4,13 @@ export type DecisionAnchor = {
   source_id: string; source_version: string; quote: string; start: number; end: number;
 };
 export type DecisionClaim = { text: string; evidence: DecisionAnchor[] };
+export type DecisionContradiction = DecisionClaim & { field: "choice" | "context" | "rationale" | "alternatives" };
 export type DecisionContent = {
   choice: DecisionClaim;
   context: DecisionClaim | null;
   rationale: DecisionClaim | null;
   alternatives: DecisionClaim[];
+  contradictions: DecisionContradiction[];
   owner_notes: string;
   relationships: { kind: "project" | "person" | "commitment" | "meeting"; label: string; target_id: string | null }[];
 };
@@ -28,6 +30,7 @@ export type DecisionExtraction = {
   id: string; status: "active" | "complete" | "stale" | "removed";
   processed_sources: number; processed_source_offset?: number; total_sources: number; pending_chunks: number; gaps: number;
   items: Decision[]; next_run_id: string | null;
+  suppressed_sources?: number;
 };
 
 // Backend offsets count Unicode code points, not JavaScript UTF-16 units.
@@ -44,7 +47,7 @@ export function decisionAnchor(source: Source, quote: string): DecisionAnchor {
 }
 
 export function blankDecisionContent(): DecisionContent {
-  return { choice: { text: "", evidence: [] }, context: null, rationale: null, alternatives: [], owner_notes: "", relationships: [] };
+  return { choice: { text: "", evidence: [] }, context: null, rationale: null, alternatives: [], contradictions: [], owner_notes: "", relationships: [] };
 }
 
 export function evidencePassage(source: Source, anchor: DecisionAnchor): { before: string; quote: string; after: string } | null {

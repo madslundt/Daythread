@@ -43,6 +43,15 @@ struct CaptureView: View {
             }
             Section {
                 Text(model.serverStatus).font(.callout).textSelection(.enabled)
+                if statusStale { Text("Current backend state unknown; showing the last successful observation.").font(.caption).foregroundStyle(.orange) }
+                Text("Backend observed: \(model.completenessStatus["as_of"].text)").font(.caption)
+                Text("Last server receipt: \(model.completenessStatus["ingestion"]["last_received_at"].text.isEmpty ? "unknown" : model.completenessStatus["ingestion"]["last_received_at"].text)").font(.caption)
+                Text("\(model.completenessStatus["processing"]["queued"].integer) queued (\(model.completenessStatus["processing"]["retrying"].integer) retrying) · \(model.completenessStatus["processing"]["transcribing"].integer) transcribing · \(model.completenessStatus["processing"]["blocked"].integer) blocked").font(.caption)
+                LabeledContent("Last decoded audio", value: model.lastDecodedAt?.formatted() ?? "Unknown this session")
+                LabeledContent("Last persisted audio", value: model.lastPersistedAt?.formatted() ?? "Unknown this session")
+                if let failure = model.captureFailure { Text("Capture stopped: \(failure). Resume explicitly after resolving the failure.").font(.caption).foregroundStyle(.red) }
+                Text("A saved archive or connection does not establish continuous capture. Backend values show the timestamp of the last successful check.").font(.caption).foregroundStyle(.secondary)
+                NavigationLink("Feedback and repairs") { FeedbackReviewView() }
                 LabeledContent("Waiting to sync", value: "\(model.queueCount) items · \(model.unsyncedMinutes.formatted(.number.precision(.fractionLength(1)))) min")
                 LabeledContent("Phone storage", value: "\(model.storageMB.formatted(.number.precision(.fractionLength(1)))) MB / \(model.storageBudgetMB) MB")
                 Button("Sync now") { model.checkpoint(); model.retryUploads(); Task { await model.refreshStatus() } }
@@ -60,6 +69,10 @@ struct CaptureView: View {
             }
         }.listStyle(.insetGrouped).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
             .refreshable { await model.refreshStatus() }
+    }
+    private var statusStale: Bool {
+        guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }
+        return model.now.timeIntervalSince(at) > 120 || !model.serverStatus.hasPrefix("Home-core connected")
     }
     private var markLabel: String {
         if let next = model.nextMarkAt, next > model.now { return "Flag added · wait \(Int(ceil(next.timeIntervalSince(model.now))))s" }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { errorMessage, post } from "./api";
 import { dateRangeForShortcut, dateRangeShortcuts, dateTimeLabel, dayLabel, localDay } from "./format";
 import { Icon } from "./Icon";
+import { EvidenceFeedback } from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
 import type { ChatScope, ChatSession, Conversation, Source, Timeline } from "./types";
 import { useResource } from "./useResource";
@@ -229,6 +230,7 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
                   {message.role === "user" ? "You" : "omi"}
                 </div>
                 <RichText text={message.content} />
+                {message.role === "assistant" ? <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} /> : null}
                 {message.sources.length ? (
                   <details className="chat-sources">
                     <summary>

@@ -10,6 +10,7 @@
 		338972066E29E13D899F0D93 /* RewindView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB103EC0D947AF259813AF67 /* RewindView.swift */; };
 		53E5E3E646103D95D8D6D0A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 34E6A4F371E71DE67B84C005 /* Assets.xcassets */; };
 		5ED2AEC6388BE96E237B1F5F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */; };
+		663B7B58CCC7240DDEB8B75D /* CompletenessFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF000BA0F7EED480D3031D5 /* CompletenessFeedback.swift */; };
 		6C77E56584FD08FE926970AB /* OmiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF738894717C09600F1F1D9 /* OmiApp.swift */; };
 		7C3A7F61C5066FD3BC21D84B /* CaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */; };
 		8742910AE564A09AF79D83E4 /* DayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D68AC74F4420C61DC1058227 /* DayView.swift */; };
@@ -33,6 +34,7 @@
 		A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
 		AD9EAC0AB3288CEED0AE38A7 /* OmiLocal.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmiLocal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C713C75E658365D773F6A8DE /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
+		CDF000BA0F7EED480D3031D5 /* CompletenessFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletenessFeedback.swift; sourceTree = "<group>"; };
 		CE6B31CC401589C34B0076D6 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		D68AC74F4420C61DC1058227 /* DayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayView.swift; sourceTree = "<group>"; };
 		FB103EC0D947AF259813AF67 /* RewindView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewindView.swift; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 				30B842DC16CA4ABEDC74FD7B /* BackgroundUploader.swift */,
 				A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */,
 				CE6B31CC401589C34B0076D6 /* ChatView.swift */,
+				CDF000BA0F7EED480D3031D5 /* CompletenessFeedback.swift */,
 				D68AC74F4420C61DC1058227 /* DayView.swift */,
 				0BAB8DB32118BFF5635E7A65 /* Info.plist */,
 				6DF738894717C09600F1F1D9 /* OmiApp.swift */,
@@ -174,6 +177,7 @@
 				9A209B1529C4C7F9940BC405 /* BackgroundUploader.swift in Sources */,
 				7C3A7F61C5066FD3BC21D84B /* CaptureView.swift in Sources */,
 				8AFACE422C82AEEA34D320D6 /* ChatView.swift in Sources */,
+				663B7B58CCC7240DDEB8B75D /* CompletenessFeedback.swift in Sources */,
 				8742910AE564A09AF79D83E4 /* DayView.swift in Sources */,
 				6C77E56584FD08FE926970AB /* OmiApp.swift in Sources */,
 				C1FF364862A99BAC8FDABF8D /* OmiBluetooth.swift in Sources */,

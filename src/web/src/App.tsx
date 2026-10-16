@@ -213,6 +213,7 @@ export default function App() {
             day={day}
             timezone={timezone}
             status={status.data}
+            statusError={status.error}
             timeline={timeline.data}
             onUpload={() => setUploadOpen(true)}
             onRewind={rewind}

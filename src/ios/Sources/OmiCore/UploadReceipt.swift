@@ -16,12 +16,18 @@ public enum UploadReceipt {
                   let started = date("started_at"), abs(started.timeIntervalSince(item.capturedAt)) < 0.002,
                   let ended = date("ended_at"), let expectedEnd = item.endedAt,
                   abs(ended.timeIntervalSince(expectedEnd)) < 0.002,
-                  let state = value["state"] as? String, ["queued", "transcribing", "done", "failed", "expired"].contains(state) else { throw CaptureError.invalidReceipt }
+                  let state = value["state"] as? String, ["queued", "transcribing", "done", "failed", "expired", "blocked"].contains(state) else { throw CaptureError.invalidReceipt }
+        case .captureState:
+            guard matches("event_id", item.id), (value["phone_id"] as? String).flatMap(UUID.init(uuidString:)) == UUID(uuidString: item.deviceID),
+                  let occurred = date("occurred_at"), abs(occurred.timeIntervalSince(item.capturedAt)) < 0.002,
+                  value["state"] as? String == item.captureState,
+                  value["cause"] as? String == item.cause else { throw CaptureError.invalidReceipt }
         case .gap:
             guard matches("gap_id", item.id), value["device_id"] as? String == item.deviceID,
                   let started = date("started_at"), abs(started.timeIntervalSince(item.capturedAt)) < 0.002,
                   let ended = date("ended_at"), let expectedEnd = item.endedAt,
-                  abs(ended.timeIntervalSince(expectedEnd)) < 0.002 else { throw CaptureError.invalidReceipt }
+                  abs(ended.timeIntervalSince(expectedEnd)) < 0.002,
+                  item.cause == nil || value["cause"] as? String == item.cause else { throw CaptureError.invalidReceipt }
         case .event:
             // Suppressed hints still need an individual durable receipt. A valid timeline
             // could be a cached response to a different event and cannot acknowledge this one.

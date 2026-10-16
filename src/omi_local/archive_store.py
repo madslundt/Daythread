@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from .completeness import audio_availability
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
 
 EXTENDED_SCHEMA = """
@@ -41,6 +42,27 @@ CREATE TABLE IF NOT EXISTS capture_gaps (
 """
 
 
+def diary_markdown(day: str, content: dict) -> str:
+    evidence = content.get("evidence")
+    diagnostic = ""
+    if evidence:
+        diagnostic = (
+            f"Output: {content.get('output_id', 'unknown')} · "
+            f"generated {evidence['generated_at']}\n\n"
+            f"Evidence: {len(evidence['selected'])} selected / "
+            f"{evidence['eligible_transcripts']} eligible "
+            f"transcript sources; {evidence['pending_chunks']} pending and "
+            f"{evidence['blocked_chunks']} blocked at selection. "
+            "Selection and citations do not verify accuracy.\n\n"
+        )
+    return (
+        f"# {day}\n\n{content['summary']}\n\n"
+        + diagnostic
+        + "## Transcript sources\n\n"
+        + "\n".join(f"- {r['started_at']} [{r['id']}] {r['text']}" for r in content["sources"])
+    )
+
+
 class ArchiveStore:
     """SQLite helpers mixed into Store; paths remain controlled by the archive."""
 
@@ -61,15 +83,16 @@ class ArchiveStore:
             }
 
     def append_gap(self, gap: dict) -> dict:
+        gap = {"cause": "unknown", **gap}
         values = tuple(
-            gap[key] for key in ("gap_id", "device_id", "started_at", "ended_at", "reason")
+            gap[key] for key in ("gap_id", "device_id", "started_at", "ended_at", "reason", "cause")
         )
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM capture_gaps WHERE gap_id=?", (values[0],)).fetchone()
             if old and tuple(old) != values:
                 raise ValueError("Gap ID already exists with different metadata")
-            db.execute("INSERT OR IGNORE INTO capture_gaps VALUES(?,?,?,?,?)", values)
+            db.execute("INSERT OR IGNORE INTO capture_gaps VALUES(?,?,?,?,?,?)", values)
         return gap
 
     def capture_gaps(
@@ -125,7 +148,8 @@ class ArchiveStore:
                 (str(uuid4()), audio_id, old["text"], text, stamp(utc_now())),
             )
             db.execute(
-                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL WHERE id=?",
+                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL,error_code=NULL,"
+                "transcription_outcome='corrected' WHERE id=?",
                 (text, audio_id),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
@@ -188,9 +212,14 @@ class ArchiveStore:
             ]
 
     def ensure_session(
-        self, session_id: str | None, title: str, day: str | None = None,
-        meeting_id: str | None = None, scope_supplied: bool = False,
-        start_day: str | None = None, end_day: str | None = None,
+        self,
+        session_id: str | None,
+        title: str,
+        day: str | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: str | None = None,
+        end_day: str | None = None,
     ) -> dict:
         key, now = session_id or str(uuid4()), stamp(utc_now())
         with self.connect() as db:
@@ -211,8 +240,14 @@ class ArchiveStore:
                 (key, title[:120], now, now, day, meeting_id, start_day, end_day),
             )
         return {
-            "id": key, "title": title[:120], "created_at": now, "updated_at": now,
-            "day": day, "meeting_id": meeting_id, "start_day": start_day, "end_day": end_day,
+            "id": key,
+            "title": title[:120],
+            "created_at": now,
+            "updated_at": now,
+            "day": day,
+            "meeting_id": meeting_id,
+            "start_day": start_day,
+            "end_day": end_day,
         }
 
     def chat_sessions(self) -> list[dict]:
@@ -235,34 +270,74 @@ class ArchiveStore:
                     "SELECT * FROM chat_messages WHERE session_id=? ORDER BY created_at,id", (key,)
                 )
             ]
+            # Preserve historical text, while playback reflects the current archive.
+            current_sources = {}
+            for message in messages:
+                projected = []
+                for source in json.loads(message["sources"]):
+                    source_id = source["id"]
+                    if source_id not in current_sources:
+                        current = db.execute(
+                            "SELECT * FROM audio WHERE id=?", (source_id,)
+                        ).fetchone()
+                        current_sources[source_id] = dict(current) if current else None
+                    current = current_sources[source_id]
+                    projected.append(
+                        source
+                        | {
+                            "audio_available": bool(current and current["audio_available"]),
+                            "audio_availability": audio_availability(current)
+                            if current
+                            else "missing",
+                        }
+                    )
+                message["sources"] = projected
         return dict(row) | {
             "messages": [
-                message | {"sources": json.loads(message["sources"])} for message in messages
+                message
+                | {
+                    "sources": message["sources"],
+                    "evidence": self.evidence(message["id"]),
+                }
+                for message in messages
             ]
         }
 
     def save_exchange(
-        self, session_id: str, question: str, answer: str, sources: list[dict]
-    ) -> None:
+        self,
+        session_id: str,
+        question: str,
+        answer: str,
+        sources: list[dict],
+        evidence: dict | None = None,
+        output_id: str | None = None,
+    ) -> dict:
         now = stamp(utc_now())
+        ids = {"user": str(uuid4()), "assistant": output_id or str(uuid4())}
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if not db.execute("SELECT id FROM chat_sessions WHERE id=?", (session_id,)).fetchone():
                 raise EvidenceChanged("Chat was removed while the answer was generated")
             self.verify_sources(db, sources)
-            for role, content, evidence in (("user", question, []), ("assistant", answer, sources)):
+            for role, content, message_sources in (
+                ("user", question, []),
+                ("assistant", answer, sources),
+            ):
                 db.execute(
                     "INSERT INTO chat_messages VALUES(?,?,?,?,?,?)",
                     (
-                        str(uuid4()),
+                        ids[role],
                         session_id,
                         role,
                         content,
-                        json.dumps(evidence),
+                        json.dumps(message_sources),
                         stamp(utc_now()),
                     ),
                 )
             db.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
+            if evidence:
+                self._save_evidence(db, ids["assistant"], evidence, sources)
+        return {"user_message_id": ids["user"], "message_id": ids["assistant"]}
 
     def delete_audio(self, key: str) -> bool:
         with self.connect() as db:
@@ -277,6 +352,7 @@ class ArchiveStore:
             db.execute("DELETE FROM chat_messages")
             db.execute("DELETE FROM chat_sessions")
             self._invalidate_diaries(db, purge_history=True)
+            self.purge_diagnostics(db)
         self._prune_files([row["path"]])
         return True
 
@@ -318,6 +394,8 @@ class ArchiveStore:
                 if removed_transcripts:
                     db.execute("DELETE FROM chat_messages")
                     db.execute("DELETE FROM chat_sessions")
+            if removed_transcripts:
+                self.purge_diagnostics(db)
             if removed_audio or removed_transcripts:
                 self._invalidate_diaries(db, purge_history=True)
         if removed_audio or removed_transcripts:
@@ -366,13 +444,7 @@ class ArchiveStore:
                 # Render the snapshot's diary projection; live files may already be newer.
                 for row in db.execute("SELECT day,content FROM diary"):
                     content = json.loads(row["content"])
-                    markdown = (
-                        f"# {row['day']}\n\n{content['summary']}\n\n## Transcript sources\n\n"
-                    )
-                    markdown += "\n".join(
-                        f"- {source['started_at']} [{source['id']}] {source['text']}"
-                        for source in content["sources"]
-                    )
+                    markdown = diary_markdown(row["day"], content)
                     archive.writestr(f"diary/{row['day']}.md", markdown)
             snapshot.unlink()
             return output

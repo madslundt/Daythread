@@ -73,6 +73,15 @@ class CaptureGap(BaseModel):
     started_at: AwareDatetime
     ended_at: AwareDatetime
     reason: str = Field(min_length=1, max_length=200)
+    cause: Literal[
+        "unknown",
+        "connection",
+        "packet_loss",
+        "delivery_interrupted",
+        "incomplete_frame",
+        "storage",
+        "decoder",
+    ] = "unknown"
 
     @model_validator(mode="after")
     def ordered(self):
@@ -159,3 +168,88 @@ def project_events(events: list[dict], now: datetime) -> dict:
         if qualified:
             accepted.append(meeting)
     return {"meetings": accepted, "markers": markers, "active_meeting": active}
+
+
+CaptureCause = Literal[
+    "unknown",
+    "user_pause",
+    "connection",
+    "packet_loss",
+    "delivery_interrupted",
+    "incomplete_frame",
+    "storage",
+    "decoder",
+    "resumed",
+]
+
+
+class PhoneObservation(BaseModel):
+    sequence: int = Field(ge=0, le=2**53 - 1, strict=True)
+    observed_at: AwareDatetime
+    device_id: str = Field(default="", max_length=80, pattern=r"^[\w-]*$")
+    capture_state: Literal["capturing", "paused", "disconnected", "blocked", "unknown"]
+    cause: CaptureCause = "unknown"
+    requested_pause: bool
+    last_decoded_at: AwareDatetime | None = None
+    last_persisted_at: AwareDatetime | None = None
+    pending_recordings: int = Field(ge=0, le=1_000_000)
+    recovery_items: int = Field(ge=0, le=1_000_000)
+    pending_seconds: float = Field(ge=0, le=1e10, allow_inf_nan=False)
+    oldest_capture_at: AwareDatetime | None = None
+    upload_policy: Literal["wifi_only", "any_network"]
+    upload_state: Literal["idle", "active", "waiting", "retrying", "unknown"]
+    storage_bytes: int = Field(ge=0, le=10**13)
+    storage_budget_bytes: int = Field(gt=0, le=10**13)
+
+    @model_validator(mode="after")
+    def clock(self):
+        if self.observed_at > utc_now() + timedelta(seconds=30):
+            raise ValueError("Observation is in the future")
+        for value in (self.last_decoded_at, self.last_persisted_at, self.oldest_capture_at):
+            if value and value > self.observed_at + timedelta(seconds=30):
+                raise ValueError("Capture time follows observation")
+        return self
+
+
+class CaptureState(BaseModel):
+    phone_id: UUID
+    occurred_at: AwareDatetime
+    state: Literal["capturing", "paused", "disconnected", "blocked", "unknown"]
+    cause: CaptureCause = "unknown"
+
+    @model_validator(mode="after")
+    def clock(self):
+        if self.occurred_at > utc_now() + timedelta(seconds=30):
+            raise ValueError("Capture state is in the future")
+        if self.state == "paused" and self.cause != "user_pause":
+            raise ValueError("Intentional pause requires user_pause cause")
+        return self
+
+
+class Feedback(BaseModel):
+    issue: Literal["incorrect", "missing"]
+    source_id: UUID | None = None
+    output_id: UUID | None = None
+    expected_source_ids: list[UUID] = Field(default_factory=list, max_length=30)
+    start: AwareDatetime | None = None
+    end: AwareDatetime | None = None
+    stage: Literal["unknown", "capture", "stt", "retrieval", "generation"] = "unknown"
+    note: str = Field(default="", max_length=2000)
+    excerpt: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def references(self):
+        if (self.start is None) != (self.end is None) or (
+            self.start is not None and self.end <= self.start
+        ):
+            raise ValueError("Provide an ordered missing interval")
+        if not (self.source_id or self.output_id or self.start):
+            raise ValueError("Attach a source, output or missing interval")
+        return self
+
+
+class FeedbackEvent(BaseModel):
+    event_id: UUID
+    status: Literal["open", "resolved"]
+    stage: Literal["unknown", "capture", "stt", "retrieval", "generation"] = "unknown"
+    note: str = Field(default="", max_length=2000)

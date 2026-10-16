@@ -54,3 +54,33 @@ final class UploadReceiptTests: XCTestCase {
         XCTAssertThrowsError(try UploadReceipt.validate(data(receipt), for: item))
     }
 }
+
+extension UploadReceiptTests {
+    func testCaptureStateReceiptRequiresPhoneIdentityTimeStateAndCause() throws {
+        let phone = UUID(), at = Date(timeIntervalSince1970: 1000.125)
+        var item = OutboxItem(id:UUID(),kind:.captureState,deviceID:phone.uuidString,capturedAt:at)
+        item.captureState = "blocked"; item.cause = "storage"
+        var receipt: [String:Any] = ["event_id":item.id.uuidString.lowercased(), "phone_id":phone.uuidString.lowercased(), "occurred_at":DurableStore.stamp(at), "state":"blocked", "cause":"storage"]
+        XCTAssertNoThrow(try UploadReceipt.validate(data(receipt),for:item))
+        receipt["cause"] = "user_pause"
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt),for:item))
+        receipt["cause"] = "storage"; receipt["phone_id"] = UUID().uuidString
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt),for:item))
+        receipt["phone_id"] = phone.uuidString; receipt["occurred_at"] = DurableStore.stamp(at.addingTimeInterval(1))
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt),for:item))
+    }
+}
+
+extension UploadReceiptTests {
+    func testTypedGapReceiptMustConfirmCauseButLegacyGapStillAcceptsOldShape() throws {
+        let start = Date(timeIntervalSince1970: 1000)
+        var item = OutboxItem(id:UUID(),kind:.gap,deviceID:"p",capturedAt:start)
+        item.endedAt=start.addingTimeInterval(1); item.cause="packet_loss"
+        var receipt: [String:Any] = ["gap_id":item.id.uuidString,"device_id":"p","started_at":DurableStore.stamp(start),"ended_at":DurableStore.stamp(item.endedAt!)]
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt),for:item))
+        receipt["cause"]="packet_loss"
+        XCTAssertNoThrow(try UploadReceipt.validate(data(receipt),for:item))
+        item.cause=nil; receipt.removeValue(forKey:"cause")
+        XCTAssertNoThrow(try UploadReceipt.validate(data(receipt),for:item))
+    }
+}

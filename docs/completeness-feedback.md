@@ -1,0 +1,40 @@
+# Completeness and feedback
+
+This release keeps observations separate. A recent recording receipt can be an old outbox upload. A recent phone report establishes only that the phone reached this server and reported a particular state at that time. Old recordings, imported text, a Bluetooth connection and the shared pause setting never establish continuous capture.
+
+## What is implemented
+
+- `/v1/status` adds a server `as_of`, first-receipt and captured-endpoint maxima for local audio, queue/transcribing/retrying/blocked counts, oldest known pending receipt/age, recent safe error codes and last receipt-to-completion delay. Retrying is a subset of queued. Imported Omi transcripts never set local-audio freshness. Legacy receipt times remain unknown.
+- New recordings save receipt, processing-start and completion times. Empty model output and the local energy gate have separate outcomes; neither proves that no speech occurred. Missing audio blocks transcription rather than retrying forever. After restoring a file, use `POST /v1/audio/{id}/retry`. A matching resend can also restore an unexpectedly missing file while preserving the first receipt. Resends never reverse retention.
+- `PUT /v1/phones/{installation_uuid}/status` saves one bounded snapshot per phone. Observations carry an increasing sequence, their original observation time, capture state/cause, last decoded/persisted audio observations, ready recording and recovery counts, known pending duration, upload policy/state and storage pressure. Same-sequence/different-content and older-sequence reports conflict. A report older than 120 seconds is historical/unknown for current state. Restore marks saved reports historical until a new report arrives.
+- The native outbox durably journals `PUT /v1/capture-state/{uuid}` transitions before upload, using original times and receipt validation. A bounded 64 KiB metadata allowance preserves stop/pause observations when the configured audio budget fills; filesystem write failures still remain visible. Intentional pauses, disconnects and capture failures are distinct. New bounded capture gaps carry a typed cause; ambiguous legacy reasons remain unknown, with unchanged IDs/payloads. Capture failures require explicit resume and are not published as user pause requests. Phone reports accompany existing foreground refreshes and upload callbacks; there is no continuous background keepalive.
+- `/v1/completeness?start=...&end=...` computes clipped interval unions separately for playable audio, transcript evidence, intentional pauses and observed interruptions. It distinguishes transcript-only imports, expired/missing audio, pending/blocked work and empty outcomes. Unknown intervals mean no known coverage. Future time is excluded. Query scopes are limited to 366 days and detail pages to 200 entries; totals are exact, including more than 1,000 gaps. Responses disclose truncation and pagination.
+- Summaries, rewind/meeting outputs and chat answers have stable `output_id` values. Chat returns the actual message IDs immediately; diary version IDs match output IDs. SQLite stores source IDs/revision hashes, resolved scope, eligible/selected/cited counts, pending/blocked counts at selection, model/prompt version and generation time. The real inference adapter records whether reduction was used and which source UUID references remained in its final prompt. These observations do **not** verify factual claims or identify semantic omissions inside intermediate summaries.
+- `GET /v1/outputs/{uuid}/evidence` identifies sources changed since generation. Cached recap completeness is refreshed separately from the saved generation evidence. Markdown exports include output identity and evidence limitations.
+- Web and iPhone can report incorrect/missing information against a source, output or selected interval, optionally search/select an expected recording and preview/edit a bounded passage to attach, and leave the suspected stage unknown. `PUT /v1/feedback/{uuid}` is idempotent. Conflicting reuse returns 409. Notes/excerpts and reference lists are bounded. `GET /v1/feedback` supports limit/offset; append-only `POST /v1/feedback/{uuid}/events` records reviewed stage, resolution/reopening and repair notes; `DELETE /v1/feedback/{uuid}` removes the report.
+- Review surfaces link to the original source, playback, explicit transcript correction and transcription retry. Users regenerate or ask again after repair and mark resolved after checking. Native feedback drafts can be saved on the phone and explicitly retried with the same ID/body after ambiguous network failure; a matching backend receipt is required before discarding the draft.
+
+## Diagnosis and repair
+
+| Observation | Next check |
+| --- | --- |
+| Phone holds unsent audio | Sync under its current upload policy; server absence alone cannot identify a capture failure. |
+| Typed capture interruption or intentional pause | Inspect the reported interval and cause. An unclosed transition is labelled; old ambiguous gaps stay unknown. |
+| Audio differs from the transcript | Correct the transcript explicitly; history remains auditable. |
+| Expected transcript not among selected IDs | Retrieval is suggested. Narrow the scope or question and compare the expected recording. |
+| Supplied text is misrepresented | Generation is a user-reviewed suspicion. Compare the answer, original source and any reduction metadata. |
+| Missing/expired audio, silence gate, or inadequate evidence | Leave the cause unknown when the available evidence cannot establish it. |
+
+A feedback report does not change transcripts, silently regenerate an answer, train a model or send diagnostics elsewhere. The only automatically suggested stages concern known pending processing or an expected source absent from the saved selection; suggestions remain distinct from the user's classification.
+
+## Retention, deletion and backup
+
+Corrections invalidate recaps and expose revision mismatches on historical outputs. Audio-only expiry preserves valid transcript evidence and feedback while updating playback availability. Full source deletion or transcript retention clears derived evidence and all feedback/resolution notes conservatively, following the existing chat/diary purge model: free text may repeat deleted material. Submissions against removed references are rejected within the same write transaction. Backup/restore includes these SQLite tables and source IDs; restored phone observations cannot claim liveness.
+
+Phone drafts are device-local and remain until sent or explicitly deleted. An offline phone cannot receive a server deletion immediately; drafts and existing offline caches must not be interpreted as current server state. A removed reference cannot be reintroduced through feedback submission. There is no extra deletion-history archive.
+
+## Validation and limits
+
+Regression tests use disposable archives, explicit times and inference fixtures. They cover overlap unions, DST day lengths, future time, exact gap counts, migrations, late/out-of-order phone reports, retry/blocked recovery, import/expiry distinctions, selection-time pending counts, reduction traces, uncited answers, feedback idempotency/resolution, correction/deletion races and backup preservation. Native tests cover journal recovery, legacy payload preservation and strict transition receipts. Browser checks exercise desktop/mobile status, recap feedback, classification/resolution, recording selection and unavailable-backend states.
+
+No real pendant/background-endurance or Danish/English model-quality acceptance is established by these checks. Device-reported clocks and causes are observations, not independently verified sensor truth. Unknown legacy times are intentionally not backfilled. The review UI displays the latest 50 reports; older reports remain accessible through the paginated API. Automatic feedback classification beyond the small deterministic suggestions, claim-support checking and semantic omission diagnosis are not implemented.

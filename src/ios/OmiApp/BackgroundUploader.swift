@@ -77,7 +77,13 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
             return client.url("v1/audio/\(item.id.uuidString)", query: ["device_id": item.deviceID, "started_at": DurableStore.stamp(item.capturedAt)])
         case .event: return client.url("v1/events", query: ["receipt_only": "true"])
         case .gap: return client.url("v1/gaps")
+        case .captureState: return client.url("v1/capture-state/\(item.id.uuidString)")
         }
+    }
+    var observedState: String {
+        if !active.isEmpty { return "active" }
+        if store.pending.contains(where: { $0.error != nil }) { return "retrying" }
+        return store.pending.isEmpty ? "idle" : "waiting"
     }
     func pump() {
         guard !restoring, active.isEmpty, let client,
@@ -91,7 +97,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         }
         var request = URLRequest(url: uploadURL(for: item, client: client))
         request.allowsCellularAccess = !uploadWiFiOnly
-        request.httpMethod = item.kind == .audio ? "PUT" : "POST"
+        request.httpMethod = item.kind == .audio || item.kind == .captureState ? "PUT" : "POST"
         request.setValue(item.kind == .audio ? "audio/wav" : "application/json", forHTTPHeaderField: "Content-Type")
         let task = session.uploadTask(with: request, fromFile: file)
         task.taskDescription = item.id.uuidString; active[task.taskIdentifier] = task; task.resume()

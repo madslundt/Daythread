@@ -8,7 +8,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from .archive_store import EXTENDED_SCHEMA, ArchiveStore
+from .archive_store import EXTENDED_SCHEMA, ArchiveStore, diary_markdown
+from .completeness import SCHEMA as COMPLETENESS_SCHEMA
+from .completeness import CompletenessStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
 
 SCHEMA = """
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS diary (
 """
 
 
-class Store(ArchiveStore):
+class Store(ArchiveStore, CompletenessStore):
     def __init__(self, root: Path):
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -43,6 +45,7 @@ class Store(ArchiveStore):
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
+            db.executescript(COMPLETENESS_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.
             columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
             if "hint_policy" not in columns:
@@ -57,14 +60,37 @@ class Store(ArchiveStore):
             for column in ("source_kind", "source_id"):
                 if column not in audio_columns:
                     db.execute(f"ALTER TABLE audio ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            for column in ("received_at", "processing_started_at", "processed_at", "error_code"):
+                if column not in audio_columns:
+                    db.execute(f"ALTER TABLE audio ADD COLUMN {column} TEXT")
+            if "transcription_outcome" not in audio_columns:
+                db.execute(
+                    "ALTER TABLE audio ADD COLUMN transcription_outcome "
+                    "TEXT NOT NULL DEFAULT 'unknown'"
+                )
+            gap_columns = {row["name"] for row in db.execute("PRAGMA table_info(capture_gaps)")}
+            if "cause" not in gap_columns:
+                db.execute(
+                    "ALTER TABLE capture_gaps ADD COLUMN cause TEXT NOT NULL DEFAULT 'unknown'"
+                )
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
             for column in ("day", "meeting_id", "start_day", "end_day"):
                 if column not in session_columns:
                     db.execute(f"ALTER TABLE chat_sessions ADD COLUMN {column} TEXT")
+            phone_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(phone_observations)")
+            }
+            if "historical" not in phone_columns:
+                db.execute(
+                    "ALTER TABLE phone_observations ADD COLUMN historical "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
             # Backups can be restored under a different data directory.
-            for row in db.execute("SELECT id FROM audio").fetchall():
+            for row in db.execute("SELECT id,path FROM audio").fetchall():
+                if Path(row["path"]).parent != self.audio_dir:
+                    db.execute("UPDATE phone_observations SET historical=1")
                 db.execute(
                     "UPDATE audio SET path=? WHERE id=?",
                     (str(self.audio_dir / f"{row['id']}.wav"), row["id"]),
@@ -93,6 +119,20 @@ class Store(ArchiveStore):
             if old:
                 if (old["digest"], old["device_id"], old["started_at"]) != (digest, device, at):
                     raise ValueError("Audio ID already exists with different content or metadata")
+                # A matching resend can repair a missing file, but never reverse retention.
+                if old["audio_available"] and not Path(old["path"]).is_file():
+                    with Path(old["path"]).open("wb") as target:
+                        target.write(data)
+                        target.flush()
+                        os.fsync(target.fileno())
+                    if old["state"] == "blocked" and old["error_code"] == "missing_audio":
+                        db.execute(
+                            "UPDATE audio SET state='queued',retry_at='',error=NULL,"
+                            "error_code=NULL "
+                            "WHERE id=?",
+                            (key,),
+                        )
+                    return dict(db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone())
                 return dict(old)
             # Each ID is a validated UUID, never a client-supplied filename.
             path = self.audio_dir / f"{key}.wav"
@@ -101,9 +141,9 @@ class Store(ArchiveStore):
                 target.flush()
                 os.fsync(target.fileno())
             db.execute(
-                "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path) "
-                "VALUES(?,?,?,?,?,?)",
-                (key, device, at, end, digest, str(path)),
+                "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (key, device, at, end, digest, str(path), stamp(utc_now())),
             )
             return dict(db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone())
 
@@ -121,14 +161,20 @@ class Store(ArchiveStore):
             ).fetchone()
             if row:
                 db.execute(
-                    "UPDATE audio SET state='transcribing',attempts=attempts+1 WHERE id=?",
-                    (row["id"],),
+                    "UPDATE audio SET state='transcribing',attempts=attempts+1,"
+                    "processing_started_at=? WHERE id=?",
+                    (stamp(utc_now()), row["id"]),
                 )
                 return dict(row)
         return None
 
     def complete(
-        self, audio_id: str, text: str, segments: list[dict] | None = None, claimed: bool = False
+        self,
+        audio_id: str,
+        text: str,
+        segments: list[dict] | None = None,
+        claimed: bool = False,
+        outcome: str | None = None,
     ) -> None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -136,19 +182,32 @@ class Store(ArchiveStore):
             if not row or (claimed and row["state"] != "transcribing"):
                 return
             db.execute(
-                "UPDATE audio SET state='done',text=?,segments=?,error=NULL WHERE id=?",
-                (text, json.dumps(segments or []), audio_id),
+                "UPDATE audio SET state='done',text=?,segments=?,error=NULL,error_code=NULL,"
+                "processed_at=?,transcription_outcome=? WHERE id=?",
+                (
+                    text,
+                    json.dumps(segments or []),
+                    stamp(utc_now()),
+                    outcome or ("text" if text else "empty_stt"),
+                    audio_id,
+                ),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search(id,text) VALUES(?,?)", (audio_id, text))
 
-    def retry(self, row: dict, error: str) -> None:
+    def retry(self, row: dict, error: str, blocked: bool = False) -> None:
         delay = min(300, 2 ** min(row["attempts"] + 1, 9))
         with self.connect() as db:
             db.execute(
-                "UPDATE audio SET state='queued',retry_at=?,error=? "
+                "UPDATE audio SET state=?,retry_at=?,error=?,error_code=? "
                 "WHERE id=? AND state='transcribing'",
-                (stamp(utc_now() + timedelta(seconds=delay)), error, row["id"]),
+                (
+                    "blocked" if blocked else "queued",
+                    stamp(utc_now() + timedelta(seconds=delay)),
+                    error,
+                    "missing_audio" if blocked else "provider_error",
+                    row["id"],
+                ),
             )
 
     def window(self, start: datetime, end: datetime) -> list[dict]:
@@ -265,7 +324,13 @@ class Store(ArchiveStore):
             self.verify_sources(db, content["sources"])
             db.execute(
                 "INSERT INTO diary_versions VALUES(?,?,?,?,?)",
-                (str(uuid4()), day, fingerprint, serialized, stamp(utc_now())),
+                (
+                    content.get("output_id") or str(uuid4()),
+                    day,
+                    fingerprint,
+                    serialized,
+                    stamp(utc_now()),
+                ),
             )
             db.execute(
                 "INSERT OR REPLACE INTO diary VALUES(?,?,?,?)",
@@ -287,10 +352,7 @@ class Store(ArchiveStore):
             self.verify_sources(db, content["sources"])
             try:
                 temporary.write_text(
-                    f"# {day}\n\n{content['summary']}\n\n## Transcript sources\n\n"
-                    + "\n".join(
-                        f"- {r['started_at']} [{r['id']}] {r['text']}" for r in content["sources"]
-                    ),
+                    diary_markdown(day, content),
                     encoding="utf-8",
                 )
                 temporary.replace(export)

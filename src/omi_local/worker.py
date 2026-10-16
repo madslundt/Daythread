@@ -19,7 +19,7 @@ async def process_one(memory: Memory) -> bool:
     try:
         data = await asyncio.to_thread(Path(row["path"]).read_bytes)
         if not contains_speech_energy(data, memory.settings.silence_threshold):
-            memory.store.complete(row["id"], "", claimed=True)
+            memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate")
         elif hasattr(memory.inference, "transcribe_result"):
             result = await memory.inference.transcribe_result(data)
             memory.store.complete(row["id"], result["text"], result["segments"], claimed=True)
@@ -27,7 +27,11 @@ async def process_one(memory: Memory) -> bool:
             memory.store.complete(row["id"], await memory.inference.transcribe(data), claimed=True)
     except Exception as exc:
         # Avoid putting transcripts, credentials, URLs or provider bodies into logs.
-        memory.store.retry(row, f"Transcription failed: {type(exc).__name__}")
+        memory.store.retry(
+            row,
+            f"Transcription failed: {type(exc).__name__}",
+            blocked=isinstance(exc, FileNotFoundError),
+        )
         logger.warning("Audio transcription will retry (%s)", type(exc).__name__)
     return True
 

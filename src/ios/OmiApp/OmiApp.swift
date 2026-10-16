@@ -134,13 +134,19 @@ struct SourceDetail: View {
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var loading = false
+    @State private var draft = ""
+    @State private var corrected = false
     var body: some View {
         NavigationStack {
             List {
                 Section("Recorded evidence") {
+                    NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: source["id"].text) }
                     Text(source["started_at"].text).font(.caption).textSelection(.enabled)
-                    Text(source["text"].text.isEmpty ? "Transcription pending" : source["text"].text).textSelection(.enabled)
+                    Text(source["text"].text.isEmpty ? "No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                if source["audio_availability"].text != "available" {
+                    Text("Audio: \(source["audio_availability"].text.isEmpty ? "availability unknown" : source["audio_availability"].text)").font(.caption)
                 }
                 Button {
                     loading = true
@@ -149,10 +155,29 @@ struct SourceDetail: View {
                         do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
                         catch { self.error = error.localizedDescription }
                     }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
+                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_available"] == .bool(false) || source["audio_availability"].text == "missing")
+                Section("Correct transcript") {
+                    TextField("Transcript", text: $draft, axis: .vertical).lineLimit(4...12)
+                    Button("Save explicit correction") { Task {
+                        loading = true; defer { loading = false }
+                        do {
+                            _ = try await model.client().request("v1/transcripts/\(source["id"].text)", method: "PATCH", body: ["text": draft])
+                            corrected = true; error = nil
+                        } catch { self.error = error.localizedDescription }
+                    } }.disabled(loading || draft.count > 20000)
+                    if corrected { Text("Correction saved. Refresh the day, then regenerate or ask again.").font(.caption) }
+                }
+                if source["state"].text == "blocked" || !source["error_code"].text.isEmpty {
+                    Button("Retry transcription after resolving the problem") { Task {
+                        do { _ = try await model.client().request("v1/audio/\(source["id"].text)/retry", method: "POST"); error = nil }
+                        catch { self.error = error.localizedDescription }
+                    } }
+                }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
+                .task { draft = source["text"].text }
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }
+

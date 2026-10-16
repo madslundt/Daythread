@@ -3,9 +3,11 @@ import hashlib
 import json
 import re
 from datetime import UTC, date, datetime, time, timedelta
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .audio import coverage_gaps
+from .completeness import audio_availability, revision
 from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
 from .inference import Inference, validate_citations
 from .retrieval import archive_recall, date_scope, topic_query
@@ -21,6 +23,15 @@ def public_source(row: dict) -> dict:
     result["segments"] = json.loads(row.get("segments", "[]"))
     result["source_kind"] = row.get("source_kind", "")
     result["source_id"] = row.get("source_id", "")
+    for key in (
+        "received_at",
+        "processing_started_at",
+        "processed_at",
+        "error_code",
+        "transcription_outcome",
+    ):
+        result[key] = row.get(key)
+    result["audio_availability"] = audio_availability(row)
     return result
 
 
@@ -76,6 +87,7 @@ class Memory:
             ),
             "capture_gaps": self.store.capture_gaps(start, end),
             "summary": None,
+            "completeness": self.store.completeness(start, end),
             **hints,
             "hint_timing": "approximate",
             "transcript_boundaries": (
@@ -85,17 +97,72 @@ class Memory:
         return result
 
     async def window(
-        self, start: datetime, end: datetime, purpose: str, summarize: bool = True
+        self,
+        start: datetime,
+        end: datetime,
+        purpose: str,
+        summarize: bool = True,
+        kind: str = "summary",
     ) -> dict:
         result = self.window_data(start, end)
         done = [row for row in result["sources"] if row["state"] == "done" and row["text"]]
         if summarize and done:
-            result["summary"] = validate_citations(
-                await self.inference.summarize(done, purpose), done
+            counts = {
+                "eligible_transcripts": len(done),
+                "pending_chunks": result["pending_chunks"],
+                "blocked_chunks": sum(r["state"] == "blocked" for r in result["sources"]),
+                "selection_observed_at": result["completeness"]["as_of"],
+            }
+            trace = None
+            if hasattr(self.inference, "summarize_traced"):
+                summary, trace = await self.inference.summarize_traced(done, purpose)
+            else:
+                summary = await self.inference.summarize(done, purpose)
+            result["summary"] = validate_citations(summary, done)
+            output_id = str(uuid4())
+            evidence = self.evidence_metadata(
+                done,
+                result["summary"],
+                "all_transcripts",
+                start,
+                end,
+                result["completeness"],
+                trace=trace,
+                counts=counts,
+                kind=kind,
             )
-            with self.store.connect() as db:
-                self.store.verify_sources(db, done)
+            self.store.save_evidence(output_id, evidence, done)
+            result.update(output_id=output_id, evidence=evidence)
         return result
+
+    def evidence_metadata(
+        self,
+        sources: list[dict],
+        text: str,
+        mode: str,
+        start: datetime | None,
+        end: datetime | None,
+        completeness: dict | None = None,
+        trace: dict | None = None,
+        counts: dict | None = None,
+        kind: str = "chat",
+    ) -> dict:
+        counts = counts if counts is not None else self.store.selection_counts(start, end)
+        return {
+            "generated_at": stamp(utc_now()),
+            "kind": kind,
+            "model": self.settings.llm_model,
+            "prompt_version": 3,
+            "retrieval_mode": mode,
+            "scope": {"start": stamp(start), "end": stamp(end)} if start and end else None,
+            **counts,
+            "selected": [{"id": r["id"], "revision": revision(r)} for r in sources],
+            "cited_ids": [r["id"] for r in sources if r["id"].lower() in text.lower()],
+            "input_handling": "reduction_capable_pipeline",
+            "pipeline": trace,
+            "completeness": completeness,
+            "limitation": "Source selection and citations do not verify answer accuracy.",
+        }
 
     def fingerprint(self, start: datetime, end: datetime) -> str:
         return hashlib.sha256(
@@ -117,7 +184,8 @@ class Memory:
         row = self.store.diary(day.isoformat())
         if row:
             return json.loads(row["content"]) | {
-                "stale": row["fingerprint"] != self.fingerprint(start, end)
+                "stale": row["fingerprint"] != self.fingerprint(start, end),
+                "completeness": self.store.completeness(start, end),
             }
         return self.window_data(start, end) | {
             "day": day.isoformat(),
@@ -133,9 +201,12 @@ class Memory:
             existing = self.store.diary(day.isoformat())
             if existing and existing["fingerprint"] == fingerprint:
                 result = json.loads(existing["content"])
+                result["completeness"] = self.store.completeness(start, end)
                 self.store.export_diary(day.isoformat(), result)
                 return result
-            result = await self.window(start, end, f"a diary recap for {day.isoformat()}")
+            result = await self.window(
+                start, end, f"a diary recap for {day.isoformat()}", kind="recap"
+            )
             result.update(
                 day=day.isoformat(),
                 timezone=self.settings.timezone,
@@ -160,7 +231,11 @@ class Memory:
         return [rows[round(index * (len(rows) - 1) / (limit - 1))] for index in range(limit)]
 
     def diary_chat_sources(
-        self, query: str, start: datetime | None, end: datetime | None, limit: int,
+        self,
+        query: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
         matched_ids: set[str],
     ) -> list[dict]:
         """Retrieve recaps alongside their current, citable transcript dependencies."""
@@ -172,7 +247,8 @@ class Memory:
                 continue
             summary = diary.get("summary") or ""
             relevant = (
-                not words or words & set(re.findall(r"\w+", summary.lower()))
+                not words
+                or words & set(re.findall(r"\w+", summary.lower()))
                 or any(source["id"] in matched_ids for source in diary["sources"])
             )
             if summary and relevant:
@@ -184,8 +260,10 @@ class Memory:
                 row = self.store.get_audio(source["id"])
                 if not row or row["state"] != "done" or row["text"] != source["text"]:
                     break
-                if start and end and not (
-                    row["started_at"] < stamp(end) and row["ended_at"] > stamp(start)
+                if (
+                    start
+                    and end
+                    and not (row["started_at"] < stamp(end) and row["ended_at"] > stamp(start))
                 ):
                     break
                 dependencies.append(public_source(row))
@@ -200,9 +278,15 @@ class Memory:
         return list(sources.values())
 
     async def chat(
-        self, question: str, limit: int, session_id: str | None = None, day: date | None = None,
-        meeting_id: str | None = None, scope_supplied: bool = False,
-        start_day: date | None = None, end_day: date | None = None,
+        self,
+        question: str,
+        limit: int,
+        session_id: str | None = None,
+        day: date | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: date | None = None,
+        end_day: date | None = None,
     ) -> dict:
         if (start_day is None) != (end_day is None) or (
             start_day is not None and start_day > end_day
@@ -215,8 +299,11 @@ class Memory:
         )
         if session_id:
             session = self.store.ensure_session(
-                session_id, question, day.isoformat() if day else None,
-                meeting_id, scope_supplied,
+                session_id,
+                question,
+                day.isoformat() if day else None,
+                meeting_id,
+                scope_supplied,
                 start_day.isoformat() if start_day else None,
                 end_day.isoformat() if end_day else None,
             )
@@ -249,14 +336,19 @@ class Memory:
                 raise ChatScopeNotFound("No diary or recordings found for this date")
         if not session_id:
             session = self.store.ensure_session(
-                None, question, day.isoformat() if day else None, meeting_id, scope_supplied,
+                None,
+                question,
+                day.isoformat() if day else None,
+                meeting_id,
+                scope_supplied,
                 start_day.isoformat() if start_day else None,
                 end_day.isoformat() if end_day else None,
             )
         query = topic_query(question)
         if not query:
             rows = (
-                self.store.window(start, end) if start and end
+                self.store.window(start, end)
+                if start and end
                 else self.store.transcripts(None, None, "", 2**31 - 1, 0)[0]
             )
             rows = self.sample_sources(
@@ -272,30 +364,55 @@ class Memory:
                 row
                 for source in (previous["sources"] if previous else [])
                 if (row := self.store.get_audio(source["id"]))
-                and row["state"] == "done" and row["text"]
+                and row["state"] == "done"
+                and row["text"]
             ][:limit]
             rows = previous_rows or rows
         sources = {row["id"]: public_source(row) for row in rows}
         if not meeting_id:
             for source in self.diary_chat_sources(
-                query if day is None else "", start, end, limit, set(sources),
+                query if day is None else "",
+                start,
+                end,
+                limit,
+                set(sources),
             ):
                 sources.setdefault(source["id"], source).update(
                     {"diary_summaries": source["diary_summaries"]}
-                    if "diary_summaries" in source else {}
+                    if "diary_summaries" in source
+                    else {}
                 )
         sources = list(sources.values())
+        counts = self.store.selection_counts(start, end)
+        trace = None
         if not sources:
             answer = "No matching recorded evidence was found. Try a specific name or topic."
         else:
-            answer = validate_citations(
-                await self.inference.chat(question, sources, history), sources
-            )
-        self.store.save_exchange(session["id"], question, answer, sources)
+            if hasattr(self.inference, "chat_traced"):
+                answer, trace = await self.inference.chat_traced(question, sources, history)
+            else:
+                answer = await self.inference.chat(question, sources, history)
+            answer = validate_citations(answer, sources)
+        output_id = str(uuid4())
+        evidence = self.evidence_metadata(
+            sources,
+            answer,
+            "keyword" if query else "bounded_selection",
+            start,
+            end,
+            trace=trace,
+            counts=counts,
+        )
+        message_ids = self.store.save_exchange(
+            session["id"], question, answer, sources, evidence, output_id
+        )
         return {
             "answer": answer,
+            "output_id": output_id,
+            "evidence": evidence,
+            **message_ids,
             "sources": sources,
-            "retrieval": "keyword",
+            "retrieval": "keyword" if query else "bounded_selection",
             "session_id": session["id"],
             "day": session["day"],
             "meeting_id": session["meeting_id"],

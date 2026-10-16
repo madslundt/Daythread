@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
 import { Icon } from "./Icon";
+import {
+  CompletenessDetails,
+  EvidenceFeedback,
+  FeedbackReview,
+} from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
@@ -63,15 +68,27 @@ export function RecapSection({
         />
       ) : null}
       {message ? <Notice>{message}</Notice> : null}
+      {recap.data?.stale ? (
+        <Notice>
+          New or changed evidence is available. Regenerate this recap.
+        </Notice>
+      ) : null}
+      <CompletenessDetails value={recap.data?.completeness} />
       {recap.loading && !recap.data ? (
         <Loading>Loading recap…</Loading>
       ) : recap.data?.summary ? (
         <div className="recap-content">
           <RichText text={recap.data.summary} />
+          <EvidenceFeedback
+            outputId={recap.data.output_id}
+            evidence={recap.data.evidence}
+            outputText={recap.data.summary}
+          />
           {recap.data.pending_chunks ? (
             <p className="caption">
-              {recap.data.pending_chunks} recording(s) are still being
-              transcribed. Regenerate to include them.
+              {recap.data.pending_chunks} recording(s) were awaiting
+              transcription when generated. Regenerate to include later
+              evidence.
             </p>
           ) : null}
           <div className="recap-footer">
@@ -150,6 +167,7 @@ export function Today({
   day,
   timezone,
   status,
+  statusError,
   timeline,
   onUpload,
   onRewind,
@@ -158,6 +176,7 @@ export function Today({
   day: string;
   timezone: string;
   status?: Status;
+  statusError?: string;
   timeline?: Timeline;
   onUpload: () => void;
   onRewind: (minutes: number) => void;
@@ -167,7 +186,10 @@ export function Today({
     <div className="day-layout">
       <div className="day-main">
         <div className="day-chat-action">
-          <button className="button" onClick={() => onChat({ kind: "day", day })}>
+          <button
+            className="button"
+            onClick={() => onChat({ kind: "day", day })}
+          >
             <Icon name="chat" size={17} />
             Chat with this day
           </button>
@@ -183,7 +205,8 @@ export function Today({
       </div>
       <aside className="day-rail">
         <QuickRewind onRewind={onRewind} />
-        <CaptureStatus status={status} />
+        <CaptureStatus status={status} error={statusError} />
+        <FeedbackReview />
       </aside>
     </div>
   );
@@ -217,48 +240,104 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
   );
 }
 
-export function CaptureStatus({ status }: { status?: Status }) {
-  if (!status)
-    return (
-      <section className="capture-status">
-        <h2>Capture status</h2>
-        <p className="muted">Checking local backend…</p>
-      </section>
-    );
-  const queued = (status.audio.queued || 0) + (status.audio.transcribing || 0);
-  const total = Object.values(status.audio).reduce(
-    (sum, value) => sum + value,
-    0,
-  );
-  const failed = status.audio.failed || 0;
+export function CaptureStatus({
+  status,
+  error,
+}: {
+  status?: Status;
+  error?: string;
+}) {
+  const when = (at?: string | null) =>
+    at ? new Date(at).toLocaleString() : "unknown";
+  const processing = status?.processing;
+  const stale =
+    !!error ||
+    (!!status?.as_of && Date.now() - Date.parse(status.as_of) > 120_000);
   return (
     <section className="capture-status">
       <h2>Capture status</h2>
-      <div className="capture-label">
-        <Icon name="phone" size={24} />
-        <span>
-          {status.capture_paused
-            ? "Capture paused"
-            : total === 0
-              ? "Waiting for your iPhone"
-              : "Local archive ready"}
-        </span>
-      </div>
-      <p className="caption">
-        {queued} queued{failed ? ` · ${failed} failed` : ""}
-      </p>
-      <p className="caption">
-        {status.capture_paused
-          ? "Resume capture in Settings when you are ready."
-          : "Your iPhone stores recordings until it can reach home-core."}
-      </p>
-      {!status.worker_running ? (
-        <p className="caption">
-          The transcription worker is{" "}
-          {status.worker_enabled ? "not running" : "disabled"}. Start it to
-          process queued audio.
-        </p>
-      ) : null}
+      {error ? <ErrorState message={error} /> : null}
+      {!status ? (
+        <p className="caption">No current backend observation.</p>
+      ) : (
+        <>
+          <p className="caption">
+            Backend observation {when(status.as_of)}
+            {stale ? " · stale; current state unknown" : ""}
+          </p>
+          <p>
+            Last recording received: {when(status.ingestion?.last_received_at)}
+          </p>
+          <p className="caption">
+            Latest captured endpoint: {when(status.ingestion?.last_captured_at)}
+            . Backlog uploads can arrive later; this does not establish
+            continuous capture.
+          </p>
+          <p className="caption">
+            Shared pause requested: {status.capture_paused ? "yes" : "no"}.
+            Observed phone state is separate.
+          </p>
+          {processing ? (
+            <>
+              <p>
+                {processing.queued} queued ({processing.retrying} retrying) ·{" "}
+                {processing.transcribing} transcribing · {processing.blocked}{" "}
+                blocked
+              </p>
+              <p className="caption">
+                Oldest known pending receipt:{" "}
+                {when(processing.oldest_received_at)}
+                {processing.oldest_age_seconds != null
+                  ? ` · waiting ${Math.round(processing.oldest_age_seconds / 60)} min`
+                  : ""}
+              </p>
+              {processing.recent_errors.map((e) => (
+                <p className="caption" key={e.id}>
+                  {e.id}: {e.error_code} · {e.attempts} attempts
+                </p>
+              ))}
+            </>
+          ) : null}
+          {!status.worker_running ? (
+            <p className="caption">
+              Transcription worker{" "}
+              {status.worker_enabled ? "not running" : "disabled"}.
+            </p>
+          ) : null}
+          {status.phones?.length ? (
+            status.phones.map((phone) => (
+              <div key={phone.phone_id}>
+                <p>
+                  Phone{" "}
+                  {phone.fresh && !stale
+                    ? phone.capture_state
+                    : "state unknown"}
+                </p>
+                <p className="caption">
+                  Reported {when(phone.observed_at)}: {phone.capture_state} (
+                  {phone.cause}). Last decoded audio{" "}
+                  {when(phone.last_decoded_at)}.
+                </p>
+                <p className="caption">
+                  {phone.pending_recordings} recordings waiting ·{" "}
+                  {phone.recovery_items} unfinished/recovery ·{" "}
+                  {Math.round(phone.pending_seconds / 60)} min ·{" "}
+                  {phone.upload_policy.replaceAll("_", " ")} ·{" "}
+                  {phone.upload_state}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="caption">
+              No phone report received; phone connectivity is unknown.
+            </p>
+          )}
+          <p className="caption">
+            {status.capture_gaps ?? 0} stored capture interruptions. A saved
+            archive does not prove live capture.
+          </p>
+        </>
+      )}
     </section>
   );
 }
@@ -347,7 +426,9 @@ function TranscriptTimeline({
               </span>
               <button
                 className="text-button"
-                onClick={() => onChat({ kind: "meeting", meeting_id: meeting.id })}
+                onClick={() =>
+                  onChat({ kind: "meeting", meeting_id: meeting.id })
+                }
                 aria-label={`Chat with meeting at ${timeLabel(meeting.started_at, timezone)}`}
               >
                 Chat with meeting

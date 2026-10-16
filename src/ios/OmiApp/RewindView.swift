@@ -27,7 +27,9 @@ struct RewindView: View {
                     if !result["summary"].text.isEmpty { Text(.init(result["summary"].text)).textSelection(.enabled) }
                     else { Text("No summary available yet.").foregroundStyle(.secondary) }
                     if result["pending_chunks"].integer > 0 { Text("\(result["pending_chunks"].integer) chunks still transcribing").font(.callout) }
-                    Text("\(result["audio_gaps"].array.count) gaps in captured audio").font(.callout).foregroundStyle(.secondary)
+                    Text("\(result["audio_gaps"].array.count) unavailable playback intervals").font(.callout).foregroundStyle(.secondary)
+                    CompletenessView(value: result["completeness"])
+                    EvidenceFeedbackView(outputID: result["output_id"].text, evidence: result["evidence"], outputText: result["summary"].text)
                     Button("Play home-core audio") { Task { await playServer() } }
                     if model.player != nil {
                         Button("Stop playback") { model.player?.stop(); model.playbackStatus = "Stopped" }

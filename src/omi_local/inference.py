@@ -130,7 +130,23 @@ class Inference:
             raise InferenceError("Invalid LLM response")
         return text.strip()
 
-    async def summarize(self, sources: list[dict], purpose: str) -> str:
+    @staticmethod
+    def prompt_source_ids(payload: str, sources: list[dict]) -> list[str]:
+        return [source["id"] for source in sources if source["id"].lower() in payload.lower()]
+
+    async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
+        trace = {"reduction_used": False, "model_calls": 0}
+        text = await self.summarize(sources, purpose, trace)
+        return text, trace
+
+    async def chat_traced(
+        self, question: str, sources: list[dict], history: list[dict]
+    ) -> tuple[str, dict]:
+        trace = {"reduction_used": False, "model_calls": 0}
+        text = await self.chat(question, sources, history, trace)
+        return text, trace
+
+    async def summarize(self, sources: list[dict], purpose: str, trace: dict | None = None) -> str:
         # Map/reduce keeps a full day's evidence in scope without silently truncating its tail.
         pieces = []
         for source in sources:
@@ -144,7 +160,8 @@ class Inference:
                     + (
                         "\nDiary recaps: "
                         + json.dumps(source["diary_summaries"], ensure_ascii=False)
-                        if offset == 0 and source.get("diary_summaries") else ""
+                        if offset == 0 and source.get("diary_summaries")
+                        else ""
                     )
                 )
         task = (
@@ -162,16 +179,28 @@ class Inference:
             if current:
                 batches.append(current)
             if len(batches) <= 1:
+                if trace is not None:
+                    trace["model_calls"] += 1
+                    trace["final_prompt_source_ids"] = self.prompt_source_ids(
+                        batches[0] if batches else "", sources
+                    )
                 return validate_citations(
                     await self.generate(task, batches[0] if batches else ""), sources
                 )
+            if trace is not None:
+                trace["reduction_used"] = True
+                trace["model_calls"] += len(batches)
             pieces = [
                 validate_citations(await self.generate(task, batch), sources) for batch in batches
             ]
         raise InferenceError("Summary reduction exceeded bounded context budget")
 
     async def chat(
-        self, question: str, sources: list[dict], history: list[dict] | None = None
+        self,
+        question: str,
+        sources: list[dict],
+        history: list[dict] | None = None,
+        trace: dict | None = None,
     ) -> str:
         evidence = [
             {"id": row["id"], "at": row["started_at"], "text": row["text"]}
@@ -180,11 +209,18 @@ class Inference:
         ]
         payload = json.dumps(evidence, ensure_ascii=False)
         if len(payload) > 16000:
-            payload = await self.summarize(sources, "evidence notes relevant to: " + question)
+            if trace is not None:
+                trace["reduction_used"] = True
+            payload = await self.summarize(
+                sources, "evidence notes relevant to: " + question, trace
+            )
         if history:
             # Prior turns help resolve follow-ups, but are never a source of factual evidence.
             context = [
                 {"role": row["role"], "content": row["content"][:1500]} for row in history[-6:]
             ]
             question = json.dumps({"question": question, "conversation_context": context})
+        if trace is not None:
+            trace["model_calls"] += 1
+            trace["final_prompt_source_ids"] = self.prompt_source_ids(payload, sources)
         return validate_citations(await self.generate(question, payload), sources)

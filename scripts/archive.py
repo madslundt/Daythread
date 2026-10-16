@@ -118,7 +118,9 @@ def restore(source: Path, destination: Path, max_bytes: int, identity: Path | No
                     shutil.copyfileobj(reader, writer)
                 target.chmod(0o600)
         validate_database(destination)
-        Store(destination)  # Migrate supported versions and rebase audio paths.
+        store = Store(destination)  # Migrate supported versions and rebase audio paths.
+        with store.connect() as db:
+            db.execute("UPDATE phone_observations SET historical=1")
     except BaseException:
         shutil.rmtree(destination)
         raise

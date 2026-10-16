@@ -206,3 +206,50 @@ final class DurableStoreTests: XCTestCase {
         XCTAssertLessThan(store.storageBytes, store.maximumBytes)
     }
 }
+
+extension DurableStoreTests {
+    func testCaptureTransitionsKeepIdentityCauseAndPayloadAcrossRecovery() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory)
+        let phone = UUID(), at = Date(timeIntervalSince1970: 1000.125)
+        let id = try store.captureState(phoneID: phone, at: at, state: "paused", cause: "user_pause")
+        let before = try Data(contentsOf: store.uploadFile(for: XCTUnwrap(store.pending.first)))
+        try store.failed(id, message: "Offline")
+        try FileManager.default.removeItem(at: store.file(id, extension: "json"))
+        let recovered = try DurableStore(directory: directory)
+        let item = try XCTUnwrap(recovered.pending.first)
+        XCTAssertEqual(item.id,id); XCTAssertEqual(item.captureState,"paused"); XCTAssertEqual(item.cause,"user_pause")
+        XCTAssertEqual(item.attempts,1)
+        XCTAssertEqual(try Data(contentsOf: recovered.uploadFile(for: item)),before)
+        let value = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String:Any])
+        XCTAssertEqual(value["phone_id"] as? String,phone.uuidString)
+        XCTAssertEqual(value["occurred_at"] as? String,DurableStore.stamp(at))
+    }
+    func testTypedNewGapDoesNotRewriteLegacyGapPayloads() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory), at = Date()
+        let legacyID = try store.gap(deviceID:"p",start:at,end:at.addingTimeInterval(1),reason:"Disconnected or paused")
+        let legacy = try Data(contentsOf: store.file(legacyID,extension:"json"))
+        let newID = try store.gap(deviceID:"p",start:at,end:at.addingTimeInterval(1),reason:"Packet loss",cause:"packet_loss")
+        let typed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.file(newID,extension:"json"))) as? [String:Any])
+        XCTAssertEqual(typed["cause"] as? String,"packet_loss")
+        let reopened = try DurableStore(directory:directory)
+        XCTAssertEqual(try Data(contentsOf: reopened.file(legacyID,extension:"json")),legacy)
+        XCTAssertNil(reopened.items.first(where:{$0.id == legacyID})?.cause)
+    }
+}
+
+extension DurableStoreTests {
+    func testCaptureStopObservationHasBoundedMetadataReserveWithoutEvictingAudio() throws {
+        let directory = try folder(), store = try DurableStore(directory:directory)
+        let at = Date(timeIntervalSince1970:1000)
+        try store.begin(deviceID:"p",codec:0,clock:CaptureClock(wall:at,uptime:0))
+        try store.append(frame:Data(repeating:1,count:640),decoded:Data(repeating:1,count:640)); try store.finish()
+        let audio = try XCTUnwrap(store.items.first)
+        store.maximumBytes = store.storageBytes + 1
+        XCTAssertThrowsError(try store.gap(deviceID:"p",start:at,end:at.addingTimeInterval(1),reason:"Full"))
+        let id = try store.captureState(phoneID:UUID(),at:at,state:"blocked",cause:"storage")
+        XCTAssertTrue(store.pending.contains(where:{$0.id == id}))
+        XCTAssertTrue(FileManager.default.fileExists(atPath:store.file(audio.id,extension:"wav").path))
+        XCTAssertFalse(try XCTUnwrap(store.items.first(where:{$0.id == audio.id})).acknowledged)
+        XCTAssertLessThan(store.storageBytes,store.maximumBytes + 65_536)
+    }
+}

@@ -81,3 +81,8 @@ The configured local gateway `ai.home.arpa:18080` and previous `192.168.30.122:1
 ## Borrow selectively
 
 [Open-source inspiration](open-source-inspiration.md) identifies code and patterns to examine before implementing each phase. Keep this backend small: borrow capture contracts, reliability patterns, and retrieval ideas first. Evaluate licenses before copying code; no third-party implementation has been vendored here.
+
+
+## Completeness and feedback — implemented first release
+
+The backend and both clients now separate ingestion freshness, processing delay, timestamped phone/outbox observations, intentional pause transitions and capture interruptions. Scoped playback/transcript completeness uses interval unions and discloses unknown coverage, imports, missing/expired audio and empty transcription outcomes. Saved outputs retain selection provenance; incorrect/missing feedback can identify expected recordings, attach a previewed passage, follow explicit source corrections/retries and record reviewed resolution. These are local diagnostics, not an analytics service or accuracy score. See [implemented contracts, acceptance coverage and limitations](completeness-feedback.md). Real pendant endurance and actual STT/LLM quality remain unverified.

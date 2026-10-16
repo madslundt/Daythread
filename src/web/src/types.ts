@@ -8,6 +8,9 @@ export type Source = {
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;
+  audio_availability?: string;
+  transcription_outcome?: string;
+  error_code?: string;
   source_id?: string | null;
   meeting_hint_ids?: string[];
 };
@@ -34,6 +37,40 @@ export type Timeline = {
   active_meeting: Meeting | null;
 };
 export type Status = {
+  as_of?: string;
+  ingestion?: {
+    last_received_at: string | null;
+    last_captured_at: string | null;
+  };
+  processing?: {
+    queued: number;
+    transcribing: number;
+    retrying: number;
+    blocked: number;
+    oldest_received_at: string | null;
+    oldest_age_seconds?: number | null;
+    last_completion_delay_seconds?: number | null;
+    recent_errors: {
+      id: string;
+      error_code: string;
+      attempts: number;
+      retry_at: string;
+    }[];
+  };
+  phones?: {
+    phone_id: string;
+    fresh: boolean;
+    observed_at: string;
+    capture_state: string;
+    cause: string;
+    pending_recordings: number;
+    recovery_items: number;
+    pending_seconds: number;
+    upload_policy: string;
+    upload_state: string;
+    last_decoded_at: string | null;
+  }[];
+  capture_gaps?: number;
   audio: Record<string, number>;
   timezone: string;
   worker_enabled: boolean;
@@ -43,6 +80,9 @@ export type Status = {
   hint_policy: { marker_cooldown_seconds: number; meeting_min_seconds: number };
 };
 export type MemoryWindow = {
+  output_id?: string;
+  evidence?: Evidence;
+  completeness?: Completeness;
   start: string;
   end: string;
   sources: Source[];
@@ -56,6 +96,7 @@ export type Recap = Partial<MemoryWindow> & {
   day: string;
   summary: string | null;
   generated_at?: string;
+  stale?: boolean;
   pending_chunks?: number;
 };
 export type CalendarDay = {
@@ -82,6 +123,7 @@ export type ChatScope =
   | { kind: "range"; start_day: string; end_day: string }
   | { kind: "meeting"; meeting_id: string };
 export type ChatMessage = {
+  evidence?: Evidence;
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -102,4 +144,48 @@ export type Settings = {
   capture_paused: boolean;
   audio_retention_days: number;
   transcript_retention_days: number;
+};
+
+export type Evidence = {
+  generated_at: string;
+  retrieval_mode: string;
+  eligible_transcripts: number;
+  selected: { id: string; revision: string }[];
+  cited_ids: string[];
+  pending_chunks: number;
+  blocked_chunks: number;
+  input_handling: string;
+  pipeline?: {
+    reduction_used: boolean;
+    model_calls: number;
+    final_prompt_source_ids: string[];
+  } | null;
+  changed_source_ids?: string[];
+};
+export type Completeness = {
+  as_of?: string;
+  observed_until?: string;
+  seconds: Record<string, number>;
+  counts: Record<string, number>;
+  capture_gaps: {
+    gap_id: string;
+    started_at: string;
+    ended_at: string;
+    reason: string;
+    cause: string;
+  }[];
+  capture_gap_count: number;
+  capture_intervals?: {
+    event_id: string;
+    state: string;
+    cause: string;
+    start: string;
+    end: string;
+    open: boolean;
+  }[];
+  unknown_intervals: { start: string; end: string }[];
+  unknown_count: number;
+  truncated: boolean;
+  start: string;
+  end: string;
 };

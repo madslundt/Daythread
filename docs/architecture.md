@@ -92,3 +92,8 @@ No Omi account, Firebase, hosted vector store, commercial STT, or cloud LLM is n
 The backend serves the built responsive web app and API on port 8787. Application authentication is intentionally disabled as requested; no mobile token is used. Credentials for an optional local inference gateway stay outside Git and the frontend. TLS and private VPN access can be configured for the home network without adding cloud dependencies.
 
 Pause, transcript correction, deletion/export and separate audio/transcript retention are implemented. Zero retention days means keep indefinitely. Expiry/deletion clears affected search/derivative data. Backup snapshots verify referenced recording checksums; the CLI supports restore into a fresh directory and optional age encryption. Local model connectivity and physical iPhone/pendant reliability still require the acceptance checks in the reviewed plan.
+
+
+## Completeness and evidence repair
+
+SQLite stores first ingestion/processing times, typed capture transitions, latest sequenced phone observations, output evidence metadata and bounded feedback/resolution records. The clients display observation age and separate playback/transcript interval unions. Source selection, final-prompt UUID references and citation counts are provenance rather than accuracy scores. Feedback invokes explicit existing repairs; source deletion/transcript retention conservatively purge derived notes. See [the implemented contracts and limits](completeness-feedback.md).

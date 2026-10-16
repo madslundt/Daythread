@@ -52,9 +52,14 @@ struct DayView: View {
                 if loading { ProgressView("Reading your day…") }
                 ErrorNote(message: error)
             }
+            Section {
+                CompletenessView(value: recap["completeness"])
+                if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
+            }
             Section("Daily recap · \(diary.label(day, template: "d MMM yyyy"))") {
                 if !recap["summary"].text.isEmpty {
                     Text(.init(recap["summary"].text)).textSelection(.enabled)
+                    EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
                     if !recap["generated_at"].text.isEmpty { Text("Generated \(recap["generated_at"].text)").font(.caption).foregroundStyle(.secondary) }
                 } else { Text("Generate a recap after audio has been transcribed. Your diary stays on home-core.").foregroundStyle(.secondary) }
                 Button { Task { await generate() } } label: { Label("Generate daily recap", systemImage: "sparkle") }.disabled(loading)

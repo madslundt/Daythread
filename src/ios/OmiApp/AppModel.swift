@@ -14,6 +14,7 @@ final class AppModel {
             serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
             serverTimeline = LocalCache.load(backendAddress + ".timeline") ?? .null
             serverStatus = "Not connected"
+            completenessStatus = .null
             lastStatusCheck = .distantPast
             refreshLocal()
         }
@@ -54,6 +55,15 @@ final class AppModel {
     var nextMarkAt: Date?
     var serverStatus = "Not connected"
     var serverTimeline: JSONValue = .null
+    var completenessStatus: JSONValue = .null
+    var lastDecodedAt: Date?
+    var lastPersistedAt: Date?
+    var captureFailure: String? = UserDefaults.standard.string(forKey: "captureFailure")
+    private(set) var observedCaptureState = "unknown"
+    @ObservationIgnored private var phoneID: UUID = {
+        if let value = UserDefaults.standard.string(forKey: "phoneInstallationID"), let id = UUID(uuidString: value) { return id }
+        let id = UUID(); UserDefaults.standard.set(id.uuidString, forKey: "phoneInstallationID"); return id
+    }()
     var now = Date()
     var player: AVAudioPlayer?
     var playbackStatus = ""
@@ -65,6 +75,7 @@ final class AppModel {
     @ObservationIgnored private var lastNotification: Date?
     @ObservationIgnored private var nextAudioDate: Date?
     @ObservationIgnored private var disconnectedAt: Date?
+    @ObservationIgnored private var disconnectedCause = "unknown"
     @ObservationIgnored private let clock = CaptureClock()
     @ObservationIgnored private var lastStatusCheck = Date.distantPast
     @ObservationIgnored private var backendGeneration = UUID()
@@ -95,7 +106,13 @@ final class AppModel {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: capture.path)
             if let store { uploader = BackgroundUploader(store: store, uploadWiFiOnly: uploadWiFiOnly) }
             disconnectedAt = store?.items.filter { $0.kind == .audio }.compactMap(\.endedAt).max()
-            uploader?.onChange = { [weak self] in self?.refreshLocal() }
+            uploader?.onChange = { [weak self] in
+                self?.refreshLocal()
+                Task { @MainActor [weak self] in
+                    guard let self, let backend = try? self.client() else { return }
+                    try? await self.publishObservation(using: backend)
+                }
+            }
             uploader?.onError = { [weak self] in self?.serverStatus = $0 }
             refreshLocal()
         } catch { self.error = error.localizedDescription }
@@ -108,6 +125,7 @@ final class AppModel {
         bluetooth.onButton = { [weak self] data in self?.button(data) }
         bluetooth.onDisconnect = { [weak self] in self?.disconnectCapture() }
         bluetooth.onError = { [weak self] message in self?.error = message }
+        recordCaptureState(paused && captureFailure == nil ? "paused" : captureFailure != nil ? "blocked" : "unknown", cause: paused && captureFailure == nil ? "user_pause" : captureFailure ?? "unknown")
         reconnectBackend()
     }
     func client() throws -> BackendClient { try BackendClient(address: backendAddress) }
@@ -140,10 +158,11 @@ final class AppModel {
                 serverTimeZoneIdentifier = status["timezone"].text
                 UserDefaults.standard.set(serverTimeZoneIdentifier, forKey: address + ".timezone")
             }
+            completenessStatus = status
             serverStatus = status["worker_running"] == .bool(true) ? "Home-core connected · worker running" : "Home-core connected"
             if UserDefaults.standard.bool(forKey: "pauseSettingDirty") {
                 let revision = pauseRevision
-                _ = try await backend.request("v1/settings", method: "PATCH", body: ["capture_paused": paused])
+                _ = try await backend.request("v1/settings", method: "PATCH", body: ["capture_paused": paused && captureFailure == nil])
                 guard backendGeneration == generation else { return }
                 guard pauseRevision == revision else { refreshStatusPending = true; return }
                 UserDefaults.standard.set(false, forKey: "pauseSettingDirty")
@@ -155,7 +174,7 @@ final class AppModel {
             if case .number(let cooldown) = settings["marker_cooldown_seconds"] { markerCooldownSeconds = max(0, min(3600, Int(cooldown))) }
             if settings["meeting_min_seconds"].integer >= 60 { meetingMinSeconds = settings["meeting_min_seconds"].integer }
             if pauseRevision == revision, !UserDefaults.standard.bool(forKey: "pauseSettingDirty"),
-               case .bool(let remotePause) = settings["capture_paused"], remotePause != paused {
+               case .bool(let remotePause) = settings["capture_paused"], remotePause != paused, captureFailure == nil {
                 setPaused(remotePause, synchronize: false)
             }
             let timeline = try await backend.request("v1/timeline")
@@ -163,6 +182,7 @@ final class AppModel {
             serverTimeline = timeline
             LocalCache.save(timeline, key: address + ".timeline")
             refreshLocal()
+            try await publishObservation(using: backend)
         } catch {
             if backendGeneration == generation { serverStatus = error.localizedDescription }
         }
@@ -173,10 +193,12 @@ final class AppModel {
             // A failed finalization keeps the previous segment recoverable. Close it before accepting new frames.
             do { try store?.finish() } catch { failCapture(error); return }
         }
+        captureFailure = nil; UserDefaults.standard.removeObject(forKey: "captureFailure")
+        recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
         paused = value; bluetooth.captureEnabled = !value && store != nil
         notice = value ? "Capture paused" : "Capture resumed"
         if value {
-            disconnectedAt = nextAudioDate ?? clock.date(at: ProcessInfo.processInfo.systemUptime)
+            disconnectedAt = nil
             nextAudioDate = nil
         } else if let codec = bluetooth.codec {
             do { decoder = try FrameDecoder(codec: codec) } catch { failCapture(error) }
@@ -190,7 +212,7 @@ final class AppModel {
         guard !paused, decoder != nil, store != nil else { return }
         let date = clock.date(at: uptime)
         if let lastNotification, date.timeIntervalSince(lastNotification) > 1 {
-            flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: "BLE audio delivery interrupted")
+            flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: "BLE audio delivery interrupted", cause: "delivery_interrupted")
             nextAudioDate = nil
             do { decoder = try FrameDecoder(codec: bluetooth.codec ?? -1) } catch { failCapture(error); return }
         }
@@ -198,14 +220,14 @@ final class AppModel {
         let result = reassembler.consume(data)
         if result.lost {
             do { try store?.finish() } catch { failCapture(error); return }
-            addGap(start: nextAudioDate ?? date.addingTimeInterval(-0.02), end: date, reason: "BLE sequence or fragment loss")
+            addGap(start: nextAudioDate ?? date.addingTimeInterval(-0.02), end: date, reason: "BLE sequence or fragment loss", cause: "packet_loss")
             pendingClock = nil; nextAudioDate = nil
             do { decoder = try FrameDecoder(codec: bluetooth.codec ?? -1) } catch { failCapture(error); return }
         }
         if let frame = result.frame, let clock = pendingClock { record(frame, clock: clock) }
         if result.startedFrame {
             if let disconnectedAt {
-                addGap(start: disconnectedAt, end: date, reason: "Capture disconnected or paused")
+                addGap(start: disconnectedAt, end: date, reason: disconnectedCause == "connection" ? "Capture disconnected" : "Capture disconnected or paused", cause: disconnectedCause)
                 self.disconnectedAt = nil
             }
             pendingClock = CaptureClock(wall: nextAudioDate ?? date, uptime: uptime)
@@ -215,6 +237,8 @@ final class AppModel {
         guard let store, let decoder else { return }
         do {
             let pcm = try decoder.decode(frame)
+            lastDecodedAt = Date()
+            if observedCaptureState != "capturing" { recordCaptureState("capturing", cause: "resumed") }
             append(frame, pcm: pcm, clock: clock, store: store, codec: decoder.codec)
         } catch { failCapture(error) }
     }
@@ -222,6 +246,7 @@ final class AppModel {
         do {
             if !store.isRecording { try store.begin(deviceID: bluetooth.identifier, codec: codec, clock: clock) }
             try store.append(frame: frame, decoded: pcm)
+            lastPersistedAt = Date()
             nextAudioDate = (nextAudioDate ?? clock.wall).addingTimeInterval(Double(pcm.count) / 32000)
             if store.segmentSeconds >= 30 { try store.finish(); refreshLocal(); uploader?.pump() }
         } catch { failCapture(error) }
@@ -233,7 +258,7 @@ final class AppModel {
             } else {
                 addGap(start: nextAudioDate ?? clock.wall,
                        end: self.clock.date(at: ProcessInfo.processInfo.systemUptime),
-                       reason: "Incomplete final BLE frame discarded")
+                       reason: "Incomplete final BLE frame discarded", cause: "incomplete_frame")
             }
         } else { reassembler.reset() }
         pendingClock = nil; lastNotification = nil
@@ -244,15 +269,21 @@ final class AppModel {
         do { try store?.finish(); refreshLocal(); uploader?.pump() } catch { failCapture(error) }
     }
     private func disconnectCapture() {
-        flush(); disconnectedAt = nextAudioDate ?? Date(); nextAudioDate = nil; decoder = nil
+        flush()
+        if !paused { recordCaptureState("disconnected", cause: "connection"); disconnectedCause = "connection"; disconnectedAt = nextAudioDate ?? Date() }
+        nextAudioDate = nil; decoder = nil
     }
-    private func addGap(start: Date, end: Date, reason: String) {
-        do { try store?.gap(deviceID: bluetooth.identifier, start: start, end: end, reason: reason); refreshLocal() }
+    private func addGap(start: Date, end: Date, reason: String, cause: String = "unknown") {
+        do { try store?.gap(deviceID: bluetooth.identifier, start: start, end: end, reason: reason, cause: cause); refreshLocal() }
         catch { failCapture(error) }
     }
     private func failCapture(_ error: Error) {
+        if case CaptureError.storageFull = error { captureFailure = "storage" }
+        else { captureFailure = error is CaptureError ? "decoder" : "storage" }
+        UserDefaults.standard.set(captureFailure, forKey: "captureFailure")
+        disconnectedCause = captureFailure ?? "unknown"
+        recordCaptureState("blocked", cause: captureFailure ?? "unknown")
         self.error = error.localizedDescription; paused = true; bluetooth.captureEnabled = false
-        UserDefaults.standard.set(true, forKey: "pauseSettingDirty")
         disconnectedAt = nextAudioDate ?? clock.date(at: ProcessInfo.processInfo.systemUptime); nextAudioDate = nil
         reassembler.reset(); pendingClock = nil
         do { try store?.finish() } catch { self.error = "\(self.error ?? "") · Could not close segment: \(error.localizedDescription)" }
@@ -311,6 +342,34 @@ final class AppModel {
         }
         if let stop = deadline, stop <= Date() { start = nil; deadline = nil }
         meetingStart = start; meetingDeadline = deadline; meetingQualifiesAt = start == nil ? nil : qualifies
+    }
+    private func recordCaptureState(_ state: String, cause: String) {
+        observedCaptureState = state
+        do { try store?.captureState(phoneID: phoneID, at: Date(), state: state, cause: cause) }
+        catch { self.error = "Could not persist capture observation: \(error.localizedDescription)" }
+    }
+    private func publishObservation(using backend: BackendClient) async throws {
+        guard let store else { return }
+        let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
+        UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
+        let pending = store.items.filter { $0.kind == .audio && !$0.acknowledged }
+        let state = captureFailure != nil ? "blocked" : paused ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
+        var body: [String: Any] = [
+            "sequence": sequence, "observed_at": DurableStore.stamp(Date()),
+            "device_id": bluetooth.identifier, "capture_state": state,
+            "cause": captureFailure ?? (paused ? "user_pause" : !bluetooth.connected ? "connection" : "unknown"),
+            "requested_pause": paused && captureFailure == nil,
+            "pending_recordings": pending.filter(\.ready).count,
+            "recovery_items": pending.filter { !$0.ready }.count,
+            "pending_seconds": store.unsyncedSeconds,
+            "upload_policy": uploadWiFiOnly ? "wifi_only" : "any_network",
+            "upload_state": uploader?.observedState ?? "unknown",
+            "storage_bytes": store.storageBytes, "storage_budget_bytes": Int64(storageBudgetMB) * 1_000_000,
+        ]
+        if let lastDecodedAt { body["last_decoded_at"] = DurableStore.stamp(lastDecodedAt) }
+        if let lastPersistedAt { body["last_persisted_at"] = DurableStore.stamp(lastPersistedAt) }
+        if let oldest = pending.map(\.capturedAt).min() { body["oldest_capture_at"] = DurableStore.stamp(oldest) }
+        _ = try await backend.request("v1/phones/\(phoneID.uuidString)/status", method: "PUT", body: body)
     }
     func retryUploads() { uploader?.retry() }
     func play(_ url: URL) {

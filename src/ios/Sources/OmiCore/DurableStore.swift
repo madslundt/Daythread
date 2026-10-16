@@ -1,7 +1,7 @@
 import Foundation
 
 public struct OutboxItem: Codable, Identifiable {
-    public enum Kind: String, Codable { case audio, event, gap }
+    public enum Kind: String, Codable { case audio, event, gap, captureState }
     public let id: UUID
     public let kind: Kind
     public let deviceID: String
@@ -14,6 +14,8 @@ public struct OutboxItem: Codable, Identifiable {
     public var meetingMinSeconds: Int?
     public var markerCooldownSeconds: Int?
     public var reason: String?
+    public var cause: String?
+    public var captureState: String?
     public var ready = false
     public var acknowledged = false
     public var attempts = 0
@@ -143,14 +145,23 @@ public final class DurableStore {
         return try appendMetadata(item)
     }
     @discardableResult
-    public func gap(deviceID: String, start: Date, end: Date, reason: String) throws -> UUID {
+    public func gap(deviceID: String, start: Date, end: Date, reason: String, cause: String? = nil) throws -> UUID {
         var item = OutboxItem(id: UUID(), kind: .gap, deviceID: deviceID, capturedAt: start)
-        item.endedAt = max(start.addingTimeInterval(0.001), end); item.reason = reason; item.ready = true
+        item.endedAt = max(start.addingTimeInterval(0.001), end); item.reason = reason; item.cause = cause; item.ready = true
+        return try appendMetadata(item)
+    }
+    @discardableResult
+    public func captureState(phoneID: UUID, at date: Date, state: String, cause: String) throws -> UUID {
+        var item = OutboxItem(id: UUID(), kind: .captureState, deviceID: phoneID.uuidString, capturedAt: date)
+        item.captureState = state; item.cause = cause; item.ready = true
         return try appendMetadata(item)
     }
     private func metadata(_ item: OutboxItem) throws -> Data {
-        let body: [String: Any]
-        if item.kind == .event {
+        var body: [String: Any]
+        if item.kind == .captureState {
+            guard let state = item.captureState, let cause = item.cause else { throw CaptureError.corruptedStore }
+            body = ["phone_id": item.deviceID, "occurred_at": Self.stamp(item.capturedAt), "state": state, "cause": cause]
+        } else if item.kind == .event {
             guard let action = item.action else { throw CaptureError.corruptedStore }
             body = ["event_id": item.id.uuidString, "device_id": item.deviceID, "occurred_at": Self.stamp(item.capturedAt), "action": action.rawValue,
                     "meeting_max_minutes": item.meetingMaxMinutes ?? 120,
@@ -160,6 +171,7 @@ public final class DurableStore {
             guard let endedAt = item.endedAt, let reason = item.reason else { throw CaptureError.corruptedStore }
             body = ["gap_id": item.id.uuidString, "device_id": item.deviceID, "started_at": Self.stamp(item.capturedAt), "ended_at": Self.stamp(endedAt), "reason": reason]
         }
+        if item.kind == .gap, let cause = item.cause { body["cause"] = cause }
         return try JSONSerialization.data(withJSONObject: body)
     }
     private func appendMetadata(_ item: OutboxItem) throws -> UUID {
@@ -168,7 +180,10 @@ public final class DurableStore {
         let indexBytes = try encoder.encode(updated).count
         let previousIndexBytes = try size(of: directory.appendingPathComponent("index.json"))
         let reservedWAVBytes = currentID == nil ? 0 : Int64(pcm.count + 44)
-        guard usedBytes + reservedWAVBytes + Int64(body.count + indexBytes) - previousIndexBytes < maximumBytes else { throw CaptureError.storageFull }
+        // Keep a small bounded emergency allowance for stop/pause observations when audio
+        // has filled its budget. Original unsent recordings are never evicted for metadata.
+        let metadataBudget = maximumBytes + (item.kind == .captureState ? 65_536 : 0)
+        guard usedBytes + reservedWAVBytes + Int64(body.count + indexBytes) - previousIndexBytes < metadataBudget else { throw CaptureError.storageFull }
         // The index holds the complete event. If writing its upload file is interrupted,
         // recovery rebuilds it with the same ID and capture-time policies.
         try commit(updated)

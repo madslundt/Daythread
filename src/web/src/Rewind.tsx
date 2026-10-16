@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { errorMessage, post, rewindAudioUrl } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
 import { Icon } from "./Icon";
+import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
 import type { MemoryWindow } from "./types";
 import { EmptyState, ErrorState, Notice, RichText } from "./UI";
@@ -131,6 +132,7 @@ export function Rewind({
                 <section className="rewind-summary">
                   <h2>What you heard</h2>
                   <RichText text={result.summary} />
+                  <EvidenceFeedback outputId={result.output_id} evidence={result.evidence} outputText={result.summary} />
                 </section>
               ) : summarize ? (
                 <Notice>
@@ -140,10 +142,10 @@ export function Rewind({
               ) : null}
               {result.pending_chunks ? (
                 <Notice>
-                  {result.pending_chunks} recording(s) are still being
-                  transcribed. Run rewind again once they are ready.
+                  {result.pending_chunks} recording(s) were awaiting transcription at this snapshot. Run rewind again to update.
                 </Notice>
               ) : null}
+              <CompletenessDetails value={result.completeness} />
               {result.audio_gaps.length ? (
                 <p className="caption">
                   There{" "}

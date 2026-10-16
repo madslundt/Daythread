@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
+import { FeedbackForm } from "./FeedbackForm";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
@@ -126,7 +127,7 @@ function SourceRow({
         <span className="source-preview">
           {text ||
             (source.state === "done"
-              ? "No speech detected"
+              ? "No transcript text"
               : `Recording · ${source.state}`)}
         </span>
         <span className="source-hints">
@@ -137,6 +138,34 @@ function SourceRow({
         </span>
         <Icon name="chevron-right" size={15} />
       </summary>
+      <FeedbackForm sourceId={source.id} />
+      {source.error_code ||
+      source.transcription_outcome === "silence_gate" ||
+      source.transcription_outcome === "empty_stt" ? (
+        <p className="caption">
+          Processing: {source.error_code || source.transcription_outcome}
+        </p>
+      ) : null}
+      {source.audio_availability === "missing" ? (
+        <p className="caption">
+          The archive expects audio but the file is missing.
+        </p>
+      ) : null}
+      {source.state === "blocked" || source.error_code ? (
+        <button
+          className="text-button"
+          onClick={async () => {
+            try {
+              await request(`/v1/audio/${source.id}/retry`, { method: "POST" });
+              onCorrect?.();
+            } catch (error) {
+              setError(errorMessage(error));
+            }
+          }}
+        >
+          Retry transcription after resolving the problem
+        </button>
+      ) : null}
       <div className="source-detail">
         <div className="source-meta">
           <span>
@@ -181,8 +210,12 @@ function SourceRow({
             <p className="transcript-text">
               {text ||
                 (source.state === "done"
-                  ? "No speech was detected in this recording."
-                  : "This recording is waiting for transcription.")}
+                  ? "Processing completed without transcript text; this does not prove no speech occurred."
+                  : source.state === "expired"
+                    ? "Transcript unavailable after retention."
+                    : source.state === "blocked"
+                      ? "Transcription blocked. Resolve the problem and retry."
+                      : "This recording is waiting for transcription.")}
             </p>
             <button
               className="text-button"
@@ -196,11 +229,14 @@ function SourceRow({
           </>
         )}
         {error ? <ErrorState message={error} /> : null}
-        {source.audio_available === false ? (
+        {source.audio_available === false ||
+        source.audio_availability === "missing" ? (
           <p className="caption">
-            {source.source_kind === "omi_api"
-              ? "Imported from Omi. This import includes the transcript only; original audio is unavailable."
-              : "Audio was removed by your retention policy. The transcript remains available."}
+            {source.audio_availability === "missing"
+              ? "The archive expects audio, but the file is missing."
+              : source.source_kind === "omi_api"
+                ? "Imported from Omi. This import includes the transcript only; original audio is unavailable."
+                : "Audio was removed by your retention policy. The transcript remains available."}
           </p>
         ) : (
           <>
@@ -273,7 +309,9 @@ function CorrectionHistory({ id, timezone }: { id: string; timezone: string }) {
               {revision.previous_text || "No transcript"}
             </p>
             <p className="caption">Corrected transcript</p>
-            <p className="transcript-text">{revision.text || "No speech"}</p>
+            <p className="transcript-text">
+              {revision.text || "No transcript text"}
+            </p>
           </details>
         ))
       ) : (

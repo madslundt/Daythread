@@ -17,11 +17,15 @@ from .audio import render_window
 from .domain import (
     ButtonEvent,
     CaptureGap,
+    CaptureState,
     ChatRequest,
     ChatScopeConflict,
     ChatScopeNotFound,
     EvidenceChanged,
+    Feedback,
+    FeedbackEvent,
     HintPolicy,
+    PhoneObservation,
     RewindRequest,
     TranscriptCorrection,
     stamp,
@@ -93,7 +97,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # Apply retention before exposing imported text in the response.
         result["items"] = [
-            public_source(row) for item in result["items"]
+            public_source(row)
+            for item in result["items"]
             if (row := memory().store.get_audio(item["id"])) is not None
         ]
         return result
@@ -107,7 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def evidence_changed(request: Request, exc: Exception) -> Response:
         return JSONResponse(
             status_code=409,
-            content={"detail": "Recorded evidence changed during generation; please retry"},
+            content={"detail": "Recorded evidence or its output changed; reload and retry"},
         )
 
     @app.exception_handler(DateScopeError)
@@ -117,7 +122,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/status")
     def status() -> dict:
         return {
-            "audio": memory().store.status(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
             "worker_running": bool(app.state.worker and not app.state.worker.done()),
@@ -125,8 +129,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "hint_policy": config.hint_policy.model_dump(),
             "capture_paused": config.capture_paused,
             "inference": getattr(memory().inference, "health", {}),
-            "capture_gaps": len(memory().store.capture_gaps()),
+            **memory().store.observations(),
         }
+
+    @app.put("/v1/phones/{phone_id}/status")
+    def phone_status(phone_id: UUID, body: PhoneObservation) -> dict:
+        try:
+            value = body.model_dump(mode="json")
+            value["observed_at"] = stamp(body.observed_at)
+            return memory().store.save_phone(str(phone_id), value)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.put("/v1/capture-state/{event_id}")
+    def capture_state(event_id: UUID, body: CaptureState) -> dict:
+        value = body.model_dump(mode="json")
+        value["occurred_at"] = stamp(body.occurred_at)
+        try:
+            return memory().store.save_capture_state(str(event_id), value)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/v1/completeness")
+    def completeness(
+        start: AwareDatetime,
+        end: AwareDatetime,
+        limit: int = Query(default=100, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        if not start < end or end - start > timedelta(days=366):
+            raise HTTPException(422, "Choose an ordered interval of at most 366 days")
+        return memory().store.completeness(start, end, offset, limit)
+
+    @app.get("/v1/outputs/{output_id}/evidence")
+    def output_evidence(output_id: UUID) -> dict:
+        result = memory().store.evidence(str(output_id))
+        if result is None:
+            raise HTTPException(404, "Output evidence unavailable")
+        return result
+
+    @app.put("/v1/feedback/{feedback_id}")
+    def feedback(feedback_id: UUID, body: Feedback) -> dict:
+        try:
+            return memory().store.save_feedback(str(feedback_id), body.model_dump(mode="json"))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/v1/feedback")
+    def feedback_list(
+        limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0)
+    ) -> dict:
+        return memory().store.feedback(limit, offset)
+
+    @app.post("/v1/feedback/{feedback_id}/events")
+    def feedback_event(feedback_id: UUID, body: FeedbackEvent) -> dict:
+        try:
+            return memory().store.resolve_feedback(str(feedback_id), body.model_dump(mode="json"))
+        except KeyError as exc:
+            raise HTTPException(404, "Feedback unavailable") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/v1/feedback/{feedback_id}")
+    def delete_feedback(feedback_id: UUID) -> dict:
+        memory().store.delete_feedback(str(feedback_id))
+        return {"deleted": str(feedback_id)}
 
     @app.get("/v1/settings")
     def get_settings() -> dict:
@@ -194,6 +261,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not memory().store.delete_audio(str(audio_id)):
             raise HTTPException(404, "Audio chunk not found")
         return {"deleted": str(audio_id)}
+
+    @app.post("/v1/audio/{audio_id}/retry")
+    def retry_transcription(audio_id: UUID) -> dict:
+        with memory().store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM audio WHERE id=?", (str(audio_id),)).fetchone()
+            if not row:
+                raise HTTPException(404, "Source unavailable")
+            if row["state"] not in ("blocked", "queued") or not row["audio_available"]:
+                raise HTTPException(409, "Only pending recordings can retry")
+            if not Path(row["path"]).is_file():
+                raise HTTPException(409, "Restore the missing audio file before retrying")
+            db.execute(
+                "UPDATE audio SET state='queued',retry_at='',error=NULL,error_code=NULL WHERE id=?",
+                (str(audio_id),),
+            )
+        return {"id": str(audio_id), "state": "queued"}
+
+    @app.get("/v1/sources/{source_id}")
+    def source(source_id: UUID) -> dict:
+        row = memory().store.get_audio(str(source_id))
+        if row is None:
+            raise HTTPException(404, "Source unavailable")
+        return public_source(row)
 
     @app.get("/v1/transcripts")
     def transcripts(
@@ -264,6 +355,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             end,
             f"a rewind of the last {body.minutes} minutes",
             body.summarize,
+            kind="rewind",
         )
 
     @app.get("/v1/rewind/audio")
@@ -339,7 +431,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         meeting = matches[0]
         start = datetime.fromisoformat(meeting["context_start"])
         end = datetime.fromisoformat(meeting["context_end"])
-        result = await memory().window(start, end, "meeting notes with decisions and action items")
+        result = await memory().window(
+            start, end, "meeting notes with decisions and action items", kind="meeting"
+        )
         return {**result, "meeting": meeting}
 
     @app.post("/v1/chat")

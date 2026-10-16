@@ -4,6 +4,10 @@ A private audio memory system: Omi pendant → iPhone → your backend and local
 
 Direct capture needs no Omi account or cloud AI subscription. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
 
+![Omi Local web app showing the Today dashboard with day recap, timeline, rewind controls, and capture status](docs/images/web-app.png)
+
+*The Today dashboard with an empty archive.*
+
 ## Features
 
 - **Capture:** durable offline phone queue, retryable uploads, pause/resume, capture-gap tracking, and optional Wi-Fi-only uploads.

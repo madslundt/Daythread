@@ -21,6 +21,8 @@
 		9A209B1529C4C7F9940BC405 /* BackgroundUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B842DC16CA4ABEDC74FD7B /* BackgroundUploader.swift */; };
 		BF2370C719FD28CE695675E0 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5149340AC58163457C8EAFA4 /* DecisionsView.swift */; };
 		C1FF364862A99BAC8FDABF8D /* OmiBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65DE8DF0B231718A45BA596C /* OmiBluetooth.swift */; };
+		C7C0F7218715AB6929F0E9BA /* ConversationPrepModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 845B9CE61FCB882C7B03E291 /* ConversationPrepModels.swift */; };
+		CE90BAFC6629A897A334B861 /* ConversationPrepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB8513E2E8BCBD64BB4AC61 /* ConversationPrepView.swift */; };
 		CFE5EA14A2B0FBB3B7257298 /* DecisionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D1609947E22F81415CA125 /* DecisionEditor.swift */; };
 		EAF4AE1FBA11AB23CD07C46C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C626139C28263DAFF05301 /* BackendClient.swift */; };
 		F56EA0F2970F74B82031361F /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759496386C0A6A63464FDB76 /* AppModel.swift */; };
@@ -33,14 +35,16 @@
 		30C626139C28263DAFF05301 /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
 		34E6A4F371E71DE67B84C005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3F6DE1ABD7080468B48F589A /* DecisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionModels.swift; sourceTree = "<group>"; };
-		5149340AC58163457C8EAFA4 /* DecisionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsView.swift; sourceTree = "<group>"; };
 		4F5C4B1BA79BB1B93E662308 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
+		5149340AC58163457C8EAFA4 /* DecisionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsView.swift; sourceTree = "<group>"; };
 		65DE8DF0B231718A45BA596C /* OmiBluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmiBluetooth.swift; sourceTree = "<group>"; };
 		6DF738894717C09600F1F1D9 /* OmiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmiApp.swift; sourceTree = "<group>"; };
 		759496386C0A6A63464FDB76 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		845B9CE61FCB882C7B03E291 /* ConversationPrepModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrepModels.swift; sourceTree = "<group>"; };
 		96D36ED4C1331E4B7B2EEE5B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
 		AD9EAC0AB3288CEED0AE38A7 /* OmiLocal.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmiLocal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AEB8513E2E8BCBD64BB4AC61 /* ConversationPrepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrepView.swift; sourceTree = "<group>"; };
 		C713C75E658365D773F6A8DE /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
 		CE6B31CC401589C34B0076D6 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		D68AC74F4420C61DC1058227 /* DayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayView.swift; sourceTree = "<group>"; };
@@ -77,6 +81,8 @@
 				30B842DC16CA4ABEDC74FD7B /* BackgroundUploader.swift */,
 				A4ECB5244965EAF9D9F75C61 /* CaptureView.swift */,
 				CE6B31CC401589C34B0076D6 /* ChatView.swift */,
+				845B9CE61FCB882C7B03E291 /* ConversationPrepModels.swift */,
+				AEB8513E2E8BCBD64BB4AC61 /* ConversationPrepView.swift */,
 				D68AC74F4420C61DC1058227 /* DayView.swift */,
 				16D1609947E22F81415CA125 /* DecisionEditor.swift */,
 				3F6DE1ABD7080468B48F589A /* DecisionModels.swift */,
@@ -189,6 +195,8 @@
 				9A209B1529C4C7F9940BC405 /* BackgroundUploader.swift in Sources */,
 				7C3A7F61C5066FD3BC21D84B /* CaptureView.swift in Sources */,
 				8AFACE422C82AEEA34D320D6 /* ChatView.swift in Sources */,
+				C7C0F7218715AB6929F0E9BA /* ConversationPrepModels.swift in Sources */,
+				CE90BAFC6629A897A334B861 /* ConversationPrepView.swift in Sources */,
 				8742910AE564A09AF79D83E4 /* DayView.swift in Sources */,
 				CFE5EA14A2B0FBB3B7257298 /* DecisionEditor.swift in Sources */,
 				13535FA1821C675C35033E36 /* DecisionModels.swift in Sources */,

@@ -155,12 +155,14 @@ export function Today({
   onUpload,
   onRewind,
   onChat,
+  onPrepare,
 }: {
   day: string;
   timezone: string;
   status?: Status;
   timeline?: Timeline;
   onUpload: () => void;
+  onPrepare: () => void;
   onRewind: (minutes: number) => void;
   onChat: (scope: ChatScope) => void;
 }) {
@@ -168,6 +170,7 @@ export function Today({
     <div className="day-layout">
       <div className="day-main">
         <div className="day-chat-action">
+          <button className="button" onClick={onPrepare}>Prepare for a conversation</button>
           <button className="button" onClick={() => onChat({ kind: "day", day })}>
             <Icon name="chat" size={17} />
             Chat with this day

@@ -165,3 +165,11 @@ h3 { font-size: 21px; line-height: 1.3; margin-bottom: 7px; }
 }
 @media (max-width: 370px) { .main-canvas { padding-inline: 16px; } .intro h1 { font-size: 37px; } .day-rail { display: block; } .capture-status { border-left: 0; padding: 22px 0 0; margin-top: 24px; border-top: 1px solid var(--line); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.prep-screen { max-width: 850px; padding: 0 24px 48px; }
+.prep-form, .prep-screen label { display: grid; gap: 8px; margin-block: 12px; }
+.prep-screen input, .prep-screen select, .prep-screen textarea { max-width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: transparent; font: inherit; }
+.prep-screen input[type=checkbox] { width: auto; margin-right: 8px; }
+.prep-candidate, .prep-item { padding: 14px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.prep-candidate label { display: block; }
+.prep-citation { display: block; text-align: left; white-space: normal; margin-block: 8px; overflow-wrap: anywhere; }

@@ -130,22 +130,46 @@ struct SourceList: View {
 struct SourceSelection: Identifiable { let id = UUID(); let source: JSONValue }
 struct SourceDetail: View {
     let source: JSONValue
+    var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var loading = false
+    @State private var editing = false
+    @State private var draft = ""
     var body: some View {
         NavigationStack {
             List {
                 Section("Recorded evidence") {
-                    Text(source["started_at"].text).font(.caption).textSelection(.enabled)
+                    Text(sourceDate).font(.caption).textSelection(.enabled)
                     Text(source["text"].text.isEmpty ? "Transcription pending" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 NavigationLink("Create decision from this source") {
                     SourceDecisionCreation(sourceID: source["id"].text)
                 }.disabled(source["text"].text.isEmpty)
-                if source["audio_available"] != .bool(false) {
+                Section("Transcript correction") {
+                    if editing {
+                        TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel("Correct transcript")
+                        Button("Save correction") {
+                            let address = model.backendAddress
+                            loading = true
+                            Task {
+                                defer { loading = false }
+                                do {
+                                    guard model.backendAddress == address else { return }
+                                    _ = try await model.client().request("v1/transcripts/\(source["id"].text)", method: "PATCH", body: ["text": draft])
+                                    guard !Task.isCancelled, model.backendAddress == address else { return }
+                                    onCorrect?(); dismiss()
+                                } catch { self.error = error.localizedDescription }
+                            }
+                        }.disabled(loading || draft.count > 20000)
+                        Button("Cancel edit") { editing = false }
+                    } else { Button("Correct transcript") { draft = source["text"].text; editing = true } }
+                }
+                if source["audio_available"] == .bool(false) {
+                    Text(source["source_kind"].text == "omi_api" ? "Imported from Omi · transcript only; original audio unavailable." : "Audio expired under retention; transcript remains available.").font(.caption)
+                } else {
                 Button {
                     loading = true
                     Task {
@@ -154,10 +178,17 @@ struct SourceDetail: View {
                         catch { self.error = error.localizedDescription }
                     }
                 } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
-                } else { Text("Transcript only. Original audio is unavailable.").font(.caption).foregroundStyle(.secondary) }
+                }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+    }
+    private var sourceDate: String {
+        guard let date = AppModel.date(source["started_at"].text) else { return source["started_at"].text }
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
+        formatter.dateStyle = .medium; formatter.timeStyle = .short
+        return formatter.string(from: date) + " · " + formatter.timeZone.identifier
     }
 }

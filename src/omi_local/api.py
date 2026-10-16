@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import AwareDatetime, ValidationError
 
+from . import conversation_prep
 from .audio import render_window
 from .decision_api import decision_routes
 from .domain import (
@@ -33,6 +34,7 @@ from .embeddings import Embeddings, run_embedding_worker
 from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
+from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
@@ -384,6 +386,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         end = datetime.fromisoformat(meeting["context_end"])
         result = await memory().window(start, end, "meeting notes with decisions and action items")
         return {**result, "meeting": meeting}
+
+    @app.post("/v1/conversation-prep/search", response_model=PrepSearchResult)
+    def prep_search(body: PrepSearch, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        return conversation_prep.search(memory(), body)
+
+    @app.post("/v1/conversation-prep/generate", response_model=PrepResult)
+    async def prep_generate(body: PrepGenerate, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return await conversation_prep.generate(memory(), body)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/v1/conversation-prep/validate")
+    def prep_validate(body: PrepValidate, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        return {"valid": conversation_prep.validate(memory(), body.search, body.snapshot)}
 
     @app.post("/v1/chat")
     async def chat(body: ChatRequest) -> dict:

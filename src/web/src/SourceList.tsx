@@ -14,6 +14,7 @@ export function SourceList({
   onDeleted,
   expanded = false,
   showDate = false,
+  idPrefix = "source",
 }: {
   sources: Source[];
   timezone: string;
@@ -21,6 +22,7 @@ export function SourceList({
   onDeleted?: () => void;
   expanded?: boolean;
   showDate?: boolean;
+  idPrefix?: string;
 }) {
   return (
     <div className="source-list">
@@ -28,6 +30,7 @@ export function SourceList({
         <SourceRow
           key={source.id}
           source={source}
+          idPrefix={idPrefix}
           timezone={timezone}
           onCorrect={onCorrect}
           onDeleted={onDeleted}
@@ -42,6 +45,7 @@ export function SourceList({
 
 function SourceRow({
   source,
+  idPrefix,
   timezone,
   onCorrect,
   onDeleted,
@@ -50,6 +54,7 @@ function SourceRow({
   index,
 }: {
   source: Source;
+  idPrefix: string;
   timezone: string;
   onCorrect?: () => void;
   onDeleted?: () => void;
@@ -125,7 +130,7 @@ function SourceRow({
     <details
       className="source-row"
       open={expanded || undefined}
-      id={`source-${source.id}`}
+      id={`${idPrefix}-${source.id}`}
     >
       <summary>
         <span className="source-time">
@@ -158,9 +163,9 @@ function SourceRow({
         {source.matches?.length ? <p className="caption">Search excerpt · full transcript below. Timing covers the recording interval.</p> : null}
         {editing ? (
           <div className="transcript-editor">
-            <label htmlFor={`edit-${source.id}`}>Correct transcript</label>
+            <label htmlFor={`edit-${idPrefix}-${source.id}`}>Correct transcript</label>
             <textarea
-              id={`edit-${source.id}`}
+              id={`edit-${idPrefix}-${source.id}`}
               rows={5}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}

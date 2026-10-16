@@ -65,6 +65,20 @@ struct BackendClient {
         let value = try await request(path, method: method, query: query, body: body)
         return try JSONDecoder().decode(type, from: JSONEncoder().encode(value))
     }
+    func prep<Body: Encodable, Result: Decodable>(_ action: String, body: Body) async throws -> Result {
+        var request = URLRequest(url: url("v1/conversation-prep/" + action), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.httpMethod = "POST"
+        request.timeoutInterval = action == "generate" ? 3600 : 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.httpBody = try JSONEncoder().encode(body)
+        // An ephemeral session prevents persistent URL caches from retaining prep evidence.
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response, data: data)
+        return try JSONDecoder().decode(Result.self, from: data)
+    }
     func download(_ path: String, query: [String: String]) async throws -> URL {
         let (temporary, response) = try await URLSession.shared.download(from: url(path, query: query))
         try Self.validate(response, data: (try? Data(contentsOf: temporary)) ?? Data())

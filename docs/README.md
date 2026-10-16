@@ -17,6 +17,18 @@ Open **http://localhost:8787** on the computer, or `http://<computer-LAN-address
 
 The web app has Today, Rewind, Diary, Chat, Inbox, and Settings. It supports recording uploads/conversion, searchable transcripts and source audio, corrections/history, deletion, recap generation/history/Markdown export, persistent chat, and shared settings. Both apps offer System, Light, and Dark appearance in Settings; the choice is saved on each device, and System follows device appearance changes. The live archive contains no sample recordings or demonstration answers.
 
+### Prepare for a conversation
+
+Choose **Prepare for a conversation** from web Today or iPhone Day. Enter a person, project or topic as a literal phrase, optional alternate names (one per line), a qualifier, and optional inclusive dates in the server timezone. Search uses Unicode case-insensitive substrings: aliases are OR alternatives and the qualifier must also occur in the same recording. Names such as “May” are never parsed as dates. Results are newest first, ten per page. A mention does not establish participation or identity.
+
+Inspect transcripts/audio, include relevant sources across pages, then explicitly confirm the latest relevant recording. **Prepare from confirmed evidence** produces a dated, cited recap, promises to check, recorded questions and separately labeled suggested questions. Promises retain **completion unknown** and unknown owners in this first release; recorded completion/conflicts can be described with evidence, but preparation does not read or mutate inbox commitment statuses. Conditional promises must preserve their conditions, and suggestions must remain separate. Generated interpretation still needs review against transcripts/audio.
+
+**My context and goals** is editable user-authored context, sent separately to the local model. It is never recorded evidence. Preparation, selection and context exist only in the current screen; closing discards them, with a draft safeguard. There is no saved preparation history, offline prep cache, calendar integration, automatic notification or messaging.
+
+At most forty sources can be selected. Generation reviews up to 4,000 characters around a literal match per source, with 16,000 transcript characters total; select fewer sources if the budget is exceeded. Coverage details disclose unselected matches, the exact reviewed excerpts, omitted character counts, known pending chunks and capture gaps. Long imports can contain relevant evidence beyond the reviewed excerpt. Old sources are labeled after thirty days. Unknown phone uploads and unnamed discussions remain retrieval limits; try alternate phrases or browse Rewind.
+
+Every generated item requires a selected source UUID and exact excerpt; unknown sources, fabricated excerpts and malformed output fail visibly. Content fingerprints include transcripts, segment timing, audio availability and provenance. The service checks its retrieval snapshot before and after inference, including new recordings/pending work/gaps in searched dates. Both clients revalidate on focus/foreground; web also responds to archive changes. Changed evidence clears the stale preparation while preserving the draft context. Unrelated changes within the searched dates may conservatively require refresh. Imported transcript-only audio and expired local audio remain distinct. These checks establish structural traceability, not factual model accuracy.
+
 For frontend-only development, run the backend plus `npm --prefix src/web run dev`; Vite forwards `/v1` to port 8787. After frontend changes, rebuild and run `uv run python scripts/package_web.py` to refresh the combined server. `scripts/build.sh` also packages the web assets into the Python wheel/source distribution.
 
 ## Decision register
@@ -213,6 +225,7 @@ Keep one archive owner and one backend process for a data directory. The app/API
 | `GET /v1/weekly-reviews/{monday}/versions`, `/{monday}.md` | Review history and original-evidence Markdown; optional `version_id` on review/export |
 | `POST /v1/meetings/{uuid}/recap` | Qualified meeting notes with surrounding context |
 | `POST /v1/search` | Scoped retrieval and diagnostics without answer generation or chat writes |
+| `POST /v1/conversation-prep/search`, `/generate`, `/validate` | Ephemeral literal source discovery, confirmed evidence preparation and freshness checks; no-store responses |
 | `POST /v1/chat`, `GET /v1/chat/sessions`, `/v1/chat/sessions/{uuid}` | Persistent evidence-based chat |
 
 Fix the same absolute `end` timestamp for rewind summary and audio requests. Missing audio is disclosed and rendered as silence; transcript boundaries remain chunk-level unless upstream segment timestamps are enabled.

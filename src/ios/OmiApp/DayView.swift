@@ -3,6 +3,7 @@ import OmiCore
 
 struct DayView: View {
     @Environment(AppModel.self) private var model
+    @State private var prepOpen = false
     @State private var day = Date()
     @State private var month = Date()
     @State private var daySelected = false
@@ -49,6 +50,7 @@ struct DayView: View {
                     ChatView(initialScope: .day(dayKey)).id(dayKey)
                 } label: { Label("Chat with this day", systemImage: "bubble.left.and.bubble.right") }
                     .accessibilityIdentifier("day.chat")
+                Button { prepOpen = true } label: { Label("Prepare for a conversation", systemImage: "person.crop.rectangle") }
                 if cached { Label("Saved on this iPhone · refresh to update", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
                 if loading { ProgressView("Reading your day…") }
                 ErrorNote(message: error)
@@ -80,6 +82,7 @@ struct DayView: View {
                 }
             }
         }.listStyle(.insetGrouped).navigationTitle("Day").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $prepOpen) { ConversationPrepView() }
             .task(id: cacheKey) { await load() }
             .task(id: calendarTaskKey) { await loadCalendar() }
             .refreshable {

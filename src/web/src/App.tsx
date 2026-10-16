@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ConversationPrep } from "./ConversationPrep";
 import { Chat } from "./Chat";
 import { Inbox, InboxEntry } from "./Inbox";
 import { DateNavigator } from "./Calendar";
@@ -78,6 +79,8 @@ export default function App() {
   const [page, setPage] = useState<Page>(pageFromHash);
   const [day, setDay] = useState(() => localDay(browserTimezone));
   const daySelected = useRef(false);
+  const [prepOpen, setPrepOpen] = useState(false);
+  const [prepDirty, setPrepDirty] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [rewindIntent, setRewindIntent] = useState<RewindIntent>();
@@ -104,6 +107,8 @@ export default function App() {
     return () => window.removeEventListener("omi:archive-changed", update);
   }, [status.refresh, timeline.refresh]);
   function navigate(next: Page) {
+    if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
+    setPrepOpen(false);
     setChatIntent(undefined);
     setPage(next);
     window.location.hash = next;
@@ -138,7 +143,7 @@ export default function App() {
         <a
           className="brand"
           href="#today"
-          onClick={() => navigate("today")}
+          onClick={(event) => { event.preventDefault(); navigate("today"); }}
           aria-label="omi home"
         >
           omi
@@ -161,7 +166,7 @@ export default function App() {
             <a
               className="brand mobile-brand"
               href="#today"
-              onClick={() => navigate("today")}
+              onClick={(event) => { event.preventDefault(); navigate("today"); }}
             >
               omi
             </a>
@@ -186,8 +191,8 @@ export default function App() {
             ) : null}
           </div>
           <div className="intro">
-            <h1>{current.title}</h1>
-            <p>{current.subtitle}</p>
+            <h1>{prepOpen ? "Prepare for what comes next." : current.title}</h1>
+            <p>{prepOpen ? "A little context, with the evidence beside it." : current.subtitle}</p>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">
@@ -214,18 +219,21 @@ export default function App() {
         {timeline.data?.active_meeting ? (
           <ActiveMeeting timeline={timeline.data} timezone={timezone} />
         ) : null}
-        {page === "today" ? (
+        {page === "today" && !prepOpen ? (
           <div className="day-chat-action">
             <InboxEntry />
           </div>
         ) : null}
-        {page === "today" ? (
+        {prepOpen ? (
+          <ConversationPrep timezone={timezone} onDirtyChange={setPrepDirty} onClose={() => { setPrepOpen(false); setPrepDirty(false); }} />
+        ) : page === "today" ? (
           <Today
             key={`${day}-${version}`}
             day={day}
             timezone={timezone}
             status={status.data}
             timeline={timeline.data}
+            onPrepare={() => setPrepOpen(true)}
             onUpload={() => setUploadOpen(true)}
             onRewind={rewind}
             onChat={openChat}
@@ -285,7 +293,7 @@ function Navigation({
         <a
           href={`#${item.id}`}
           key={item.id}
-          onClick={() => navigate(item.id)}
+          onClick={(event) => { event.preventDefault(); navigate(item.id); }}
           className={page === item.id ? "active" : ""}
           aria-current={page === item.id ? "page" : undefined}
         >

@@ -7,12 +7,12 @@ Direct capture needs no Omi account or cloud AI subscription. Existing hosted Om
 <table>
 <tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
 <tr>
-<td width="67%" valign="top"><img src="docs/images/web-app.png" alt="Omi Local Today dashboard with a sample day recap and recordings from the gym, work, errands, family time, and dinner with friends"></td>
-<td width="33%" valign="top"><img src="docs/images/web-app-iphone17.png" alt="Today day recap in Safari on iPhone 17, using the same fictional gym, work, errands, family, and friends recordings" width="302"></td>
+<td width="67%" valign="top"><img src="docs/images/web-app.png" alt="Today dashboard with an expanded family recap point, its related recording and chat button, individual follow-up checkboxes, and a timeline spanning gym, work, errands, family, and friends"></td>
+<td width="33%" valign="top"><img src="docs/images/web-app-iphone17.png" alt="Today in Safari on iPhone 17, showing the same fictional family and friends recap points and four individual follow-up checkboxes" width="302"></td>
 </tr>
 </table>
 
-*The Today dashboard on desktop and iPhone 17, with the same fictional recordings from the gym, work, everyday errands, home with family, and time out with friends.*
+*Today on desktop and iPhone 17: expandable recap points with related recordings and a chat action, plus individual follow-up checkboxes. Both views use the same fictional recordings from the gym, work, everyday errands, home with family, and time out with friends.*
 
 Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. Longer pages are scrolled to show their sample content.
 

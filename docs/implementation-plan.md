@@ -81,3 +81,9 @@ The configured local gateway `ai.home.arpa:18080` and previous `192.168.30.122:1
 ## Borrow selectively
 
 [Open-source inspiration](open-source-inspiration.md) identifies code and patterns to examine before implementing each phase. Keep this backend small: borrow capture contracts, reliability patterns, and retrieval ideas first. Evaluate licenses before copying code; no third-party implementation has been vendored here.
+
+## 8. Editable inbox — implemented
+
+The shared backend, responsive web Inbox and native Day → Inbox now support evidenced commitment/deadline/question proposals, cross-day status, manual edits/resets, duplicate dismissal, bounded historical scans and progress. Independent durable extraction jobs cover STT and Omi transcript imports. Transcript revisions, exact-span validation, conservative date resolution, overlap reconciliation, optimistic mutation IDs, correction/retention/deletion propagation, truncation splitting and backup/restore are covered by software tests. Weekly reviews, project histories, briefings and external task synchronization remain future work.
+
+Acceptance includes durable explicit-null overrides/status after re-extraction, no stale results after source correction/deletion/expiry, original capture-relative dates and timezone precision, bounded complete coverage of long transcripts, recovery/retry without duplicating items, and shared web/native contracts. Real Danish/English/mixed-language model precision/recall, owner/date accuracy, duplicate rate and throughput still need evaluation on the configured local model before relying on automatic proposals. Existing physical capture acceptance remains unchanged.

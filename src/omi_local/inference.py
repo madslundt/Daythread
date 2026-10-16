@@ -23,6 +23,10 @@ class InferenceError(Exception):
     """Provider returned an invalid response; never forward its body to the caller."""
 
 
+class InferenceTruncated(InferenceError):
+    """The provider explicitly stopped at its output token limit."""
+
+
 def validate_citations(text: str, sources: list[dict]) -> str:
     allowed = {source["id"].lower() for source in sources}
     cited = re.findall(
@@ -123,7 +127,10 @@ class Inference:
             },
         )
         try:
-            text = response.json()["choices"][0]["message"]["content"]
+            choice = response.json()["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise InferenceTruncated("LLM output was truncated")
+            text = choice["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise InferenceError("Invalid LLM response") from exc
         if not isinstance(text, str) or not text.strip() or len(text) > 30000:
@@ -144,7 +151,8 @@ class Inference:
                     + (
                         "\nDiary recaps: "
                         + json.dumps(source["diary_summaries"], ensure_ascii=False)
-                        if offset == 0 and source.get("diary_summaries") else ""
+                        if offset == 0 and source.get("diary_summaries")
+                        else ""
                     )
                 )
         task = (

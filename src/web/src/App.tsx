@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Chat } from "./Chat";
+import { Inbox, InboxEntry } from "./Inbox";
 import { DateNavigator } from "./Calendar";
 import { Diary } from "./Diary";
 import { Rewind, type RewindIntent } from "./Rewind";
@@ -7,17 +8,13 @@ import { Settings } from "./Settings";
 import { Today } from "./Today";
 import { UploadDialog } from "./UploadDialog";
 import { errorMessage, newId, post } from "./api";
-import {
-  localDay,
-  remainingCooldown,
-  timeLabel,
-} from "./format";
+import { localDay, remainingCooldown, timeLabel } from "./format";
 import { Icon, type IconName } from "./Icon";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Notice } from "./UI";
 
-type Page = "today" | "rewind" | "diary" | "chat" | "settings";
+type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings";
 const pages: {
   id: Page;
   label: string;
@@ -54,6 +51,13 @@ const pages: {
     subtitle: "Ask a question. Follow it back to the source.",
   },
   {
+    id: "inbox",
+    label: "Inbox",
+    icon: "diary",
+    title: "Follow through.",
+    subtitle: "Promises and open questions, across your days.",
+  },
+  {
     id: "settings",
     label: "Settings",
     icon: "settings",
@@ -77,7 +81,10 @@ export default function App() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [rewindIntent, setRewindIntent] = useState<RewindIntent>();
-  const [chatIntent, setChatIntent] = useState<{ scope: ChatScope; id: number }>();
+  const [chatIntent, setChatIntent] = useState<{
+    scope: ChatScope;
+    id: number;
+  }>();
   const [notice, setNotice] = useState("");
   useEffect(() => {
     const sync = () => setPage(pageFromHash());
@@ -208,6 +215,11 @@ export default function App() {
           <ActiveMeeting timeline={timeline.data} timezone={timezone} />
         ) : null}
         {page === "today" ? (
+          <div className="day-chat-action">
+            <InboxEntry />
+          </div>
+        ) : null}
+        {page === "today" ? (
           <Today
             key={`${day}-${version}`}
             day={day}
@@ -221,9 +233,20 @@ export default function App() {
         ) : page === "rewind" ? (
           <Rewind timezone={timezone} intent={rewindIntent} />
         ) : page === "diary" ? (
-          <Diary day={day} timezone={timezone} onDay={selectDay} onChat={openChat} />
+          <Diary
+            day={day}
+            timezone={timezone}
+            onDay={selectDay}
+            onChat={openChat}
+          />
+        ) : page === "inbox" ? (
+          <Inbox timezone={timezone} />
         ) : page === "chat" ? (
-          <Chat key={chatIntent?.id} timezone={timezone} initialScope={chatIntent?.scope} />
+          <Chat
+            key={chatIntent?.id}
+            timezone={timezone}
+            initialScope={chatIntent?.scope}
+          />
         ) : (
           <Settings
             onSaved={() => {

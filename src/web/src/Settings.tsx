@@ -347,7 +347,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   onChange={(value) => update("transcript_retention_days", value)}
                 />
                 <small id="transcript-retention-hint">
-                  Expiring transcripts also clears derived diary and chat content.
+                  Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history.
                 </small>
               </label>
             </div>

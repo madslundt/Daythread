@@ -15,7 +15,7 @@ bash scripts/dev.sh
 
 Open **http://localhost:8787** on the computer, or `http://<computer-LAN-address>:8787` from a phone on the same network. The server binds `0.0.0.0`; shell environment variables can override the address, for example `OMI_HOST=127.0.0.1 OMI_PORT=8787 bash scripts/dev.sh`. The launcher explicitly uses one worker, including when `WEB_CONCURRENCY` is inherited from another application. One process serves the web client and `/v1` API. No account, token, Firebase, hosted vector database, or commercial AI provider is required.
 
-The web app has Today, Rewind, Diary, Chat, and Settings. It supports recording uploads/conversion, searchable transcripts and source audio, corrections/history, deletion, recap generation/history/Markdown export, persistent chat, and shared settings. Both apps offer System, Light, and Dark appearance in Settings; the choice is saved on each device, and System follows device appearance changes. The live archive contains no sample recordings or demonstration answers.
+The web app has Today, Rewind, Diary, Chat, Inbox, and Settings. It supports recording uploads/conversion, searchable transcripts and source audio, corrections/history, deletion, recap generation/history/Markdown export, persistent chat, and shared settings. Both apps offer System, Light, and Dark appearance in Settings; the choice is saved on each device, and System follows device appearance changes. The live archive contains no sample recordings or demonstration answers.
 
 For frontend-only development, run the backend plus `npm --prefix src/web run dev`; Vite forwards `/v1` to port 8787. After frontend changes, rebuild and run `uv run python scripts/package_web.py` to refresh the combined server. `scripts/build.sh` also packages the web assets into the Python wheel/source distribution.
 
@@ -44,6 +44,16 @@ xcodebuild -project OmiLocal.xcodeproj -scheme OmiLocal \
 ```
 
 The project file is included; regenerate it when changing `project.yml`. Physical signing/install, actual pendant pairing, button timing, and screen-locked/background endurance still need the purchased hardware. See [device evidence and acceptance checks](device-research.md).
+
+## Editable inbox
+
+Open **Inbox** on the web or **Day → Inbox** on iPhone to review promises, standalone deadlines and unanswered questions across all days. Items keep pending/completed/dismissed status, editable title/kind/owner/deadline, explicit unknown values, transcript excerpts, review history and duplicate links. User edits and status survive re-extraction. Questions mean no answer was found in the scanned context; they are never automatically marked answered. Model proposals need review and do not establish that every obligation was recorded or found.
+
+New transcripts, including Omi imports and corrections, queue independent extraction after a short settling period. Older transcripts already in an upgraded archive are scanned only when you select dates (default seven days; up to 31 per request). Scan/retry controls and coverage distinguish unscanned, waiting, failed and completed windows. The backend worker must be enabled. Extraction uses only the configured local LLM, retries durably, and reduces truncated output into smaller windows. Real model precision, recall and throughput have not been verified.
+
+Every proposal needs validated exact transcript spans. Ownership stays unknown when unsupported; I/we and speaker labels do not identify the wearer. Automatic deadline resolution intentionally handles only explicit ISO dates and unambiguous today/tomorrow (including Danish) against capture time in the archive timezone. Other phrases remain unresolved for manual review. Date-only deadlines retain their precision; changing archive timezone does not rewrite accepted reviewed deadlines. There are no notifications or external task-manager synchronization.
+
+Corrections flag affected evidence for review and re-extract with new revision IDs. Historical excerpts are labeled as prior transcript evidence. Audio expiry keeps transcript-backed items but disables playback. Source deletion or transcript expiry conservatively removes affected items, manual edits, history and jobs, including items whose extraction used that source as context. Content-free source tombstones prevent automatic inbox resurrection on replay. Existing exported backups remain historical snapshots. Inbox review requires backend connectivity; failed saves preserve the open draft, while leaving the editor discards unsaved changes. Inbox content is not added to the phone capture outbox or persistent cache.
 
 ## Optional Omi API import
 

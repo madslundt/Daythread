@@ -28,6 +28,7 @@ from .domain import (
     utc_now,
     wav_duration,
 )
+from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
 from .retrieval import DateScopeError
@@ -77,6 +78,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def memory() -> Memory:
         return app.state.memory
 
+    app.include_router(inbox_router(memory))
+
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:
         return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
@@ -93,7 +96,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # Apply retention before exposing imported text in the response.
         result["items"] = [
-            public_source(row) for item in result["items"]
+            public_source(row)
+            for item in result["items"]
             if (row := memory().store.get_audio(item["id"])) is not None
         ]
         return result

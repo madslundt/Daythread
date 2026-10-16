@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
+from .inbox_schema import SCHEMA as INBOX_SCHEMA
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -57,6 +58,7 @@ class Store(ArchiveStore):
             for column in ("source_kind", "source_id"):
                 if column not in audio_columns:
                     db.execute(f"ALTER TABLE audio ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            db.executescript(INBOX_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }

@@ -87,7 +87,7 @@ struct ChatView: View {
                         }
                     }
                 } label: { Label(sessionID == nil ? "New conversation" : "Conversations", systemImage: "clock.arrow.circlepath") }.disabled(loading)
-                if cached { Text("Saved conversation on this iPhone").font(.caption).foregroundStyle(.secondary) }
+                if cached { Text("Saved conversation on this iPhone; source availability and corrections may have changed").font(.caption).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
             }
             scopeControls
@@ -96,7 +96,13 @@ struct ChatView: View {
             }
             ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                 Section(message["role"].text == "user" ? "You" : "Omi Local") {
+                    if message["stale"] == .bool(true) {
+                        Text("Historical answer: transcript evidence changed. Ask again for a current answer.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(.init(message["content"].text)).textSelection(.enabled)
+                    if !message["retrieval_details"]["notice"].text.isEmpty {
+                        Text(message["retrieval_details"]["notice"].text).font(.caption).foregroundStyle(.secondary)
+                    }
                     if !message["sources"].array.isEmpty { SourceList(sources: message["sources"].array) }
                 }
             }
@@ -251,7 +257,7 @@ struct ChatView: View {
             let result = try await client.request("v1/chat", method: "POST", body: body)
             guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
             messages.append(.object(["role": .string("user"), "content": .string(text)]))
-            messages.append(.object(["role": .string("assistant"), "content": result["answer"], "sources": result["sources"]]))
+            messages.append(.object(["role": .string("assistant"), "content": result["answer"], "sources": result["sources"], "retrieval_details": result["retrieval_details"]]))
             if !result["session_id"].text.isEmpty { sessionID = result["session_id"].text }
             question = ""; cached = false; save()
             let resultSessions = try await client.request("v1/chat/sessions")

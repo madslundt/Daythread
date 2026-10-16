@@ -28,6 +28,7 @@ from .domain import (
     utc_now,
     wav_duration,
 )
+from .embeddings import Embeddings, run_embedding_worker
 from .inference import Inference, InferenceError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
 from .retrieval import DateScopeError
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             timeout=config.inference_timeout_seconds, follow_redirects=False
         ) as client:
             memory = Memory(store, config, Inference(config, client))
+            memory.retriever.embeddings = Embeddings(config, client)
             app.state.memory = memory
             app.state.omi = OmiAPI(config, client, store)
             task = None
@@ -57,13 +59,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 store.recover()
                 task = asyncio.create_task(run_worker(memory))
             app.state.worker = task
+            embedding_task = None
+            if config.worker_enabled and memory.retriever.set_id:
+                embedding_task = asyncio.create_task(
+                    run_embedding_worker(
+                        store,
+                        memory.retriever.embeddings,
+                        memory.retriever.set_id,
+                    )
+                )
+            app.state.embedding_worker = embedding_task
             try:
                 yield
             finally:
-                if task:
-                    task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await task
+                for running in (task, embedding_task):
+                    if running:
+                        running.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await running
 
     app = FastAPI(
         title="Omi Local",
@@ -93,7 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # Apply retention before exposing imported text in the response.
         result["items"] = [
-            public_source(row) for item in result["items"]
+            public_source(row)
+            for item in result["items"]
             if (row := memory().store.get_audio(item["id"])) is not None
         ]
         return result
@@ -126,6 +140,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "capture_paused": config.capture_paused,
             "inference": getattr(memory().inference, "health", {}),
             "capture_gaps": len(memory().store.capture_gaps()),
+            "embeddings": memory().retriever.status()
+            | {
+                "worker_running": bool(
+                    app.state.embedding_worker and not app.state.embedding_worker.done()
+                ),
+            },
         }
 
     @app.get("/v1/settings")
@@ -346,6 +366,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def chat(body: ChatRequest) -> dict:
         try:
             return await memory().chat(
+                body.question,
+                body.limit,
+                str(body.session_id) if body.session_id else None,
+                body.day,
+                str(body.meeting_id) if body.meeting_id else None,
+                bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                body.start_day,
+                body.end_day,
+            )
+        except ChatScopeNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ChatScopeConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(404, "Chat session not found") from exc
+
+    @app.post("/v1/search")
+    async def search(body: ChatRequest) -> dict:
+        try:
+            return await memory().search(
                 body.question,
                 body.limit,
                 str(body.session_id) if body.session_id else None,

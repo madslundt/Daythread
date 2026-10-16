@@ -124,7 +124,7 @@ function SourceRow({
             : timeLabel(source.started_at, timezone)}
         </span>
         <span className="source-preview">
-          {text ||
+          {(saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
             (source.state === "done"
               ? "No speech detected"
               : `Recording · ${source.state}`)}
@@ -145,6 +145,7 @@ function SourceRow({
           </span>
           <span>{source.state === "done" ? "Transcribed" : source.state}</span>
         </div>
+        {source.matches?.length ? <p className="caption">Search excerpt · full transcript below. Timing covers the recording interval.</p> : null}
         {editing ? (
           <div className="transcript-editor">
             <label htmlFor={`edit-${source.id}`}>Correct transcript</label>
@@ -153,7 +154,7 @@ function SourceRow({
               rows={5}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              maxLength={20000}
+              maxLength={200000}
             />
             <div className="button-row">
               <button

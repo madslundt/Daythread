@@ -47,9 +47,18 @@ class ArchiveStore:
     @staticmethod
     def verify_sources(db: sqlite3.Connection, sources: list[dict]) -> None:
         for source in sources:
-            current = db.execute("SELECT text FROM audio WHERE id=?", (source["id"],)).fetchone()
-            if not current or (
-                source.get("text") is not None and current["text"] != source["text"]
+            current = db.execute(
+                "SELECT text,transcript_version FROM audio WHERE id=?", (source["id"],)
+            ).fetchone()
+            if (
+                not current
+                or (source.get("text") is not None and current["text"] != source["text"])
+                or (
+                    source.get("transcript_version") is not None
+                    and (
+                        not current or current["transcript_version"] != source["transcript_version"]
+                    )
+                )
             ):
                 raise EvidenceChanged("Recorded evidence changed; retry the request")
 
@@ -188,9 +197,14 @@ class ArchiveStore:
             ]
 
     def ensure_session(
-        self, session_id: str | None, title: str, day: str | None = None,
-        meeting_id: str | None = None, scope_supplied: bool = False,
-        start_day: str | None = None, end_day: str | None = None,
+        self,
+        session_id: str | None,
+        title: str,
+        day: str | None = None,
+        meeting_id: str | None = None,
+        scope_supplied: bool = False,
+        start_day: str | None = None,
+        end_day: str | None = None,
     ) -> dict:
         key, now = session_id or str(uuid4()), stamp(utc_now())
         with self.connect() as db:
@@ -211,8 +225,14 @@ class ArchiveStore:
                 (key, title[:120], now, now, day, meeting_id, start_day, end_day),
             )
         return {
-            "id": key, "title": title[:120], "created_at": now, "updated_at": now,
-            "day": day, "meeting_id": meeting_id, "start_day": start_day, "end_day": end_day,
+            "id": key,
+            "title": title[:120],
+            "created_at": now,
+            "updated_at": now,
+            "day": day,
+            "meeting_id": meeting_id,
+            "start_day": start_day,
+            "end_day": end_day,
         }
 
     def chat_sessions(self) -> list[dict]:
@@ -237,12 +257,31 @@ class ArchiveStore:
             ]
         return dict(row) | {
             "messages": [
-                message | {"sources": json.loads(message["sources"])} for message in messages
+                message
+                | {
+                    "sources": json.loads(message["sources"]),
+                    "retrieval_details": json.loads(message["retrieval_details"] or "null"),
+                    "stale": self.sources_stale(json.loads(message["sources"])),
+                }
+                for message in messages
             ]
         }
 
+    def sources_stale(self, sources: list[dict]) -> bool:
+        try:
+            with self.connect() as db:
+                self.verify_sources(db, sources)
+        except EvidenceChanged:
+            return True
+        return False
+
     def save_exchange(
-        self, session_id: str, question: str, answer: str, sources: list[dict]
+        self,
+        session_id: str,
+        question: str,
+        answer: str,
+        sources: list[dict],
+        retrieval_details: dict | None = None,
     ) -> None:
         now = stamp(utc_now())
         with self.connect() as db:
@@ -252,7 +291,9 @@ class ArchiveStore:
             self.verify_sources(db, sources)
             for role, content, evidence in (("user", question, []), ("assistant", answer, sources)):
                 db.execute(
-                    "INSERT INTO chat_messages VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO chat_messages "
+                    "(id,session_id,role,content,sources,created_at,retrieval_details) "
+                    "VALUES(?,?,?,?,?,?,?)",
                     (
                         str(uuid4()),
                         session_id,
@@ -260,6 +301,7 @@ class ArchiveStore:
                         content,
                         json.dumps(evidence),
                         stamp(utc_now()),
+                        json.dumps(retrieval_details) if role == "assistant" else None,
                     ),
                 )
             db.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))

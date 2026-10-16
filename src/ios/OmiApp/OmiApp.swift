@@ -119,7 +119,7 @@ struct SourceList: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(AppModel.date(source["started_at"].text)?.formatted(date: .abbreviated, time: .shortened) ?? source["started_at"].text)
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text)
+                    Text(source["matches"].array.first?["text"].text ?? (source["text"].text.isEmpty ? "Transcription \(source["state"].text)" : source["text"].text))
                         .font(.body).foregroundStyle(.primary).lineLimit(4).multilineTextAlignment(.leading)
                 }.padding(.vertical, 5)
             }
@@ -142,6 +142,9 @@ struct SourceDetail: View {
                     Text(source["text"].text.isEmpty ? "Transcription pending" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                if source["audio_available"] == .bool(false) {
+                    Text("Transcript only. Original audio is unavailable.").font(.caption).foregroundStyle(.secondary)
+                }
                 Button {
                     loading = true
                     Task {
@@ -149,7 +152,7 @@ struct SourceDetail: View {
                         do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
                         catch { self.error = error.localizedDescription }
                     }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
+                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_available"] == .bool(false))
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

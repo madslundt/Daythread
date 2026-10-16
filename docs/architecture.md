@@ -34,7 +34,7 @@ flowchart LR
 | Forget to end meeting | End at configured duration | Implemented, default 120 minutes, with native countdown |
 | Rewind 10 minutes (or chosen X) | Hear original audio and read a short recap | Backend implements both for 1–60 minutes |
 | End of day | Recap with events, decisions, commitments and open questions | Scheduled backend recap plus portable diary implemented |
-| Ask later | Answer using past recorded evidence and source links | Persistent chat with keyword/date retrieval and source playback |
+| Ask later | Answer using past recorded evidence and source links | Persistent chat with scoped keyword/optional hybrid retrieval and source playback |
 
 Choose the meeting gesture by capability: **verified click-and-hold → double click → phone control**. Current production source turns off at ~3 seconds and does not emit its defined long-tap event from the active state machine, but does implement double-click notifications. Do not infer hold duration from a release event. Resolve each gesture once: a recognized meeting double-click must not also create important flags from its component taps. Pairing must discover model/firmware/capabilities, and physical timing remains a device acceptance test. See the [source evidence](device-research.md).
 
@@ -69,11 +69,11 @@ The optional Omi adapter fetches `/v1/dev/user/conversations` with transcripts e
 | Moments | Append-only `mark` events with capture time, cooldown and context policy | Sparse approximate importance hints |
 | Meetings | Append-only `meeting_toggle`, capture time, timeout and hint policy | Qualified approximate meeting spans and end reason |
 | Diary | Transcript sources, relevant events, timezone, model and prompt version | Version-sensitive daily Markdown and recap |
-| Recall | Evidence UUIDs, transcript time range | Keyword results, audio rewind, grounded chat |
+| Recall | Evidence UUIDs, transcript time range | Scoped keyword/optional hybrid results, audio rewind, grounded chat |
 
 Meeting state is replayable in event capture order, so delayed uploads and retries do not toggle it twice. One owner/one wearable timeline is assumed. New phone payloads preserve captured timeout/minimum/cooldown values across offline uploads; older payloads use server defaults at delivery. Conflicting policy retries under the same UUID are rejected. Derived closure at a deadline does not depend on a timer surviving process termination. The native app reconciles server state with its pending local events.
 
-SQLite with FTS5 is sufficient initially. It avoids infrastructure services while preserving a migration path to Postgres and an embedding index if volume/search quality warrants them. Audio and transcripts remain authoritative; a language model's summary is a derived interpretation. Preserve traceability and allow correction rather than treating inferred facts as established knowledge.
+SQLite with FTS5 and an optional versioned passage/vector index avoids additional infrastructure. Exact scoped vector scans are streamed and bounded in memory; a different index is a future measured-performance decision. Audio and transcripts remain authoritative; a language model's summary is a derived interpretation. Preserve traceability and allow correction rather than treating inferred facts as established knowledge.
 
 ## Summaries and knowledge
 
@@ -81,7 +81,7 @@ Rewind returns original chunk evidence, pending transcription count, missing-aud
 
 Daily generation uses the configured local calendar boundaries, including 23/25-hour daylight-saving days. Large days are reduced in batches instead of silently dropping the end of the transcript. Accepted important/meeting hints are passed to the summarizer as approximate context. The diary exports source UUIDs, and late evidence invalidates the cache, including a hint just outside the calendar day whose context overlaps it. Generated diary versions and transcript corrections have history. In-flight inference checks its evidence before persisting output, so corrections/deletions cannot silently restore stale derived content.
 
-Long-term recall uses transcript keywords and local-calendar date scoping, with persistent conversations and source playback. Today/yesterday, ISO dates and English/Danish weekday references scope evidence before retrieval. Broad day questions sample bounded evidence; they do not claim exhaustive semantic recall. Unknown source UUID citations are rejected. Local semantic embeddings can be added later behind an explicit local service; they are not currently enabled. Model factual accuracy still needs verification against the evidence.
+Long-term recall uses transcript keywords and local-calendar date scoping, with persistent conversations and source playback. Today/yesterday, ISO dates and English/Danish weekday references scope evidence before retrieval. Broad day questions sample bounded evidence; they do not claim exhaustive semantic recall. Unknown source UUID citations are rejected. Optional local semantic retrieval is implemented but disabled by default. A separate embedding adapter and durable bounded worker backfill versioned passages; independent scoped lexical/semantic candidates are deduplicated and rank-fused. SQL triggers invalidate all derived versions on correction/deletion/expiry, while read/write checks reject stale results. `/v1/search` shares chat retrieval without generating or saving answers. Full transcripts remain authoritative; matching excerpts and retrieval provenance are additive. No particular embedding model or bilingual quality has been validated. See the [retrieval configuration and evaluation contract](README.md#optional-local-semantic-retrieval). Model factual accuracy still needs verification against the evidence.
 
 ## Local deployment boundary
 

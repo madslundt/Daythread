@@ -1,7 +1,6 @@
 import { profileResourceUrl } from "./profiles";
 import { ImportanceButton } from "./Importance";
 import { useEffect, useState, type ReactNode } from "react";
-import { errorMessage, post } from "./api";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
 import { CaptureStatus } from "./CaptureStatus";
 export { CaptureStatus } from "./CaptureStatus";
@@ -23,41 +22,23 @@ import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
 export function RecapSection({
   day,
   timezone,
-  onGenerated,
   onUpload,
   onChat,
   compact = false,
 }: {
   day: string;
   timezone: string;
-  onGenerated?: () => void;
   onUpload?: () => void;
   onChat: (scope: ChatScope, question?: string) => void;
   compact?: boolean;
 }) {
-  const recap = useResource<Recap>(`/v1/recaps/${day}`, day === localDay(timezone) ? 60_000 : 0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const recap = useResource<Recap>(`/v1/recaps/${day}`, 15_000);
   const [showVersions, setShowVersions] = useState(false);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", recap.refresh);
     return () =>
       window.removeEventListener("omi:archive-changed", recap.refresh);
   }, [recap.refresh]);
-  async function generate() {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await post<Recap>(`/v1/recaps/${day}`);
-      recap.setData(result);
-      onGenerated?.();
-      window.dispatchEvent(new Event("omi:archive-changed"));
-    } catch (error) {
-      setError(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <section className="recap-section">
       <div className="section-heading">
@@ -65,20 +46,11 @@ export function RecapSection({
           <h2>Day recap</h2>
           {compact ? <p className="section-description">The important parts, brought together.</p> : null}
         </div>
-        <button className={`button ${compact ? "accent" : ""}`} onClick={generate} disabled={busy}>
-          <Icon name="diary" size={18} />
-          {busy ? "Generating…" : "Generate recap"}
-        </button>
       </div>
-      {error || recap.error ? (
-        <ErrorState
-          message={error || recap.error}
-          retry={error ? () => void generate() : recap.refresh}
-        />
-      ) : null}
+      {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
       {recap.data?.stale ? (
         <Notice>
-          New or changed evidence is available. Regenerate this recap.
+          New or changed evidence is available. This recap will update automatically.
         </Notice>
       ) : null}
       {recap.data ? <RecapCoverage recap={recap.data} timezone={timezone} /> : null}
@@ -101,7 +73,7 @@ export function RecapSection({
           {recap.data.pending_chunks ? (
             <p className="caption">
               {recap.data.pending_chunks} recording(s) were awaiting
-              transcription when generated. Regenerate to include later
+              transcription when generated. This recap updates automatically to include later
               evidence.
             </p>
           ) : null}
@@ -150,7 +122,7 @@ export function RecapSection({
         <div className="recap-empty">
           <span className="empty-symbol"><Icon name="diary" size={25} /></span>
           {compact ? <div>
-            <h3>Your recap is ready when you are.</h3>
+            <h3>Your recap comes together automatically.</h3>
             <p>{emptyRecapMessage(recap.data)}</p>
             {onUpload ? <button className="text-button recap-upload" onClick={onUpload}>Add a recording</button> : null}
           </div> : <>

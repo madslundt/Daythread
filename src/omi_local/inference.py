@@ -504,8 +504,10 @@ class Inference:
                     )
                 )
         task = (
-            f"Create {purpose}: key events, decisions, important details, commitments and "
-            "open questions. Preserve source UUID citations. Use concise Markdown."
+            f"Create {purpose}. Preserve useful supported details and source UUID citations. "
+            "Use concise Markdown. Follow the requested organization. "
+            "Do not force category sections; omit empty sections and statements that "
+            "nothing was recorded for a category."
         )
         # Large chat also uses this reducer, but keeps its existing language behavior.
         if answer_task is None:

@@ -18,7 +18,8 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = "completed-conversations-2-multiple-sources"
+PROMPT_VERSION = "completed-conversations-4-topic-notes"
+DAY_PROMPT_VERSION = "daily-topics-1"
 NO_CONTENT = "[[NO_RECAP_CONTENT]]"
 BOUNDARY_NOTE = (
     "Includes completed conversations and finished uploads. Ongoing or uncertain conversations "
@@ -58,7 +59,10 @@ class Recaps:
         })
 
     def day_key(self, groups: list[Conversation]) -> str:
-        return digest([self.group_key(group) for group in groups if group.ready])
+        return digest({
+            "conversations": [self.group_key(group) for group in groups if group.ready],
+            "prompt": DAY_PROMPT_VERSION,
+        })
 
     def guard(
         self, day: date, now: datetime, expected: str,
@@ -164,6 +168,9 @@ class Recaps:
                 "Multiple sources can record the same meeting. Describe shared points once, "
                 "retain every unique detail from each source including its beginning and end, "
                 "and disclose conflicting readings instead of guessing. "
+                "Keep related details together by subject. A recording can cover several "
+                "subjects; preserve each without forcing event, decision or question categories. "
+                "Do not repeat the same point in different categories or add empty placeholders. "
                 "Otherwise preserve original source UUID citations for every useful point",
             )
             summary = validate_citations(summary, sources).strip()
@@ -217,9 +224,30 @@ class Recaps:
         trace = {"conversation_preparation": "cached_completed_conversations",
                  "conversation_count": len(ready)}
         if inputs:
-            purpose = (f"a diary recap for {day.isoformat()} from completed conversation notes. "
-                       "Keep original source citations. Omit fillers and unsupported fragments. "
-                       "Do not describe pending conversations or claim the entire day is complete")
+            purpose = (
+                f"a readable diary recap for {day.isoformat()} from completed conversation notes. "
+                "Use the fewest meaningful topic sections that keep it easy to read. "
+                "For a recording covering three subjects, use one compact section with three "
+                "clearly labeled points or three topic sections, not extra category sections. "
+                "Group related discussions across recordings, rather than making a section "
+                "for each recording, utterance or minor detail. Use short, specific subject "
+                "headings (##) and concise bullet points; use a flat structure "
+                "without subheadings. "
+                "Start directly with useful content, without a recap title, date heading, "
+                "introductory overview or generic highlights/events section. "
+                "Keep decisions, commitments and genuine unresolved questions in their relevant "
+                "topic section; do not create separate decisions/commitments or open-questions "
+                "sections. Never add empty sections, placeholders or statements such as "
+                "'no open questions were recorded'. "
+                "Merge new details into the relevant topic. Rewrite, rename, merge or reorganize "
+                "sections whenever that makes the whole recap clearer; "
+                "do not just append sections. "
+                "State each fact or decision only once, even when repeated across conversations, "
+                "while preserving unique useful details and original source citations. "
+                "Keep claims and suggestions qualified as recorded, without turning them into "
+                "verified facts or decisions. Omit fillers and unsupported fragments. "
+                "Do not describe pending conversations or claim the entire day is complete"
+            )
             if hasattr(memory.inference, "summarize_traced"):
                 summary, pipeline = await memory.inference.summarize_traced(inputs, purpose)
                 trace["daily_synthesis"] = pipeline

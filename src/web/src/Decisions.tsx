@@ -3,13 +3,13 @@ import { errorMessage, newId, post, request } from "./api";
 import { DecisionEvidence } from "./DecisionEvidence";
 import { DecisionEditor } from "./DecisionEditor";
 import { DecisionFollowups } from "./DecisionFollowups";
-import type { Decision, DecisionClaim, DecisionContent, DecisionExtraction, DecisionList } from "./decisionModels";
+import type { Decision, DecisionClaim, DecisionContent, DecisionList } from "./decisionModels";
 import { dateTimeLabel } from "./format";
 import { ErrorState, Loading, Notice } from "./UI";
 import { useResource } from "./useResource";
 
-function useDecisions<T>(path: string | null) {
-  const resource = useResource<T>(path);
+function useDecisions<T>(path: string | null, interval = 0) {
+  const resource = useResource<T>(path, interval);
   const { setData, refresh } = resource;
   useEffect(() => {
     const invalidate = () => { setData(undefined); refresh(); };
@@ -142,34 +142,15 @@ export function Decisions({ day, timezone, compact = false }: { day: string; tim
   const [review, setReview] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [extraction, setExtraction] = useState<DecisionExtraction>();
-  const pendingExtraction = useRef<{ key: string; id: string } | null>(null);
-  const sourceGeneration = useRef(0);
   const params = new URLSearchParams({ q: submitted, limit: "30", offset: String(page * 30), include_dismissed: review === "dismissed" ? "true" : "false" });
   if (!allDays) params.set("day", day);
   if (review) params.set("review_status", review);
-  const resource = useDecisions<DecisionList>(`/v1/decisions?${params}`);
+  const resource = useDecisions<DecisionList>(`/v1/decisions?${params}`, 15_000);
   useEffect(() => {
-    const invalidate = () => { sourceGeneration.current += 1; setExtraction(undefined); setSelected(undefined); };
+    const invalidate = () => setSelected(undefined);
     window.addEventListener("omi:archive-changed", invalidate);
     return () => window.removeEventListener("omi:archive-changed", invalidate);
   }, []);
-  async function extract() {
-    setBusy(true); setError("");
-    const generation = sourceGeneration.current;
-    const key = JSON.stringify({ day, run: extraction?.next_run_id });
-    if (pendingExtraction.current?.key !== key) pendingExtraction.current = { key, id: newId() };
-    try {
-      const result = await post<DecisionExtraction>("/v1/decision-extractions", { request_id: pendingExtraction.current.id, ...(extraction?.next_run_id ? { run_id: extraction.next_run_id } : { day }) });
-      if (generation !== sourceGeneration.current) return;
-      pendingExtraction.current = null;
-      setExtraction(result);
-      window.dispatchEvent(new Event("omi:decisions-changed"));
-    } catch (error) { setError(errorMessage(error)); }
-    finally { setBusy(false); }
-  }
   const filters = <>
     <form className="search-form" onSubmit={(event) => { event.preventDefault(); setSubmitted(query); setPage(0); }}><input maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search decisions" placeholder="Search decisions" /><button className="text-button">Search</button></form>
     <div className="button-row decision-filters">
@@ -179,14 +160,8 @@ export function Decisions({ day, timezone, compact = false }: { day: string; tim
     </div>
   </>;
   return <section className={`decisions-section ${compact ? "decisions-compact" : ""}`}>
-    <div className="section-heading"><div><h2>Decisions</h2>{compact ? <p className="section-description">Evidence-backed choices, reviewed by you.</p> : null}</div><button className="button" disabled={busy} onClick={() => void extract()}>{busy ? "Finding decisions…" : extraction?.next_run_id ? "Continue finding decisions" : compact ? "Find decisions" : "Find decisions for this day"}</button></div>
-    {!compact ? <p className="caption">Evidence-backed records, reviewed by you. Create one from a source recording, or ask the local model for proposals.</p> : null}
-    {extraction ? <Notice>
-      Processed {extraction.processed_sources} of {extraction.total_sources} transcript sources. {extraction.processed_source_offset ? `Also processed ${extraction.processed_source_offset.toLocaleString()} characters of the next source. ` : ""}{extraction.pending_chunks} recording(s) pending transcription; {extraction.gaps} capture gap(s).
-      {extraction.suppressed_sources ? ` ${extraction.suppressed_sources} previously removed source(s) excluded from automatic extraction. Explicit manual records remain available.` : ""}
-      {extraction.next_run_id ? " More sources remain; continue to process the next batch." : extraction.status === "complete" ? " Available transcripts processed. Missing audio or pending transcripts can leave decisions undiscovered." : ` Extraction is ${extraction.status}; start again with current evidence.`}
-    </Notice> : null}
-    {error || resource.error ? <ErrorState message={error || resource.error} retry={resource.refresh} /> : null}
+    <div className="section-heading"><div><h2>Decisions</h2><p className="section-description">Found automatically from new transcripts. Review the evidence before confirming.</p></div></div>
+    {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {compact ? <details className="decision-search"><summary>Search & filter{submitted || allDays || review ? " · filters active" : ""}</summary>{filters}</details> : filters}
     {resource.loading && !resource.data ? <Loading>Loading decisions…</Loading> : resource.data?.items.length ? <div className="decision-list">
       {resource.data.items.map((decision) => <button key={decision.id} className={`decision-row ${selected === decision.id ? "selected" : ""}`} onClick={() => setSelected(decision.id)}>

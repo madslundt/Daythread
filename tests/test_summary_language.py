@@ -224,3 +224,29 @@ async def test_weekly_summary_language_changes_prose_prompts_and_cache(tmp_path)
         assert all("Use the transcript language." not in task for task in calls)
         assert all("schema enum values unchanged" in task for task in calls)
 
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("large", [False, True])
+async def test_summary_reducer_does_not_impose_a_category_template(tmp_path, large):
+    key = str(uuid4())
+    sources = [{"id": key, "started_at": stamp(AT),
+                "text": "Milk frother. Omi recording. Roadster discussion. "
+                * (600 if large else 1)}]
+    tasks = []
+
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        tasks.append(payload["task"])
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": f"Three topics [{key}]",
+        }}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await Inference(config(tmp_path), http).summarize(sources, "a topic-based recap")
+    assert len(tasks) > 1 if large else len(tasks) == 1
+    for task in tasks:
+        template = "key events, decisions, important details, commitments and open questions"
+        assert template not in task
+        assert "Do not force category sections" in task
+        assert "omit empty sections" in task

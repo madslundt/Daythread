@@ -122,8 +122,8 @@ export function EvidenceFeedback({
       ) : null}
       {value?.changed_source_ids?.length ? (
         <p role="status" className="caption">
-          Sources changed since this output. Regenerate or ask again to use
-          current evidence.
+          Sources changed since this output. Recaps update automatically; ask again
+          to use current evidence in chat.
         </p>
       ) : null}
       <FeedbackForm outputId={outputId} outputText={outputText} />
@@ -157,8 +157,8 @@ export function FeedbackReview() {
       ) : null}
       <p className="caption">
         Sync pending recordings on the phone; listen and correct the source
-        transcript; then regenerate the recap or ask again with a narrower
-        scope. Mark resolved only after checking the repair.
+        transcript; the recap will update automatically. You can also ask again
+        with a narrower scope. Mark resolved only after checking the repair.
       </p>
       {resource.data?.items.map((item) => (
         <FeedbackReviewRow

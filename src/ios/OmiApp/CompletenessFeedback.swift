@@ -149,7 +149,7 @@ struct FeedbackReviewView: View {
     @State private var error: String?
     var body: some View {
         List {
-            Text("Sync pending audio on Capture; listen and correct the transcript; then regenerate the recap or ask again with a narrower scope. Feedback does not change evidence.").font(.caption)
+            Text("Sync pending audio on Capture; listen and correct the transcript; the recap will update automatically. You can also ask again with a narrower scope. Feedback does not change evidence.").font(.caption)
             ErrorNote(message: error)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 FeedbackReviewRow(item: item) { await load() }.id(item["id"].text)

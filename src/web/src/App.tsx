@@ -61,7 +61,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   const [selectedDay, setSelectedDay] = useState(() => dayFromPath(window.location.pathname));
   const today = localDay(timezone);
   const day = selectedDay ?? today;
-  const hrefForPage = (next: Page) => pagePath(next, selectedDay);
+  const hrefForPage = (next: Page) => pagePath(next, next === "today" ? undefined : selectedDay);
   const [prepOpen, setPrepOpen] = useState(false);
   const [prepDirty, setPrepDirty] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -93,6 +93,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
     if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
     setPrepOpen(false);
     setChatIntent(undefined);
+    if (next === "today") setSelectedDay(undefined);
     setPage(next);
     navigatePath(hrefForPage(next));
   }

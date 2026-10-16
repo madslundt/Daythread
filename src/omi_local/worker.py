@@ -4,9 +4,12 @@ import logging
 from contextlib import suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .audio import contains_speech_energy
+from .decision_service import extract
+from .decisions import ExtractionRequest
 from .domain import utc_now
 from .inbox_jobs import InboxJobs
 from .recording_topics import run_topics
@@ -60,31 +63,54 @@ async def process_one(memory: Memory) -> bool:
     return True
 
 
-async def scheduled_recaps(memory: Memory) -> None:
-    now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
-    async with memory.recap_lock:
-        await memory.recaps.prepare(now)
-    latest = (
-        now.date()
-        if memory.settings.recap_interval_minutes or now.hour >= memory.settings.recap_hour
-        else now.date() - timedelta(days=1)
-    )
+def recorded_days(memory: Memory, now: datetime) -> list[date]:
+    """Include historical and cross-midnight arrivals in the archive's timezone."""
     days: set[date] = set()
     for row in memory.store.recorded_intervals():
         first = datetime.fromisoformat(row["started_at"]).astimezone(now.tzinfo).date()
         last = datetime.fromisoformat(row["ended_at"]) - timedelta(microseconds=1)
         last = last.astimezone(now.tzinfo).date()
-        while first <= min(last, latest):
+        while first <= min(last, now.date()):
             days.add(first)
             first += timedelta(days=1)
-    for day in sorted(days):
-        if day == now.date() and now.hour < memory.settings.recap_hour:
+    return sorted(days)
+
+
+async def scheduled_recaps(memory: Memory) -> None:
+    now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
+    await memory.recaps.observe()
+    groups = memory.recaps.groups(now)
+    for day in recorded_days(memory, now):
+        try:
             saved = memory.store.diary(day.isoformat())
-            if saved:
-                generated = datetime.fromisoformat(saved["created_at"])
-                if (now - generated).total_seconds() < memory.settings.recap_interval_minutes * 60:
-                    continue
-        await memory.recap(day)
+            if saved and saved["fingerprint"] == memory.recaps.day_key(
+                memory.recaps.for_day(groups, day)
+            ):
+                continue
+            await memory.recap(day)
+        except Exception as exc:
+            logger.warning("Automatic recap will retry (%s)", type(exc).__name__)
+
+
+async def scheduled_decisions(memory: Memory) -> None:
+    now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
+    for day in recorded_days(memory, now):
+        try:
+            # Reuses the current snapshot and advances one bounded batch each pass.
+            # Completed snapshots cost no inference; changed transcripts start a new one.
+            await extract(memory, ExtractionRequest(request_id=uuid4(), day=day), automatic=True)
+        except Exception as exc:
+            logger.warning("Automatic decisions will retry (%s)", type(exc).__name__)
+
+
+async def run_insights(memory: Memory) -> None:
+    while True:
+        for update in (scheduled_recaps, scheduled_decisions):
+            try:
+                await update(memory)
+            except Exception as exc:
+                logger.warning("Automatic insights will retry (%s)", type(exc).__name__)
+        await asyncio.sleep(5)
 
 
 async def maintenance(memory: Memory) -> None:
@@ -93,7 +119,6 @@ async def maintenance(memory: Memory) -> None:
             memory.store.apply_retention(
                 memory.settings.audio_retention_days, memory.settings.transcript_retention_days
             )
-            await scheduled_recaps(memory)
         except Exception as exc:
             logger.warning("Diary maintenance will retry (%s)", type(exc).__name__)
         await asyncio.sleep(60)
@@ -103,6 +128,7 @@ async def run_worker(memory: Memory) -> None:
     upkeep = asyncio.create_task(maintenance(memory))
     inbox = asyncio.create_task(run_inbox(memory))
     topics = asyncio.create_task(run_topics(memory))
+    insights = asyncio.create_task(run_insights(memory))
     try:
         while True:
             try:
@@ -112,6 +138,9 @@ async def run_worker(memory: Memory) -> None:
                 worked = False
             await asyncio.sleep(0.1 if worked else 2)
     finally:
+        insights.cancel()
+        with suppress(asyncio.CancelledError):
+            await insights
         topics.cancel()
         with suppress(asyncio.CancelledError):
             await topics

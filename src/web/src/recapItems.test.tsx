@@ -22,6 +22,17 @@ describe("day recap interactions", () => {
     expect(groups[1].parts).toEqual([{ kind: "item", text: "Call Sam", action: true }]);
   });
 
+  it.each([false, true])("omits empty headings without losing topic points (compact=%s)", (compact) => {
+    const text = "# Dagbogsoversigt 2026-10-16\n## Mælkeskummer\n- Kakao med mørk chokolade.\n## Omi\n- Optagelser og rewind.\n## Tesla Roadster\n- Samtale om bilen.\n## Åbne spørgsmål";
+    const groups = recapGroups(recapParts(text), "2026-10-16");
+    expect(groups.map((group) => group.title)).toEqual(["Mælkeskummer", "Omi", "Tesla Roadster"]);
+    expect(groups.every((group) => group.parts.length > 0)).toBe(true);
+    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[]} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact={compact} />);
+    expect(html).not.toContain("0 points");
+    expect(html).not.toContain("Dagbogsoversigt");
+    expect(html).toContain("Kakao med mørk chokolade");
+  });
+
   it("preserves introductions, nonredundant titles, and ordinary bracketed text", () => {
     expect(recapGroups(recapParts("A short introduction.\n## Highlights\n- A point"), "2026-10-16")[0]).toEqual({ parts: [{ kind: "text", text: "A short introduction." }] });
     expect(recapGroups(recapParts("## A memorable day\n- A point"), "2026-10-16")[0].title).toBe("A memorable day");

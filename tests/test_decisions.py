@@ -409,3 +409,70 @@ def test_extraction_preserves_manual_review_and_owner_edits(client):
     assert (
         client.get(f"/v1/decisions/{d['id']}").json()["content"]["owner_notes"] == c["owner_notes"]
     )
+
+
+def test_automatic_decisions_resume_and_include_late_historical_transcripts(client, monkeypatch):
+    import asyncio
+    from datetime import timedelta
+
+    from omi_local.worker import scheduled_decisions
+
+    monkeypatch.setattr("omi_local.worker.utc_now", lambda: AT + timedelta(days=2))
+    memory = client.app.state.memory
+    for index in range(11):
+        source(client, f"We chose item {index}.", AT + timedelta(minutes=index))
+    ai = Extractor()
+    memory.inference = ai
+    asyncio.run(scheduled_decisions(memory))
+    asyncio.run(scheduled_decisions(memory))
+    records = client.get("/v1/decisions").json()
+    assert records["total"] == 11 and ai.calls == 2
+    dismissed = event(client, records["items"][0], "dismiss").json()
+    asyncio.run(scheduled_decisions(memory))
+    assert ai.calls == 2
+    late = source(client, "We chose a late addition.", AT + timedelta(minutes=12))
+    asyncio.run(scheduled_decisions(memory))
+    asyncio.run(scheduled_decisions(memory))
+    records = client.get("/v1/decisions", params={"include_dismissed": True}).json()
+    assert records["total"] == 12
+    assert any(late["id"] == a["source_id"] for r in records["items"]
+               for a in r["content"]["choice"]["evidence"])
+    assert client.get(f"/v1/decisions/{dismissed['id']}").json()["review_status"] == "dismissed"
+    calls = ai.calls
+    asyncio.run(scheduled_decisions(memory))
+    assert ai.calls == calls
+    with memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM extraction_requests").fetchone()[0] == 0
+
+
+def test_automatic_long_transcript_continues_after_inference_failure(client, monkeypatch):
+    import asyncio
+    import json
+
+    from omi_local.worker import scheduled_decisions
+
+    monkeypatch.setattr("omi_local.worker.utc_now", lambda: AT)
+    source(client, "We chose A. " * 5000)
+    sizes = []
+
+    class FlakyExtractor:
+        failed = False
+
+        async def generate(self, task, evidence):
+            if not self.failed:
+                self.failed = True
+                raise RuntimeError("Temporary inference failure")
+            sizes.append(sum(len(row["text"]) for row in json.loads(evidence)))
+            return '{"candidates":[]}'
+
+    memory = client.app.state.memory
+    memory.inference = FlakyExtractor()
+    for _ in range(6):
+        asyncio.run(scheduled_decisions(memory))
+    with memory.store.connect() as db:
+        run = db.execute("SELECT * FROM decision_extractions").fetchone()
+        assert run["status"] == "complete" and run["cursor"] == 1
+        assert db.execute("SELECT count(*) FROM extraction_requests").fetchone()[0] == 0
+    assert len(sizes) == 5 and max(sizes) <= 24000
+    asyncio.run(scheduled_decisions(memory))
+    assert len(sizes) == 5

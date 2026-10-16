@@ -307,26 +307,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   Choose the language for recaps, summaries, and optional transcript translations. Automatic follows the source language. Transcripts are translated only when you click Translate.
                 </small>
               </label>
-              <label className="setting-field" htmlFor="recap-hour">
-                <span id="recap-hour-label">Evening recap update</span>
-                <NumberSelect
-                  id="recap-hour"
-                  value={draft.recap_hour}
-                  options={Array.from({ length: 24 }, (_, hour) => hour)}
-                  onChange={(value) => update("recap_hour", value)}
-                  label={(hour) => `${String(hour).padStart(2, "0")}:00`}
-                />
-                <small id="recap-hour-hint">
-                  Update today’s recap at this time in your home timezone. Later completed conversations are added automatically, and earlier days are caught up.
-                </small>
-              </label>
-              <label className="setting-field" htmlFor="recap-interval">
-                <span id="recap-interval-label">Daytime recap updates</span>
-                <NumberSelect id="recap-interval" value={draft.recap_interval_minutes ?? 60}
-                  options={[0, 15, 30, 60, 120, 180]} onChange={(value) => update("recap_interval_minutes", value)}
-                  label={(minutes) => minutes === 0 ? "Evening only" : `Every ${durationLabel(minutes * 60)}`} />
-                <small id="recap-interval-hint">Refresh your day so far when completed conversations change. Silence and background noise alone do not create new recaps.</small>
-              </label>
+              <p className="caption">Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.</p>
               <label className="setting-field" htmlFor="recap-quiet">
                 <span id="recap-quiet-label">Wait after speech before including a conversation</span>
                 <NumberSelect id="recap-quiet" value={draft.recap_quiet_minutes ?? 5}

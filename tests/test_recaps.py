@@ -225,7 +225,7 @@ def test_legacy_amplitude_gate_is_not_treated_as_evidence_of_no_speech(client):
     assert store.get_audio(first)["text"]
 
 
-def test_hourly_daytime_updates_prepare_new_conversations_before_synthesis(client, monkeypatch):
+def test_new_transcripts_update_recaps_without_waiting_for_interval(client, monkeypatch):
     import asyncio
 
     now = AT + timedelta(hours=1)
@@ -240,15 +240,15 @@ def test_hourly_daytime_updates_prepare_new_conversations_before_synthesis(clien
     now += timedelta(minutes=10)
     second = insert(client, AT + timedelta(minutes=5), "Call the shop", kind="manual_upload")
     asyncio.run(scheduled_recaps(memory))
-    assert len(memory.inference.calls) == 3  # Prepare new conversation, defer daily synthesis.
-    assert client.get("/v1/recaps/2026-10-16").json()["output_id"] == first["output_id"]
+    assert len(memory.inference.calls) == 4  # New conversation and immediate daily synthesis.
+    assert client.get("/v1/recaps/2026-10-16").json()["output_id"] != first["output_id"]
     now += timedelta(minutes=50)
     asyncio.run(scheduled_recaps(memory))
     assert len(memory.inference.calls) == 4
     assert second in client.get("/v1/recaps/2026-10-16").json()["summary"]
 
 
-def test_disabling_daytime_updates_preserves_evening_update(client, monkeypatch):
+def test_legacy_schedule_does_not_delay_automatic_recaps(client, monkeypatch):
     import asyncio
 
     now = AT + timedelta(hours=1)
@@ -258,8 +258,8 @@ def test_disabling_daytime_updates_preserves_evening_update(client, monkeypatch)
     memory = client.app.state.memory
     insert(client, kind="manual_upload")
     asyncio.run(scheduled_recaps(memory))
-    assert len(memory.inference.calls) == 1  # Prepared in advance, no daytime recap.
-    assert client.get("/v1/recaps/2026-10-16").json()["summary"] is None
+    assert len(memory.inference.calls) == 2
+    assert client.get("/v1/recaps/2026-10-16").json()["summary"]
     now = AT.replace(hour=22)
     asyncio.run(scheduled_recaps(memory))
     assert client.get("/v1/recaps/2026-10-16").json()["summary"]
@@ -334,3 +334,57 @@ def test_previous_day_legacy_web_upload_can_generate_and_reload_recap(client):
     # Classification must not rewrite the original upload/retry metadata.
     source = client.app.state.memory.store.get_audio(key)
     assert source["device_id"] == "web" and source["source_kind"] == ""
+
+
+def test_late_historical_transcript_updates_only_its_recap(client, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr("omi_local.worker.utc_now", lambda: AT + timedelta(hours=1))
+    memory = client.app.state.memory
+    old = insert(client, AT - timedelta(days=3), "Send the notes", kind="manual_upload")
+    current = insert(client, kind="manual_upload")
+    asyncio.run(scheduled_recaps(memory))
+    original = client.get("/v1/recaps/2026-10-13").json()
+    today = client.get("/v1/recaps/2026-10-16").json()
+    late = insert(
+        client, AT - timedelta(days=3, minutes=-5), "Book the service", kind="manual_upload",
+    )
+    asyncio.run(scheduled_recaps(memory))
+    updated = client.get("/v1/recaps/2026-10-13").json()
+    assert updated["output_id"] != original["output_id"]
+    assert {s["id"] for s in updated["sources"]} == {old, late}
+    assert current not in updated["summary"]
+    assert client.get("/v1/recaps/2026-10-16").json()["output_id"] == today["output_id"]
+    calls = len(memory.inference.calls)
+    asyncio.run(scheduled_recaps(memory))
+    assert len(memory.inference.calls) == calls
+    assert client.get("/v1/recaps/2026-10-13").json()["output_id"] == updated["output_id"]
+    assert "State each fact or decision only once" in memory.inference.calls[-1][1]
+
+
+def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(client, monkeypatch):
+    import asyncio
+
+    import omi_local.recaps as recaps
+
+    monkeypatch.setattr("omi_local.worker.utc_now", lambda: AT + timedelta(hours=1))
+    insert(client, text="Milk frother. Omi recording. Roadster discussion.", kind="manual_upload")
+    memory = client.app.state.memory
+    asyncio.run(scheduled_recaps(memory))
+    previous = client.get("/v1/recaps/2026-10-16").json()
+    assert len(memory.inference.calls) == 2
+
+    monkeypatch.setattr(recaps, "DAY_PROMPT_VERSION", "next-topic-format")
+    assert client.get("/v1/recaps/2026-10-16").json()["stale"]
+    asyncio.run(scheduled_recaps(memory))
+    updated = client.get("/v1/recaps/2026-10-16").json()
+    assert updated["output_id"] != previous["output_id"]
+    assert not updated["stale"]
+    assert len(memory.inference.calls) == 3  # Reuse notes; rewrite only the daily recap.
+    purpose = memory.inference.calls[-1][1]
+    assert "fewest meaningful topic sections" in purpose
+    assert "without a recap title, date heading" in purpose
+    assert "do not create separate decisions/commitments or open-questions sections" in purpose
+    assert "Rewrite, rename, merge or reorganize" in purpose
+    asyncio.run(scheduled_recaps(memory))
+    assert len(memory.inference.calls) == 3

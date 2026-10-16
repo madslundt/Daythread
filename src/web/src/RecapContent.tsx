@@ -31,6 +31,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   const [checks, setChecks] = useState(() => savedChecks(storageKey));
   const [storageError, setStorageError] = useState(false);
   const parts = recapParts(text);
+  const groups = recapGroups(parts, day);
   const savedVersion = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(version);
   const target = (section = ""): ImportanceTarget => ({ kind: "recap", id: version, section });
   function toggle(key: string) {
@@ -71,7 +72,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
         {savedVersion ? <ImportanceButton target={target()} label="day recap" /> : null}
         <p className="caption recap-item-hint">Open any point for recordings and a conversation.</p>
       </>}
-      {compact ? recapGroups(parts, day).map((group, index) => group.title ? (
+      {compact ? groups.map((group, index) => group.title ? (
         <details className="recap-group" key={`${index}:${group.title}`} open={index === 0 || group.parts.some((part) => part.kind === "item" && part.action)}>
           <summary>
             <span><InlineText text={group.title} /></span>
@@ -83,7 +84,10 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
             {group.parts.map(renderPart)}
           </div>
         </details>
-      ) : <div key={index}>{group.parts.map(renderPart)}</div>) : parts.map(renderPart)}
+      ) : <div key={index}>{group.parts.map(renderPart)}</div>) : groups.flatMap((group) => [
+        ...(group.title ? [{ kind: "heading" as const, text: group.title }] : []),
+        ...group.parts,
+      ]).map(renderPart)}
       {parts.some((part) => part.kind === "item" && part.action) ? (
         <p className="caption recap-check-hint" role={storageError ? "status" : undefined}>
           {storageError ? "Checks are kept for this visit only because browser storage is unavailable." : "Optional checkmarks · saved in this browser. Inbox status is managed separately."}

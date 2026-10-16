@@ -19,6 +19,13 @@ beforeEach(() => {
   resource.useResource.mockClear();
 });
 describe("completed conversation recap display", () => {
+  it("has no manual generation button and explains automatic updates", () => {
+    resource.data = { ...resource.data!, stale: true };
+    const html = render();
+    expect(html).not.toContain("Generate recap");
+    expect(html).not.toContain("Regenerate");
+    expect(html).toContain("This recap will update automatically");
+  });
   it("shows active conversation status before any summary exists", () => {
     resource.data = { ...resource.data!, included_through: null, deferred_conversations: 1, deferred_sources: 4,
       boundary_note: "Capture coverage is uncertain." };
@@ -41,12 +48,12 @@ describe("completed conversation recap display", () => {
     expect(html).toContain("recordings and transcripts remain in the archive under your retention settings");
     expect(html).toContain("1 conversation is waiting to finish");
   });
-  it("polls only today's recap through the existing read-only resource hook", () => {
+  it("polls current and historical recaps automatically through the read-only resource hook", () => {
     const today = localDay("Europe/Copenhagen");
     render(today);
-    expect(resource.useResource).toHaveBeenCalledWith(`/v1/recaps/${today}`, 60_000);
+    expect(resource.useResource).toHaveBeenCalledWith(`/v1/recaps/${today}`, 15_000);
     resource.useResource.mockClear();
     render("2020-01-01");
-    expect(resource.useResource).toHaveBeenCalledWith("/v1/recaps/2020-01-01", 0);
+    expect(resource.useResource).toHaveBeenCalledWith("/v1/recaps/2020-01-01", 15_000);
   });
 });

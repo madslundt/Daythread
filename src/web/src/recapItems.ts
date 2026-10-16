@@ -19,7 +19,7 @@ export function recapGroups(parts: RecapPart[], day: string) {
       groups[groups.length - 1].parts.push(part);
     }
   }
-  return groups;
+  return groups.filter((group) => group.parts.length > 0);
 }
 
 export function recapReadingText(text: string) {

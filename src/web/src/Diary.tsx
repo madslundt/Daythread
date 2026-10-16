@@ -21,7 +21,7 @@ export function Diary({
   onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const [mode, setMode] = useState<"day" | "week">("day");
-  const diaries = useResource<{ items: Recap[] }>("/v1/diary");
+  const diaries = useResource<{ items: Recap[] }>("/v1/diary", 15_000);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", diaries.refresh);
     return () =>
@@ -90,7 +90,6 @@ export function Diary({
           key={day}
           day={day}
           timezone={timezone}
-          onGenerated={diaries.refresh}
           onChat={onChat}
         />
         <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />

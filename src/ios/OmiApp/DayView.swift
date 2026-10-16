@@ -56,7 +56,7 @@ struct DayView: View {
             } footer: { Text("Dates in \(diary.calendar.timeZone.identifier)") }
             Section("Daily recap · \(diary.label(day, template: "d MMM yyyy"))") {
                 ErrorNote(message: recapRefreshError)
-                if recap["stale"] == .bool(true) { Text("New or changed evidence is available. Regenerate this recap.").font(.caption).foregroundStyle(.orange) }
+                if recap["stale"] == .bool(true) { Text("New or changed evidence is available. This recap will update automatically.").font(.caption).foregroundStyle(.orange) }
                 if let included = AppModel.date(recap["included_through"].text) {
                     Text("Includes completed conversations through \(diary.label(included, template: "d MMM HHmm")).").font(.caption).foregroundStyle(.secondary)
                 } else if recap["included_through"] == .null && recap != .null && recap["summary"].text.isEmpty {
@@ -78,8 +78,6 @@ struct DayView: View {
                         Text(recapEmptyMessage).foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }
-                Button { Task { await generate() } } label: { Label(recap["summary"].text.isEmpty ? "Generate daily recap" : "Regenerate daily recap", systemImage: "sparkle") }
-                    .buttonStyle(PrimaryActionStyle()).disabled(loading)
                 CompletenessView(value: recap["completeness"])
             }
             Section("Make space for what’s next") {
@@ -121,9 +119,9 @@ struct DayView: View {
             .task(id: calendarTaskKey) { await loadCalendar() }
             .task(id: cacheKey + model.archiveRevision + ".recap-refresh") {
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     guard !Task.isCancelled else { return }
-                    if dayKey == diary.dayKey(model.now) { await refreshRecap() }
+                    await refreshRecap()
                 }
             }
             .refreshable {
@@ -212,21 +210,6 @@ struct DayView: View {
         } catch {
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
             recapRefreshError = "Could not refresh the recap. \(error.localizedDescription)"
-        }
-    }
-
-    private func generate() async {
-        let key = cacheKey, requestedDay = dayKey, address = model.archiveIdentity, request = UUID()
-        dayRequest = request; loading = true; error = nil; recapRefreshError = nil
-        defer { if dayRequest == request { loading = false } }
-        do {
-            let result = try await model.client().request("v1/recaps/\(requestedDay)", method: "POST")
-            if !Task.isCancelled, model.archiveIdentity == address { calendarRevision += 1 }
-            guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
-            recap = result; cached = false; save(key)
-        } catch {
-            guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
-            self.error = error.localizedDescription
         }
     }
 

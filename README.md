@@ -5,16 +5,16 @@ A private audio memory system: Omi pendant → iPhone → your backend and local
 Direct capture needs no Omi account or cloud AI subscription. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-app.png" alt="Today dashboard with an expanded family recap point, its related recording and chat button, individual follow-up checkboxes, and a timeline spanning gym, work, errands, family, and friends"></td>
-<td width="33%" valign="top"><img src="docs/images/web-app-iphone17.png" alt="Today in Safari on iPhone 17, showing the same fictional family and friends recap points and four individual follow-up checkboxes" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-app-iphone17.png" alt="Today in a 402 × 874 mobile browser viewport, showing the same fictional family and friends recap points and four individual follow-up checkboxes" width="302"></td>
 </tr>
 </table>
 
-*Today on desktop and iPhone 17: expandable recap points with related recordings and a chat action, plus individual follow-up checkboxes. Both views use the same fictional recordings from the gym, work, everyday errands, home with family, and time out with friends.*
+*Today on desktop and mobile: expandable recap points with related recordings and a chat action, plus individual follow-up checkboxes. Both views use the same fictional recordings from the gym, work, everyday errands, home with family, and time out with friends.*
 
-Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. Longer pages are scrolled to show their sample content.
+Screenshots reflect the current redesign, captured in the Codex browser. Mobile views use a 402 × 874 viewport; longer pages are scrolled to show their sample content.
 
 ## Features
 
@@ -27,7 +27,7 @@ Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. 
 
 ## More screenshots
 
-These pages use fictional sample data spanning work, family, friends, the gym, and everyday errands. Expand a page to compare its desktop and iPhone 17 views.
+These pages use fictional sample data spanning work, family, friends, the gym, and everyday errands. Expand a page to compare its desktop and mobile views.
 
 <details>
 <summary>Rewind — revisit plans made over dinner with friends</summary>
@@ -35,10 +35,10 @@ These pages use fictional sample data spanning work, family, friends, the gym, a
 A recent audio window, a quick recap, and the original source recordings.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-rewind.png" alt="Rewind page showing a sample dinner conversation, game-night plans, audio playback, and source recordings"></td>
-<td width="33%" valign="top"><img src="docs/images/web-rewind-iphone17.png" alt="Rewind in Safari on iPhone 17, showing sample dinner plans, a thirty-minute audio window, and a recap" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-rewind-iphone17.png" alt="Rewind in a 402 × 874 mobile browser viewport, showing sample dinner plans, a thirty-minute audio window, and a recap" width="302"></td>
 </tr>
 </table>
 
@@ -50,10 +50,10 @@ A recent audio window, a quick recap, and the original source recordings.
 Saved daily recaps alongside a calendar, covering work, workouts, family time, and social plans.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-diary.png" alt="Diary page showing five sample daily entries, an October calendar, and a recap spanning gym, work, errands, family, and friends"></td>
-<td width="33%" valign="top"><img src="docs/images/web-diary-iphone17.png" alt="Diary in Safari on iPhone 17, showing the October calendar and saved sample daily entries" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-diary-iphone17.png" alt="Diary in a 402 × 874 mobile browser viewport, showing the October calendar and saved sample daily entries" width="302"></td>
 </tr>
 </table>
 
@@ -65,10 +65,10 @@ Saved daily recaps alongside a calendar, covering work, workouts, family time, a
 A sample conversation about weekend plans, with the related recordings available for inspection.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-chat.png" alt="Chat page showing saved conversations and an answer about a gym session, family plans, and a board-game night"></td>
-<td width="33%" valign="top"><img src="docs/images/web-chat-iphone17.png" alt="Chat in Safari on iPhone 17, showing the saved weekend question and sample gym, family, and friends plans" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-chat-iphone17.png" alt="Chat in a 402 × 874 mobile browser viewport, showing the saved weekend question and sample gym, family, and friends plans" width="302"></td>
 </tr>
 </table>
 
@@ -80,10 +80,10 @@ A sample conversation about weekend plans, with the related recordings available
 Example labels for a teammate, a training partner, family, an onboarding project, and game night.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-people.png" alt="People and projects directory with fictional labels for Alex, Sam, Mia, onboarding research, a family Sunday, and Friday game night"></td>
-<td width="33%" valign="top"><img src="docs/images/web-people-iphone17.png" alt="People and projects in Safari on iPhone 17, showing Friday game night, Mia, and the onboarding project" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-people-iphone17.png" alt="People and projects in a 402 × 874 mobile browser viewport, showing Alex, Friday game night, and Mia" width="302"></td>
 </tr>
 </table>
 
@@ -95,10 +95,10 @@ Example labels for a teammate, a training partner, family, an onboarding project
 Sample commitments and an open question from work, the gym, family plans, errands, and friends.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
 <td width="67%" valign="top"><img src="docs/images/web-inbox.png" alt="Inbox page showing six sample follow-ups, including a prototype, interview questions, a workout, a bike service, a photo album, and game-night plans"></td>
-<td width="33%" valign="top"><img src="docs/images/web-inbox-iphone17.png" alt="Inbox in Safari on iPhone 17, showing sample workout, customer interview, prototype, and bike service follow-ups" width="302"></td>
+<td width="33%" valign="top"><img src="docs/images/web-inbox-iphone17.png" alt="Inbox in a 402 × 874 mobile browser viewport, showing sample workout, customer interview, prototype, and bike service follow-ups" width="302"></td>
 </tr>
 </table>
 
@@ -107,13 +107,13 @@ Sample commitments and an open question from work, the gym, family plans, errand
 <details>
 <summary>Settings — choose capture, diary, and archive preferences</summary>
 
-Example appearance, timezone, transcription, recap, gesture, and retention settings.
+Daily preferences for appearance, timezone, transcription, and recaps, with separate categories for flags, storage, connections, and local AI.
 
 <table>
-<tr><th>Desktop</th><th>iPhone 17 · Safari</th></tr>
+<tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
 <tr>
-<td width="67%" valign="top"><img src="docs/images/web-settings.png" alt="Settings page showing light appearance, Copenhagen timezone, automatic language detection, a daily recap time, gesture settings, and archive retention"></td>
-<td width="33%" valign="top"><img src="docs/images/web-settings-iphone17.png" alt="Settings in Safari on iPhone 17, showing light appearance and the Copenhagen timezone" width="302"></td>
+<td width="67%" valign="top"><img src="docs/images/web-settings.png" alt="Redesigned Settings page with category navigation, light appearance, Copenhagen timezone, language preferences, and daily recap settings"></td>
+<td width="33%" valign="top"><img src="docs/images/web-settings-iphone17.png" alt="Settings in a 402 × 874 mobile browser viewport, showing category selection and light appearance" width="302"></td>
 </tr>
 </table>
 

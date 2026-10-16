@@ -107,7 +107,8 @@ def batch_at(sources: list[dict], cursor: int, offset: int) -> tuple[list[dict],
     return batch, after, 0
 
 
-async def extract(memory, body: ExtractionRequest) -> dict:
+async def extract(memory, body: ExtractionRequest, *, automatic: bool = False) -> dict:
+    """Advance one batch; workers omit request receipts and the full response projection."""
     # The app has one worker; this lock serializes request retries without blocking capture writes.
     async with memory.decision_lock:
         store = memory.store
@@ -175,18 +176,19 @@ async def extract(memory, body: ExtractionRequest) -> dict:
                             stamp(utc_now()),
                         ),
                     )
-            if not previous:
+            if not previous and not automatic:
                 db.execute(
                     "INSERT INTO extraction_requests VALUES(?,?,?,NULL)",
                     (str(body.request_id), key, request_hash),
                 )
             run = db.execute("SELECT * FROM decision_extractions WHERE id=?", (key,)).fetchone()
             if run["status"] != "active":
-                db.execute(
-                    "UPDATE extraction_requests SET cursor=? WHERE id=?",
-                    (run["cursor"], str(body.request_id)),
-                )
-                return run_result(store, key, db)
+                if not automatic:
+                    db.execute(
+                        "UPDATE extraction_requests SET cursor=? WHERE id=?",
+                        (run["cursor"], str(body.request_id)),
+                    )
+                return {} if automatic else run_result(store, key, db)
             sources = verify_snapshot(db, json.loads(run["snapshot"]))
             cursor = run["cursor"]
             text_offset = run["text_offset"]
@@ -284,7 +286,9 @@ async def extract(memory, body: ExtractionRequest) -> dict:
                 "UPDATE decision_extractions SET cursor=?,status=?,text_offset=? WHERE id=?",
                 (done, "complete" if done == len(sources) else "active", next_offset, key),
             )
-            db.execute(
-                "UPDATE extraction_requests SET cursor=? WHERE id=?", (done, str(body.request_id))
-            )
-            return run_result(store, key, db)
+            if not automatic:
+                db.execute(
+                    "UPDATE extraction_requests SET cursor=? WHERE id=?",
+                    (done, str(body.request_id)),
+                )
+            return {} if automatic else run_result(store, key, db)

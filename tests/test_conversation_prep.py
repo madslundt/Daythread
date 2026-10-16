@@ -272,3 +272,64 @@ def test_casefold_expansion_preserves_original_excerpt_offsets(client):
     assert excerpt["id"] == key and "May kitchen" in excerpt["text"]
     assert excerpt["omitted_characters"] == 4501
     assert response.json()["as_of"]
+
+
+@pytest.mark.parametrize("change", ["same_text_correction", "delete_recreate"])
+def test_current_main_revision_tokens_invalidate_identical_text(client, change):
+    from uuid import UUID
+
+    key = insert(client, text="May kitchen promise")
+    store = client.app.state.memory.store
+    found = search(client)
+    source = found["sources"][0]
+    public = client.get("/v1/transcripts/" + key).json()
+    assert source["source_version"] == public["source_version"]
+    assert source["transcript_version"] == public["transcript_version"]
+    if change == "same_text_correction":
+        store.correct_transcript(key, source["text"])
+    else:
+        store.delete_audio(key)
+        store.ingest(UUID(key), "omi", AT, audio_data(), 1)
+        store.complete(key, source["text"])
+    current = search(client)
+    assert current["sources"][0]["text"] == source["text"]
+    assert current["snapshot"] != found["snapshot"]
+    assert current["sources"][0]["version"] != source["version"]
+    model = Model()
+    client.app.state.memory.inference = model
+    assert client.post(PREFIX + "generate", json=body(found)).status_code == 409
+    assert model.payload is None
+    assert client.post(PREFIX + "generate", json=body(current)).status_code == 200
+
+
+def test_prep_preserves_inbox_decisions_and_does_not_use_hybrid_retrieval(client):
+    from test_decisions import content
+    from test_inbox import listing, mutate, proposal, run
+
+    text = "May: I promise to send the kitchen plan. What is the budget?"
+    key = insert(client, text=text)
+    memory = client.app.state.memory
+    run(memory.store, [proposal(key, text=text)])
+    item = listing(memory.store)["items"][0]
+    mutate(memory.store, item, changes={"title": "USER_OVERRIDE_INBOX"}, status="completed")
+    inbox_before = listing(memory.store, status="completed")
+    assert inbox_before["items"][0]["status"] == "completed"
+    decision_content = content(client.get("/v1/transcripts/" + key).json(), "Review kitchen plan")
+    decision_content["owner_notes"] = "USER_OVERRIDE_DECISION"
+    created = client.post(
+        "/v1/decisions",
+        json={"command_id": str(uuid4()), "content": decision_content},
+    )
+    assert created.status_code == 200, created.text
+    decision_path = "/v1/decisions/" + created.json()["id"]
+    decision_before = client.get(decision_path).json()
+    model = Model()
+    memory.inference = model
+    # Prep remains lexical even though the archive now supports hybrid retrieval.
+    memory.retriever = object()
+    result = client.post(PREFIX + "generate", json=body(search(client), "User goal")).json()
+    assert result["promises_to_check"][0]["completion_status"] == "unknown"
+    evidence = json.dumps(model.payload["recorded_evidence"])
+    assert "USER_OVERRIDE_INBOX" not in evidence and "USER_OVERRIDE_DECISION" not in evidence
+    assert listing(memory.store, status="completed") == inbox_before
+    assert client.get(decision_path).json() == decision_before

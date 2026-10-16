@@ -86,6 +86,86 @@ def test_reupload_reuses_recognition_but_preserves_receipts_and_audio(client):
     assert upload(client, key=second["id"], name="renamed.wav").json()["id"] == second["id"]
 
 
+def test_reupload_with_changed_time_matches_legacy_web_upload(client):
+    first = upload(client, device_id="web", source_kind="", source_id="").json()
+    second = upload(client, at=AT + timedelta(minutes=7)).json()
+    memory = client.app.state.memory
+    asyncio.run(process_one(memory))
+    asyncio.run(process_one(memory))
+    assert memory.inference.transcriptions == 1
+    assert len(groups(client)) == 1
+    assert {row["id"] for row in groups(client)[0].sources} == {first["id"], second["id"]}
+    assert memory.store.get_audio(second["id"])["started_at"] == second["started_at"]
+
+
+def test_timeline_collapses_identical_uploads_before_pagination(client):
+    first = done(client)
+    second = done(client, at=AT + timedelta(minutes=7), name="renamed.wav")
+    different = done(client, at=AT + timedelta(minutes=10), level=2000)
+    params = {"day": "2026-10-15", "deduplicate": True, "limit": 1}
+    page = client.get("/v1/transcripts", params=params).json()
+    assert page["total"] == 2
+    assert page["items"][0]["id"] == different
+    page = client.get("/v1/transcripts", params=params | {"offset": 1}).json()
+    assert page["items"][0]["id"] == first
+    assert [row["id"] for row in page["items"][0]["alternate_sources"]] == [second]
+    assert client.get("/v1/transcripts").json()["total"] == 3
+    assert client.get(f"/v1/sources/{second}").status_code == 200
+
+
+def test_existing_changed_time_uploads_are_matched_after_upgrade(client):
+    first = done(client, device_id="web", source_kind="", source_id="")
+    second = done(client, at=AT + timedelta(minutes=7))
+    store = client.app.state.memory.store
+    with store.connect() as db:
+        db.execute("DELETE FROM source_matches")
+        db.execute("UPDATE source_match_checked SET version="
+                   "(SELECT source_version FROM audio WHERE audio.id=source_match_checked.id)")
+    assert len(groups(client)) == 2
+    Store(store.root)
+    assert len(groups(client)) == 1
+    assert {row["id"] for row in groups(client)[0].sources} == {first, second}
+
+
+def test_timeline_matches_queued_legacy_upload_without_changing_receipts(client):
+    first = upload(client, device_id="web", source_kind="", source_id="").json()
+    second = upload(client, at=AT + timedelta(minutes=7)).json()
+    page = client.get("/v1/transcripts?day=2026-10-15&deduplicate=true").json()
+    assert page["total"] == 1
+    assert page["items"][0]["id"] == first["id"]
+    alternative = page["items"][0]["alternate_sources"][0]
+    assert alternative["started_at"] == second["started_at"]
+    assert alternative["state"] == "queued"
+
+
+def test_repeated_wearable_audio_at_different_times_stays_separate(client):
+    for at in (AT, AT + timedelta(minutes=7)):
+        done(client, at=at, device_id="omi", source_kind="", source_id="")
+    page = client.get("/v1/transcripts?deduplicate=true").json()
+    assert page["total"] == 2
+    assert all(not row["alternate_sources"] for row in page["items"])
+
+
+def test_deduplicated_timeline_respects_search_and_day_filters(client):
+    done(client, "First reading of the meeting")
+    second = done(client, "Corrected unique phrase", at=AT + timedelta(minutes=7))
+    done(client, at=AT + timedelta(days=1))
+    params = {"day": "2026-10-15", "deduplicate": True, "q": "unique phrase"}
+    page = client.get("/v1/transcripts", params=params).json()
+    assert page["total"] == 1
+    assert page["items"][0]["id"] == second
+    assert client.get("/v1/transcripts", params=params | {"q": "missing"}).json()["total"] == 0
+
+
+def test_repeated_audio_in_different_parts_is_not_hidden_as_a_reupload(client):
+    recording = str(uuid4())
+    for index in range(2):
+        upload(client, at=AT + timedelta(seconds=index), recording_id=recording,
+               part_index=index, part_count=2)
+    page = client.get("/v1/transcripts?deduplicate=true").json()
+    assert page["total"] == 2
+
+
 def test_reuse_does_not_copy_a_manual_correction_or_cross_a_model_change(client):
     first = upload(client).json()["id"]
     memory = client.app.state.memory

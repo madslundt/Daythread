@@ -300,6 +300,7 @@ function TranscriptTimeline({
     q: submitted,
     limit: "30",
     offset: String(page * 30),
+    deduplicate: "true",
   });
   const resource = useResource<{ items: Source[]; total: number }>(
     `/v1/transcripts?${params}`,

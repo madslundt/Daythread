@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .domain import project_events, stamp
-from .source_matching import merge_groups
+from .source_matching import manual_upload, merge_groups
 from .voice_activity import VERSION
 
 
@@ -45,14 +45,6 @@ def activity(row: dict) -> dict:
         row.get("transcription_details") or "{}"
     ).get("voice_activity", {})
     return result if isinstance(result, dict) and result.get("version") == VERSION else {}
-
-
-def manual_upload(row: dict) -> bool:
-    # Before upload provenance was added, the web file picker used device_id=web.
-    # Interpret that known legacy format without changing stored retry metadata.
-    return row.get("source_kind") == "manual_upload" or (
-        row.get("source_kind", "") == "" and row.get("device_id") == "web"
-    )
 
 
 def quiet_runs(quiet: list, blockers: list) -> list:

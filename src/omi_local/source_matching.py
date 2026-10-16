@@ -8,6 +8,9 @@ from datetime import datetime
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
+MATCH_VERSION = "2"
+MANUAL_UPLOAD_SQL = "(source_kind='manual_upload' OR (source_kind='' AND device_id='web'))"
+
 SCHEMA = """
 CREATE INDEX IF NOT EXISTS audio_duplicate ON audio(digest,started_at,ended_at,state);
 CREATE TABLE IF NOT EXISTS source_matches (
@@ -81,6 +84,12 @@ def compatible_time(left: dict, right: dict) -> bool:
     ) * 0.5
 
 
+def manual_upload(row: dict) -> bool:
+    return row.get("source_kind") == "manual_upload" or (
+        row.get("source_kind", "") == "" and row.get("device_id") == "web"
+    )
+
+
 def recognition_contract(settings) -> str:
     fields = {key: value for key, value in settings.model_dump(mode="json").items()
               if key.startswith("stt_") and key != "stt_routes"}
@@ -103,16 +112,19 @@ class SourceMatchingStore:
         if row["state"] == "done" and row["text"]:
             candidates = db.execute(
                 "SELECT * FROM audio WHERE id!=? AND state='done' AND length(trim(text))>0 "
-                "AND started_at<? AND ended_at>? ORDER BY started_at,id",
-                (key, row["ended_at"], row["started_at"]),
+                "AND ((started_at<? AND ended_at>?) OR "
+                f"(? AND digest=? AND {MANUAL_UPLOAD_SQL})) ORDER BY started_at,id",
+                (key, row["ended_at"], row["started_at"], manual_upload(row), row["digest"]),
             )
             for candidate in candidates:
                 other = dict(candidate)
                 exact = (
                     row["source_kind"] not in {"omi_api", "omi_audio_webhook"}
                     and other["source_kind"] not in {"omi_api", "omi_audio_webhook"}
-                    and (row["digest"], row["started_at"], row["ended_at"]) ==
-                    (other["digest"], other["started_at"], other["ended_at"])
+                    and row["digest"] == other["digest"]
+                    and ((row["started_at"], row["ended_at"]) ==
+                         (other["started_at"], other["ended_at"])
+                         or (manual_upload(row) and manual_upload(other)))
                 )
                 if exact or (compatible_time(row, other)
                              and same_content(row["text"], other["text"])):
@@ -120,15 +132,16 @@ class SourceMatchingStore:
                     db.execute("INSERT OR REPLACE INTO source_matches VALUES(?,?,?)",
                                (a, b, "audio" if exact else "transcript"))
         db.execute("INSERT OR REPLACE INTO source_match_checked VALUES(?,?)",
-                   (key, row["source_version"]))
+                   (key, f"{MATCH_VERSION}:{row['source_version']}"))
 
     def reusable_transcription(self, row: dict, contract: str) -> dict | None:
         with self.connect() as db:
             for candidate in db.execute(
-                "SELECT * FROM audio WHERE id!=? AND digest=? AND started_at=? AND ended_at=? "
+                "SELECT * FROM audio WHERE id!=? AND digest=? "
+                f"AND ((started_at=? AND ended_at=?) OR (? AND {MANUAL_UPLOAD_SQL})) "
                 "AND state='done' AND transcription_outcome IN ('text','empty_stt','silence_gate') "
                 "ORDER BY processed_at,id",
-                (row["id"], row["digest"], row["started_at"], row["ended_at"]),
+                (row["id"], row["digest"], row["started_at"], row["ended_at"], manual_upload(row)),
             ):
                 details = json.loads(candidate["transcription_details"])
                 if details.get("recognition_contract") == contract:

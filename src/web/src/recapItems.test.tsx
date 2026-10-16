@@ -2,7 +2,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RecapContent } from "./RecapContent";
-import { itemSources, recapGroups, recapParts, recapReadingText } from "./recapItems";
+import { RecapEvidence } from "./RecapEvidence";
+import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections } from "./recapItems";
 import type { Source } from "./types";
 
 const sources: Source[] = [
@@ -45,7 +46,7 @@ describe("day recap interactions", () => {
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact
     />);
     expect(html.match(/class="recap-group"/g)).toHaveLength(2);
-    expect(html.match(/class="recap-group" open=""/g)).toHaveLength(2);
+    expect(html.match(/class="recap-group" open=""/g)).toHaveLength(1);
     expect(html).toContain("aria-expanded=\"false\"");
     expect(html).toContain("A workout.");
     expect(html).not.toContain(sources[0].id);
@@ -57,6 +58,41 @@ describe("day recap interactions", () => {
       "share the prototype", "call the bike shop", "bring the photo album", "confirm game night.",
     ]);
     expect(parts.filter((part) => part.kind === "item" && !part.action)).toHaveLength(2);
+  });
+
+  it("shows a topic summary and counts points without counting summary paragraphs", () => {
+    const text = `## Cocoa\nA test with dark chocolate.\n- Milk frother and cocoa [${sources[0].id}].`;
+    expect(recapGroupSummary(recapParts(text).slice(1))).toBe("A test with dark chocolate.");
+    expect(recapGroupSummary(recapParts(`- Cocoa [${sources[0].id}].`))).toBe("Cocoa.");
+    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact />);
+    expect(html).toContain('class="recap-group-summary">A test with dark chocolate.');
+    expect(html).toContain("1 point");
+    expect(html).not.toContain("2 points");
+  });
+
+  it("reveals the matching original passage without repeating unrelated recording topics", () => {
+    const cocoa = "☕️ Tested a milk frother with cocoa. ";
+    const tesla = "We discussed the Tesla Roadster.";
+    const source: Source = { ...sources[0], text: cocoa + tesla, sections: [
+      { title: "Cocoa and milk frother", start_offset: 0, end_offset: Array.from(cocoa).length },
+      { title: "Tesla Roadster", start_offset: Array.from(cocoa).length, end_offset: Array.from(cocoa + tesla).length },
+    ] };
+    const point = `Tested a milk frother with cocoa [${source.id}]`;
+    expect(recapSourceSections(point, source)).toEqual([source.sections![0]]);
+    const html = renderToStaticMarkup(<RecapEvidence source={source} point={point} timezone="UTC" onCorrect={() => {}} />);
+    expect(html).toContain(cocoa);
+    expect(html).not.toContain(tesla);
+    expect(html).not.toContain("topic sections");
+    expect(html).not.toContain("source-row");
+    expect(html).toContain("Full recording &amp; tools");
+  });
+
+  it("shows the full original transcript when no passage can be identified", () => {
+    const source = { ...sources[0], sections: [{ title: "Gym", start_offset: 0, end_offset: 14 }] };
+    const html = renderToStaticMarkup(<RecapEvidence source={source} point={`Unrelated point [${source.id}]`} timezone="UTC" onCorrect={() => {}} />);
+    expect(html).toContain("no specific topic passage identified");
+    expect(html).toContain("Gym discussion");
+    expect(recapSourceSections("Gym", { ...source, text: null })).toEqual([]);
   });
 
   it("supports heading lists, numbered lists, task syntax and continuation lines", () => {

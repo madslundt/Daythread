@@ -462,9 +462,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         q: str = Query(default="", max_length=200),
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
+        deduplicate: bool = False,
     ) -> dict:
         start, end = memory().day_window(day) if day else (None, None)
-        rows, total = memory().store.transcripts(start, end, q, limit, offset)
+        rows, total = memory().store.transcripts(
+            start, end, q, limit, offset, deduplicate=deduplicate,
+        )
         return {"items": [public_source(row) for row in rows], "total": total}
 
     @app.get("/v1/transcripts/{audio_id}")

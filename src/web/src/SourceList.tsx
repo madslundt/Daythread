@@ -1,4 +1,4 @@
-import { ImportanceButton, ImportantBadge } from "./Importance";
+import { ImportanceButton } from "./Importance";
 import { SourceLabels } from "./SourceLabels";
 import { useEffect, useState, type ReactNode } from "react";
 import { audioUrl, errorMessage, request } from "./api";
@@ -220,13 +220,14 @@ function SourceRow({
           </span>
           {compact ? <span className="source-glance">
             {recordingDuration(source)}
+            {source.alternate_sources?.length ? ` · ${source.alternate_sources.length + 1} uploads` : ""}
             {hasTopics ? ` · ${currentSource.sections!.length} ${currentSource.sections!.length === 1 ? "topic" : "topics"}` : ""}
             {source.state !== "done" ? ` · ${source.state}` : ""}
           </span> : null}
           {compact && source.matches?.length && currentSource.title ? <span className="source-match">{source.matches[0].text}</span> : null}
         </span>
         <span className="source-hints">
-          <ImportantBadge target={{ kind: "source", id: source.id }} />
+          <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" compact />
           {source.important ? <span title="Importance hint added during recording"><Icon name="star" size={15} /></span> : null}
           {source.meeting_hint_ids?.length ? (
             <Icon name="mic" size={15} />
@@ -234,10 +235,7 @@ function SourceRow({
         </span>
         <Icon name="chevron-right" size={15} />
       </summary>
-      {!compact ? <>
-        <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" />
-        <FeedbackForm sourceId={source.id} />
-      </> : null}
+      {!compact ? <FeedbackForm sourceId={source.id} /> : null}
       {source.error_code ||
       source.transcription_outcome === "silence_gate" ||
       source.transcription_outcome === "empty_stt" ? (
@@ -272,6 +270,12 @@ function SourceRow({
         </button>
       ) : null}
       <div className="source-detail">
+        {source.alternate_sources?.length ? <details className="recording-alternatives">
+          <summary>Other uploads of this recording ({source.alternate_sources.length})</summary>
+          <p className="caption">Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript.</p>
+          <SourceList sources={source.alternate_sources} timezone={timezone} showDate
+            idPrefix={`${idPrefix}-alternate`} onCorrect={onCorrect} onDeleted={onDeleted} />
+        </details> : null}
         {compact ? playback : null}
         {compact && !editing ? <RecordingSections source={currentSource} compact /> : null}
         {!compact ? metadata : null}
@@ -343,7 +347,6 @@ function SourceRow({
         {error ? <ErrorState message={error} /> : null}
         {!compact ? playback : null}
         <div className={compact ? "recording-footer" : undefined}>
-        {compact ? <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" compact /> : null}
         <RecordingDisclosure enabled={compact} label="Recording details & tools" className="recording-utilities" open={toolsOpen} onToggle={setToolsOpen}>
         {compact ? <>
           {metadata}

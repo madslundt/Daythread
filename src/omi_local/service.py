@@ -54,6 +54,8 @@ def public_source(row: dict) -> dict:
     for field in ("matches", "context_for"):
         if field in row:
             result[field] = row[field]
+    if "alternate_sources" in row:
+        result["alternate_sources"] = [public_source(source) for source in row["alternate_sources"]]
     return result
 
 

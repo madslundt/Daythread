@@ -45,6 +45,20 @@ describe("recording topic sections", () => {
     expect(html).not.toContain("recording-disclosure");
     expect(html).toContain("3 topic sections");
   });
+  it("shows repeated uploads once with access to each original time and transcript", () => {
+    const alternative: Source = {
+      ...source, id: "reupload", started_at: "2026-10-16T21:17:00Z",
+      ended_at: "2026-10-16T21:19:00Z", text: "Another transcript reading", sections: [],
+    };
+    const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC"
+      sources={[{ ...source, alternate_sources: [alternative] }]} />);
+    expect(html.match(/class="source-row source-row-compact"/g)).toHaveLength(1);
+    expect(html).toContain("2 uploads");
+    expect(html).toContain("Other uploads of this recording (1)");
+    expect(html).toContain("Another transcript reading");
+    expect(html).toContain("21:17");
+    expect(html).toContain('id="source-alternate-reupload"');
+  });
   it("keeps pending or corrected recordings free of stale sections", () => {
     expect(renderToStaticMarkup(<RecordingSections source={{ ...source, sections: [] }} />)).toBe("");
     expect(renderToStaticMarkup(<RecordingSections source={{ ...source, text: null }} />)).toBe("");

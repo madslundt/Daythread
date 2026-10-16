@@ -2,8 +2,8 @@ import { profileStorageKey } from "./profiles";
 import { ImportanceButton, type ImportanceTarget } from "./Importance";
 import { useId, useState } from "react";
 import { Icon } from "./Icon";
-import { itemSources, recapGroups, recapParts, recapReadingText, type RecapPart } from "./recapItems";
-import { SourceList } from "./SourceList";
+import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, type RecapPart } from "./recapItems";
+import { RecapEvidence } from "./RecapEvidence";
 import type { ChatScope, Source } from "./types";
 import { InlineText, RichText } from "./UI";
 
@@ -44,7 +44,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
       setStorageError(true);
     }
   }
-  const renderPart = (part: RecapPart, index: number) => part.kind === "heading" ? (
+  const renderPart = (part: RecapPart, index: number, topic = "") => part.kind === "heading" ? (
         <div key={index} className="recap-section-heading"><h3><InlineText text={part.text} /></h3>{savedVersion ? <ImportanceButton target={target(part.text)} label={part.text} /> : null}</div>
       ) : part.kind === "text" ? (
         <div key={index} className="recap-paragraph"><RichText text={compact ? recapReadingText(part.text) : part.text} />{savedVersion ? <ImportanceButton target={target(part.text)} label="recap section" compact={compact} /> : null}</div>
@@ -52,6 +52,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
         <RecapItem
           key={`${index}:${part.text}`}
           text={part.text}
+          topic={topic}
           importanceTarget={savedVersion ? target(part.text) : undefined}
           action={part.action}
           checked={checks.includes(part.text)}
@@ -67,27 +68,30 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
     <div className={`prose recap-items ${compact ? "recap-reading-view" : ""}`}>
       {compact ? <div className="recap-reading-tools">
         {savedVersion ? <ImportanceButton target={target()} label="day recap" compact /> : null}
-        <p className="caption recap-item-hint">Open a point to explore its recordings.</p>
+        <p className="caption recap-item-hint">Open a topic for its summary, then a point for the original passage.</p>
       </div> : <>
         {savedVersion ? <ImportanceButton target={target()} label="day recap" /> : null}
         <p className="caption recap-item-hint">Open any point for recordings and a conversation.</p>
       </>}
-      {compact ? groups.map((group, index) => group.title ? (
-        <details className="recap-group" key={`${index}:${group.title}`} open={index === 0 || group.parts.some((part) => part.kind === "item" && part.action)}>
+      {compact ? groups.map((group, index) => {
+        const pointCount = group.parts.filter((part) => part.kind === "item").length;
+        return group.title ? (
+        <details className="recap-group" key={`${index}:${group.title}`} open={group.parts.some((part) => part.kind === "item" && part.action)}>
           <summary>
-            <span><InlineText text={group.title} /></span>
-            <small>{group.parts.length} {group.parts.length === 1 ? "point" : "points"}</small>
+            <span className="recap-group-overview"><span><InlineText text={group.title} /></span><span className="recap-group-summary">{recapGroupSummary(group.parts)}</span></span>
+            {savedVersion ? <ImportanceButton target={target(group.title)} label={group.title.replace(/\*\*/g, "")} compact /> : null}
+            <small>{pointCount ? `${pointCount} ${pointCount === 1 ? "point" : "points"}` : "Summary"}</small>
             <Icon name="chevron-right" size={15} />
           </summary>
           <div className="recap-group-content">
-            {savedVersion ? <div className="recap-group-tools"><ImportanceButton target={target(group.title)} label={group.title.replace(/\*\*/g, "")} compact /></div> : null}
-            {group.parts.map(renderPart)}
+            {group.parts.map((part, index) => renderPart(part, index, group.title))}
           </div>
         </details>
-      ) : <div key={index}>{group.parts.map(renderPart)}</div>) : groups.flatMap((group) => [
+      ) : <div key={index}>{group.parts.map((part, index) => renderPart(part, index))}</div>;
+      }) : groups.flatMap((group) => [
         ...(group.title ? [{ kind: "heading" as const, text: group.title }] : []),
         ...group.parts,
-      ]).map(renderPart)}
+      ]).map((part, index) => renderPart(part, index))}
       {parts.some((part) => part.kind === "item" && part.action) ? (
         <p className="caption recap-check-hint" role={storageError ? "status" : undefined}>
           {storageError ? "Checks are kept for this visit only because browser storage is unavailable." : "Optional checkmarks · saved in this browser. Inbox status is managed separately."}
@@ -97,8 +101,9 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   );
 }
 
-function RecapItem({ text, importanceTarget, action, checked, onToggle, sources, timezone, onChat, onCorrect, compact }: {
+function RecapItem({ text, topic, importanceTarget, action, checked, onToggle, sources, timezone, onChat, onCorrect, compact }: {
   text: string;
+  topic: string;
   importanceTarget?: ImportanceTarget;
   action: boolean;
   checked: boolean;
@@ -137,7 +142,7 @@ function RecapItem({ text, importanceTarget, action, checked, onToggle, sources,
                   : "This point has no linked or matching recordings."}
           </p>
           {related.sources.length ? (
-            <SourceList sources={related.sources} timezone={timezone} expanded onCorrect={onCorrect} idPrefix={`recap-${id}`} />
+            related.sources.map((source) => <RecapEvidence key={source.id} source={source} point={`${topic}\n${text}`} timezone={timezone} onCorrect={onCorrect} />)
           ) : null}
         </> : null}
       </div>

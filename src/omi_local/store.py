@@ -27,8 +27,8 @@ from .recap_store import RecapStore
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
+from .source_matching import MATCH_VERSION, SourceMatchingStore, UploadGrouping
 from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
-from .source_matching import SourceMatchingStore, UploadGrouping
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
@@ -160,7 +160,8 @@ class Store(
             )
             for row in db.execute(
                 "SELECT a.id FROM audio a LEFT JOIN source_match_checked m ON m.id=a.id "
-                "WHERE m.id IS NULL OR m.version!=a.source_version"
+                "WHERE m.id IS NULL OR m.version!=? || ':' || a.source_version",
+                (MATCH_VERSION,),
             ).fetchall():
                 self.refresh_source_matches(db, row["id"])
             session_columns = {

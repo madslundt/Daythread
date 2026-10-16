@@ -26,6 +26,24 @@ export function recapReadingText(text: string) {
   return text.replace(/\[[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\]/gi, "").replace(/ +([.,;!?])/g, "$1").trim();
 }
 
+export function recapGroupSummary(parts: RecapPart[]): string {
+  const narrative = parts.filter((part) => part.kind === "text");
+  return (narrative.length ? narrative : parts.filter((part) => part.kind === "item"))
+    .map((part) => recapReadingText(part.text).replace(/\*\*/g, "")).join(" ");
+}
+
+export function recapSourceSections(point: string, source: Source): NonNullable<Source["sections"]> {
+  if (!source.text || !source.sections?.length) return [];
+  const characters = Array.from(source.text);
+  const candidates = source.sections.map((section, index) => ({
+    ...source, id: String(index),
+    text: `${section.title} ${characters.slice(section.start_offset, section.end_offset).join("")}`,
+  }));
+  // A citation links a recording, not an exact span. Match passage words separately.
+  const matching = new Set(itemSources(recapReadingText(point), candidates).sources.map((candidate) => candidate.id));
+  return source.sections.filter((_section, index) => matching.has(String(index)));
+}
+
 const actionHeading = /^(?:to follow[ -]?up|follow[ -]?ups?|action (?:items?|points?)|next steps?|to[ -]?dos?|tasks?)$/i;
 
 // Parse only presentation structure. Completion always comes from the user's checks.

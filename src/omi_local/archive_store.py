@@ -16,6 +16,7 @@ from uuid import uuid4
 from .completeness import audio_availability
 from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
+from .source_matching import MANUAL_UPLOAD_SQL
 from .weekly_models import markdown as weekly_markdown
 
 EXTENDED_SCHEMA = """
@@ -112,7 +113,8 @@ class ArchiveStore:
             )
 
     def transcripts(
-        self, start: datetime | None, end: datetime | None, query: str, limit: int, offset: int
+        self, start: datetime | None, end: datetime | None, query: str, limit: int, offset: int,
+        *, deduplicate: bool = False,
     ) -> tuple[list[dict], int]:
         filters, args = ["1=1"], []
         if start and end:
@@ -125,6 +127,37 @@ class ArchiveStore:
             args.append(f"%{escaped}%")
         where = " AND ".join(filters)
         with self.connect() as db:
+            if deduplicate:
+                # Group before counting/paging so duplicates cannot leak onto later pages.
+                # Keep the earliest supplied capture time as the stable display row.
+                projection = (
+                    "WITH scoped AS (SELECT *,CASE WHEN " + MANUAL_UPLOAD_SQL +
+                    " THEN 'audio:' || digest || ':' || "
+                    "coalesce(json_extract(source_metadata,'$.part_index'),0) "
+                    "ELSE 'source:' || id END AS upload_key "
+                    f"FROM audio WHERE {where}), ranked AS (SELECT *,"
+                    "row_number() OVER (PARTITION BY upload_key ORDER BY started_at,id) "
+                    "AS upload_rank FROM scoped) "
+                )
+                total = db.execute(
+                    projection + "SELECT count(*) FROM ranked WHERE upload_rank=1", args,
+                ).fetchone()[0]
+                rows = [dict(row) for row in db.execute(
+                    projection + "SELECT * FROM ranked WHERE upload_rank=1 "
+                    "ORDER BY started_at DESC,id LIMIT ? OFFSET ?", (*args, limit, offset),
+                )]
+                if rows:
+                    placeholders = ",".join("?" for _ in rows)
+                    alternatives = {}
+                    for row in db.execute(
+                        projection + "SELECT * FROM ranked WHERE upload_rank>1 "
+                        f"AND upload_key IN ({placeholders}) ORDER BY started_at,id",
+                        (*args, *(row["upload_key"] for row in rows)),
+                    ):
+                        alternatives.setdefault(row["upload_key"], []).append(dict(row))
+                    for row in rows:
+                        row["alternate_sources"] = alternatives.get(row["upload_key"], [])
+                return rows, total
             total = db.execute(f"SELECT count(*) FROM audio WHERE {where}", args).fetchone()[0]
             rows = db.execute(
                 f"SELECT * FROM audio WHERE {where} ORDER BY started_at DESC,id LIMIT ? OFFSET ?",

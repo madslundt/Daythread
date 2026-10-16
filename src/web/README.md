@@ -20,6 +20,14 @@ Use **Upload recording** to import audio exported from another phone, Voice Memo
 
 The UI shows empty, queued, failure, and model-unavailable states from the actual API. Recaps, chats, original audio, and correction history always come from home-core. Rewind audio uses the exact same end timestamp as its summary request. Gesture hints do not crop recordings, and the UI observes the configured flag cooldown.
 
+Today shows identical manually uploaded audio once, even when it was uploaded again with a
+different filename or capture time. The entry uses the earliest supplied capture time within
+the selected day; expand **Other uploads of this recording** to inspect each upload's original
+time, audio and transcript. Counts and pagination apply to these entries. Transcript search
+shows matching readings. All original uploads remain in the archive. Exact audio matches also
+share conversation matching and compatible transcription results, including legacy web uploads;
+changing transcription settings or correcting a transcript prevents recognition reuse.
+
 After transcription, the backend generates a descriptive recording title and topic sections using
 the local summary model. Open a recording in Today to expand each titled topic and read its
 original transcript passage. Existing recordings are analyzed automatically after upgrade. The

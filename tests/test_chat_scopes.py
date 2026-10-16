@@ -42,7 +42,8 @@ def client(config):
 def insert(client, at=AT, text="Kitchen discussion", duration=1, *, source_kind=""):
     key = uuid4()
     store = client.app.state.memory.store
-    store.ingest(key, "omi", at, b"test audio", duration, source_kind=source_kind)
+    # These are distinct recordings, rather than reuploads of identical audio.
+    store.ingest(key, "omi", at, b"test audio " + key.bytes, duration, source_kind=source_kind)
     store.complete(str(key), text)
     return str(key)
 

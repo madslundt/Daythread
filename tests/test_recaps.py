@@ -18,11 +18,11 @@ from omi_local.worker import scheduled_recaps
 AT = datetime(2026, 10, 16, 12, tzinfo=UTC)
 
 
-def wav():
+def wav(identity=b""):
     out = io.BytesIO()
     with wave.open(out, "wb") as stream:
         stream.setparams((1, 2, 16000, 0, "NONE", "PCM"))
-        stream.writeframes(b"\0\0" * 16000)
+        stream.writeframes(identity + b"\0" * (32000 - len(identity)))
     return out.getvalue()
 
 
@@ -48,8 +48,10 @@ def client(tmp_path, monkeypatch):
 
 def insert(client, at=AT, text="Share the notes tomorrow", kind="", duration=60, activity=None):
     store = client.app.state.memory.store
-    key = str(uuid4())
-    store.ingest(key, "omi", at, wav(), duration, source_kind=kind)
+    recording = uuid4()
+    key = str(recording)
+    # Separate spoken recordings need distinct audio; observed quiet remains digital zero.
+    store.ingest(key, "omi", at, wav(recording.bytes if text else b""), duration, source_kind=kind)
     store.complete(key, text, details={"voice_activity": activity} if activity else None)
     return key
 

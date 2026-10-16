@@ -1,4 +1,5 @@
 export type Source = {
+  alternate_sources?: Source[];
   id: string;
   device_id: string;
   source_version?: string;

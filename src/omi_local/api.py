@@ -45,6 +45,7 @@ from .model_connections import model_connection_routes
 from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
+from .recording_groups import recording_groups
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
@@ -455,6 +456,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if row is None:
             raise HTTPException(404, "Source unavailable")
         return public_source(row)
+
+    @app.get("/v1/recording-groups")
+    def timeline_recording_groups(
+        day: date, q: str = Query(default="", max_length=200),
+        limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        start, end = memory().day_window(day)
+        return recording_groups(memory().store, start, end, q, limit, offset)
+
+    @app.get("/v1/recording-groups/{group_id}/sources")
+    def timeline_group_sources(
+        group_id: UUID, day: date, q: str = Query(default="", max_length=200),
+        limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        start, end = memory().day_window(day)
+        try:
+            return recording_groups(
+                memory().store, start, end, q, limit, offset, group_id=str(group_id),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "Recording group unavailable") from exc
 
     @app.get("/v1/transcripts")
     def transcripts(

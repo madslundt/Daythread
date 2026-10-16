@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     from .service import Memory
 
 logger = logging.getLogger(__name__)
-VERSION = "recording-topics-1"
+VERSION = "recording-topics-2-broad-subjects"
 MAX_INPUT = 12000
 
 SCHEMA = """
@@ -65,8 +66,12 @@ async def analyze(memory: Memory, row: dict) -> dict:
             'Give this recording a concise, descriptive title and divide its transcript into '
             'consecutive topic sections. Return JSON: {"title":"...","sections":'
             '[{"title":"...","start_quote":"..."}]}. '
-            'Start a new section when the subject clearly changes, even within a short recording. '
-            'Keep one section for one topic. A language switch alone is not a topic change. '
+            'Use the fewest useful sections. Default to one section for a coherent discussion; '
+            'split only for a sustained, clearly different subject. Keep related subtopics, '
+            'examples, brief tangents, clarifications and decisions together. A short recording '
+            'usually needs one to three sections, not one per detail or sentence. '
+            'A language switch, speaker change or processing window is not a topic change. '
+            'Reuse the same concise topic title when a subject continues. '
             'Each start_quote must copy an exact, unique, contiguous phrase (8–300 characters) '
             'from the beginning of that topic in the supplied transcript, in transcript order '
             '(use the full text for transcripts shorter than eight characters). '
@@ -87,12 +92,18 @@ async def analyze(memory: Memory, row: dict) -> dict:
                     raise ValueError("First topic must cover the start of the transcript")
                 start = 0
             previous = start
+            normalized = " ".join(re.findall(r"\w+", topic.title.casefold()))
+            last_title = sections[-1]["title"] if sections else ""
+            last_normalized = " ".join(re.findall(r"\w+", last_title.casefold()))
+            if sections and normalized and normalized == last_normalized:
+                continue
             sections.append({"title": topic.title, "start_offset": base + start})
     for index, section in enumerate(sections):
         section["end_offset"] = (
             sections[index + 1]["start_offset"] if index + 1 < len(sections) else len(text)
         )
-    title = titles[0] if len(titles) == 1 else " · ".join(titles)[:160]
+    unique_titles = {" ".join(re.findall(r"\w+", title.casefold())): title for title in titles}
+    title = " · ".join(unique_titles.values())[:160]
     return {"title": title, "sections": sections}
 
 

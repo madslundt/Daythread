@@ -167,7 +167,26 @@ def test_short_and_long_transcripts_are_covered_completely(recording, text):
     memory.inference = WholeTopic()
     run(memory)
     result = client.get(f"/v1/transcripts/{key}").json()
-    assert result["sections"]
+    assert len(result["sections"]) == 1
+    assert result["title"] == "Topic"
     assert "".join(memory.inference.excerpts) == text
     assert "".join(text[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == text
     assert max(map(len, memory.inference.excerpts)) <= 12000
+
+
+def test_adjacent_matching_topics_merge_but_later_returns_stay_chronological(recording):
+    client, memory, key = recording
+    memory.inference = Model({
+        "title": "Kakao og Omi",
+        "sections": [
+            {"title": "Kakao", "start_quote": "Vi taler om kakao"},
+            {"title": "KAKAO!", "start_quote": "Det kan ikke anbefales"},
+            {"title": "Omi", "start_quote": "Jeg har bestilt en OMI"},
+            {"title": "Kakao", "start_quote": "Let's turn to English"},
+        ],
+    })
+    assert run(memory)
+    result = client.get(f"/v1/transcripts/{key}").json()
+    assert [section["title"] for section in result["sections"]] == ["Kakao", "Omi", "Kakao"]
+    assert result["sections"][0]["end_offset"] == TEXT.index("Jeg har")
+    assert "".join(TEXT[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == TEXT

@@ -1,0 +1,81 @@
+import { useState } from "react";
+import { Icon } from "./Icon";
+import { SourceList } from "./SourceList";
+import { ErrorState, Loading } from "./UI";
+import { timeLabel } from "./format";
+import type { Source, Timeline } from "./types";
+import { useResource } from "./useResource";
+
+export type RecordingGroup = {
+  id: string;
+  started_at: string;
+  ended_at: string;
+  title: string;
+  recording_count: number;
+  estimated_times?: boolean;
+  sources: Source[];
+};
+export type RecordingGroupList = {
+  items: RecordingGroup[];
+  total: number;
+  total_recordings: number;
+};
+
+export function RecordingGroups({ groups, day, query, timezone, onCorrect, timeline }: {
+  groups: RecordingGroup[]; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+}) {
+  return <div className="source-list source-list-compact">
+    {groups.map((group) => group.recording_count === 1 ? (
+      <SourceList key={group.id} compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
+    ) : <RecordingSession key={group.id} group={group} day={day} query={query} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />)}
+  </div>;
+}
+
+function RecordingSession({ group, day, query, timezone, onCorrect, timeline }: {
+  group: RecordingGroup; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+}) {
+  const [open, setOpen] = useState(false);
+  return <details className="source-row source-row-compact recording-session" onToggle={(event) => {
+    if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
+  }}>
+    <summary>
+      <span className="source-time">{timeLabel(group.started_at, timezone)}<br />–{timeLabel(group.ended_at, timezone)}</span>
+      <span className="source-overview"><span className="source-preview">{group.title}</span>
+        <span className="source-glance">{group.recording_count} recordings{group.estimated_times ? " · estimated times" : ""}</span></span>
+      <Icon name="chevron-right" size={15} />
+    </summary>
+    <div className="source-detail">
+      {open ? <SessionSources key={`${day}:${query}`} group={group} day={day} query={query} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
+    </div>
+  </details>;
+}
+
+function SessionSources({ group, day, query, timezone, onCorrect, timeline }: {
+  group: RecordingGroup; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+}) {
+  const [page, setPage] = useState(0);
+  const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
+  const resource = useResource<{ items: Source[]; total: number }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
+  const correct = () => { resource.refresh(); onCorrect(); };
+  return <>
+    <p className="caption">Nearby recordings, grouped for browsing. Each recording keeps its own audio and transcript.</p>
+    {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
+    {resource.loading && !resource.data ? <Loading>Loading recordings…</Loading> : null}
+    {resource.data ? <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} /> : null}
+    {resource.data && (resource.data.total > 30 || page > 0) ? <div className="pagination">
+      <span className="caption">Recordings {page * 30 + 1}–{page * 30 + resource.data.items.length} of {resource.data.total}</span>
+      <button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous recordings</button>
+      <button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>Next recordings</button>
+    </div> : null}
+  </>;
+}
+
+function withHints(sources: Source[], timeline?: Timeline): Source[] {
+  return sources.map((source) => ({
+    ...source,
+    important: source.important || timeline?.markers.some((mark) =>
+      source.started_at < mark.context_end && source.ended_at > mark.context_start),
+    meeting_hint_ids: timeline?.meetings.filter((meeting) =>
+      source.started_at < meeting.context_end && source.ended_at > meeting.context_start).map((meeting) => meeting.id) || source.meeting_hint_ids,
+  }));
+}

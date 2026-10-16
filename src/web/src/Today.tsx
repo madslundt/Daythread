@@ -13,6 +13,7 @@ import {
 import { InboxEntry } from "./Inbox";
 import { Decisions } from "./Decisions";
 import { SourceList } from "./SourceList";
+import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
 import { RecapContent } from "./RecapContent";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
@@ -300,10 +301,9 @@ function TranscriptTimeline({
     q: submitted,
     limit: "30",
     offset: String(page * 30),
-    deduplicate: "true",
   });
-  const resource = useResource<{ items: Source[]; total: number }>(
-    `/v1/transcripts?${params}`,
+  const resource = useResource<RecordingGroupList>(
+    `/v1/recording-groups?${params}`,
     15_000,
   );
   const markers =
@@ -314,27 +314,13 @@ function TranscriptTimeline({
     timeline?.meetings.filter(
       (meeting) => localDay(timezone, new Date(meeting.started_at)) === day,
     ) || [];
-  const sources = (resource.data?.items || []).map((source) => ({
-    ...source,
-    important: timeline?.markers.some(
-      (mark) =>
-        source.started_at < mark.context_end &&
-        source.ended_at > mark.context_start,
-    ),
-    meeting_hint_ids: timeline?.meetings
-      .filter(
-        (meeting) =>
-          source.started_at < meeting.context_end &&
-          source.ended_at > meeting.context_start,
-      )
-      .map((meeting) => meeting.id),
-  }));
+  const groups = resource.data?.items || [];
   return (
     <section className="timeline-section">
       <div className="section-heading">
         <div className="timeline-title">
           <h2>Timeline</h2>
-          {resource.data ? <span className="caption">{resource.data.total} {submitted ? "matching " : ""}{resource.data.total === 1 ? "recording" : "recordings"}</span> : null}
+          {resource.data ? <span className="caption">{resource.data.total_recordings} {submitted ? "matching " : ""}{resource.data.total_recordings === 1 ? "recording" : "recordings"} · {resource.data.total} {resource.data.total === 1 ? "group" : "groups"}</span> : null}
         </div>
         {resource.data?.total ? (
           <button className="text-button" onClick={onUpload}>
@@ -422,17 +408,12 @@ function TranscriptTimeline({
       ) : null}
       {resource.loading && !resource.data ? (
         <Loading>Loading recordings…</Loading>
-      ) : sources.length ? (
+      ) : groups.length ? (
         <>
-          <SourceList
-            compact
-            sources={sources}
-            timezone={timezone}
-            onCorrect={resource.refresh}
-          />
+          <RecordingGroups groups={groups} day={day} query={submitted} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} />
           {(resource.data?.total || 0) > 30 || page > 0 ? <div className="pagination">
             <span className="caption">
-              {page * 30 + 1}–{page * 30 + sources.length} of{" "}
+              {page * 30 + 1}–{page * 30 + groups.length} of{" "}
               {resource.data?.total}
             </span>
             <div className="button-row">

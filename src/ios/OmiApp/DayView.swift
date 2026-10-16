@@ -8,7 +8,7 @@ struct DayView: View {
     @State private var month = Date()
     @State private var daySelected = false
     @State private var recap: JSONValue = .null
-    @State private var transcripts: [JSONValue] = []
+    @State private var recordingGroups: [JSONValue] = []
     @State private var error: String?
     @State private var loading = false
     @State private var recapRefreshError: String?
@@ -23,7 +23,7 @@ struct DayView: View {
 
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var dayKey: String { diary.dayKey(day) }
-    private var cacheKey: String { model.archiveIdentity + ".day." + dayKey }
+    private var cacheKey: String { model.archiveIdentity + ".day-recording-groups." + dayKey }
     private var monthKey: String { diary.monthKey(month) }
     private var calendarKey: String { model.archiveIdentity + ".calendar." + monthKey + "." + diary.calendar.timeZone.identifier }
     private var calendarTaskKey: String { calendarKey + ".\(calendarRevision)" }
@@ -105,10 +105,10 @@ struct DayView: View {
                     }
                 }
             }
-            Section("Transcript · \(total) chunks") {
-                if transcripts.isEmpty && !loading { ContentUnavailableView("No transcript yet", systemImage: "text.alignleft", description: Text("Capture audio with Omi, then sync to home-core.")) }
-                SourceList(sources: transcripts)
-                if transcripts.count < total {
+            Section("Timeline · \(total) groups") {
+                if recordingGroups.isEmpty && !loading { ContentUnavailableView("No transcript yet", systemImage: "text.alignleft", description: Text("Capture audio with Omi, then sync to home-core.")) }
+                TimelineRecordingGroups(groups: recordingGroups, day: dayKey)
+                if recordingGroups.count < total {
                     Button("Load more") { Task { await loadMore() } }.disabled(loading)
                 }
             }
@@ -182,18 +182,18 @@ struct DayView: View {
     private func load() async {
         let key = cacheKey, requestedDay = dayKey, request = UUID()
         dayRequest = request; error = nil; recapRefreshError = nil; loading = true; cached = false
-        recap = .null; transcripts = []; total = 0
+        recap = .null; recordingGroups = []; total = 0
         if let saved = LocalCache.load(key) {
-            recap = saved["recap"]; transcripts = saved["transcripts"].array; total = saved["total"].integer; cached = true
+            recap = saved["recap"]; recordingGroups = saved["recording_groups"].array; total = saved["total"].integer; cached = true
         }
         defer { if dayRequest == request { loading = false } }
         do {
             let client = try model.client()
-            async let transcriptRequest = client.request("v1/transcripts", query: ["day": requestedDay, "limit": "100"])
+            async let transcriptRequest = client.request("v1/recording-groups", query: ["day": requestedDay, "limit": "30"])
             async let recapRequest = client.request("v1/recaps/\(requestedDay)")
             let (transcript, result) = try await (transcriptRequest, recapRequest)
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
-            transcripts = transcript["items"].array; total = transcript["total"].integer; recap = result; cached = false; save(key)
+            recordingGroups = transcript["items"].array; total = transcript["total"].integer; recap = result; cached = false; save(key)
         } catch {
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
             self.error = error.localizedDescription
@@ -214,20 +214,20 @@ struct DayView: View {
     }
 
     private func loadMore() async {
-        let key = cacheKey, requestedDay = dayKey, offset = transcripts.count, request = UUID()
+        let key = cacheKey, requestedDay = dayKey, offset = recordingGroups.count, request = UUID()
         dayRequest = request; loading = true; error = nil
         defer { if dayRequest == request { loading = false } }
         do {
-            let result = try await model.client().request("v1/transcripts", query: ["day": requestedDay, "limit": "100", "offset": "\(offset)"])
+            let result = try await model.client().request("v1/recording-groups", query: ["day": requestedDay, "limit": "30", "offset": "\(offset)"])
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
-            transcripts.append(contentsOf: result["items"].array); total = result["total"].integer; save(key)
+            recordingGroups.append(contentsOf: result["items"].array); total = result["total"].integer; save(key)
         } catch {
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
             self.error = error.localizedDescription
         }
     }
 
-    private func save(_ key: String) { LocalCache.save(.object(["recap": recap, "transcripts": .array(transcripts), "total": .number(Double(total))]), key: key) }
+    private func save(_ key: String) { LocalCache.save(.object(["recap": recap, "recording_groups": .array(recordingGroups), "total": .number(Double(total))]), key: key) }
 }
 
 /// Keep the complete day metadata so additional calendar annotations can share this model.
@@ -309,5 +309,76 @@ private struct MonthCalendar: View {
                 .background(key == diary.dayKey(day) ? Theme.accent.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain).disabled(key > todayKey)
             .accessibilityAddTraits(key == diary.dayKey(day) ? .isSelected : [])
+    }
+}
+
+
+struct TimelineRecordingGroups: View {
+    let groups: [JSONValue]
+    let day: String
+
+    var body: some View {
+        ForEach(Array(groups.enumerated()), id: \.element["id"].text) { _, group in
+            if group["recording_count"].integer == 1 {
+                SourceList(sources: group["sources"].array)
+            } else {
+                TimelineRecordingSession(group: group, day: day)
+            }
+        }
+    }
+}
+
+private struct TimelineRecordingSession: View {
+    let group: JSONValue
+    let day: String
+    @Environment(AppModel.self) private var model
+    @State private var expanded = false
+    @State private var requestID = UUID()
+    @State private var sources: [JSONValue] = []
+    @State private var total = 0
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            SourceList(sources: sources)
+            if busy { ProgressView("Loading recordings…") }
+            ErrorNote(message: error)
+            if error != nil || sources.count < total {
+                Button(error == nil ? "Load more recordings" : "Retry recordings") {
+                    Task { await load(reset: false) }
+                }.disabled(busy)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(group["title"].text).foregroundStyle(.primary)
+                Text("\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · \(group["recording_count"].integer) recordings")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(.vertical, 5)
+        }
+        .task(id: "\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(group["recording_count"].integer)") {
+            if expanded { await load(reset: true) }
+        }
+    }
+
+    private func time(_ value: String) -> String {
+        AppModel.date(value)?.formatted(date: .omitted, time: .shortened) ?? value
+    }
+
+    private func load(reset: Bool) async {
+        guard reset || !busy else { return }
+        let token = UUID(); requestID = token
+        busy = true; error = nil
+        defer { if requestID == token { busy = false } }
+        do {
+            let result = try await model.client().request("v1/recording-groups/\(group["id"].text)/sources", query: [
+                "day": day, "limit": "30", "offset": "\(reset ? 0 : sources.count)"
+            ])
+            guard !Task.isCancelled, requestID == token else { return }
+            let incoming = result["items"].array
+            let known = Set(reset ? [] : sources.map { $0["id"].text })
+            sources = (reset ? [] : sources) + incoming.filter { !known.contains($0["id"].text) }
+            total = result["total"].integer
+        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
     }
 }

@@ -192,6 +192,7 @@ class OmiAPI:
                 db.execute(
                     "INSERT INTO transcript_search VALUES(?,?)", (source["id"], source["text"])
                 )
+                self.store.refresh_source_matches(db, source["id"])
                 row = db.execute("SELECT * FROM audio WHERE id=?", (source["id"],)).fetchone()
                 items.append(public_source(dict(row)))
                 imported += 1

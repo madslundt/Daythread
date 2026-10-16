@@ -38,6 +38,9 @@ def public_source(row: dict) -> dict:
     )
     result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
     result["transcription_details"] = json.loads(row.get("transcription_details", "{}"))
+    topics = json.loads(row.get("topic_details") or "{}")
+    result["title"] = topics.get("title")
+    result["sections"] = topics.get("sections", [])
     for key in (
         "received_at",
         "processing_started_at",

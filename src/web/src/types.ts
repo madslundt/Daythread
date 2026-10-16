@@ -6,11 +6,18 @@ export type Source = {
   ended_at: string;
   state: string;
   text: string | null;
+  title?: string | null;
+  sections?: { title: string; start_offset: number; end_offset: number }[];
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;
   timestamp_basis?: string;
-  source_metadata?: { input_sample_rate?: number; archive_sample_rate?: number };
+  source_metadata?: {
+    input_sample_rate?: number; archive_sample_rate?: number;
+    recording_id?: string; part_index?: number; part_count?: number;
+    conversation_source_id?: string;
+    recording_started_at?: string; recording_ended_at?: string;
+  };
   audio_availability?: string;
   transcription_outcome?: string;
   transcription_details?: TranscriptionDetails;

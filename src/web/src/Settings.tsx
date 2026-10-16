@@ -1,8 +1,9 @@
+import { navigatePath, subscribeNavigation } from "./routing";
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
 import { OmiIntegration } from "./OmiIntegration";
-import { SettingsNavigation, sectionFromHash, matchesSettings, type SettingsSection } from "./SettingsNavigation";
+import { SettingsNavigation, sectionFromPath, matchesSettings, type SettingsSection } from "./SettingsNavigation";
 import "./settings.css";
 import { Configuration } from "./Configuration";
 import type { Settings as SettingsData } from "./types";
@@ -144,7 +145,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   const [connectionRevision, setConnectionRevision] = useState(0);
   const [configurationRevision, setConfigurationRevision] = useState(0);
   const [serverDirty, setServerDirty] = useState(false);
-  const [section, setSection] = useState<SettingsSection>(sectionFromHash);
+  const [section, setSection] = useState<SettingsSection>(sectionFromPath);
   const [search, setSearch] = useState("");
   const [serverMatches, setServerMatches] = useState<{ query: string; count: number }>();
   const query = search.trim();
@@ -153,12 +154,11 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
     setSearch("");
     setSaved(false);
     setSection(next);
-    window.location.hash = `settings/${next}`;
+    navigatePath(`/settings/${next}`);
   }
   useEffect(() => {
-    const sync = () => { setSection(sectionFromHash()); setSearch(""); };
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const sync = () => { setSection(sectionFromPath()); setSearch(""); };
+    return subscribeNavigation(sync);
   }, []);
   const show = (group: string, category: SettingsSection) => query
     ? matchesSettings(group, query) : section === category;

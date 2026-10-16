@@ -1,9 +1,11 @@
 import { profileScope } from "./profiles";
 import { useEffect, useId, useRef, useState } from "react";
-import { decodeRecording, encodeWav, recordingTimes, selectRecording, validateUploadReceipt, type RecordingTimeReference } from "./audioUpload";
+import { decodeRecording, encodeWav, recordingEndTime, recordingTimes, selectRecording, validateUploadReceipt, type RecordingTimeReference } from "./audioUpload";
 import { errorMessage, newId, request } from "./api";
-import { localDateTimeInput } from "./format";
+import { dateTimeLabel, localDateTimeInput } from "./format";
 import { Icon } from "./Icon";
+import type { Source } from "./types";
+import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
 
 export function UploadDialog({
@@ -22,6 +24,8 @@ export function UploadDialog({
     | {
         file: File;
         startedAt: string;
+        recordingId: string;
+        conversationSourceId: string;
         samples: Float32Array;
         ids: string[];
         completed: number;
@@ -29,13 +33,19 @@ export function UploadDialog({
     | undefined
   >(undefined);
   const [file, setFile] = useState<File>();
-  const [recordedAt, setRecordedAt] = useState(() => localDateTimeInput());
+  const [recordedAt, setRecordedAt] = useState("");
   const [timeReference, setTimeReference] = useState<RecordingTimeReference>("end");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number }>();
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [linkExisting, setLinkExisting] = useState(false);
+  const [conversationSourceId, setConversationSourceId] = useState("");
+  const [sourceQuery, setSourceQuery] = useState("");
+  const conversations = useResource<{ items: Source[] }>(linkExisting
+    ? `/v1/transcripts?limit=50&q=${encodeURIComponent(sourceQuery)}` : null);
+  const locked = busy || Boolean(plan.current?.completed);
   useEffect(() => {
     controller.current = new AbortController();
     const element = dialog.current;
@@ -49,10 +59,15 @@ export function UploadDialog({
     };
   }, []);
   function chooseRecording(files: ArrayLike<File>) {
-    if (busy) return;
+    if (locked) return;
     try {
       const selected = selectRecording(files);
       setFile(selected);
+      setRecordedAt(recordingEndTime(selected));
+      setTimeReference("end");
+      setLinkExisting(false);
+      setConversationSourceId("");
+      setSourceQuery("");
       plan.current = undefined;
       setError("");
     } catch (error) {
@@ -69,7 +84,7 @@ export function UploadDialog({
     try {
       const form = new FormData(event.currentTarget);
       const timestamp = String(form.get("recorded_at") ?? recordedAt);
-      const reference = form.get("time_reference") === "start" ? "start" : "end";
+      const reference = (form.get("time_reference") ?? timeReference) === "start" ? "start" : "end";
       setRecordedAt(timestamp);
       setTimeReference(reference);
       const samples = plan.current?.file === file
@@ -79,15 +94,20 @@ export function UploadDialog({
       scope.current.signal.throwIfAborted();
       const { startedAt: start } = recordingTimes(timestamp, samples.length, reference);
       const recordingStarted = start.toISOString();
+      const target = linkExisting ? conversationSourceId : "";
+      if (linkExisting && !target) throw new Error("Choose a source from the same conversation.");
       const chunkLength = 16000 * 120;
       if (
         !plan.current ||
         plan.current.file !== file ||
-        plan.current.startedAt !== recordingStarted
+        plan.current.startedAt !== recordingStarted ||
+        plan.current.conversationSourceId !== target
       ) {
         plan.current = {
           file,
           startedAt: recordingStarted,
+          recordingId: newId(),
+          conversationSourceId: target,
           samples,
           ids: Array.from(
             { length: Math.ceil(samples.length / chunkLength) },
@@ -108,7 +128,13 @@ export function UploadDialog({
           started_at: partStartedAt,
           source_kind: "manual_upload",
           source_id: file.name,
+          recording_id: current.recordingId,
+          part_index: String(i),
+          part_count: String(current.ids.length),
+          recording_started_at: current.startedAt,
+          recording_ended_at: new Date(start.getTime() + current.samples.length / 16).toISOString(),
         });
+        if (current.conversationSourceId) query.set("conversation_source_id", current.conversationSourceId);
         const receipt = await request(`/v1/audio/${current.ids[i]}?${query}`, {
           method: "PUT",
           signal: controller.current.signal,
@@ -169,13 +195,13 @@ export function UploadDialog({
           exported Voice Memos. Choose a file and when the recording stopped
           or began. Long recordings are uploaded in parts automatically.
         </p>
-        <AudioDropArea file={file} busy={busy} dragging={dragging}
+        <AudioDropArea file={file} busy={locked} dragging={dragging}
           onDragging={setDragging} onChoose={chooseRecording} />
         <p className="caption" id="audio-file-hint">WAV, M4A, MP3, OGG, FLAC, or another format supported by your browser. Up to 100 MB and two hours. Audio is converted locally before upload; keep this window open until it finishes.</p>
         <label htmlFor="capture-time-reference">Time refers to</label>
         <select id="capture-time-reference" name="time_reference" value={timeReference}
           onChange={(event) => { setTimeReference(event.target.value === "start" ? "start" : "end"); setError(""); }}
-          disabled={busy}>
+          disabled={locked}>
           <option value="end">Recording ended</option>
           <option value="start">Recording started</option>
         </select>
@@ -189,15 +215,44 @@ export function UploadDialog({
           onChange={(event) => { setRecordedAt(event.target.value); setError(""); }}
           max={localDateTimeInput()}
           required
-          disabled={busy}
+          disabled={locked}
         />
         <p className="caption" id="capture-time-hint">
           Time on this device:{" "}
           {Intl.DateTimeFormat().resolvedOptions().timeZone}.{" "}
           {timeReference === "end"
-            ? "Choose when the recording stopped. Its start time is calculated from the audio duration."
+            ? "The file’s last-modified date and time is used when available. Otherwise, enter when the recording stopped. You can correct this time. Its start time is calculated from the audio duration."
             : "Choose when the recording began. Its end time is calculated from the audio duration."}
         </p>
+        <label htmlFor="upload-conversation">Conversation</label>
+        <select id="upload-conversation" value={linkExisting ? "existing" : "auto"}
+          disabled={locked} onChange={(event) => setLinkExisting(event.target.value === "existing")}>
+          <option value="auto">Match automatically after transcription</option>
+          <option value="existing">Add another source to an existing conversation</option>
+        </select>
+        <p className="caption">Overlapping recordings with shared speech are combined in the recap.
+          Every source is kept so details missing from one recording can be included from another.</p>
+        {linkExisting ? <>
+          <label htmlFor="conversation-search">Find a conversation</label>
+          <input id="conversation-search" type="search" value={sourceQuery} disabled={locked}
+            placeholder="Search transcript text" onChange={(event) => setSourceQuery(event.target.value)} />
+          <label htmlFor="conversation-source">Source from the same conversation</label>
+          <select id="conversation-source" value={conversationSourceId} required disabled={locked}
+            onChange={(event) => setConversationSourceId(event.target.value)}>
+            <option value="">Choose a recording…</option>
+            {conversationSourceId && !conversations.data?.items.some((s) => s.id === conversationSourceId)
+              ? <option value={conversationSourceId}>Selected conversation</option> : null}
+            {conversations.data?.items.filter((s) => s.state !== "expired").map((source) =>
+              <option key={source.id} value={source.id}>
+                {dateTimeLabel(source.started_at, Intl.DateTimeFormat().resolvedOptions().timeZone)}
+                {" · "}{source.title || source.source_id || source.text?.slice(0, 80) || "Recording"}
+              </option>)}
+          </select>
+          {conversations.loading ? <p role="status" className="caption">Loading conversations…</p> : null}
+          {conversations.error ? <ErrorState message={conversations.error} retry={conversations.refresh} /> : null}
+          <p className="caption">Choose this when you know the sources belong together, including
+            recordings with different wording. Keep each recording’s original capture time.</p>
+        </> : null}
         {error ? <ErrorState message={error} /> : null}
         {busy ? <progress className="upload-progress" aria-label="Recording upload progress"
           value={uploadProgress?.completed} max={uploadProgress?.total ?? 1} /> : null}
@@ -207,7 +262,7 @@ export function UploadDialog({
           </p>
         ) : null}
         <div className="button-row">
-          <button className="button accent" disabled={!file || busy}>
+          <button className="button accent" disabled={!file || busy || (linkExisting && !conversationSourceId)}>
             <Icon name="upload" size={18} />
             {busy ? "Uploading…" : error && plan.current?.completed ? "Resume upload" : "Upload recording"}
           </button>

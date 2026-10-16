@@ -112,6 +112,8 @@ struct DecisionDetail: View {
     @State private var error: String?
     @State private var busy = false
     @State private var editor: DecisionEditSelection?
+    @State private var followUpActionActive = false
+    @State private var savedFollowUps: Set<String> = []
     @State private var predecessor: DecisionRecord?
     @State private var choosingPredecessor = false
     @State private var deleting = false
@@ -121,7 +123,15 @@ struct DecisionDetail: View {
     var body: some View {
         List {
             if let record {
-                Section { DecisionRow(record: record) }
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        DecisionRow(record: record)
+                        if record.canSuggestFollowUps {
+                            DecisionFollowUpLinks(record: record, saved: $savedFollowUps, nativeActionActive: $followUpActionActive)
+                                .id(model.archiveIdentity + model.archiveRevision + record.id + "\(record.version)")
+                        }
+                    }
+                }
                 if let content = record.content {
                     DecisionClaims(content: content)
                     if !content.owner_notes.isEmpty {
@@ -173,7 +183,7 @@ struct DecisionDetail: View {
             Button("Refresh record") { Task { await load() } }.disabled(busy)
         }
         .navigationTitle("Decision").navigationBarTitleDisplayMode(.inline)
-        .task(id: model.archiveIdentity + id) { await load() }
+        .task(id: model.archiveIdentity + model.archiveRevision + id) { await load() }
         .refreshable { await load() }
         .sheet(item: $editor, onDismiss: { Task { await load() } }) { selection in
             NavigationStack { DecisionEditor(record: selection.record, source: nil) }
@@ -183,9 +193,11 @@ struct DecisionDetail: View {
             Button("Delete decision", role: .destructive) { Task { await delete() } }
         }
         .onChange(of: phase) { _, value in
-            if value == .active { Task { await load() } }
-            else { requestID = UUID(); record = nil; predecessor = nil; editor = nil; choosingPredecessor = false }
+            if value == .active, !followUpActionActive { Task { await load() } }
+            else if value == .background { requestID = UUID(); record = nil; predecessor = nil; editor = nil; followUpActionActive = false; choosingPredecessor = false }
         }
+        .onChange(of: model.archiveIdentity) { _, _ in followUpActionActive = false; savedFollowUps = [] }
+        .onChange(of: model.archiveRevision) { _, _ in followUpActionActive = false; savedFollowUps = [] }
         .onDisappear { requestID = UUID(); record = nil; predecessor = nil }
     }
     private func load() async {
@@ -217,7 +229,7 @@ struct DecisionDetail: View {
         }
     }
     private func clearMutationState() {
-        record = nil; predecessor = nil; editor = nil; choosingPredecessor = false; deleting = false
+        record = nil; predecessor = nil; editor = nil; followUpActionActive = false; choosingPredecessor = false; deleting = false
     }
     private func delete() async {
         guard let record else { return }; busy = true; error = nil

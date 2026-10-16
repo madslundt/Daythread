@@ -24,7 +24,11 @@ from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
 from .recap_store import SCHEMA as RECAP_SCHEMA
 from .recap_store import RecapStore
+from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
+from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
+from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
+from .source_matching import SourceMatchingStore, UploadGrouping
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
@@ -62,6 +66,7 @@ class Store(
     ImportanceStore,
     TranslationStore,
     RecapStore,
+    SourceMatchingStore,
 ):
     def __init__(self, root: Path):
         self.root = root
@@ -88,6 +93,8 @@ class Store(
                 db.execute(
                     "ALTER TABLE audio ADD COLUMN transcription_details TEXT NOT NULL DEFAULT '{}'"
                 )
+            if "topic_details" not in audio_columns:
+                db.execute("ALTER TABLE audio ADD COLUMN topic_details TEXT NOT NULL DEFAULT '{}'")
             if "audio_available" not in audio_columns:
                 db.execute(
                     "ALTER TABLE audio ADD COLUMN audio_available INTEGER NOT NULL DEFAULT 1"
@@ -141,6 +148,21 @@ class Store(
             db.executescript(LABEL_SCHEMA)
             db.executescript(IMPORTANCE_SCHEMA)
             db.executescript(RECAP_SCHEMA)
+            db.executescript(RECORDING_TOPICS_SCHEMA)
+            db.executescript(SOURCE_MATCHING_SCHEMA)
+            db.executescript(SOURCE_EVIDENCE_SCHEMA)
+            db.execute(
+                "INSERT OR IGNORE INTO upload_parts "
+                "SELECT json_extract(source_metadata,'$.recording_id'),"
+                "json_extract(source_metadata,'$.part_index'),"
+                "json_extract(source_metadata,'$.part_count') FROM audio "
+                "WHERE json_extract(source_metadata,'$.recording_id') IS NOT NULL"
+            )
+            for row in db.execute(
+                "SELECT a.id FROM audio a LEFT JOIN source_match_checked m ON m.id=a.id "
+                "WHERE m.id IS NULL OR m.version!=a.source_version"
+            ).fetchall():
+                self.refresh_source_matches(db, row["id"])
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
@@ -177,19 +199,31 @@ class Store(
     def ingest(
         self, audio_id: UUID, device: str, start: datetime, data: bytes, duration: float,
         *, source_kind: str = "", source_id: str = "",
+        source_metadata: dict | None = None,
     ) -> dict:
         key = str(audio_id)
         digest = hashlib.sha256(data).hexdigest()
         at = stamp(start)
         end = stamp(start + timedelta(seconds=duration))
+        metadata = UploadGrouping.model_validate(source_metadata or {}).model_dump(
+            exclude_none=True, mode="json"
+        )
+        encoded_metadata = json.dumps(metadata, sort_keys=True)
+        if metadata.get("recording_started_at") and not (
+            datetime.fromisoformat(metadata["recording_started_at"])
+            <= start + timedelta(milliseconds=1)
+            and datetime.fromisoformat(metadata["recording_ended_at"])
+            >= start + timedelta(seconds=duration, milliseconds=-1)
+        ):
+            raise ValueError("Audio part must fall within its recording bounds")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if old:
                 if (
                     old["digest"], old["device_id"], old["started_at"],
-                    old["source_kind"], old["source_id"],
-                ) != (digest, device, at, source_kind, source_id):
+                    old["source_kind"], old["source_id"], json.loads(old["source_metadata"]),
+                ) != (digest, device, at, source_kind, source_id, metadata):
                     raise ValueError("Audio ID already exists with different content or metadata")
                 # A matching resend can repair a missing file, but never reverse retention.
                 if old["audio_available"] and not Path(old["path"]).is_file():
@@ -206,6 +240,27 @@ class Store(
                         )
                     return dict(db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone())
                 return dict(old)
+            target = metadata.get("conversation_source_id")
+            if target and not db.execute(
+                "SELECT 1 FROM audio WHERE id=? AND state!='expired'", (target,),
+            ).fetchone():
+                raise ValueError("The selected conversation source is no longer available")
+            if metadata.get("recording_id"):
+                for other in db.execute(
+                    "SELECT * FROM audio WHERE json_extract(source_metadata,'$.recording_id')=?",
+                    (metadata["recording_id"],),
+                ):
+                    value = json.loads(other["source_metadata"])
+                    if (other["device_id"] != device or other["source_id"] != source_id
+                            or value["part_count"] != metadata["part_count"]
+                            or value.get("conversation_source_id") != target
+                            or value.get("recording_started_at") !=
+                            metadata.get("recording_started_at")
+                            or value.get("recording_ended_at") != metadata.get("recording_ended_at")
+                            or (value["part_index"] == metadata["part_index"] and
+                                (other["digest"], other["started_at"], other["ended_at"]) !=
+                                (digest, at, end))):
+                        raise ValueError("Recording part conflicts with previously uploaded parts")
             # Each ID is a validated UUID, never a client-supplied filename.
             path = self.audio_dir / f"{key}.wav"
             with path.open("wb") as target:
@@ -214,9 +269,15 @@ class Store(
                 os.fsync(target.fileno())
             db.execute(
                 "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at,"
-                "source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?)",
-                (key, device, at, end, digest, str(path), stamp(utc_now()), source_kind, source_id),
+                "source_kind,source_id,source_metadata) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (key, device, at, end, digest, str(path), stamp(utc_now()), source_kind, source_id,
+                 encoded_metadata),
             )
+            if metadata.get("recording_id"):
+                db.execute(
+                    "INSERT OR IGNORE INTO upload_parts VALUES(?,?,?)",
+                    (metadata["recording_id"], metadata["part_index"], metadata["part_count"]),
+                )
             return dict(db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone())
 
     def recover(self) -> None:
@@ -271,6 +332,7 @@ class Store(
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search(id,text) VALUES(?,?)", (audio_id, text))
+            self.refresh_source_matches(db, audio_id)
 
     def retry(self, row: dict, error: str, blocked: bool = False) -> None:
         delay = min(300, 2 ** min(row["attempts"] + 1, 9))
@@ -336,7 +398,9 @@ class Store(
         with self.connect() as db:
             # Count and selected IDs must describe the same snapshot during capture/corrections.
             db.execute("BEGIN")
-            total = db.execute("SELECT count(*) FROM audio WHERE " + where, args).fetchone()[0]
+            total = db.execute(
+                "SELECT count(*) FROM canonical_audio WHERE " + where, args
+            ).fetchone()[0]
             if not total:
                 return [], 0
             size = min(limit, total)
@@ -347,7 +411,7 @@ class Store(
             )
             rows = db.execute(
                 "WITH ranked AS (SELECT id, row_number() OVER (ORDER BY started_at,id)-1 AS n "
-                "FROM audio WHERE " + where + ") "
+                "FROM canonical_audio WHERE " + where + ") "
                 "SELECT a.* FROM ranked r JOIN audio a ON a.id=r.id WHERE r.n IN ("
                 + ",".join("?" for _ in offsets)
                 + ") ORDER BY a.started_at,a.id",
@@ -380,7 +444,7 @@ class Store(
         with self.connect() as db:
             rows = db.execute(
                 "SELECT a.*,highlight(transcript_search,1,?,?) AS matched_text "
-                "FROM transcript_search f JOIN audio a ON a.id=f.id "
+                "FROM transcript_search f JOIN canonical_audio a ON a.id=f.id "
                 "WHERE transcript_search MATCH ?"
                 + scope
                 + " AND a.state='done' ORDER BY bm25(transcript_search),a.started_at,a.id LIMIT ?",

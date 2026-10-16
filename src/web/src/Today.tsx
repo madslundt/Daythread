@@ -247,6 +247,7 @@ export function Today({
       <div className="day-main">
         <RecapSection key={day} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} compact />
         <TranscriptTimeline
+          key={day}
           day={day}
           timezone={timezone}
           timeline={timeline}
@@ -425,7 +426,7 @@ function TranscriptTimeline({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search this day’s transcripts"
+            placeholder="Search transcripts"
             aria-label="Search this day's transcripts"
           />
           <button className="text-button" type="submit">
@@ -451,6 +452,7 @@ function TranscriptTimeline({
       ) : sources.length ? (
         <>
           <SourceList
+            compact
             sources={sources}
             timezone={timezone}
             onCorrect={resource.refresh}

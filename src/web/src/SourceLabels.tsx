@@ -76,7 +76,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
         );
         return (
           <div className="label-link" key={link.id}>
-            <a href={`#labels/${link.entity_id}`}>{entity?.name || "Label"}</a>
+            <a href={`/labels/${link.entity_id}`}>{entity?.name || "Label"}</a>
             <span>
               {meanings[link.relation]}
               {link.needs_review ? " · Needs review" : ""}
@@ -189,7 +189,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
           </button>
         </>
       ) : null}
-      <a className="text-link" href="#labels">
+      <a className="text-link" href="/labels">
         Create or manage labels and cited notes
       </a>
       {mutation.error || state.error || directory.error ? (

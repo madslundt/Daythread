@@ -306,3 +306,31 @@ def test_blocked_count_describes_excluded_audio_and_retention_preserves_original
     store.apply_retention(0, 1, now=AT + timedelta(days=2))
     with store.connect() as db:
         assert db.execute("SELECT count(*) FROM recap_summaries").fetchone()[0] == 0
+
+
+def test_previous_day_legacy_web_upload_can_generate_and_reload_recap(client):
+    # The original web uploader sent device_id=web without source_kind.
+    previous = AT - timedelta(days=1)
+    key = str(uuid4())
+    receipt = client.put(
+        f"/v1/audio/{key}",
+        params={"device_id": "web", "started_at": stamp(previous)},
+        content=wav(), headers={"Content-Type": "audio/wav"},
+    )
+    assert receipt.status_code == 200
+    pending = client.post("/v1/recaps/2026-10-15").json()
+    assert pending["summary"] is None and pending["deferred_sources"] == 1
+    client.app.state.memory.store.complete(key, "Send the project notes on Friday")
+    current = insert(client, text="Today's ongoing conversation")
+
+    result = client.post("/v1/recaps/2026-10-15").json()
+    assert result["summary"] and key in result["summary"]
+    assert {source["id"] for source in result["sources"]} == {key}
+    assert result["deferred_conversations"] == 0
+    assert current not in result["summary"]
+    saved = client.get("/v1/recaps/2026-10-15").json()
+    assert saved["summary"] == result["summary"] and not saved["stale"]
+    assert client.get("/v1/recaps/2026-10-16").json()["deferred_conversations"] == 1
+    # Classification must not rewrite the original upload/retry metadata.
+    source = client.app.state.memory.store.get_audio(key)
+    assert source["device_id"] == "web" and source["source_kind"] == ""

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from .conversation_state import Conversation, activity, conversations
+from .conversation_state import Conversation, activity, conversations, manual_upload
 from .domain import EvidenceChanged, stamp
 from .inference import InferenceError, validate_citations
 from .voice_activity import analyze_voice
@@ -18,7 +18,7 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = "completed-conversations-1"
+PROMPT_VERSION = "completed-conversations-2-multiple-sources"
 NO_CONTENT = "[[NO_RECAP_CONTENT]]"
 BOUNDARY_NOTE = (
     "Includes completed conversations and finished uploads. Ongoing or uncertain conversations "
@@ -113,7 +113,7 @@ class Recaps:
         """Backfill older recordings; new recordings are observed by the STT worker."""
         store = self.memory.store
         for row in store.recap_snapshot()["rows"]:
-            if (row["source_kind"] in {"manual_upload", "omi_api"}
+            if (manual_upload(row) or row["source_kind"] == "omi_api"
                     or row["state"] != "done" or activity(row)):
                 continue
             if row["audio_available"] and Path(row["path"]).is_file():
@@ -130,7 +130,7 @@ class Recaps:
         ])
         sources = [public_source(rows[r["id"]]) for r in group.sources if r["id"] in rows]
         for source in sources:
-            manual = source["source_kind"] == "manual_upload"
+            manual = manual_upload(source)
             source["important"] = not manual and any(
                 source["started_at"] < mark["context_end"]
                 and source["ended_at"] > mark["context_start"] for mark in hints["markers"]
@@ -161,6 +161,9 @@ class Recaps:
                 "agreements and decisions. Omit fillers, unintelligible fragments and isolated "
                 "words without supported meaning. Do not infer events from background noise. "
                 f"If nothing useful is supported, return exactly {NO_CONTENT} and nothing else. "
+                "Multiple sources can record the same meeting. Describe shared points once, "
+                "retain every unique detail from each source including its beginning and end, "
+                "and disclose conflicting readings instead of guessing. "
                 "Otherwise preserve original source UUID citations for every useful point",
             )
             summary = validate_citations(summary, sources).strip()

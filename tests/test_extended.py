@@ -310,6 +310,11 @@ def test_spa_assets_and_deep_links_do_not_capture_missing_api_routes(config, tmp
     with TestClient(create_app(config)) as client:
         assert client.get("/").status_code == 200
         assert client.get("/diary/2026-10-15").text == "<html>Omi application</html>"
+        for path in ("/today", "/today/2026-10-15", "/settings/connections", "/labels/person-id"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.text == "<html>Omi application</html>"
+            assert response.headers["cache-control"] == "no-cache"
         assert client.get("/app.js").text == "window.omi = true"
         assert client.get("/v1/unknown").status_code == 404
         assert client.get("/missing.js").status_code == 404

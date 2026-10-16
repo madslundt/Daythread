@@ -7,7 +7,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
+from .decision_calendar import export_calendar
 from .decision_export import day_bounds
+from .decision_followups import CalendarExportRequest, FollowUpRequest, suggest_followups
 from .decision_service import extract
 from .decisions import DecisionCreate, DecisionEvent, ExtractionRequest
 from .service import Memory
@@ -66,6 +68,21 @@ def decision_routes(memory: Callable[[], Memory]) -> APIRouter:
     def delete(key: UUID, response: Response, expected_version: int = Query(ge=1)):
         response.headers["Cache-Control"] = "no-store"
         return call(memory().store.delete_decision, str(key), expected_version)
+
+    @router.post("/decisions/{key}/suggestions")
+    async def suggestions(key: UUID, body: FollowUpRequest, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return await suggest_followups(memory(), str(key), body)
+        except KeyError as exc:
+            raise HTTPException(404, "Decision or source not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/decisions/{key}/calendar-export")
+    def calendar_export(key: UUID, body: CalendarExportRequest, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return call(export_calendar, memory(), str(key), body)
 
     @router.post("/decision-extractions")
     async def extraction(body: ExtractionRequest, response: Response):

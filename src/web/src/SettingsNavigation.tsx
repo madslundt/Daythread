@@ -9,8 +9,8 @@ const categories: { id: SettingsSection; label: string; detail: string; icon: Ic
 ];
 export type SettingsSection = "general" | "gestures" | "storage" | "connections" | "server";
 
-export function sectionFromHash(): SettingsSection {
-  const value = window.location.hash.split("/")[1];
+export function sectionFromPath(): SettingsSection {
+  const value = window.location.pathname.split("/")[2];
   return categories.find((category) => category.id === value)?.id || "general";
 }
 
@@ -54,7 +54,7 @@ export function SettingsNavigation({ section, search, onSearch, onSelect, prefer
       </select>
     </label>
     <nav aria-label="Settings categories">
-      {categories.map((category) => <a key={category.id} href={`#settings/${category.id}`}
+      {categories.map((category) => <a key={category.id} href={`/settings/${category.id}`}
         aria-current={!search.trim() && section === category.id ? "page" : undefined}
         onClick={(event) => { event.preventDefault(); onSelect(category.id); }}>
         <Icon name={category.icon} size={19} />

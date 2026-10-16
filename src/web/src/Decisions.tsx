@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage, newId, post, request } from "./api";
 import { DecisionEvidence } from "./DecisionEvidence";
 import { DecisionEditor } from "./DecisionEditor";
+import { DecisionFollowups } from "./DecisionFollowups";
 import type { Decision, DecisionClaim, DecisionContent, DecisionExtraction, DecisionList } from "./decisionModels";
 import { dateTimeLabel } from "./format";
 import { ErrorState, Loading, Notice } from "./UI";
@@ -24,16 +25,16 @@ function useDecisions<T>(path: string | null) {
   return resource;
 }
 
-function Claim({ label, claim, historical = false, opposing = false }: { label: string; claim: DecisionClaim | null; historical?: boolean; opposing?: boolean }) {
+function Claim({ label, claim, historical = false, opposing = false, actions }: { label: string; claim: DecisionClaim | null; historical?: boolean; opposing?: boolean; actions?: ReactNode }) {
   return <div className="decision-claim"><h4>{label}</h4>
-    <p>{claim?.text || "Not stated"}</p>
+    <p>{claim?.text || "Not stated"}{actions}</p>
     {claim?.evidence.map((anchor, index) => <DecisionEvidence key={index} anchor={anchor} historical={historical} opposing={opposing} />)}
   </div>;
 }
 
-function Contents({ content, historical = false }: { content: DecisionContent; historical?: boolean }) {
+function Contents({ content, historical = false, actions }: { content: DecisionContent; historical?: boolean; actions?: ReactNode }) {
   return <>
-    <Claim label="Choice" claim={content.choice} historical={historical} />
+    <Claim label="Choice" claim={content.choice} historical={historical} actions={actions} />
     <Claim label="Context" claim={content.context} historical={historical} />
     <Claim label="Rationale" claim={content.rationale} historical={historical} />
     {content.alternatives.map((claim, index) => <Claim key={index} label={`Explicitly discussed alternative ${index + 1}`} claim={claim} historical={historical} />)}
@@ -107,7 +108,7 @@ export function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: stri
       {decision.evidence_condition !== "current" ? <Notice tone="error">Evidence is {decision.evidence_condition}. {decision.evidence_condition === "stale" ? "Review corrected transcripts and explicitly reattach evidence before confirming again." : "Resolve the evidence issue before confirming."}</Notice> : null}
       {decision.predecessor_id ? <button className="text-button" onClick={() => onNavigate(decision.predecessor_id!)}>View earlier choice</button> : null}
       {decision.successor_id ? <button className="text-button" onClick={() => onNavigate(decision.successor_id!)}>View revised choice</button> : null}
-      {decision.content ? <Contents content={decision.content} historical={decision.evidence_condition !== "current"} /> : <p>Content removed with its source evidence.</p>}
+      {decision.content ? <Contents content={decision.content} historical={decision.evidence_condition !== "current"} actions={<DecisionFollowups key={`${decision.id}:${decision.version}`} decision={decision} timezone={timezone} />} /> : <p>Content removed with its source evidence.</p>}
       {decision.content ? <>
         <p className="caption">Confirmation means this record accurately represents the evidence. It does not turn a tentative choice into a final one.</p>
         <div className="button-row">

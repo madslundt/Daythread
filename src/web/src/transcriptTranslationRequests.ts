@@ -3,6 +3,7 @@ import { profileScope } from "./profiles";
 
 export type TranscriptTranslationData = {
   language: string;
+  already_in_target_language: boolean;
   translation: {
     text: string;
     language: string;

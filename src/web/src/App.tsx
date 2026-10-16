@@ -1,6 +1,6 @@
 import { savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
 import { ProfileSelector } from "./ProfileSelector";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
 import { Labels } from "./Labels";
 import { Chat } from "./Chat";
@@ -15,14 +15,10 @@ import { errorMessage, newId, post } from "./api";
 import { localDay, remainingCooldown, timeLabel } from "./format";
 import { Icon } from "./Icon";
 import { Navigation, pages, type Page } from "./Navigation";
+import { dayFromPath, isDayPage, pageFromPath, pagePath, navigatePath, subscribeNavigation } from "./routing";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
-
-function pageFromHash(): Page {
-  const key = window.location.hash.slice(1).split("/")[0];
-  return pages.some((page) => page.id === key) ? (key as Page) : "today";
-}
 
 export default function App() {
   const directory = useResource<ProfileDirectory>("/v1/profiles");
@@ -60,9 +56,12 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   const timeline = useResource<Timeline>("/v1/timeline", 15_000);
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const timezone = status.data?.timezone || browserTimezone;
-  const [page, setPage] = useState<Page>(pageFromHash);
-  const [day, setDay] = useState(() => localDay(browserTimezone));
-  const daySelected = useRef(false);
+  const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname));
+  // An absent date means Today; resolve it in the configured timezone on every render.
+  const [selectedDay, setSelectedDay] = useState(() => dayFromPath(window.location.pathname));
+  const today = localDay(timezone);
+  const day = selectedDay ?? today;
+  const hrefForPage = (next: Page) => pagePath(next, selectedDay);
   const [prepOpen, setPrepOpen] = useState(false);
   const [prepDirty, setPrepDirty] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -75,14 +74,13 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   }>();
   const [notice, setNotice] = useState("");
   useEffect(() => {
-    const sync = () => setPage(pageFromHash());
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const sync = () => {
+      const next = pageFromPath(window.location.pathname);
+      setPage(next);
+      if (isDayPage(next)) setSelectedDay(dayFromPath(window.location.pathname));
+    };
+    return subscribeNavigation(sync);
   }, []);
-  useEffect(() => {
-    if (status.data?.timezone && !daySelected.current)
-      setDay(localDay(status.data.timezone));
-  }, [status.data?.timezone]);
   useEffect(() => {
     const update = () => {
       status.refresh();
@@ -96,12 +94,13 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
     setPrepOpen(false);
     setChatIntent(undefined);
     setPage(next);
-    window.location.hash = next;
+    navigatePath(hrefForPage(next));
   }
   function selectDay(value: string) {
     if (value) {
-      daySelected.current = true;
-      setDay(value);
+      const selection = value === today ? undefined : value;
+      setSelectedDay(selection);
+      navigatePath(pagePath(page, selection));
     }
   }
   function uploaded() {
@@ -134,13 +133,13 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
       <aside className="sidebar">
         <a
           className="brand"
-          href="#today"
+          href={hrefForPage("today")}
           onClick={(event) => { event.preventDefault(); navigate("today"); }}
           aria-label="omi home"
         >
           omi<span className="brand-caption">A little more remembered.</span>
         </a>
-        <Navigation page={page} navigate={navigate} />
+        <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} />
         <div className="sidebar-footer">
           {profileSelector}
           <div className="backend-indicator">
@@ -160,7 +159,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           <div className="topbar">
             <a
               className="brand mobile-brand"
-              href="#today"
+              href={hrefForPage("today")}
               onClick={(event) => { event.preventDefault(); navigate("today"); }}
             >
               omi
@@ -168,7 +167,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
             {showDate ? (
               <DateNavigator
                 day={day}
-                today={localDay(timezone)}
+                today={today}
                 onDay={selectDay}
               />
             ) : (
@@ -259,7 +258,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           />
         )}
       </main>
-      <Navigation page={page} navigate={navigate} mobile profileSelector={profileSelector} />
+      <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} mobile profileSelector={profileSelector} />
       {uploadOpen ? (
         <UploadDialog
           onClose={() => setUploadOpen(false)}

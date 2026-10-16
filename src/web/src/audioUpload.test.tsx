@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { recordingTimes, selectRecording, validateUploadReceipt } from "./audioUpload";
+import { recordingEndTime, recordingTimes, selectRecording, validateUploadReceipt } from "./audioUpload";
 import { localDateTimeInput } from "./format";
 import { SourceList } from "./SourceList";
 import { AudioDropArea, UploadDialog } from "./UploadDialog";
@@ -11,7 +11,7 @@ const expected = {
 };
 
 describe("recordings chosen or dropped from another device", () => {
-  it("defaults the selected timestamp to when recording stopped", () => {
+  it("requires an explicit timestamp until a file provides one", () => {
     vi.useFakeTimers();
     try {
       const now = new Date("2026-10-16T12:34:56Z");
@@ -19,8 +19,13 @@ describe("recordings chosen or dropped from another device", () => {
       const html = renderToStaticMarkup(<UploadDialog onClose={() => {}} onUploaded={() => {}} />);
       expect(html).toContain('<option value="end" selected="">Recording ended</option>');
       expect(html).toContain('name="recorded_at"');
-      expect(html).toContain(`value="${localDateTimeInput(now)}"`);
+      expect(html.match(/<input[^>]+name="recorded_at"[^>]*>/)?.[0]).toContain('value=""');
+      expect(html.match(/<input[^>]+name="recorded_at"[^>]*>/)?.[0]).toContain('required=""');
+      expect(html).toContain("last-modified");
       expect(html).toContain("when the recording stopped");
+      expect(html).toContain('<option value="auto" selected="">Match automatically after transcription</option>');
+      expect(html).toContain("Add another source to an existing conversation");
+      expect(html).toContain("Every source is kept");
     } finally { vi.useRealTimers(); }
   });
   it("accepts a dropped recording and prevents the browser from navigating to the file", () => {
@@ -75,6 +80,20 @@ describe("recordings chosen or dropped from another device", () => {
 describe("manual recording start and end times", () => {
   const now = Date.parse("2026-10-16T12:00:00Z");
   const minutes = (count: number) => count * 60 * 16000;
+
+  it("prefills the recording end from file metadata in local time", () => {
+    const end = new Date("2026-10-15T23:45:00Z");
+    const file = new File(["audio"], "memo.m4a", { lastModified: end.getTime() });
+    expect(recordingEndTime(file, now)).toBe(localDateTimeInput(end));
+  });
+  it.each([undefined, 0, -1, NaN, Infinity, 8.64e15 + 1, now + 60_000])(
+    "leaves the timestamp empty for unavailable or invalid metadata: %s", (lastModified) => {
+      expect(recordingEndTime({ lastModified }, now)).toBe("");
+    },
+  );
+  it("requires a date and time when file metadata is unavailable", () => {
+    expect(() => recordingTimes("", minutes(20), "end", now)).toThrow("valid recording date");
+  });
 
   it("allows a recording ending now by subtracting its full duration", () => {
     const bounds = recordingTimes(new Date(now).toISOString(), minutes(45), undefined, now);

@@ -239,7 +239,7 @@ class SemanticStore:
         heap = []
         with self.connect() as db:
             rows = db.execute(
-                "SELECT p.* FROM retrieval_passages p JOIN audio a ON a.id=p.audio_id "
+                "SELECT p.* FROM retrieval_passages p JOIN canonical_audio a ON a.id=p.audio_id "
                 "AND a.transcript_version=p.version JOIN embedding_sets s ON s.id=p.set_id "
                 "WHERE p.set_id=? AND s.active=1 AND p.vector IS NOT NULL AND a.state='done'"
                 + scope

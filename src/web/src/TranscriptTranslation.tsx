@@ -48,14 +48,14 @@ export function TranscriptTranslation({ sourceId, original }: { sourceId: string
   }, [requests]);
 
   async function translate() {
-    if (loading || generating || !data || data.language === "auto") return;
+    if (loading || generating || !data || data.language === "auto" || data.already_in_target_language) return;
     setGenerating(true);
     setError("");
     try {
       const result = await requests.run("POST");
       if (!result) return;
       setData(result);
-      setTranslated(Boolean(result.translation));
+      setTranslated(Boolean(result.translation) && !result.already_in_target_language);
       setGenerating(false);
     } catch (failure) {
       setError(errorMessage(failure));
@@ -81,10 +81,11 @@ export function TranscriptTranslationView({ original, data, translated, loading,
   onSelect: (translated: boolean) => void;
   onRetry: () => void;
 }) {
-  const translation = data?.translation;
+  const alreadyInTargetLanguage = !loading && data?.already_in_target_language;
+  const translation = !loading && !alreadyInTargetLanguage ? data?.translation : null;
   const language = data && data.language !== "auto" ? translationLanguageLabel(data.language) : "";
   return <div>
-    <div className="button-row" aria-label="Transcript language">
+    {!loading && data && !alreadyInTargetLanguage ? <div className="button-row" aria-label="Transcript language">
       {translation ? <>
         <button type="button" className="button small" aria-pressed={!translated} onClick={() => onSelect(false)}>Original</button>
         <button type="button" className="button small" aria-pressed={translated} onClick={() => onSelect(true)}>{language} translation</button>
@@ -92,9 +93,11 @@ export function TranscriptTranslationView({ original, data, translated, loading,
         disabled={loading || generating || !data || data.language === "auto"}>
         {generating ? "Translating…" : language ? `Translate to ${language}` : "Translate to summary language"}
       </button>}
-    </div>
-    {data?.language === "auto" ? <p className="caption">Choose a summary language in <a href="#settings/general">Settings</a> to translate this transcript.</p>
-      : <p className="caption" role="status">{loading ? "Checking for a saved translation…" : generating ? "Translating. Your original transcript is kept." : translated && translation ? "Showing a generated translation. Corrections apply to the original transcript." : "Original transcript · languages detected automatically. Translation is generated only when you click Translate."}</p>}
+    </div> : null}
+    {loading ? <p className="caption" role="status">Checking transcript language and saved translation…</p>
+      : alreadyInTargetLanguage ? <p className="caption">Transcript is already in {language}.</p>
+      : data?.language === "auto" ? <p className="caption">Choose a summary language in <a href="/settings/general">Settings</a> to translate this transcript.</p>
+      : <p className="caption" role="status">{generating ? "Translating. Your original transcript is kept." : translated && translation ? "Showing a generated translation. Corrections apply to the original transcript." : `Original transcript · languages detected automatically.${data ? " Translation is generated only when you click Translate." : ""}`}</p>}
     <p className="transcript-text" lang={translated && translation ? translation.language : undefined}>
       {translated && translation ? translation.text : original}
     </p>

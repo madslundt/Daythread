@@ -98,6 +98,15 @@ The JSON chat route remains available. Web/native clients use a separate NDJSON 
 
 ## Summaries and knowledge
 
+Completed nonempty transcripts receive a recording title and consecutive topic sections from the
+local summary model. A separate background consumer backfills existing recordings and retries
+failed analysis without repeating transcription. Exact, unique transcript phrases anchor section
+boundaries; stored character spans cover the full original text. These are topic boundaries in
+text, not measured audio times or conversation closure evidence. The source UUID, capture bounds,
+audio and canonical transcript remain unchanged. Analysis is cached by prompt/model/language;
+correction and transcript expiry clear it, and conditional publication rejects evidence changes
+during generation. Today shows the generated title and expandable sections within each recording.
+
 Rewind returns original chunk evidence, pending transcription count, missing-audio intervals, optional generated summary, and clipped audio separately. Speech timestamps are chunk-level by default; compatible HTTP STT providers can supply segment timestamps when enabled. Recall-first processing skips only exact digital zero by default, retaining quiet/overlapping signals for STT; the old RMS floor requires an explicit opt-out. Optional speaker diarization processes complete meeting/conversation audio in a separate local Community-1 service. SQLite stores anonymous turns, user-assigned names and correction events separately from canonical transcripts; version checks reject concurrent edits and stale evidence. Playback joins original intervals for one speaker. Source deletion/transcript expiry removes dependent speaker metadata, and profiles retain separate assignments. Optional remembered voices use only explicit confirmed enrollment, clean speech embeddings and immutable weights/code fingerprints. Suggestions require two independent confirmed conversations and an exact-gallery held-out evaluation report, then user confirmation. Audio retention, deletion and corrections remove dependent examples; duplicate source evidence cannot count twice. Automatic naming and simultaneous-speaker separation remain unimplemented.
 
 STT requests use pieces bounded by `stt_chunk_seconds` (default 30, configurable from 1–120 seconds) to fit speech providers whose duration limit is shorter than the archive's 120-second upload limit. The setting applies live to subsequent processing and must fit every configured speech route; audio limits are not automatically inferred from gateway model metadata. The original recording, source ID and capture bounds stay intact; text is joined in order and segment timestamps are offset into the original recording. All pieces must succeed before publishing a transcript, and all requests share the recording's inference deadline.

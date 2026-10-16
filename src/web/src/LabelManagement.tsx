@@ -1,3 +1,4 @@
+import { navigatePath } from "./routing";
 import { useState } from "react";
 import { useResource } from "./useResource";
 import { errorMessage, newId, request } from "./api";
@@ -40,7 +41,7 @@ export function EntityManagement({
     target ? `/v1/labels/${target}/timeline?limit=200` : null,
   );
   const mutation = useLabelMutation((action) => {
-    if (action === "entity.delete") window.location.hash = "labels";
+    if (action === "entity.delete") navigatePath("/labels");
     else onSaved();
   });
   async function refreshVersion() {

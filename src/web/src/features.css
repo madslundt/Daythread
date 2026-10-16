@@ -283,6 +283,12 @@
 }
 
 .decision-form-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.decision-action-links { margin-left: .55em; font-size: .92em; white-space: normal; }
+.decision-inline-action { display: inline; }
+.decision-inline-action + .decision-inline-action::before { content: " · "; color: var(--muted); }
+.decision-action-link { display: inline; padding: 2px 0; border: 0; border-radius: 2px; background: transparent; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.decision-action-link:disabled { cursor: default; }
+.decision-link-error { margin-left: .4em; color: var(--error-ink); font-size: 12px; }
 .inbox-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 20px 0; }
 .inbox-controls label, .inbox-editor label { display: grid; gap: 7px; font-size: 13px; }
 .inbox-controls input, .inbox-controls select { max-width: 100%; }

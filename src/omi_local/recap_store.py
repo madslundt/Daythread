@@ -32,6 +32,7 @@ class RecapStore:
             "rows": [dict(row) for row in db.execute(
                 "SELECT a.id,a.device_id,a.started_at,a.ended_at,a.state,a.source_kind,"
                 "a.source_id,a.source_version,a.transcript_version,a.digest,a.path,a.audio_available,"
+                "a.source_metadata,"
                 "length(trim(coalesce(a.text,'')))>0 AS text,"
                 "json_object('voice_activity',json_extract(a.transcription_details,"
                 "'$.voice_activity')) AS transcription_details,v.activity AS recap_activity "
@@ -41,6 +42,8 @@ class RecapStore:
             )],
             "events": [dict(row) for row in db.execute("SELECT * FROM events")],
             "gaps": [dict(row) for row in db.execute("SELECT * FROM capture_gaps")],
+            "source_matches": [dict(row) for row in db.execute("SELECT * FROM source_matches")],
+            "upload_parts": [dict(row) for row in db.execute("SELECT * FROM upload_parts")],
         }
 
     def save_recap_activity(self, source_id: str, digest: str, activity: dict) -> None:

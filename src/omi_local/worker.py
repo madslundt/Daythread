@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from contextlib import suppress
 from datetime import date, datetime, timedelta
@@ -8,7 +9,9 @@ from zoneinfo import ZoneInfo
 from .audio import contains_speech_energy
 from .domain import utc_now
 from .inbox_jobs import InboxJobs
+from .recording_topics import run_topics
 from .service import Memory
+from .source_matching import recognition_contract
 from .voice_activity import analyze_voice
 
 logger = logging.getLogger(__name__)
@@ -19,6 +22,15 @@ async def process_one(memory: Memory) -> bool:
     if row is None:
         return False
     try:
+        contract = recognition_contract(memory.settings)
+        duplicate = memory.store.reusable_transcription(row, contract)
+        if duplicate:
+            memory.store.complete(
+                row["id"], duplicate["text"], json.loads(duplicate["segments"]), claimed=True,
+                outcome=duplicate["transcription_outcome"],
+                details=json.loads(duplicate["transcription_details"]),
+            )
+            return True
         data = await asyncio.to_thread(Path(row["path"]).read_bytes)
         voice = await asyncio.to_thread(analyze_voice, data)
         memory.store.save_recap_activity(row["id"], row["digest"], voice)
@@ -26,15 +38,17 @@ async def process_one(memory: Memory) -> bool:
             None if memory.settings.stt_preserve_quiet else memory.settings.silence_threshold
         )
         if not contains_speech_energy(data, threshold):
-            memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate")
+            memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate",
+                                  details={"recognition_contract": contract})
         elif hasattr(memory.inference, "transcribe_result"):
             result = await memory.inference.transcribe_result(data)
             memory.store.complete(
                 row["id"], result["text"], result["segments"], claimed=True,
-                details=result.get("processing"),
+                details={**(result.get("processing") or {}), "recognition_contract": contract},
             )
         else:
-            memory.store.complete(row["id"], await memory.inference.transcribe(data), claimed=True)
+            memory.store.complete(row["id"], await memory.inference.transcribe(data), claimed=True,
+                                  details={"recognition_contract": contract})
     except Exception as exc:
         # Avoid putting transcripts, credentials, URLs or provider bodies into logs.
         memory.store.retry(
@@ -88,6 +102,7 @@ async def maintenance(memory: Memory) -> None:
 async def run_worker(memory: Memory) -> None:
     upkeep = asyncio.create_task(maintenance(memory))
     inbox = asyncio.create_task(run_inbox(memory))
+    topics = asyncio.create_task(run_topics(memory))
     try:
         while True:
             try:
@@ -97,6 +112,9 @@ async def run_worker(memory: Memory) -> None:
                 worked = False
             await asyncio.sleep(0.1 if worked else 2)
     finally:
+        topics.cancel()
+        with suppress(asyncio.CancelledError):
+            await topics
         inbox.cancel()
         with suppress(asyncio.CancelledError):
             await inbox

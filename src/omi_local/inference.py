@@ -57,6 +57,9 @@ SYSTEM = (
     " Important flags and meeting labels are contextual hints around button presses, never "
     "proof of exact boundaries or that a meeting happened. Interpret surrounding speech; "
     "do not omit relevant context or invent a meeting from a hint alone."
+    " Different recordings may cover the same conversation. Describe repeated points once; "
+    "retain unique details from every source and disclose conflicting readings. Multiple "
+    "recordings of the same words are not independent confirmation of a claim."
 )
 
 

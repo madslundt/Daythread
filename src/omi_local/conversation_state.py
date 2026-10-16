@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .domain import project_events, stamp
+from .source_matching import merge_groups
 from .voice_activity import VERSION
 
 
@@ -44,6 +45,14 @@ def activity(row: dict) -> dict:
         row.get("transcription_details") or "{}"
     ).get("voice_activity", {})
     return result if isinstance(result, dict) and result.get("version") == VERSION else {}
+
+
+def manual_upload(row: dict) -> bool:
+    # Before upload provenance was added, the web file picker used device_id=web.
+    # Interpret that known legacy format without changing stored retry metadata.
+    return row.get("source_kind") == "manual_upload" or (
+        row.get("source_kind", "") == "" and row.get("device_id") == "web"
+    )
 
 
 def quiet_runs(quiet: list, blockers: list) -> list:
@@ -89,8 +98,9 @@ def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Con
     for row in snapshot["rows"]:
         if row["started_at"] > stamp(now) or row["state"] == "expired":
             continue
-        if row.get("source_kind") in {"manual_upload", "omi_api"}:
-            if row["text"] or row["state"] != "done":
+        if manual_upload(row) or row.get("source_kind") == "omi_api":
+            if (row["text"] or row["state"] != "done"
+                    or json.loads(row.get("source_metadata") or "{}").get("recording_id")):
                 result.append(Conversation(
                     [row], row["ended_at"] if row["ended_at"] <= settled else None,
                     "finished_import" if row["source_kind"] == "omi_api" else "uploaded_file",
@@ -157,6 +167,9 @@ def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Con
         if current:
             close(current, settled)
             result.append(current)
+    result = merge_groups(
+        result, snapshot.get("source_matches", []), snapshot.get("upload_parts", [])
+    )
     for group in result:
         group.hints = {
             kind: [{**hint, "context_end": min(hint["context_end"], group.end)}

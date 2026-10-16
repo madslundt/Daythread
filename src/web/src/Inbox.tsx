@@ -9,7 +9,7 @@ import { deadlineLabel, type InboxPage, type InboxStatus } from "./inboxTypes";
 export function InboxEntry() {
   const inbox = useResource<InboxPage>("/v1/inbox?limit=1", 15_000);
   return (
-    <a className="button" href="#inbox">
+    <a className="button" href="/inbox">
       Inbox
       {inbox.data
         ? ` · ${inbox.data.pending} pending across days`

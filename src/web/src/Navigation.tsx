@@ -57,9 +57,10 @@ export const pages: {
 const primaryPages = pages.slice(0, 4);
 const morePages = pages.slice(4);
 
-export function Navigation({ page, navigate, mobile = false, profileSelector }: {
+export function Navigation({ page, navigate, hrefForPage, mobile = false, profileSelector }: {
   page: Page;
   navigate: (page: Page) => void;
+  hrefForPage?: (page: Page) => string;
   mobile?: boolean;
   profileSelector?: ReactNode;
 }) {
@@ -79,7 +80,7 @@ export function Navigation({ page, navigate, mobile = false, profileSelector }: 
   useEffect(() => { setMoreOpen(false); }, [page]);
   const moreActive = morePages.some((item) => item.id === page);
   const link = (item: typeof pages[number]) => (
-    <a href={`#${item.id}`} key={item.id}
+    <a href={hrefForPage?.(item.id) ?? `/${item.id}`} key={item.id}
       onClick={(event) => { event.preventDefault(); setMoreOpen(false); navigate(item.id); }}
       className={page === item.id ? "active" : ""}
       aria-current={page === item.id ? "page" : undefined}>

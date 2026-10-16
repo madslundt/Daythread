@@ -48,6 +48,7 @@ from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
+from .source_matching import UploadGrouping
 from .speaker_api import speaker_routes
 from .store import Store
 from .translation import translation_routes
@@ -370,7 +371,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         started_at: AwareDatetime,
         source_kind: Literal["", "manual_upload"] = "",
         source_id: Annotated[str, Query(max_length=255)] = "",
+        recording_id: UUID | None = None,
+        part_index: Annotated[int | None, Query(ge=0, le=59)] = None,
+        part_count: Annotated[int | None, Query(ge=1, le=60)] = None,
+        conversation_source_id: UUID | None = None,
+        recording_started_at: AwareDatetime | None = None,
+        recording_ended_at: AwareDatetime | None = None,
     ) -> dict:
+        try:
+            grouping = UploadGrouping(
+                recording_id=str(recording_id) if recording_id else None,
+                part_index=part_index, part_count=part_count,
+                conversation_source_id=(
+                    str(conversation_source_id) if conversation_source_id else None
+                ),
+                recording_started_at=recording_started_at, recording_ended_at=recording_ended_at,
+            ).model_dump(exclude_none=True, mode="json")
+            if grouping and source_kind != "manual_upload":
+                raise ValueError("Recording groups apply to manual uploads")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         if started_at > utc_now() + timedelta(seconds=30):
             raise HTTPException(422, "Capture time is in the future; check phone clock")
         chunks = bytearray()
@@ -387,6 +407,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             row = memory().store.ingest(
                 audio_id, device_id, started_at, data, duration,
                 source_kind=source_kind, source_id=source_id,
+                source_metadata=grouping,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc

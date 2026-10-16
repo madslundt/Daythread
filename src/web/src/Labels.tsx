@@ -1,3 +1,4 @@
+import { navigatePath, subscribeNavigation } from "./routing";
 import { ImportanceButton, ImportantBadge } from "./Importance";
 import { LabelDecisionLink } from "./LabelDecisionLink";
 import { DecisionDetail } from "./Decisions";
@@ -26,7 +27,7 @@ import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
 
 function selectedId() {
-  return window.location.hash.split("/")[1] || "";
+  return window.location.pathname.split("/")[2] || "";
 }
 
 export function Labels({ timezone }: { timezone: string }) {
@@ -42,14 +43,13 @@ export function Labels({ timezone }: { timezone: string }) {
   const mutation = useLabelMutation(() => {
     setCreating(false);
     directory.refresh();
-    window.location.hash = `labels/${createId}`;
+    navigatePath(`/labels/${createId}`);
     setCreateId(newId());
     setDraft(emptyDraft);
   });
   useEffect(() => {
     const sync = () => setId(selectedId());
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    return subscribeNavigation(sync);
   }, []);
   useEffect(() => {
     const sync = () => directory.refresh();
@@ -124,7 +124,7 @@ export function Labels({ timezone }: { timezone: string }) {
           <a
             className="label-panel"
             key={entity.id}
-            href={`#labels/${entity.id}`}
+            href={`/labels/${entity.id}`}
           >
             <span className="caption">
               {entity.kind === "person" ? "Person" : "Project"}
@@ -223,7 +223,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
   }
   return (
     <section className="labels-page">
-      <a className="text-link" href="#labels">
+      <a className="text-link" href="/labels">
         ← People & projects
       </a>
       {timeline.error ? (

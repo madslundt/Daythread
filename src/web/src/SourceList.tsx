@@ -1,6 +1,6 @@
 import { ImportanceButton, ImportantBadge } from "./Importance";
 import { SourceLabels } from "./SourceLabels";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
 import { FeedbackForm } from "./FeedbackForm";
@@ -8,6 +8,7 @@ import { DecisionEditor } from "./DecisionEditor";
 import { TranscriptionReview } from "./TranscriptionReview";
 import { TranscriptTranslation } from "./TranscriptTranslation";
 import { Speakers } from "./Speakers";
+import { RecordingSections } from "./RecordingSections";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
@@ -19,6 +20,7 @@ export function SourceList({
   onCorrect,
   onDeleted,
   expanded = false,
+  compact = false,
   showDate = false,
   idPrefix = "source",
 }: {
@@ -27,11 +29,12 @@ export function SourceList({
   onCorrect?: () => void;
   onDeleted?: () => void;
   expanded?: boolean;
+  compact?: boolean;
   showDate?: boolean;
   idPrefix?: string;
 }) {
   return (
-    <div className="source-list">
+    <div className={`source-list${compact ? " source-list-compact" : ""}`}>
       {sources.map((source, index) => (
         <SourceRow
           key={source.id}
@@ -41,6 +44,7 @@ export function SourceList({
           onCorrect={onCorrect}
           onDeleted={onDeleted}
           expanded={expanded}
+          compact={compact}
           showDate={showDate}
           index={index + 1}
         />
@@ -56,6 +60,7 @@ function SourceRow({
   onCorrect,
   onDeleted,
   expanded,
+  compact,
   showDate,
   index,
 }: {
@@ -65,6 +70,7 @@ function SourceRow({
   onCorrect?: () => void;
   onDeleted?: () => void;
   expanded: boolean;
+  compact: boolean;
   showDate: boolean;
   index: number;
 }) {
@@ -79,6 +85,8 @@ function SourceRow({
   const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(!source.sections?.length || !!source.matches?.length);
+  const [toolsOpen, setToolsOpen] = useState(false);
   useEffect(() => {
     setSaved(undefined);
   }, [source.id, source.source_version]);
@@ -130,6 +138,58 @@ function SourceRow({
       setBusy(false);
     }
   }
+  const hasTopics = Boolean(currentSource.sections?.length && text);
+  const metadata = <>
+    <div className="source-meta">
+      <span>
+        Source {index} · {timeLabel(source.started_at, timezone)}–
+        {timeLabel(source.ended_at, timezone)} · {source.device_id}
+      </span>
+      <span>{source.state === "done" ? "Transcribed" : source.state}</span>
+    </div>
+    {source.source_kind === "manual_upload" ? <p className="caption">
+      Manually uploaded recording{source.source_id ? ` · ${source.source_id}` : ""}.
+      Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.
+    </p> : null}
+    {source.source_kind === "omi_audio_webhook" ? <p className="caption">
+      Forwarded from the official Omi integration · account identity supplied by the sender, pendant identity unknown.
+      Times estimate a chunk ending at server receipt, not actual capture time. Each POST is separate; overlap, gaps and delivery order are uncertain.
+      Input {source.source_metadata?.input_sample_rate || "unknown"} Hz, archived as mono PCM16 at 16000 Hz.
+    </p> : null}
+  </>;
+  const playback = source.audio_available === false ||
+        source.audio_availability === "missing" ? (
+          <p className="caption">
+            {source.audio_availability === "missing"
+              ? "The archive expects audio, but the file is missing."
+              : source.source_kind === "omi_api"
+                ? "Imported from Omi. This import includes the transcript only; original audio is unavailable."
+                : "Audio was removed by your retention policy. The transcript remains available."}
+          </p>
+        ) : (
+          <>
+            <audio
+              controls
+              preload="none"
+              src={audioUrl(source.id)}
+              onError={() => setAudioError(true)}
+              aria-label={`Play recording from ${timeLabel(source.started_at, timezone)}`}
+            />
+            {audioError ? (
+              <p className="caption">
+                This audio is unavailable. The original may have expired under
+                your retention policy.
+              </p>
+            ) : null}
+            {!compact ? <a
+              className="text-link caption"
+              href={audioUrl(source.id)}
+              download
+            >
+              {source.source_kind === "omi_audio_webhook" || source.source_kind === "manual_upload" ? "Download archived audio" : "Download original audio"}
+            </a> : null}
+          </>
+        );
   if (deleted)
     return (
       <p className="caption" role="status">
@@ -138,7 +198,7 @@ function SourceRow({
     );
   return (
     <details
-      className="source-row"
+      className={`source-row${compact ? " source-row-compact" : ""}`}
       open={expanded || undefined}
       id={`${idPrefix}-${source.id}`}
       onToggle={(event) => {
@@ -151,11 +211,19 @@ function SourceRow({
             ? dateTimeLabel(source.started_at, timezone)
             : timeLabel(source.started_at, timezone)}
         </span>
-        <span className="source-preview">
-          {(saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
-            (source.state === "done"
-              ? "No transcript text"
-              : `Recording · ${source.state}`)}
+        <span className="source-overview">
+          <span className="source-preview">
+            {currentSource.title || (saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
+              (source.state === "done"
+                ? "No transcript text"
+                : `Recording · ${source.state}`)}
+          </span>
+          {compact ? <span className="source-glance">
+            {recordingDuration(source)}
+            {hasTopics ? ` · ${currentSource.sections!.length} ${currentSource.sections!.length === 1 ? "topic" : "topics"}` : ""}
+            {source.state !== "done" ? ` · ${source.state}` : ""}
+          </span> : null}
+          {compact && source.matches?.length && currentSource.title ? <span className="source-match">{source.matches[0].text}</span> : null}
         </span>
         <span className="source-hints">
           <ImportantBadge target={{ kind: "source", id: source.id }} />
@@ -166,8 +234,10 @@ function SourceRow({
         </span>
         <Icon name="chevron-right" size={15} />
       </summary>
-      <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" />
-      <FeedbackForm sourceId={source.id} />
+      {!compact ? <>
+        <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" />
+        <FeedbackForm sourceId={source.id} />
+      </> : null}
       {source.error_code ||
       source.transcription_outcome === "silence_gate" ||
       source.transcription_outcome === "empty_stt" ? (
@@ -175,7 +245,7 @@ function SourceRow({
           Processing: {source.error_code || source.transcription_outcome}
         </p>
       ) : null}
-      {source.audio_availability === "missing" ? (
+      {!compact && source.audio_availability === "missing" ? (
         <p className="caption">
           The archive expects audio but the file is missing.
         </p>
@@ -202,23 +272,11 @@ function SourceRow({
         </button>
       ) : null}
       <div className="source-detail">
-        <div className="source-meta">
-          <span>
-            Source {index} · {timeLabel(source.started_at, timezone)}–
-            {timeLabel(source.ended_at, timezone)} · {source.device_id}
-          </span>
-          <span>{source.state === "done" ? "Transcribed" : source.state}</span>
-        </div>
-        {source.source_kind === "manual_upload" ? <p className="caption">
-          Manually uploaded recording{source.source_id ? ` · ${source.source_id}` : ""}.
-          Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.
-        </p> : null}
-        {source.source_kind === "omi_audio_webhook" ? <p className="caption">
-          Forwarded from the official Omi integration · account identity supplied by the sender, pendant identity unknown.
-          Times estimate a chunk ending at server receipt, not actual capture time. Each POST is separate; overlap, gaps and delivery order are uncertain.
-          Input {source.source_metadata?.input_sample_rate || "unknown"} Hz, archived as mono PCM16 at 16000 Hz.
-        </p> : null}
+        {compact ? playback : null}
+        {compact && !editing ? <RecordingSections source={currentSource} compact /> : null}
+        {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">Search excerpt · full transcript below. Timing covers the recording interval.</p> : null}
+        <RecordingDisclosure enabled={compact} label="Full transcript" className="recording-transcript" open={transcriptOpen} onToggle={setTranscriptOpen}>
         {editing ? (
           <div className="transcript-editor">
             <label htmlFor={`edit-${idPrefix}-${source.id}`}>Correct transcript</label>
@@ -251,7 +309,8 @@ function SourceRow({
           </div>
         ) : (
           <>
-            {open && text ? <TranscriptTranslation
+            {!compact ? <RecordingSections source={currentSource} /> : null}
+            {open && (!compact || transcriptOpen) && text ? <TranscriptTranslation
               key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
               sourceId={source.id} original={text}
             /> : <p className="transcript-text">
@@ -275,45 +334,29 @@ function SourceRow({
             </button>
           </>
         )}
+        </RecordingDisclosure>
         <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
           setDraft(text || "");
+          setTranscriptOpen(true);
           setEditing(true);
         }} />
-        {open ? <Speakers kind="source" id={source.id} /> : null}
         {error ? <ErrorState message={error} /> : null}
-        {source.audio_available === false ||
-        source.audio_availability === "missing" ? (
-          <p className="caption">
-            {source.audio_availability === "missing"
-              ? "The archive expects audio, but the file is missing."
-              : source.source_kind === "omi_api"
-                ? "Imported from Omi. This import includes the transcript only; original audio is unavailable."
-                : "Audio was removed by your retention policy. The transcript remains available."}
-          </p>
-        ) : (
-          <>
-            <audio
-              controls
-              preload="none"
-              src={audioUrl(source.id)}
-              onError={() => setAudioError(true)}
-              aria-label={`Play recording from ${timeLabel(source.started_at, timezone)}`}
-            />
-            {audioError ? (
-              <p className="caption">
-                This audio is unavailable. The original may have expired under
-                your retention policy.
-              </p>
-            ) : null}
-            <a
+        {!compact ? playback : null}
+        <div className={compact ? "recording-footer" : undefined}>
+        {compact ? <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" compact /> : null}
+        <RecordingDisclosure enabled={compact} label="Recording details & tools" className="recording-utilities" open={toolsOpen} onToggle={setToolsOpen}>
+        {compact ? <>
+          {metadata}
+          {source.audio_available !== false && source.audio_availability !== "missing" ? <a
               className="text-link caption"
               href={audioUrl(source.id)}
               download
             >
               {source.source_kind === "omi_audio_webhook" || source.source_kind === "manual_upload" ? "Download archived audio" : "Download original audio"}
-            </a>
-          </>
-        )}
+            </a> : null}
+          <FeedbackForm sourceId={source.id} />
+        </> : null}
+        {open && (!compact || toolsOpen) ? <Speakers kind="source" id={source.id} /> : null}
         {text && currentSource.source_version ? <button className="button small" onClick={() => setCreatingDecision(true)}>Record a decision from this source</button> : null}
         {creatingDecision ? <DecisionEditor source={currentSource} onClose={() => setCreatingDecision(false)} onSaved={() => {}} /> : null}
         <SourceLabels sourceId={source.id} />
@@ -335,9 +378,32 @@ function SourceRow({
         {showHistory ? (
           <CorrectionHistory id={source.id} timezone={timezone} />
         ) : null}
+        </RecordingDisclosure>
+        </div>
       </div>
     </details>
   );
+}
+
+function recordingDuration(source: Source): string {
+  const seconds = Math.round((Date.parse(source.ended_at) - Date.parse(source.started_at)) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return "Duration unavailable";
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+}
+
+function RecordingDisclosure({ enabled, label, className, open, onToggle, children }: {
+  enabled: boolean; label: string; className: string; open: boolean;
+  onToggle: (open: boolean) => void; children: ReactNode;
+}) {
+  if (!enabled) return <>{children}</>;
+  return <details className={`recording-disclosure ${className}`} open={open} onToggle={(event) => {
+    if (event.target === event.currentTarget) onToggle(event.currentTarget.open);
+  }}>
+    <summary><span>{label}</span><Icon name="chevron-right" size={14} /></summary>
+    <div className="recording-disclosure-content">{children}</div>
+  </details>;
 }
 
 function CorrectionHistory({ id, timezone }: { id: string; timezone: string }) {

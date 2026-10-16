@@ -20,6 +20,7 @@ Phone views were captured in Safari on an iPhone 17 simulator running iOS 26.5. 
 
 - **Capture:** durable offline phone queue, retryable uploads, pause/resume, capture-gap tracking, and optional Wi-Fi-only uploads.
 - **Import audio:** add recordings from other phones, computers, and voice recorders through the web app, preserving original start times and filenames.
+- **Recording topics:** automatically generate descriptive titles and expandable topic sections after transcription, including for existing recordings.
 - **Recall:** transcript search and correction, audio rewind, and persistent chat grounded in recorded sources.
 - **Diary:** automatic daily recaps, meeting notes, history, and Markdown export.
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.

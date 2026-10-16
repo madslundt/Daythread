@@ -55,6 +55,12 @@ class PrepGenerate(PrepValidate):
         return self
 
 
+class PrepTopicSection(PrepModel):
+    title: str
+    start_offset: int
+    end_offset: int
+
+
 class PrepSource(PrepModel):
     id: str
     version: str
@@ -77,6 +83,8 @@ class PrepSource(PrepModel):
     error_code: str | None = Field(default=None, max_length=80)
     transcription_outcome: str | None = Field(default=None, max_length=80)
     transcription_details: dict = Field(default_factory=dict)
+    title: str | None = None
+    sections: list[PrepTopicSection] = Field(default_factory=list)
     audio_availability: Literal["available", "missing", "expired", "transcript_only"] | None = None
 
 

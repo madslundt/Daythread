@@ -31,6 +31,7 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         NSBluetoothAlwaysUsageDescription: Omi Local connects to your pendant to save audio and button hints on your iPhone and home-core.
         NSLocalNetworkUsageDescription: Omi Local sends recordings to your own home-core on your local network.
+        NSRemindersFullAccessUsageDescription: Omi Local adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true

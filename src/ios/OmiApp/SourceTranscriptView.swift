@@ -9,6 +9,7 @@ struct SourceTranscriptView: View {
     @State private var translation: JSONValue = .null
     @State private var language = ""
     @State private var showingTranslation = false
+    @State private var alreadyInTargetLanguage = false
     @State private var busy = false
     @State private var loaded = false
     @State private var error: String?
@@ -19,7 +20,7 @@ struct SourceTranscriptView: View {
     private var sourceID: String { source["id"].text }
     private var languageName: String { Locale.current.localizedString(forLanguageCode: language) ?? language }
     private var hasTranslation: Bool {
-        !translation["text"].text.isEmpty && translation["language"].text == language &&
+        !alreadyInTargetLanguage && !translation["text"].text.isEmpty && translation["language"].text == language &&
             translation["transcript_version"] == source["transcript_version"]
     }
     private var loadKey: String {
@@ -42,6 +43,9 @@ struct SourceTranscriptView: View {
             if !source["text"].text.isEmpty {
                 if busy {
                     ProgressView(generation == nil ? "Checking translation…" : "Translating…")
+                } else if loaded && alreadyInTargetLanguage {
+                    Text("Transcript is already in \(languageName).")
+                        .font(.caption).foregroundStyle(.secondary)
                 } else if loaded && !hasTranslation && language != "auto" && !language.isEmpty {
                     Button("Translate to \(languageName)", systemImage: "translate") { generate() }
                         .disabled(editing).accessibilityIdentifier("source.translate")
@@ -75,7 +79,7 @@ struct SourceTranscriptView: View {
     private func invalidate() {
         requestID = UUID()
         generation?.cancel(); generation = nil
-        translation = .null; showingTranslation = false; loaded = false; busy = false
+        translation = .null; showingTranslation = false; alreadyInTargetLanguage = false; loaded = false; busy = false
     }
 
     private func load() async {
@@ -87,15 +91,22 @@ struct SourceTranscriptView: View {
         do {
             let result = try await model.client().request("v1/transcripts/\(sourceID)/translation")
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-            language = result["language"].text; translation = result["translation"]; loaded = true
+            apply(result); loaded = true
         } catch {
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
             self.error = error.localizedDescription
         }
     }
 
+    private func apply(_ result: JSONValue) {
+        language = result["language"].text
+        alreadyInTargetLanguage = result["already_in_target_language"] == .bool(true)
+        translation = alreadyInTargetLanguage ? .null : result["translation"]
+        if alreadyInTargetLanguage { showingTranslation = false }
+    }
+
     private func generate() {
-        guard !busy, loaded, !editing else { return }
+        guard !busy, loaded, !editing, !alreadyInTargetLanguage else { return }
         let request = UUID(), identity = model.archiveIdentity
         requestID = request; busy = true; error = nil
         generation = Task {
@@ -103,7 +114,7 @@ struct SourceTranscriptView: View {
             do {
                 let result = try await model.client().request("v1/transcripts/\(sourceID)/translation", method: "POST")
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                language = result["language"].text; translation = result["translation"]
+                apply(result)
                 showingTranslation = hasTranslation
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }

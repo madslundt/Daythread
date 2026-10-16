@@ -86,7 +86,8 @@ class WeeklyReviews:
         rows = [
             dict(row)
             for row in db.execute(
-                "SELECT * FROM audio WHERE started_at<? AND ended_at>? ORDER BY started_at,id",
+                "SELECT * FROM canonical_audio WHERE started_at<? AND ended_at>? "
+                "ORDER BY started_at,id",
                 (stamp(cutoff), stamp(before)),
             )
         ]

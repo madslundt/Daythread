@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		17BC2F418218E1ADC9349E04 /* DecisionFollowUpsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D0A882E8B925B66AF03AB4 /* DecisionFollowUpsView.swift */; };
 		B81CF360273D4D21B5F45818 /* SpeakersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B81CF360273D4D21B5F45819 /* SpeakersView.swift */; };
 		B81CF360273D4D21B5F45816 /* SourceTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B81CF360273D4D21B5F45817 /* SourceTranscriptView.swift */; };
 		032E529509B3B5754CE48B7F /* LabelManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4DA08F95FCF7424E6F2FCC /* LabelManagementView.swift */; };
@@ -38,6 +39,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B0D0A882E8B925B66AF03AB4 /* DecisionFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionFollowUpsView.swift; sourceTree = "<group>"; };
 		B81CF360273D4D21B5F45819 /* SpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakersView.swift; sourceTree = "<group>"; };
 		B81CF360273D4D21B5F45817 /* SourceTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceTranscriptView.swift; sourceTree = "<group>"; };
 		0BAB8DB32118BFF5635E7A65 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -104,6 +106,7 @@
 				AEB8513E2E8BCBD64BB4AC61 /* ConversationPrepView.swift */,
 				D68AC74F4420C61DC1058227 /* DayView.swift */,
 				16D1609947E22F81415CA125 /* DecisionEditor.swift */,
+				B0D0A882E8B925B66AF03AB4 /* DecisionFollowUpsView.swift */,
 				3F6DE1ABD7080468B48F589A /* DecisionModels.swift */,
 				5149340AC58163457C8EAFA4 /* DecisionsView.swift */,
 				E0ACE56629A0C388614F77B4 /* InboxDetail.swift */,
@@ -229,6 +232,7 @@
 				CE90BAFC6629A897A334B861 /* ConversationPrepView.swift in Sources */,
 				8742910AE564A09AF79D83E4 /* DayView.swift in Sources */,
 				CFE5EA14A2B0FBB3B7257298 /* DecisionEditor.swift in Sources */,
+				17BC2F418218E1ADC9349E04 /* DecisionFollowUpsView.swift in Sources */,
 				13535FA1821C675C35033E36 /* DecisionModels.swift in Sources */,
 				BF2370C719FD28CE695675E0 /* DecisionsView.swift in Sources */,
 				82CC434A9CA7143BF5BC69D1 /* InboxDetail.swift in Sources */,

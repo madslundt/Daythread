@@ -1,3 +1,5 @@
+import { localDateTimeInput } from "./format";
+
 export function encodeWav(samples: Float32Array): ArrayBuffer {
   const result = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(result);
@@ -44,6 +46,17 @@ export function selectRecording(files: ArrayLike<File>): File {
 }
 
 export type RecordingTimeReference = "start" | "end";
+
+export function recordingEndTime(
+  file: { lastModified?: number },
+  now = Date.now(),
+): string {
+  const timestamp = file.lastModified;
+  if (timestamp === undefined || !Number.isFinite(timestamp) || timestamp <= 0 || timestamp > now)
+    return "";
+  const date = new Date(timestamp);
+  return Number.isFinite(date.getTime()) ? localDateTimeInput(date) : "";
+}
 
 export function recordingTimes(
   timestamp: string,

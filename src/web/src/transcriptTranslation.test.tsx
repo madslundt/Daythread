@@ -6,6 +6,7 @@ import { selectProfile } from "./profiles";
 
 const data: TranscriptTranslationData = {
   language: "en",
+  already_in_target_language: false,
   translation: { text: "Hello, how are you?", language: "en", transcript_version: "version-1", created_at: "2026-10-16T12:00:00Z" },
 };
 const original = "Hej, hvordan har du det?";
@@ -45,11 +46,11 @@ describe("transcript translation requests", () => {
   it("does not let a late response replace a refreshed summary language", async () => {
     let finish!: (response: Response) => void;
     const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ language: "da", translation: null })));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ language: "da", already_in_target_language: false, translation: null })));
     vi.stubGlobal("fetch", fetch);
     const requests = new TranscriptTranslationRequests("source");
     const generating = requests.run("POST");
-    await expect(requests.run("GET")).resolves.toEqual({ language: "da", translation: null });
+    await expect(requests.run("GET")).resolves.toEqual({ language: "da", already_in_target_language: false, translation: null });
     finish(new Response(JSON.stringify(data)));
     await expect(generating).resolves.toBeUndefined();
   });
@@ -89,11 +90,44 @@ describe("transcript translation display", () => {
   });
 
   it("explains how to enable translation when the summary language is automatic", () => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "auto", translation: null }} />);
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "auto", already_in_target_language: false, translation: null }} />);
     expect(html).toContain("Choose a summary language");
-    expect(html).toContain('href="#settings/general"');
+    expect(html).toContain('href="/settings/general"');
     expect(html).toContain('disabled=""');
     expect(html).toContain(original);
+  });
+
+  it("hides translation actions when the transcript already uses the summary language", () => {
+    const sameLanguageOriginal = "We planned our next meeting.";
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} original={sameLanguageOriginal}
+      data={{ ...data, already_in_target_language: true, translation: null }} />);
+    expect(html).toContain(sameLanguageOriginal);
+    expect(html).toContain("Transcript is already in English.");
+    expect(html).not.toContain("Translate");
+    expect(html).not.toContain("<button");
+  });
+
+  it("ignores a stale cached translation for a transcript already in the target language", () => {
+    const sameLanguageOriginal = "We planned our next meeting.";
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} original={sameLanguageOriginal}
+      data={{ ...data, already_in_target_language: true }} translated />);
+    expect(html).toContain(sameLanguageOriginal);
+    expect(html).not.toContain(data.translation!.text);
+    expect(html).not.toContain("English translation");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain('lang="en"');
+  });
+
+  it("keeps translation controls hidden until the language check finishes", () => {
+    for (const cached of [undefined, data]) {
+      const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={cached} loading translated />);
+      expect(html).toContain(original);
+      expect(html).toContain("Checking transcript language");
+      expect(html).not.toContain("Translate");
+      expect(html).not.toContain("English translation");
+      expect(html).not.toContain(data.translation!.text);
+      expect(html).not.toContain("<button");
+    }
   });
 
   it("keeps original text visible while generating and after a failure", () => {

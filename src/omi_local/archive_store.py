@@ -151,6 +151,7 @@ class ArchiveStore:
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search VALUES(?,?)", (audio_id, text))
+            self.refresh_source_matches(db, audio_id)
             row = dict(db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone())
             self.invalidate_decision_sources(db, [audio_id], purge=False)
             self._invalidate_diaries(db)

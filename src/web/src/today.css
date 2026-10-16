@@ -162,3 +162,72 @@
   .recap-group-tools .importance-icon { min-height: 44px; }
   .recap-utilities > summary { min-height: 44px; }
 }
+.recording-sections { margin: 1rem 0; }
+.recording-sections h3 { font-size: .9rem; margin-bottom: .6rem; }
+.recording-sections details { border-top: 1px solid var(--border); padding: .65rem 0; }
+.recording-sections summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.recording-sections .transcript-text { padding-top: .5rem; }
+
+/* A recording reads as one moment; its transcript and utilities unfold separately. */
+.source-overview { flex: 1; min-width: 0; }
+.source-overview > .source-preview { display: block; }
+.source-list-compact { --timeline-gutter: 76px; }
+.source-row-compact { position: relative; content-visibility: visible; border-bottom: 0; }
+.source-row-compact + .source-row-compact { border-top: 1px solid var(--line); }
+.source-row-compact::before { content: ''; position: absolute; left: 55px; top: 31px; bottom: -31px; width: 1px; background: var(--line); pointer-events: none; }
+.source-row-compact:last-child::before { bottom: 30px; }
+.source-row-compact[open]:last-child::before { bottom: 22px; }
+.day-main .timeline-section .source-row-compact > summary { position: relative; gap: 12px; min-height: 78px; padding: 18px 0; align-items: flex-start; }
+.source-row-compact > summary::before { content: ''; position: absolute; left: 52px; top: 27px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px var(--surface); }
+.source-row-compact[open] > summary::before { background: var(--accent); }
+.day-main .timeline-section .source-row-compact .source-time { width: 64px; min-width: 64px; padding-top: 1px; font-size: 11px; }
+.day-main .timeline-section .source-row-compact .source-preview { font-size: 14px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; }
+.source-glance, .source-match { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; font-weight: 400; }
+.source-match { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.source-row-compact > summary > svg:last-child { margin-top: 3px; }
+.source-row-compact > summary:hover .source-preview { color: var(--accent); }
+.source-row-compact > .source-detail { margin-left: var(--timeline-gutter); padding: 0 0 20px; min-width: 0; }
+.source-row-compact > .caption, .source-row-compact > .text-button { margin-left: var(--timeline-gutter); }
+.source-row-compact .source-detail > audio { margin: 0 0 18px; height: 38px; }
+.source-row-compact .recording-sections { margin: 0 0 16px; }
+.source-row-compact .recording-sections h3 { font: 400 11px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--muted); margin: 0 0 8px; }
+.source-row-compact .recording-sections details { padding: 0; border-color: var(--line); }
+.source-row-compact .recording-sections details:last-child { border-bottom: 1px solid var(--line); }
+.source-row-compact .recording-sections summary, .recording-disclosure > summary { display: flex; align-items: center; gap: 12px; justify-content: space-between; list-style: none; min-height: 44px; padding: 12px 0; font-size: 12px; line-height: 1.6; font-weight: 400; }
+.source-row-compact .recording-sections summary::-webkit-details-marker, .recording-disclosure > summary::-webkit-details-marker { display: none; }
+.source-row-compact .recording-sections summary > span, .recording-disclosure > summary > span { min-width: 0; overflow-wrap: anywhere; }
+.source-row-compact .recording-sections summary > svg, .recording-disclosure > summary > svg { color: var(--muted); transition: transform .15s; }
+.source-row-compact .recording-sections details[open] > summary > svg, .recording-disclosure[open] > summary > svg { transform: rotate(90deg); }
+.source-row-compact .recording-sections summary:hover, .recording-disclosure > summary:hover { color: var(--accent); }
+.source-row-compact .recording-sections .transcript-text { padding: 0; margin: 0 0 16px; color: var(--secondary); font-size: 13px; line-height: 1.8; }
+.recording-transcript { border-top: 1px solid var(--line); }
+.recording-disclosure-content { padding: 4px 0 16px; }
+.source-row-compact .transcript-text { font-size: 13px; line-height: 1.8; }
+.source-row-compact .transcript-translation .caption { font-size: 11px; }
+.source-row-compact .source-detail > .caption { font-size: 12px; }
+.recording-footer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; border-top: 1px solid var(--line); }
+.recording-footer > .importance-control { padding-top: 4px; }
+.recording-footer > .importance-control:has([role="alert"]) { flex-basis: 100%; display: flex; align-items: center; gap: 8px; }
+.recording-utilities { flex: 1; min-width: 0; }
+.recording-utilities > summary { color: var(--muted); font-size: 11px; }
+.recording-utilities .source-meta { margin: 4px 0 12px; justify-content: flex-start; }
+.recording-utilities .caption { font-size: 11px; line-height: 1.7; }
+.recording-utilities .feedback-form { margin: 14px 0; }
+.recording-utilities .button, .recording-utilities .text-button { font-size: 12px; }
+@media (max-width: 760px) {
+  .source-list-compact { --timeline-gutter: 24px; }
+  .source-row-compact::before { left: 3px; top: 30px; }
+  .source-row-compact > summary::before { left: 0; }
+  .day-main .timeline-section .source-row-compact > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 5px 10px; padding-left: 24px; }
+  .day-main .timeline-section .source-row-compact .source-time { width: auto; min-width: 0; grid-column: 1; }
+  .source-row-compact .source-overview { grid-column: 1; grid-row: 2; }
+  .source-row-compact .source-hints { grid-column: 2; grid-row: 2; }
+  .source-row-compact > summary > svg:last-child { grid-column: 3; grid-row: 2; }
+  .source-row-compact > .source-detail { padding-bottom: 16px; }
+  .source-row-compact .recording-sections summary, .recording-disclosure > summary { min-height: 48px; }
+  .source-row-compact .source-preview { -webkit-line-clamp: 3; }
+  .source-row-compact .source-detail > audio { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .source-row-compact summary > svg { transition: none; }
+}

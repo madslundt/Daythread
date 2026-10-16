@@ -29,6 +29,7 @@ from .domain import (
     wav_duration,
 )
 from .embeddings import Embeddings, run_embedding_worker
+from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
 from .retrieval import DateScopeError
@@ -89,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def memory() -> Memory:
         return app.state.memory
+
+    app.include_router(inbox_router(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:

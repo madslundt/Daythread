@@ -86,7 +86,7 @@ function SourceRow({
   async function remove() {
     if (
       !window.confirm(
-        "Delete this recording and transcript? Derived diary entries and chat history will also be cleared because they may contain this recording. This cannot be undone.",
+        "Delete this recording and transcript? Derived diary entries and chat history will also be cleared. Related inbox items, including manual edits and review history, will be removed because their extraction used this recording. This cannot be undone.",
       )
     )
       return;
@@ -108,7 +108,7 @@ function SourceRow({
   if (deleted)
     return (
       <p className="caption" role="status">
-        Recording deleted. Derived diary entries and chat history were cleared.
+        Recording deleted. Derived diary/chat content and related inbox items were removed.
       </p>
     );
   return (

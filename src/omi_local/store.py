@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
+from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 
 SCHEMA = """
@@ -69,6 +70,7 @@ class Store(ArchiveStore, SemanticStore):
             }
             if "retrieval_details" not in message_columns:
                 db.execute("ALTER TABLE chat_messages ADD COLUMN retrieval_details TEXT")
+            db.executescript(INBOX_SCHEMA)
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }

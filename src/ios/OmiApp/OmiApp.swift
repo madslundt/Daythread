@@ -142,9 +142,7 @@ struct SourceDetail: View {
                     Text(source["text"].text.isEmpty ? "Transcription pending" : source["text"].text).textSelection(.enabled)
                     Text(source["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                if source["audio_available"] == .bool(false) {
-                    Text("Transcript only. Original audio is unavailable.").font(.caption).foregroundStyle(.secondary)
-                }
+                if source["audio_available"] != .bool(false) {
                 Button {
                     loading = true
                     Task {
@@ -152,7 +150,8 @@ struct SourceDetail: View {
                         do { model.play(try await model.client().download("v1/audio/\(source["id"].text)", query: [:])) }
                         catch { self.error = error.localizedDescription }
                     }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || source["audio_available"] == .bool(false))
+                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading)
+                } else { Text("Transcript only. Original audio is unavailable.").font(.caption).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
             }.navigationTitle("Source").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

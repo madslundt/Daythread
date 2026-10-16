@@ -21,6 +21,7 @@ from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
 from .speakers import Speakers
 from .store import Store
+from .voices import Voices
 
 
 def public_source(row: dict) -> dict:
@@ -63,6 +64,7 @@ class Memory:
         self.recaps = Recaps(self)
         self.translation_lock = asyncio.Lock()
         self.speakers = Speakers(self)
+        self.voices = Voices(self)
         self.decision_lock = asyncio.Lock()
         self.retriever = HybridRetriever(store, settings)
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 
 export type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings" | "labels";
@@ -57,10 +57,11 @@ export const pages: {
 const primaryPages = pages.slice(0, 4);
 const morePages = pages.slice(4);
 
-export function Navigation({ page, navigate, mobile = false }: {
+export function Navigation({ page, navigate, mobile = false, profileSelector }: {
   page: Page;
   navigate: (page: Page) => void;
   mobile?: boolean;
+  profileSelector?: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -101,6 +102,7 @@ export function Navigation({ page, navigate, mobile = false }: {
         </div>
         <nav aria-label="More navigation">{morePages.map(link)}</nav>
         <p className="caption">Keep track of people, follow through, and make omi yours.</p>
+        {profileSelector ? <div className="navigation-profile">{profileSelector}</div> : null}
       </div>
     </dialog> : null}
   </>;

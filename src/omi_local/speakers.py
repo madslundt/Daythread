@@ -136,13 +136,21 @@ class Speakers:
                          (scope["key"],)).fetchone()
         return dict(row) if row else None
 
-    def view(self, scope: dict, saved: dict | None) -> dict:
+    def view(self, scope: dict, saved: dict | None, db=None) -> dict:
+        if db is None:
+            with self.memory.store.connect() as db:
+                db.execute("BEGIN")
+                return self.view(scope, saved, db)
         ready = saved is not None and saved["fingerprint"] == fingerprint(scope)
         payload = json.loads(saved["payload"]) if saved else {"speakers": [], "turns": []}
         turns = payload["turns"]
         if ready:
             self.attach_text(turns, scope["rows"])
         speakers = payload["speakers"]
+        audio_available = bool(scope["rows"]) and all(
+            r["audio_available"] and Path(r["path"]).is_file() for r in scope["rows"]
+        )
+        recognition = self.memory.voices.annotate(db, scope, payload, ready and audio_available)
         for speaker in speakers:
             # Union same-speaker overlap so totals agree with playback.
             speaker["seconds"] = round(sum(b - a for _, a, b in
@@ -152,14 +160,14 @@ class Speakers:
                 "version": saved["version"] if saved else None,
                 "scope": scope["scope"], "source_count": len(scope["rows"]),
                 "speakers": speakers, "turns": turns,
-                "audio_available": bool(scope["rows"]) and all(
-                    r["audio_available"] and Path(r["path"]).is_file() for r in scope["rows"])}
+                "recognition": recognition,
+                "audio_available": audio_available}
 
     def read(self, kind: Kind, key: str) -> dict:
         with self.memory.store.connect() as db:
             db.execute("BEGIN")
             scope = self.resolve(kind, key, db)
-            return self.view(scope, self.load(db, scope))
+            return self.view(scope, self.load(db, scope), db)
 
     @staticmethod
     def attach_text(turns: list[dict], rows: list[dict]) -> None:
@@ -252,6 +260,7 @@ class Speakers:
                     raise HTTPException(502, "Speaker service returned too many speakers")
                 speakers[turn.speaker] = {
                     "id": str(uuid4()), "label": alphabet(len(speakers)), "name": None,
+                    "voice_key": turn.speaker,
                 }
             for index in range(bisect_right(ends, turn.start), len(mappings)):
                 mapping = mappings[index]
@@ -287,7 +296,7 @@ class Speakers:
                 before = saved["version"] if saved else None
                 if saved and not reset:
                     if saved["fingerprint"] == fingerprint(scope):
-                        return self.view(scope, saved)
+                        return self.view(scope, saved, db)
                     raise HTTPException(
                         409, "Evidence changed; detect again to replace labels and names",
                     )
@@ -316,11 +325,13 @@ class Speakers:
                 db.execute("DELETE FROM speaker_dependencies WHERE scope_key=?", (scope["key"],))
                 db.executemany("INSERT INTO speaker_dependencies VALUES(?,?)",
                                [(scope["key"], row["id"]) for row in scope["rows"]])
+                self.memory.voices.invalidate_scope(db, scope["key"])
+                self.memory.voices.save_vectors(db, scope, payload, result)
                 # Detection snapshots plus later edit events can replay this projection.
                 self.event(db, scope, "detected", payload | {
                     "version": version, "fingerprint": fingerprint(scope),
                 })
-                return self.view(current, self.load(db, current))
+                return self.view(current, self.load(db, current), db)
 
     def mutate(self, kind: Kind, key: str, version: str, action: str, values: dict) -> dict:
         with self.memory.store.connect() as db:
@@ -352,10 +363,11 @@ class Speakers:
                         turn["speaker_id"] = target
                 payload["speakers"] = [s for s in payload["speakers"] if s["id"] != source]
             new_version = str(uuid4())
+            self.memory.voices.invalidate_scope(db, scope["key"])
             db.execute("UPDATE speaker_scopes SET version=?,payload=? WHERE scope_key=?",
                        (new_version, json.dumps(payload), scope["key"]))
             self.event(db, scope, action, values | {"version": new_version})
-            return self.view(scope, self.load(db, scope))
+            return self.view(scope, self.load(db, scope), db)
 
     def audio(self, kind: Kind, key: str, speaker: str, version: str | None = None) -> bytes:
         with self.memory.store.connect() as db:

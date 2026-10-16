@@ -124,6 +124,10 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   const showDate = page === "today" || page === "diary";
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
   useEffect(() => { document.title = `${prepOpen ? "Prepare" : current.label} · omi`; }, [current.label, prepOpen]);
+  const profileSelector = <ProfileSelector profiles={profiles} selected={selected} onSelect={(id) => {
+    if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
+    onSelect(id);
+  }} onCreate={onCreate} beforeCreate={() => !prepOpen || !prepDirty || window.confirm("Discard this preparation and unsaved context?")} />;
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to content</a>
@@ -137,22 +141,21 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           omi<span className="brand-caption">A little more remembered.</span>
         </a>
         <Navigation page={page} navigate={navigate} />
-        <div className="backend-indicator">
-          <span
-            className={`status-dot ${status.data && !status.error ? "online" : ""}`}
-          />
-          {status.error
-            ? "Backend offline"
-            : status.data
-              ? "Local backend"
-              : "Connecting…"}
+        <div className="sidebar-footer">
+          {profileSelector}
+          <div className="backend-indicator">
+            <span
+              className={`status-dot ${status.data && !status.error ? "online" : ""}`}
+            />
+            {status.error
+              ? "Backend offline"
+              : status.data
+                ? "Local backend"
+                : "Connecting…"}
+          </div>
         </div>
       </aside>
       <main className="main-canvas" data-page={page} id="main-content" tabIndex={-1}>
-        <ProfileSelector profiles={profiles} selected={selected} onSelect={(id) => {
-          if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
-          onSelect(id);
-        }} onCreate={onCreate} beforeCreate={() => !prepOpen || !prepDirty || window.confirm("Discard this preparation and unsaved context?")} />
         <header className={`page-header ${page === "today" && !prepOpen ? "today-header" : ""}`}>
           <div className="topbar">
             <a
@@ -256,7 +259,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           />
         )}
       </main>
-      <Navigation page={page} navigate={navigate} mobile />
+      <Navigation page={page} navigate={navigate} mobile profileSelector={profileSelector} />
       {uploadOpen ? (
         <UploadDialog
           onClose={() => setUploadOpen(false)}

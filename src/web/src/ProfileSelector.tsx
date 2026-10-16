@@ -12,9 +12,10 @@ export function ProfileSelector({ profiles, selected, onSelect, onCreate, before
   beforeCreate?: () => boolean;
 }) {
   const [creating, setCreating] = useState(false);
+  const selectorId = useId();
   return <div className="profile-toolbar">
-    <label htmlFor="active-profile">Profile</label>
-    <select id="active-profile" value={selected} onChange={(event) => onSelect(event.target.value)}>
+    <label htmlFor={selectorId}>Profile</label>
+    <select id={selectorId} value={selected} onChange={(event) => onSelect(event.target.value)}>
       {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
     </select>
     <button className="text-button" onClick={() => { if (!beforeCreate || beforeCreate()) setCreating(true); }}>Create profile</button>

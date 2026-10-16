@@ -179,6 +179,9 @@ Optional [local speaker detection](docs/README.md#speaker-detection-and-names) l
 A, B, C across a meeting or conversation. On web and iPhone, listen to a speaker's turns,
 assign a conversation-specific name, and correct or merge assignments. It requires the
 separate local model service described in [the configuration example](config/omi.env.example).
+Optional [remembered voices](docs/README.md#remembering-speakers-across-conversations) use
+explicitly confirmed examples to suggest identities in later conversations. Suggestions
+require a passing evaluation on separate real recordings and always need confirmation.
 
 Environment variables remain available as initial defaults; the example gateway/model names are specific to the original home network:
 
@@ -243,7 +246,7 @@ uv run python scripts/archive.py restore /path/to/omi-backup.zip /path/to/new-da
 
 Stop the backend before restoring into a new destination, then update `OMI_DATA_DIR`. See [changing the storage location](docs/README.md#change-the-storage-location) for source and Docker migration steps, and [backup details](docs/README.md#archive-and-backup) for encryption.
 
-**Access and limits:** the archive app/API have no authentication (the optional audio webhook requires its own token); use a trusted private LAN or VPN. Physical-device endurance and real model quality still need validation. Device Wi-Fi capture, pendant-storage downloads, semantic embeddings, and speaker identification are not implemented. Markers are approximate context; check generated answers against sources.
+**Access and limits:** the archive app/API have no authentication (the optional audio webhook requires its own token); use a trusted private LAN or VPN. Physical-device endurance and real model quality still need validation. Device Wi-Fi capture, pendant-storage downloads, semantic embeddings, and automatic speaker naming are not implemented. Remembered voice suggestions require explicit enrollment and a passing real-recording evaluation. Markers are approximate context; check generated answers against sources.
 
 ## Development and further reading
 

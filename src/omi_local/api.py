@@ -51,6 +51,7 @@ from .settings import RUNTIME_FIELDS, Settings, public_settings
 from .speaker_api import speaker_routes
 from .store import Store
 from .translation import translation_routes
+from .voice_api import voice_routes
 from .weekly_api import weekly_routes
 
 
@@ -152,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inbox_router(memory))
     app.include_router(translation_routes(memory))
     app.include_router(speaker_routes(memory))
+    app.include_router(voice_routes(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:

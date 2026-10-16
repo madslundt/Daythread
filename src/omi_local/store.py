@@ -28,6 +28,7 @@ from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
+from .voice_schema import SCHEMA as VOICE_SCHEMA
 from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
 SCHEMA = """
@@ -130,6 +131,7 @@ class Store(
             db.executescript(SEMANTIC_SCHEMA)
             db.executescript(TRANSLATION_SCHEMA)
             db.executescript(SPEAKER_SCHEMA)
+            db.executescript(VOICE_SCHEMA)
             message_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_messages)")
             }

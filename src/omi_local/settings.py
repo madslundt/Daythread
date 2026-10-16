@@ -143,7 +143,14 @@ class Settings(BaseSettings):
     diarization_enabled: bool = False
     diarization_base_url: str = "http://127.0.0.1:8790"
     diarization_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    voice_recognition_enabled: bool = False
+    voice_recognition_report: Path | None = None
     web_dir: Path | None = None
+
+    @field_validator("voice_recognition_report", mode="before")
+    @classmethod
+    def optional_voice_report(cls, value):
+        return None if value == "" else value
 
     @field_validator("stt_routes", mode="before")
     @classmethod

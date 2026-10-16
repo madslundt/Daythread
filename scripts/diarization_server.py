@@ -3,7 +3,7 @@
 # dependencies = [
 #   "fastapi>=0.115,<1",
 #   "numpy>=2,<3",
-#   "pyannote.audio>=4,<5",
+#   "pyannote.audio==4.0.4",
 #   "python-multipart>=0.0.20,<1",
 #   "uvicorn>=0.30,<1",
 # ]
@@ -19,11 +19,14 @@ Only Community-1 runs here; audio is never sent to a hosted inference service.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import math
 import os
 import threading
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from importlib.metadata import distribution, version
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -39,6 +42,7 @@ MODEL_ID = "pyannote/speaker-diarization-community-1"
 MAX_DURATION_SECONDS = 8 * 60 * 60
 MAX_AUDIO_BYTES = MAX_DURATION_SECONDS * 16000 * 2 + 65536
 MAX_REQUEST_BYTES = MAX_AUDIO_BYTES + 65536
+EMBEDDING_VERSION = "4.0.4"
 
 # Set before importing pyannote/Hugging Face, including when an operator enabled
 # telemetry globally. Local meeting metadata must stay local.
@@ -150,6 +154,8 @@ class DiarizationRuntime:
         self.pipeline: Any = None
         self.status = "unloaded"
         self.lock = threading.Lock()
+        self.embedding_adapter: tuple[Any, dict] | None = None
+        self.embedding_checked = False
 
     def health(self) -> dict[str, Any]:
         directory = os.environ.get("OMI_DIARIZATION_MODEL_DIR", "").strip()
@@ -193,18 +199,38 @@ class DiarizationRuntime:
                 options = {} if num_speakers is None else {"num_speakers": num_speakers}
                 with torch.inference_mode():
                     output = self.pipeline({"waveform": waveform, "sample_rate": 16000}, **options)
-                turns = normalize_turns(output.exclusive_speaker_diarization, duration)
-                return {"turns": turns, "model": MODEL_ID}
+                labels: dict[str, str] = {}
+                turns = normalize_turns(output.exclusive_speaker_diarization, duration, labels)
+                result = {"turns": turns, "model": MODEL_ID, "voices": []}
+                # Optional recognition must never break basic speaker detection.
+                try:
+                    if not self.embedding_checked and num_speakers is None:
+                        self.embedding_adapter = embedding_adapter(self.pipeline)
+                        self.embedding_checked = True
+                    # Forced cluster counts can hide distinct/overlapping voices.
+                    if self.embedding_adapter and num_speakers is None:
+                        extractor, identity = self.embedding_adapter
+                        regular = normalize_turns(output.speaker_diarization, duration, labels)
+                        result.update(embedding_model=identity, voices=extract_voices(
+                            extractor, identity["dimension"], waveform, samples, regular,
+                            {turn["speaker"] for turn in turns},
+                        ))
+                except Exception:
+                    # No provider exceptions, file paths or secrets go to clients.
+                    pass
+                return result
             except HTTPException:
                 raise
             except Exception:
                 raise HTTPException(503, "Local speaker detection failed.") from None
 
 
-def normalize_turns(annotation: Any, duration: float) -> list[dict[str, Any]]:
+def normalize_turns(
+    annotation: Any, duration: float, labels: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     """Keep timestamps bounded and speaker identifiers stable within this request."""
     turns = []
-    labels: dict[str, str] = {}
+    labels = {} if labels is None else labels
     for segment, _, speaker in annotation.itertracks(yield_label=True):
         start, end = float(segment.start), float(segment.end)
         if not math.isfinite(start) or not math.isfinite(end) or end <= start:
@@ -217,6 +243,160 @@ def normalize_turns(annotation: Any, duration: float) -> list[dict[str, Any]]:
         if len(turns) > 100000:
             raise ValueError("Too many speaker turns.")
     return sorted(turns, key=lambda turn: (turn["start"], turn["end"]))
+
+
+def fingerprint_parts(parts: Iterable[tuple[str, bytes]]) -> str:
+    """Content identity, independent of aliases, local paths and access credentials."""
+    digest = hashlib.sha256()
+    for name, data in parts:
+        encoded = name.encode()
+        digest.update(len(encoded).to_bytes(8, "big") + encoded)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def embedding_adapter(pipeline: Any) -> tuple[Any, dict] | None:
+    """Use only the verified 4.0.4 PyTorch adapter; never load another model.
+
+    Official API: pyannote/pyannote-audio tag 4.0.4, pipelines/speaker_verification.py
+    PyannoteAudioPretrainedSpeakerEmbedding.__call__: (batch,1,samples) -> (batch,dimension).
+    Pipeline centroids are unsuitable: get_embeddings can fall back to overlapping speech.
+    """
+    from pyannote.audio.pipelines.speaker_verification import (
+        PyannoteAudioPretrainedSpeakerEmbedding,
+    )
+
+    extractor = getattr(pipeline, "_embedding", None)
+    if version("pyannote-audio") != EMBEDDING_VERSION or not isinstance(
+        extractor, PyannoteAudioPretrainedSpeakerEmbedding
+    ) or extractor.sample_rate != 16000:
+        return None
+    dimension = int(extractor.dimension)
+    if not 1 <= dimension <= 4096:
+        return None
+    model = extractor.model_
+    model.eval()
+
+    def parts() -> Iterable[tuple[str, bytes]]:
+        config = {"class": f"{type(model).__module__}.{type(model).__qualname__}",
+                  "parameters": dict(model.hparams), "dimension": dimension,
+                  "versions": {p: version(p) for p in
+                               ("pyannote-audio", "torch", "torchaudio", "numpy")}}
+        yield "config", json.dumps(config, sort_keys=True, allow_nan=False).encode()
+        yield "extraction", Path(__file__).read_bytes()
+        package = distribution("pyannote-audio")
+        implementation = [item for item in package.files or []
+                          if str(item).startswith("pyannote/audio/") and str(item).endswith(".py")]
+        if not implementation:
+            raise ValueError("No installed implementation available for fingerprinting.")
+        for item in sorted(implementation, key=str):
+            yield str(item), Path(package.locate_file(item)).read_bytes()
+        state = model.state_dict()
+        if not state:
+            raise ValueError("No embedding weights available for fingerprinting.")
+        for name, tensor in sorted(state.items()):
+            value = tensor.detach().cpu().contiguous()
+            yield name + ":shape", json.dumps([str(value.dtype), list(value.shape)]).encode()
+            # Byte view also supports scalar and bfloat16 state buffers.
+            import torch
+            yield name, value.reshape(-1).view(torch.uint8).numpy().tobytes()
+
+    identity = {"id": "pyannote-community-1-clean-speech", "revision": fingerprint_parts(parts()),
+                "dimension": dimension, "normalization": "l2-v1"}
+    return extractor, identity
+
+
+def union_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged = []
+    for start, end in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def clean_intervals(turns: list[dict], speaker: str) -> tuple[list[tuple[float, float]], float]:
+    """Subtract every other regular-diarization voice, including overlapping tracks."""
+    own = union_intervals([(t["start"], t["end"]) for t in turns if t["speaker"] == speaker])
+    others = union_intervals([(t["start"], t["end"]) for t in turns if t["speaker"] != speaker])
+    clean, index = [], 0
+    for start, end in own:
+        cursor = start
+        while index < len(others) and others[index][1] <= start:
+            index += 1
+        scan = index
+        while scan < len(others) and others[scan][0] < end:
+            left, right = others[scan]
+            if left > cursor:
+                clean.append((cursor, min(left, end)))
+            cursor = max(cursor, right)
+            scan += 1
+        if cursor < end:
+            clean.append((cursor, end))
+    total = sum(b - a for a, b in own)
+    ratio = 1 - sum(b - a for a, b in clean) / total if total else 1.0
+    return clean, min(1.0, max(0.0, ratio))
+
+
+def voice_windows(intervals: list[tuple[float, float]]) -> list[tuple[int, int]]:
+    """At most sixty seconds per voice, in 3–10s contiguous, unpadded windows."""
+    windows, remaining = [], 60 * 16000
+    for start, end in sorted(intervals, key=lambda value: value[1] - value[0], reverse=True):
+        # A small boundary collar reduces contamination from imprecise diarization.
+        first, last = math.ceil((start + 0.15) * 16000), math.floor((end - 0.15) * 16000)
+        while min(last - first, remaining) >= 3 * 16000:
+            stop = first + min(last - first, remaining, 10 * 16000)
+            windows.append((first, stop))
+            remaining -= stop - first
+            first = stop
+    return windows
+
+
+def unit_vector(values: Any, dimension: int) -> list[float]:
+    if len(values) != dimension:
+        raise ValueError("Unexpected embedding dimension.")
+    vector = [float(value) for value in values]
+    if not all(math.isfinite(value) for value in vector):
+        raise ValueError("Invalid embedding values.")
+    norm = math.hypot(*vector)
+    if not math.isfinite(norm) or norm <= 1e-12:
+        raise ValueError("Empty embedding.")
+    return [value / norm for value in vector]
+
+
+def extract_voices(
+    extractor: Any, dimension: int, waveform: Any, samples: Any,
+    regular_turns: list[dict], speakers: set[str],
+) -> list[dict]:
+    voices = []
+    for speaker in sorted(speakers):
+        clean, overlap = clean_intervals(regular_turns, speaker)
+        windows = voice_windows(clean)
+        if sum(last - first for first, last in windows) < 10 * 16000:
+            continue
+        try:
+            accumulated, count, clipped = [0.0] * dimension, 0, 0
+            for first, last in windows:
+                batch = extractor(waveform[:, first:last].unsqueeze(0))
+                if len(batch) != 1:
+                    raise ValueError("Unexpected embedding batch.")
+                vector = unit_vector(batch[0], dimension)
+                size = last - first
+                # PCM16 clipping, measured on exactly the audio used for embeddings.
+                clipped += int(((samples[first:last] >= 32760) |
+                                (samples[first:last] <= -32760)).sum())
+                accumulated = [a + b * size for a, b in zip(accumulated, vector)]
+                count += size
+            if count >= 10 * 16000:
+                voices.append({"speaker": speaker, "embedding": unit_vector(accumulated, dimension),
+                               "clean_seconds": count / 16000, "overlap_ratio": overlap,
+                               "clipped_ratio": clipped / count})
+        except Exception:
+            # A bad/unsupported voice is omitted, never replaced by a fabricated vector.
+            continue
+    return voices
 
 
 def create_app(runtime: DiarizationRuntime | None = None) -> FastAPI:

@@ -1,0 +1,107 @@
+[
+  {
+    "path": "held-out/calibration-conversation-1.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_CALIBRATION_CONVERSATION_1",
+    "split": "calibration",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/calibration-conversation-2.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_CALIBRATION_CONVERSATION_2",
+    "split": "calibration",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/test-conversation-1.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_TEST_CONVERSATION_1",
+    "split": "test",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/test-conversation-2.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_TEST_CONVERSATION_2",
+    "split": "test",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/test-conversation-3.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_TEST_CONVERSATION_3",
+    "split": "test",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/test-conversation-4.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_TEST_CONVERSATION_4",
+    "split": "test",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  },
+  {
+    "path": "held-out/test-conversation-5.wav",
+    "conversation_id": "REPLACE_WITH_UNIQUE_TEST_CONVERSATION_5",
+    "split": "test",
+    "speakers": {
+      "SPEAKER_00": "REPLACE_WITH_CONFIRMED_PROFILE_1_ID",
+      "SPEAKER_01": "REPLACE_WITH_CONFIRMED_PROFILE_2_ID",
+      "SPEAKER_02": "REPLACE_WITH_CONFIRMED_PROFILE_3_ID",
+      "SPEAKER_03": "REPLACE_WITH_CONFIRMED_PROFILE_4_ID",
+      "SPEAKER_04": "REPLACE_WITH_CONFIRMED_PROFILE_5_ID",
+      "SPEAKER_05": "REPLACE_WITH_CONFIRMED_PROFILE_6_ID",
+      "SPEAKER_06": null,
+      "SPEAKER_07": null
+    }
+  }
+]

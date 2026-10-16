@@ -83,7 +83,9 @@ describe("profile isolation", () => {
 
   it("shows a named accessible selector and profile creation action", () => {
     const html = renderToStaticMarkup(<ProfileSelector profiles={[{ id: "default", name: "Default" }, { id: "alice", name: "Alice" }]} selected="alice" onSelect={() => {}} onCreate={() => {}} />);
-    expect(html).toContain('<label for="active-profile">Profile</label>');
+    const selectorId = html.match(/<label for="([^"]+)">Profile<\/label>/)?.[1];
+    expect(selectorId).toBeTruthy();
+    expect(html).toContain(`<select id="${selectorId}">`);
     expect(html).toContain('<option value="alice" selected="">Alice</option>');
     expect(html).toContain("Create profile");
   });

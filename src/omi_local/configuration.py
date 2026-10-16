@@ -30,7 +30,7 @@ def plain(value):
 
 
 def group(key: str) -> str:
-    if key.startswith("diarization_"):
+    if key.startswith(("diarization_", "voice_recognition_")):
         return "Speaker detection"
     if key.startswith("stt_"):
         return "Transcription"
@@ -48,6 +48,12 @@ def group(key: str) -> str:
 
 
 DESCRIPTIONS = {
+    "voice_recognition_enabled": "Remember explicitly confirmed voices across conversations in "
+    "this archive. Suggestions require a passing evaluation on separate recordings; names are "
+    "never applied automatically. Original audio retention also removes learned examples.",
+    "voice_recognition_report": "Local JSON report from scripts/evaluate_speakers.py. "
+    "Suggestions stay off until its model, confirmed examples and accuracy checks match. "
+    "A relative path is resolved within this archive's data directory.",
     "diarization_enabled": "Enable local speaker detection for meetings and conversations. "
     "Requires the separate local diarization service and downloaded model weights. "
     "Names apply only to the selected conversation; simultaneous voices remain mixed.",
@@ -126,6 +132,8 @@ def descriptors() -> list[dict]:
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
         title = {
+            "voice_recognition_enabled": "Remember speakers",
+            "voice_recognition_report": "Speaker recognition evaluation report",
             "diarization_enabled": "Enable speaker detection",
             "diarization_base_url": "Speaker service address",
             "diarization_timeout_seconds": "Speaker detection timeout (seconds)",

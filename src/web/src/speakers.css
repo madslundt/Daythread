@@ -16,6 +16,13 @@
 .speaker-turn-heading label { margin-left: auto; }
 .speaker-turns .transcript-text { margin-block: 8px 0; display: block; color: var(--ink); }
 .meeting-speakers > summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.speaker-remember, .voice-profiles { margin-block: 12px; }
+.speaker-remember > summary, .voice-profiles > summary { cursor: pointer; font-size: 13px; }
+.speaker-suggestion { border-left: 3px solid var(--accent); padding-left: 12px; margin-top: 12px; }
+.voice-profile { margin-top: 12px; border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
+.voice-profile ul { list-style: none; padding: 0; margin-bottom: 0; }
+.voice-profile li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; margin-top: 8px; }
+.voice-profile li > span { flex: 1 1 180px; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .speaker-name-form input, .speaker-merge-form select, .speaker-turn-heading select { font-size: 16px; }
   .speaker-card { padding: 10px; }

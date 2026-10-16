@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage } from "./api";
-import { SpeakersRequests, speakerName, speakerTime, type Speaker, type SpeakersData } from "./speakersRequests";
+import { SpeakersRequests, VoiceProfilesRequests, speakerName, speakerTime, type Speaker, type SpeakersData, type VoiceProfilesData, type VoiceProfile } from "./speakersRequests";
 import { ErrorState } from "./UI";
 import "./speakers.css";
 
@@ -10,7 +10,10 @@ export function Speakers({ kind, id }: { kind: "source" | "meeting"; id: string 
 
 function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string }) {
   const [requests] = useState(() => new SpeakersRequests(kind, id));
+  const [voiceRequests] = useState(() => new VoiceProfilesRequests());
   const [data, setData] = useState<SpeakersData>();
+  const [voices, setVoices] = useState<VoiceProfilesData>();
+  const [voiceError, setVoiceError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -20,6 +23,7 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
   const [audioError, setAudioError] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
   const activeMutation = useRef(false);
+  const operationEpoch = useRef(0);
   const currentScope = useRef<SpeakersData["scope"]>(undefined);
   currentScope.current = data?.scope;
   const bindAudio = useCallback((element: HTMLAudioElement | null) => {
@@ -29,27 +33,35 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
 
   useEffect(() => {
     let active = true;
+    operationEpoch.current += 1;
     setLoading(true);
     setBusy(false);
     activeMutation.current = false;
     setDetecting(false);
     setListening(undefined);
     setData(undefined);
+    setVoices(undefined);
+    setVoiceError("");
     setError("");
     requests.run("GET").then((result) => {
       if (active && result) { setData(result); setLoading(false); }
     }).catch((failure) => {
       if (active) { setError(errorMessage(failure)); setLoading(false); }
     });
-    return () => { active = false; requests.cancel(); };
-  }, [requests, revision]);
+    voiceRequests.run("GET").then((result) => { if (active && result) setVoices(result); })
+      .catch((failure) => { if (active) setVoiceError(errorMessage(failure)); });
+    return () => { active = false; requests.cancel(); voiceRequests.cancel(); };
+  }, [requests, voiceRequests, revision]);
 
   useEffect(() => {
     const refresh = () => {
+      operationEpoch.current += 1;
       requests.cancel();
+      voiceRequests.cancel();
       audio.current?.pause();
       setListening(undefined);
       setData(undefined);
+      setVoices(undefined);
       setLoading(true);
       setRevision((value) => value + 1);
     };
@@ -63,18 +75,21 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     window.addEventListener("omi:archive-changed", refresh);
     window.addEventListener("omi:settings-changed", refresh);
     window.addEventListener("omi:speakers-changed", speakersChanged);
+    window.addEventListener("omi:voice-profiles-changed", speakersChanged);
     window.addEventListener("focus", refresh);
     return () => {
       audio.current?.pause();
       window.removeEventListener("omi:archive-changed", refresh);
       window.removeEventListener("omi:settings-changed", refresh);
       window.removeEventListener("omi:speakers-changed", speakersChanged);
+      window.removeEventListener("omi:voice-profiles-changed", speakersChanged);
       window.removeEventListener("focus", refresh);
     };
-  }, [requests]);
+  }, [requests, voiceRequests]);
 
   async function mutate(method: "POST" | "PATCH", suffix = "", body?: unknown) {
-    if (loading || busy) return;
+    if (loading || busy || activeMutation.current) return;
+    const epoch = ++operationEpoch.current;
     activeMutation.current = true;
     setBusy(true);
     setDetecting(method === "POST" && suffix === "");
@@ -84,15 +99,41 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     try {
       const result = await requests.run(method, suffix, body);
       if (result) {
-        setData(result); setBusy(false); setDetecting(false);
+        setData(result);
         window.dispatchEvent(new CustomEvent("omi:speakers-changed", { detail: { origin: requests, scope: result.scope } }));
+        if (suffix.endsWith("/remember") || suffix.endsWith("/confirm") || method === "PATCH" || suffix === "/merge" || suffix === "") {
+          try {
+            const directory = await voiceRequests.run("GET");
+            if (directory && operationEpoch.current === epoch) setVoices(directory);
+          } catch (failure) { if (operationEpoch.current === epoch) setVoiceError(errorMessage(failure)); }
+          if (operationEpoch.current === epoch) window.dispatchEvent(new CustomEvent("omi:voice-profiles-changed", { detail: { origin: requests } }));
+        }
       }
-    } catch (failure) { setError(errorMessage(failure)); setBusy(false); setDetecting(false); }
-    finally { activeMutation.current = false; }
+    } catch (failure) { if (operationEpoch.current === epoch) setError(errorMessage(failure)); }
+    finally { if (operationEpoch.current === epoch) { activeMutation.current = false; setBusy(false); setDetecting(false); } }
+  }
+
+  async function forgetVoice(profile: VoiceProfile, exampleId?: string) {
+    if (loading || busy || activeMutation.current || !voices) return;
+    if (!window.confirm(exampleId ? `Remove this saved voice example for ${profile.name}? Confirmed conversation names stay unchanged.` : `Forget the saved voice ${profile.name} and all its examples? Future conversations will no longer suggest this voice. Confirmed conversation names stay unchanged.`)) return;
+    const epoch = ++operationEpoch.current;
+    activeMutation.current = true; setBusy(true); setVoiceError("");
+    try {
+      const directory = await voiceRequests.forget(profile.id, voices.revision, exampleId);
+      if (!directory || operationEpoch.current !== epoch) return;
+      setVoices(directory);
+      const updated = await requests.run("GET");
+      if (updated && operationEpoch.current === epoch) setData(updated);
+      if (operationEpoch.current === epoch) window.dispatchEvent(new CustomEvent("omi:voice-profiles-changed", { detail: { origin: requests } }));
+    } catch (failure) { if (operationEpoch.current === epoch) setVoiceError(errorMessage(failure)); }
+    finally { if (operationEpoch.current === epoch) { activeMutation.current = false; setBusy(false); } }
   }
 
   const selected = data?.speakers.find((speaker) => speaker.id === listening);
-  return <SpeakersView data={data} loading={loading} busy={busy} detecting={detecting} error={error}
+  return <SpeakersView data={data} voices={voices} voiceError={voiceError} loading={loading} busy={busy} detecting={detecting} error={error}
+    onForget={(profile, example) => void forgetVoice(profile, example)}
+    onRemember={(speaker, choice) => void mutate("POST", `/${encodeURIComponent(speaker)}/remember`, { ...choice, version: data?.version })}
+    onConfirm={(speaker, profile) => void mutate("POST", `/${encodeURIComponent(speaker)}/confirm`, { profile_id: profile, version: data?.version })}
     onRetry={() => setRevision((value) => value + 1)} onDetect={() => {
       const reset = data?.state !== "idle";
       if (reset && !window.confirm("Detect speakers again? This replaces the existing speaker labels, names and turn assignments for this conversation or meeting.")) return;
@@ -112,8 +153,10 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
   </SpeakersView>;
 }
 
-export function SpeakersView({ data, loading, busy, detecting = false, error, onDetect, onRetry, onRename, onListen, onMerge, onReassign, children }: {
+export function SpeakersView({ data, voices, voiceError, loading, busy, detecting = false, error, onDetect, onRetry, onRename, onListen, onMerge, onReassign, onRemember, onConfirm, onForget, children }: {
   data?: SpeakersData;
+  voices?: VoiceProfilesData;
+  voiceError?: string;
   loading: boolean;
   busy: boolean;
   detecting?: boolean;
@@ -124,6 +167,9 @@ export function SpeakersView({ data, loading, busy, detecting = false, error, on
   onListen: (speaker: string) => void;
   onMerge: (source: string, target: string) => void;
   onReassign: (turn: string, speaker: string) => void;
+  onRemember?: (speaker: string, choice: { profile_id: string } | { name: string }) => void;
+  onConfirm?: (speaker: string, profile: string) => void;
+  onForget?: (profile: VoiceProfile, exampleId?: string) => void;
   children?: ReactNode;
 }) {
   const stale = data?.state === "stale";
@@ -140,6 +186,10 @@ export function SpeakersView({ data, loading, busy, detecting = false, error, on
     {loading ? <p className="caption" role="status">Loading speakers…</p> : null}
     {detecting ? <p className="caption" role="status">Analyzing retained audio with your local speaker service. This may take a few minutes.</p> : null}
     {error ? <ErrorState message={error} retry={onRetry} /> : null}
+    {data?.recognition || voices?.recognition ? <p className="caption" role="status">{(data?.recognition || voices?.recognition)?.message}</p> : null}
+    <p className="caption">Voice profiles stay in the selected archive. A suggestion never changes a name until you confirm it.</p>
+    {voiceError ? <ErrorState message={voiceError} retry={onRetry} /> : null}
+    {onForget ? <VoiceProfilesManager voices={voices} busy={busy || loading} onForget={onForget} /> : null}
     {data && !data.configured ? <p className="caption">Enable speaker detection and configure your local speaker service in <a href="#settings/server">Settings → Models &amp; server → Speaker detection</a>.</p> : null}
     {data && !data.audio_available ? <p className="caption">Original audio is unavailable. Speaker detection and speaker-only playback require retained audio.</p> : null}
     {data && data.state !== "idle" ? <p className="caption">Detecting again replaces speaker labels, names and turn assignments.</p> : null}
@@ -147,10 +197,12 @@ export function SpeakersView({ data, loading, busy, detecting = false, error, on
     {data?.state === "ready" && !data.speakers.length ? <p className="caption">No speakers detected in this audio.</p> : null}
     {data?.speakers.length ? <>
       <p className="caption">Names apply only to this {data.scope?.kind === "meeting" ? "meeting" : "conversation"}{data.source_count && data.source_count > 1 ? ` across ${data.source_count} recordings` : ""}. Detection can make mistakes; review speaking turns below. Overlapping voices may remain audible.</p>
+      {data.speakers.some((speaker) => speaker.remembered_example_id) ? <p className="caption">Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers.</p> : null}
       <div className="speaker-list">
-        {data.speakers.map((speaker) => <SpeakerEditor key={`${speaker.id}:${speaker.name || ""}`} speaker={speaker}
+        {data.speakers.map((speaker) => <SpeakerEditor key={`${speaker.id}:${speaker.name || ""}:${speaker.voice_profile_id || ""}:${speaker.remembered_example_id || ""}`} speaker={speaker}
           speakers={data.speakers} editable={editable} canListen={editable && data.audio_available}
-          onRename={onRename} onListen={onListen} onMerge={onMerge} />)}
+          voices={voices} recognition={data.recognition?.state || voices?.recognition.state || "disabled"}
+          onRemember={onRemember} onConfirm={onConfirm} onRename={onRename} onListen={onListen} onMerge={onMerge} />)}
       </div>
       {!stale ? children : null}
       <details className="speaker-turns">
@@ -172,24 +224,55 @@ export function SpeakersView({ data, loading, busy, detecting = false, error, on
   </section>;
 }
 
-function SpeakerEditor({ speaker, speakers, editable, canListen, onRename, onListen, onMerge }: {
+function SpeakerEditor({ speaker, speakers, voices, recognition, editable, canListen, onRename, onListen, onMerge, onRemember, onConfirm }: {
   speaker: Speaker; speakers: Speaker[]; editable: boolean; canListen: boolean;
+  voices?: VoiceProfilesData; recognition: "disabled" | "unvalidated" | "ready";
   onRename: (speaker: string, name: string | null) => void;
   onListen: (speaker: string) => void;
   onMerge: (source: string, target: string) => void;
+  onRemember?: (speaker: string, choice: { profile_id: string } | { name: string }) => void;
+  onConfirm?: (speaker: string, profile: string) => void;
 }) {
   const [name, setName] = useState(speaker.name || "");
   const [mergeTarget, setMergeTarget] = useState("");
+  const [voiceTarget, setVoiceTarget] = useState(speaker.voice_profile_id || "");
+  const [voiceName, setVoiceName] = useState(speaker.name || "");
+  const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
   const label = speakerName(speaker);
   return <div className="speaker-card">
     <div className="speaker-heading"><strong>{label}</strong><span className="caption">{speakerTime(speaker.seconds)} speaking</span>
       <button type="button" className="button small" disabled={!canListen} onClick={() => onListen(speaker.id)}>Listen to {label} only</button>
     </div>
+    {speaker.suggestion && !dismissedSuggestion ? <div className="speaker-suggestion">
+      <p className="caption">Suggested: {speaker.suggestion.name}. Listen first, then confirm the person.</p>
+      <div className="button-row">
+        <button type="button" className="button small" disabled={!canListen || recognition !== "ready" || !onConfirm}
+          onClick={() => onConfirm?.(speaker.id, speaker.suggestion!.profile_id)}>Confirm {speaker.suggestion.name}</button>
+        <button type="button" className="text-button" onClick={() => setDismissedSuggestion(true)}>Leave {label} unchanged</button>
+      </div>
+    </div> : null}
+    {speaker.remembered_example_id ? <p className="caption">Saved as a voice example for future conversations.</p> : null}
     <form className="speaker-name-form" onSubmit={(event) => { event.preventDefault(); onRename(speaker.id, name.trim() || null); }}>
       <label>Name for {label}<input value={name} placeholder={speaker.label} maxLength={120} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
       <button className="button small" type="submit" disabled={!editable || (name.trim() || null) === speaker.name}>Save name</button>
       {speaker.name ? <button className="text-button" type="button" disabled={!editable} onClick={() => onRename(speaker.id, null)}>Reset to {speaker.label}</button> : null}
     </form>
+    {onRemember ? <details className="speaker-remember">
+      <summary>Remember speaker for future conversations</summary>
+      <p className="caption">After listening, explicitly choose whose voice this is. Saved examples can suggest a name in later conversations; you confirm every suggestion. A new profile remains separate even if its name matches another profile.</p>
+      <form className="speaker-name-form" onSubmit={(event) => {
+        event.preventDefault();
+        onRemember(speaker.id, voiceTarget ? { profile_id: voiceTarget } : { name: voiceName.trim() });
+      }}>
+        <label>Save voice to <select value={voiceTarget} onChange={(event) => setVoiceTarget(event.target.value)} disabled={!editable || !voices}>
+          <option value="">Create a new voice profile</option>
+          {voices?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.example_count} examples</option>)}
+        </select></label>
+        {!voiceTarget ? <label>New voice profile name<input value={voiceName} maxLength={120} disabled={!editable}
+          onChange={(event) => setVoiceName(event.target.value)} placeholder="Name" /></label> : null}
+        <button className="button small" type="submit" disabled={!canListen || !voices || recognition === "disabled" || (!voiceTarget && !voiceName.trim())}>Confirm and remember voice</button>
+      </form>
+    </details> : null}
     {speakers.length > 1 ? <form className="speaker-merge-form" onSubmit={(event) => { event.preventDefault(); if (mergeTarget) onMerge(speaker.id, mergeTarget); }}>
       <label>Same person as <select value={mergeTarget} disabled={!editable} onChange={(event) => setMergeTarget(event.target.value)}>
         <option value="">Choose speaker…</option>
@@ -198,4 +281,21 @@ function SpeakerEditor({ speaker, speakers, editable, canListen, onRename, onLis
       <button className="text-button" type="submit" disabled={!editable || !mergeTarget}>Merge turns</button>
     </form> : null}
   </div>;
+}
+
+export function VoiceProfilesManager({ voices, busy, onForget }: { voices?: VoiceProfilesData; busy: boolean;
+  onForget: (profile: VoiceProfile, exampleId?: string) => void }) {
+  return <details className="voice-profiles">
+    <summary>Saved voices{voices ? ` (${voices.profiles.length})` : ""}</summary>
+    <p className="caption">Only examples you explicitly confirm are saved. Removing an example stops using it for recognition. Forgetting a voice removes all its saved examples. Conversation names stay in their conversations.</p>
+    {!voices ? <p className="caption">Loading saved voices…</p> : !voices.profiles.length ? <p className="caption">No saved voices in this archive.</p> : voices.profiles.map((profile) => <div className="voice-profile" key={profile.id}>
+      <div className="speaker-heading"><strong>{profile.name}</strong><span className="caption">{profile.example_count} examples · {profile.conversation_count} conversations</span>
+        <button type="button" className="text-button danger" disabled={busy} onClick={() => onForget(profile)}>Forget voice</button>
+      </div>
+      <ul>{profile.examples.map((example) => <li key={example.id}>
+        <span>{speakerTime(example.seconds)} · {example.scope.kind === "meeting" ? "Meeting" : "Conversation"} {example.scope.id.slice(0, 8)} · {example.created_at.slice(0, 10)}</span>
+        <button type="button" className="text-button" disabled={busy} onClick={() => onForget(profile, example.id)}>Remove example</button>
+      </li>)}</ul>
+    </div>)}
+  </details>;
 }

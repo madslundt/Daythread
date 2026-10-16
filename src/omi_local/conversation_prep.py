@@ -6,7 +6,7 @@ import json
 from pydantic import ValidationError
 
 from .domain import EvidenceChanged, stamp, utc_now
-from .inference import InferenceError
+from .inference import InferenceError, for_task
 from .prep_models import PrepGenerate, PrepOutput, PrepSearch
 from .service import Memory, public_source
 
@@ -189,7 +189,9 @@ async def generate(memory: Memory, body: PrepGenerate) -> dict:
         "user_context": body.user_context,
         "recorded_evidence": evidence,
     }
-    raw = await memory.inference.generate(TASK, json.dumps(payload, ensure_ascii=False))
+    raw = await for_task(memory.inference, "preparation").generate(
+        TASK, json.dumps(payload, ensure_ascii=False)
+    )
     if not validate(memory, body.search, body.snapshot):
         raise EvidenceChanged()
     try:
@@ -241,7 +243,7 @@ async def generate(memory: Memory, body: PrepGenerate) -> dict:
         | {
             "reviewed_excerpts": evidence,
             "generated_at": stamp(utc_now()),
-            "model": memory.settings.llm_model,
+            "model": memory.settings.llm_route("preparation").model,
             "prompt_version": PROMPT_VERSION,
             "latest_source_id": str(body.latest_source_id),
             "user_context": body.user_context,

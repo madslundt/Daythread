@@ -172,6 +172,7 @@ Set these values in `.env`; the example gateway/model names are specific to the 
 | `OMI_STT_BASE_URL`, `OMI_STT_MODEL` | Local transcription endpoint base (including `/v1`) and model name. |
 | `OMI_LLM_BASE_URL`, `OMI_LLM_MODEL` | Local language-model endpoint base (including `/v1`) and model name. |
 | `OMI_INFERENCE_TOKEN` | Optional credential for your local inference gateway. |
+| `OMI_LLM_ROUTES__<TASK>__MODEL` | Optional model override for `CHAT`, `SUMMARY`, `EXTRACTION`, `PREPARATION`, or `WEEKLY`; unset tasks use `OMI_LLM_MODEL`. Each task also supports `BASE_URL`, `TOKEN`, and `REVISION`. See [local inference](docs/README.md#local-inference). |
 | `OMI_DATA_DIR`, `OMI_TIMEZONE` | Archive location (default `data/`) and local calendar timezone. |
 | `OMI_AUDIO_RETENTION_DAYS`, `OMI_TRANSCRIPT_RETENTION_DAYS` | Independent retention periods; defaults are 7 days for audio and 30 days for transcripts. `0` keeps data indefinitely. |
 

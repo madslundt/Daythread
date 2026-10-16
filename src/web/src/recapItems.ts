@@ -49,7 +49,7 @@ function words(text: string): string[] {
 
 export function itemSources(text: string, sources: Source[]): { sources: Source[]; basis: "citation" | "subject" | "words" | "unlinked" } {
   const ids = new Set((text.match(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi) ?? []).map((id) => id.toLowerCase()));
-  // An explicit citation takes precedence over a time mentioned in the same item.
+  // Explicit source links take precedence over inferred subject matches.
   if (ids.size) return { sources: sources.filter((source) => ids.has(source.id.toLowerCase())), basis: "citation" };
   const label = text.match(/^\*\*([^*]+)\*\*/)?.[1] ?? text.match(/^([^:—–]+)[—–:]\s+/)?.[1] ?? "";
   const subject = words(label.replace(/(?:[·|]\s*)?\b\d{1,2}:\d{2}\b.*$/, ""));
@@ -62,7 +62,10 @@ export function itemSources(text: string, sources: Source[]): { sources: Source[
   // Uncited older recaps can have descriptive labels, e.g. "Around town".
   // Require multiple distinctive words; a timestamp alone never establishes relevance.
   const keywords = new Set(words(text).filter((word) => word.length >= 3 && !commonWords.has(word) && !/^\d+$/.test(word)));
+  const pointWords = words(text);
+  const pointPhrase = ` ${pointWords.join(" ")} `;
   const matching = candidates.filter((candidate) => {
+    if (keywords.size && pointWords.length >= 2 && ` ${candidate.words.join(" ")} `.includes(pointPhrase)) return true;
     const overlap = [...new Set(candidate.words)].filter((word) => keywords.has(word));
     return overlap.length >= 2;
   }).map((candidate) => candidate.source);

@@ -1,17 +1,81 @@
+import json
 import re
 from ipaddress import ip_address
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .domain import HintPolicy
 
+LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly"]
+
+
+def local_endpoint(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Use a local HTTP(S) inference endpoint")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Endpoint must not contain credentials, query, or fragment")
+    host = parsed.hostname
+    try:
+        address = ip_address(host)
+        local = (address.is_private or address.is_loopback) and not address.is_unspecified
+    except ValueError:
+        local = (
+            host == "localhost"
+            or "." not in host
+            or host.endswith((".home.arpa", ".local", ".lan"))
+        )
+    if not local:
+        raise ValueError("Use a private IP or a local hostname for inference")
+    return value.rstrip("/")
+
+
+class LLMRouteOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    base_url: str | None = None
+    token: SecretStr | None = None
+    revision: str | None = Field(default=None, max_length=200)
+
+    @field_validator("model")
+    @classmethod
+    def nonempty_model(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Model must not be blank")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def valid_endpoint(cls, value: str | None) -> str | None:
+        return local_endpoint(value) if value is not None else None
+
+
+class LLMRoute(BaseModel):
+    model: str
+    base_url: str
+    token: SecretStr
+    revision: str
+
+    @property
+    def identity(self) -> dict:
+        # Credentials never belong in generated output, cache fingerprints, or archives.
+        return {"model": self.model, "endpoint": self.base_url, "revision": self.revision}
+
+    @property
+    def cache_key(self) -> str:
+        return json.dumps(self.identity, sort_keys=True)
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="OMI_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="OMI_", env_file=".env", env_nested_delimiter="__", extra="ignore"
+    )
 
     data_dir: Path = Path("data")
     timezone: str = "Europe/Copenhagen"
@@ -24,6 +88,7 @@ class Settings(BaseSettings):
     stt_model: str = "stt-danish"
     llm_model: str = "home"
     llm_revision: str = Field(default="", max_length=200)
+    llm_routes: dict[LLMTask, LLMRouteOverride] = Field(default_factory=dict)
     embedding_enabled: bool = False
     embedding_base_url: str = "http://127.0.0.1:4000/v1"
     embedding_token: SecretStr = SecretStr("")
@@ -52,6 +117,15 @@ class Settings(BaseSettings):
     silence_threshold: int = Field(default=35, ge=0, le=32767)
     stt_segment_timestamps: bool = False
     web_dir: Path | None = None
+
+    def llm_route(self, task: LLMTask) -> LLMRoute:
+        override = self.llm_routes.get(task, LLMRouteOverride())
+        return LLMRoute(
+            model=override.model if override.model is not None else self.llm_model,
+            base_url=override.base_url if override.base_url is not None else self.llm_base_url,
+            token=override.token if override.token is not None else self.inference_token,
+            revision=override.revision if override.revision is not None else self.llm_revision,
+        )
 
     @field_validator("audio_forwarding_token")
     @classmethod
@@ -114,24 +188,7 @@ class Settings(BaseSettings):
     @field_validator("stt_base_url", "llm_base_url", "embedding_base_url")
     @classmethod
     def local_endpoint(cls, value: str) -> str:
-        parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError("Use a local HTTP(S) inference endpoint")
-        if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError("Endpoint must not contain credentials, query, or fragment")
-        host = parsed.hostname
-        try:
-            address = ip_address(host)
-            local = (address.is_private or address.is_loopback) and not address.is_unspecified
-        except ValueError:
-            local = (
-                host == "localhost"
-                or "." not in host
-                or host.endswith((".home.arpa", ".local", ".lan"))
-            )
-        if not local:
-            raise ValueError("Use a private IP or a local hostname for inference")
-        return value.rstrip("/")
+        return local_endpoint(value)
 
 
 RUNTIME_FIELDS = (

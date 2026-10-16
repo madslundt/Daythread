@@ -262,17 +262,22 @@ class ArchiveStore:
                 )
             ]
 
-    def chat_session(self, key: str) -> dict | None:
+    def chat_session(self, key: str, message_limit: int | None = None) -> dict | None:
+        if message_limit is not None and message_limit < 1:
+            raise ValueError("Message limit must be positive")
         with self.connect() as db:
             row = db.execute("SELECT * FROM chat_sessions WHERE id=?", (key,)).fetchone()
             if not row:
                 return None
-            messages = [
-                dict(message)
-                for message in db.execute(
-                    "SELECT * FROM chat_messages WHERE session_id=? ORDER BY created_at,id", (key,)
+            query = "SELECT * FROM chat_messages WHERE session_id=? ORDER BY created_at,id"
+            args = (key,)
+            if message_limit is not None:
+                query = (
+                    "SELECT * FROM (SELECT * FROM chat_messages WHERE session_id=? "
+                    "ORDER BY created_at DESC,id DESC LIMIT ?) ORDER BY created_at,id"
                 )
-            ]
+                args = (key, message_limit)
+            messages = [dict(message) for message in db.execute(query, args)]
             # Preserve historical text, while playback reflects the current archive.
             current_sources = {}
             for message in messages:

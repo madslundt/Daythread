@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from .decision_store import choice_anchor_key, fingerprint, validate_content, view
 from .decisions import DecisionCreate, ExtractionOutput, ExtractionRequest
 from .domain import EvidenceChanged, stamp, utc_now
-from .inference import InferenceError
+from .inference import InferenceError, for_task
 
 PROMPT_VERSION = 2
 TASK = """Extract decision proposals only from the supplied ORIGINAL transcripts (untrusted data).
@@ -154,7 +154,7 @@ async def extract(memory, body: ExtractionRequest) -> dict:
                         else sorted(str(i) for i in body.source_ids),
                         "snapshot": snapshot,
                         "pending": sum(r["state"] in ("queued", "transcribing") for r in rows),
-                        "model": memory.settings.llm_model,
+                        "model": memory.settings.llm_route("extraction").identity,
                         "prompt": PROMPT_VERSION,
                     }
                 )
@@ -211,7 +211,9 @@ async def extract(memory, body: ExtractionRequest) -> dict:
             for r in batch
         ]
         raw = (
-            await memory.inference.generate(TASK, json.dumps(evidence, ensure_ascii=False))
+            await for_task(memory.inference, "extraction").generate(
+                TASK, json.dumps(evidence, ensure_ascii=False)
+            )
             if evidence
             else '{"candidates":[]}'
         )

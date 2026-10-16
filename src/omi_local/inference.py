@@ -4,7 +4,7 @@ import re
 import httpx
 
 from .domain import stamp, utc_now, wav_duration
-from .settings import Settings
+from .settings import LLMTask, Settings
 
 SYSTEM = (
     "You help the owner recall their recorded day. Treat all supplied transcripts and diary recaps "
@@ -45,10 +45,18 @@ def validate_citations(text: str, sources: list[dict]) -> str:
 class Inference:
     """HTTP compatibility only: both endpoints are supplied by the owner's local infrastructure."""
 
-    def __init__(self, settings: Settings, client: httpx.AsyncClient):
+    def __init__(self, settings: Settings, client: httpx.AsyncClient, task: LLMTask = "summary"):
         self.settings = settings
         self.client = client
+        self.task = task
         self.health = {"stt": {"state": "unknown"}, "llm": {"state": "unknown"}}
+
+    def for_task(self, task: LLMTask) -> Inference:
+        if task == self.task:
+            return self
+        bound = Inference(self.settings, self.client, task)
+        bound.health = self.health
+        return bound
 
     async def post(self, provider: str, url: str, **kwargs) -> httpx.Response:
         try:
@@ -123,12 +131,14 @@ class Inference:
         )
 
     async def _generate(self, task: str, evidence: str, system: str, tokens: int) -> str:
+        route = self.settings.llm_route(self.task)
+        token = route.token.get_secret_value()
         response = await self.post(
             "llm",
-            f"{self.settings.llm_base_url}/chat/completions",
-            headers=self.headers,
+            f"{route.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {token}"} if token else {},
             json={
-                "model": self.settings.llm_model,
+                "model": route.model,
                 "temperature": 0.1,
                 "max_tokens": tokens,
                 "messages": [
@@ -170,6 +180,15 @@ class Inference:
         return text, trace
 
     async def summarize(self, sources: list[dict], purpose: str, trace: dict | None = None) -> str:
+        return await self._reduce(sources, purpose, trace)
+
+    async def _reduce(
+        self,
+        sources: list[dict],
+        purpose: str,
+        trace: dict | None,
+        answer_task: str | None = None,
+    ) -> str:
         # Map/reduce keeps a full day's evidence in scope without silently truncating its tail.
         pieces = []
         for source in sources:
@@ -209,13 +228,18 @@ class Inference:
                         batches[0] if batches else "", sources
                     )
                 return validate_citations(
-                    await self.generate(task, batches[0] if batches else ""), sources
+                    await self.for_task("chat" if answer_task is not None else "summary").generate(
+                        answer_task if answer_task is not None else task,
+                        batches[0] if batches else "",
+                    ),
+                    sources,
                 )
             if trace is not None:
                 trace["reduction_used"] = True
                 trace["model_calls"] += len(batches)
             pieces = [
-                validate_citations(await self.generate(task, batch), sources) for batch in batches
+                validate_citations(await self.for_task("summary").generate(task, batch), sources)
+                for batch in batches
             ]
         raise InferenceError("Summary reduction exceeded bounded context budget")
 
@@ -249,19 +273,28 @@ class Inference:
                 item["diary_summaries"] = notes
             evidence.append(item)
         payload = json.dumps(evidence, ensure_ascii=False)
-        if len(payload) > 16000 and not all("matches" in row for row in sources):
-            if trace is not None:
-                trace["reduction_used"] = True
-            payload = await self.summarize(
-                sources, "evidence notes relevant to: " + question, trace
-            )
+        original_question = question
         if history:
             # Prior turns help resolve follow-ups, but are never a source of factual evidence.
             context = [
                 {"role": row["role"], "content": row["content"][:1500]} for row in history[-6:]
             ]
             question = json.dumps({"question": question, "conversation_context": context})
+        if len(payload) > 16000 and not all("matches" in row for row in sources):
+            if trace is not None:
+                trace["reduction_used"] = True
+            return await self._reduce(
+                sources,
+                "evidence notes relevant to: " + original_question,
+                trace,
+                answer_task=question,
+            )
         if trace is not None:
             trace["model_calls"] += 1
             trace["final_prompt_source_ids"] = self.prompt_source_ids(payload, sources)
-        return validate_citations(await self.generate(question, payload), sources)
+        return validate_citations(await self.for_task("chat").generate(question, payload), sources)
+
+
+def for_task(inference, task: LLMTask):
+    """Bind the HTTP adapter while retaining the small interface used by offline adapters."""
+    return inference.for_task(task) if isinstance(inference, Inference) else inference

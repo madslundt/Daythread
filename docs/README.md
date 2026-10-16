@@ -141,6 +141,21 @@ The example uses the inspected HomeCompute repository configuration:
 
 Configure `OMI_STT_BASE_URL`, `OMI_LLM_BASE_URL`, `OMI_STT_MODEL`, and `OMI_LLM_MODEL` in `.env`. `OMI_INFERENCE_TOKEN` is optional authentication for your own inference gateway and is never an app login credential. Endpoints accept private IPs and local DNS/service names. There is no cloud fallback or redirect following.
 
+Every LLM task inherits that shared model, endpoint, token and revision by default. Optional backend-only overrides let each task use a different local model or server:
+
+```dotenv
+OMI_LLM_MODEL=home
+# Optional examples; use aliases actually configured on your local gateway.
+OMI_LLM_ROUTES__CHAT__MODEL=fast-chat
+OMI_LLM_ROUTES__SUMMARY__MODEL=long-context
+```
+
+Supported tasks are `CHAT` (final answers), `SUMMARY` (diary, meeting, rewind and large-chat evidence reduction), `EXTRACTION` (inbox and decisions), `PREPARATION` (conversation briefs), and `WEEKLY` (weekly extraction and synthesis). Each also accepts `BASE_URL`, `TOKEN`, and `REVISION`, for example `OMI_LLM_ROUTES__SUMMARY__BASE_URL=http://summarizer.local:4000/v1`. Omitted fields inherit the corresponding shared setting; an explicitly empty `TOKEN` removes authentication for that task. Use `REVISION` when replacing weights behind the same model alias. Routes require the same private/local endpoints and HTTP chat-completions contract; they do not download models or enable hosted inference. Restart the backend after editing environment configuration. STT and embeddings retain their separate settings.
+
+Generated output records the selected model. Diary and weekly fingerprints include the task's model, endpoint and revision, and extraction jobs use the extraction route identity. Changing only the chat route leaves diary/weekly caches valid. Task credentials are excluded from public settings, generated output, cache identities and backups.
+
+Chat uses one answer-model call for bounded topic excerpts. Broad recall samples chronological source IDs in SQLite before loading transcript bodies; with a limit of one it chooses the most recent eligible recording. Database sampling runs outside the event loop. Follow-ups load only the six recent messages used for model context; opening a saved chat still returns its complete history. Large selected transcripts are reduced in bounded summary-model batches, then answered directly by the chat model without an extra final-summary call. Full selected evidence and source validation are preserved. Responses currently return completed JSON rather than streamed tokens. Real answer latency depends on local model loading, context size and gateway contention; the fictional retrieval evaluation below measures search alone.
+
 Adapters use HTTP `/audio/transcriptions` and `/chat/completions`; the existing home-core Wyoming service on port 10300 needs an HTTP bridge before it can be used here. The configured gateway and previous `192.168.30.122:18080` address were unreachable from this Mac during validation, so real STT/LLM quality and latency have not been verified. When models are unreachable, audio remains queued and summary/chat errors remain visible.
 
 Optional `OMI_STT_SEGMENT_TIMESTAMPS=true` requests verbose segment timestamps from compatible providers. A conservative local audio-energy silence gate avoids transcribing quiet chunks; it is not a diarization model. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and speaker identification is not implemented. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.

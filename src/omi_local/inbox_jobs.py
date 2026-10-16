@@ -9,7 +9,8 @@ from .domain import stamp, utc_now
 from .inbox_domain import validate_candidates
 from .inbox_split import split_job
 from .inbox_store import InboxStore
-from .inference import InferenceTruncated
+from .inference import InferenceTruncated, for_task
+from .settings import Settings
 
 PROMPT_VERSION = "inbox-1"
 TASK = """Return only JSON: {"candidates":[{"kind":"commitment|deadline|question",
@@ -197,8 +198,22 @@ class InboxJobs:
         job = self.claim()
         if not job:
             return False
-        configured_model = getattr(getattr(inference, "settings", None), "llm_model", job["model"])
-        if configured_model != job["model"] or job["prompt_version"] != PROMPT_VERSION:
+        settings = getattr(inference, "settings", None)
+        configured_model = (
+            settings.llm_route("extraction").cache_key
+            if isinstance(settings, Settings)
+            else getattr(settings, "llm_model", job["model"])
+        )
+        # Older queued jobs stored only the shared model alias. Preserve their existing
+        # behavior when no task override was introduced; new jobs pin the full route.
+        legacy_default = (
+            isinstance(settings, Settings)
+            and "extraction" not in settings.llm_routes
+            and job["model"] == settings.llm_model
+        )
+        if (configured_model != job["model"] and not legacy_default) or job[
+            "prompt_version"
+        ] != PROMPT_VERSION:
             with self.archive.connect() as db:
                 db.execute(
                     "UPDATE inbox_jobs SET state='failed',claim=NULL,error=? WHERE id=? "
@@ -219,7 +234,9 @@ class InboxJobs:
             evidence = [
                 {k: s[k] for k in ("id", "started_at", "text", "slice_start")} for s in sources
             ]
-            raw = await inference.generate(TASK, json.dumps(evidence, ensure_ascii=False))
+            raw = await for_task(inference, "extraction").generate(
+                TASK, json.dumps(evidence, ensure_ascii=False)
+            )
             candidates = validate_candidates(raw, sources, job["timezone"])
             with self.archive.connect() as db:
                 db.execute("BEGIN IMMEDIATE")

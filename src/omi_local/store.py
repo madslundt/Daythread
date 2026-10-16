@@ -267,6 +267,49 @@ class Store(
             row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
             return dict(row) if row else None
 
+    def has_recordings(self, start: datetime, end: datetime) -> bool:
+        with self.connect() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM audio WHERE started_at<? AND ended_at>? LIMIT 1",
+                    (stamp(end), stamp(start)),
+                ).fetchone()
+                is not None
+            )
+
+    def sample_transcripts(
+        self, limit: int, start: datetime | None = None, end: datetime | None = None
+    ) -> tuple[list[dict], int]:
+        """Evenly sample chronological IDs before loading selected transcript bodies."""
+        if limit < 1:
+            raise ValueError("Sample limit must be positive")
+        where = "state='done' AND text IS NOT NULL AND text!=''"
+        args = ()
+        if start and end:
+            where += " AND started_at<? AND ended_at>?"
+            args = (stamp(end), stamp(start))
+        with self.connect() as db:
+            # Count and selected IDs must describe the same snapshot during capture/corrections.
+            db.execute("BEGIN")
+            total = db.execute("SELECT count(*) FROM audio WHERE " + where, args).fetchone()[0]
+            if not total:
+                return [], 0
+            size = min(limit, total)
+            offsets = (
+                [total - 1]
+                if size == 1
+                else [round(index * (total - 1) / (size - 1)) for index in range(size)]
+            )
+            rows = db.execute(
+                "WITH ranked AS (SELECT id, row_number() OVER (ORDER BY started_at,id)-1 AS n "
+                "FROM audio WHERE " + where + ") "
+                "SELECT a.* FROM ranked r JOIN audio a ON a.id=r.id WHERE r.n IN ("
+                + ",".join("?" for _ in offsets)
+                + ") ORDER BY a.started_at,a.id",
+                (*args, *offsets),
+            )
+            return [dict(row) for row in rows], total
+
     def recorded_intervals(self) -> list[dict]:
         with self.connect() as db:
             return [

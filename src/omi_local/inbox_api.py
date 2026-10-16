@@ -32,7 +32,11 @@ def inbox_router(memory) -> APIRouter:
         start = datetime.combine(body.start_day, time(), zone)
         end = datetime.combine(body.end_day + timedelta(days=1), time(), zone)
         jobs = InboxJobs(memory().store).discover(
-            timezone, start, end, body.retry_failed, memory().settings.llm_model
+            timezone,
+            start,
+            end,
+            body.retry_failed,
+            memory().settings.llm_route("extraction").cache_key,
         )
         return {"job_ids": jobs, "total": len(jobs)}
 

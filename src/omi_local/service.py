@@ -168,7 +168,7 @@ class Memory:
         return {
             "generated_at": stamp(utc_now()),
             "kind": kind,
-            "model": self.settings.llm_model,
+            "model": self.settings.llm_route("chat" if kind == "chat" else "summary").model,
             "prompt_version": 3,
             "retrieval_mode": mode,
             "scope": {"start": stamp(start), "end": stamp(end)} if start and end else None,
@@ -200,7 +200,7 @@ class Memory:
                     "rows": [public_source(row) for row in self.store.window(start, end)],
                     "hints": self.hints(start, end),
                     "gaps": self.store.capture_gaps(start, end),
-                    "model": self.settings.llm_model,
+                    "model": self.settings.llm_route("summary").identity,
                     "timezone": self.settings.timezone,
                     "prompt_version": 3,
                 },
@@ -239,7 +239,7 @@ class Memory:
             result.update(
                 day=day.isoformat(),
                 timezone=self.settings.timezone,
-                model=self.settings.llm_model,
+                model=self.settings.llm_route("summary").model,
                 generated_at=stamp(utc_now()),
             )
             if result["summary"] is not None:
@@ -356,7 +356,11 @@ class Memory:
                 "end_day": end_day.isoformat() if end_day else None,
             }
         )
-        history = self.store.chat_session(session_id)["messages"] if session_id else []
+        history = (
+            (await asyncio.to_thread(self.store.chat_session, session_id, 6) or {})["messages"]
+            if session_id
+            else []
+        )
         today = utc_now().astimezone(ZoneInfo(self.settings.timezone)).date()
         scope = (day, day) if day else ((start_day, end_day) if start_day else None)
         if meeting_id:
@@ -377,19 +381,20 @@ class Memory:
                     scope = date_scope(prior, today)
             start = self.day_window(scope[0])[0] if scope else None
             end = self.day_window(scope[1])[1] if scope else None
-            if day and not self.store.window(start, end) and not self.store.diary(day.isoformat()):
+            if (
+                day
+                and not await asyncio.to_thread(self.store.has_recordings, start, end)
+                and not self.store.diary(day.isoformat())
+            ):
                 raise ChatScopeNotFound("No diary or recordings found for this date")
         query = topic_query(question)
-        details = {"mode": "sample", "embedding": self.retriever.status()}
         if not query:
-            rows = (
-                self.store.window(start, end)
-                if start and end
-                else self.store.transcripts(None, None, "", 2**31 - 1, 0)[0]
-            )
-            rows = [row for row in rows if row["state"] == "done" and row["text"]]
-            details["recordings_sampled"] = len(rows) > limit
-            rows = self.sample_sources(rows, limit)
+            rows, total = await asyncio.to_thread(self.store.sample_transcripts, limit, start, end)
+            details = {
+                "mode": "sample",
+                "embedding": await asyncio.to_thread(self.retriever.status, start, end),
+                "recordings_sampled": total > limit,
+            }
         else:
             rows, details = await self.retriever.retrieve(
                 question,

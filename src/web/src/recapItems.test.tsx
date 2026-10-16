@@ -47,18 +47,23 @@ describe("day recap interactions", () => {
     expect(itemSources("**Gym** — Strength session with Sam.", sources).sources).toEqual([sources[0]]);
     expect(itemSources("**Work · 09:30** — Review the prototype.", sources).sources).toEqual([sources[1]]);
     expect(itemSources("**Gym · 09:30** — Strength session.", sources).sources).toEqual([sources[0]]);
+    const laterGym = { ...sources[0], id: "later-gym", started_at: "2026-10-16T16:00:00Z", text: "A second gym discussion" };
+    expect(itemSources("**Gym · 07:15**", [...sources, laterGym]).sources).toEqual([sources[0], laterGym]);
   });
 
   it("never falls back to unrelated recordings, even at a matching time", () => {
     expect(itemSources("**Dentist · 07:15** — Arrange a dental appointment.", sources).sources).toEqual([]);
     expect(itemSources("General reflection", sources).sources).toEqual([]);
     expect(itemSources("**Gym**", [{ ...sources[1], text: "A work discussion about gymnasium renovation." }]).sources).toEqual([]);
+    expect(itemSources("**Gym**", [{ ...sources[0], text: null }]).sources).toEqual([]);
   });
 
   it("finds recordings for descriptive subjects and follow-ups using distinctive words", () => {
     const errands = { ...sources[0], text: "The bike needs a service. I will call the repair shop." };
     expect(itemSources("**Around town** — Book a bike service.", [errands, sources[1]]).sources).toEqual([errands]);
     expect(itemSources("call the bike shop", [errands, sources[1]]).sources).toEqual([errands]);
+    const work = { ...sources[1], text: "I will share the prototype on Monday." };
+    expect(itemSources("share the prototype", [errands, work]).sources).toEqual([work]);
     expect(itemSources("Review the plans for next week.", [{ ...sources[0], text: "We made plans for next week about something else." }]).sources).toEqual([]);
   });
 

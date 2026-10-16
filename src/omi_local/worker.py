@@ -94,7 +94,7 @@ async def run_inbox(memory: Memory) -> None:
         try:
             jobs.discover(
                 memory.settings.timezone,
-                model=memory.settings.llm_model,
+                model=memory.settings.llm_route("extraction").cache_key,
                 settled_before=utc_now() - timedelta(seconds=30),
             )
             worked = await jobs.process_one(memory.inference)

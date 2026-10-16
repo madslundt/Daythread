@@ -9,7 +9,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .domain import EvidenceChanged, stamp, utc_now
-from .inference import InferenceError
+from .inference import InferenceError, for_task
 from .service import public_source
 from .weekly_inference import generate_items
 from .weekly_models import PROMPT_VERSION, ReviewVersion, default_week, week_bounds
@@ -139,10 +139,10 @@ class WeeklyReviews:
             ],
             "gaps": gaps,
             "events": events,
-            "model": settings.llm_model,
-            "endpoint": settings.llm_base_url,
+            "model": settings.llm_route("weekly").model,
+            "endpoint": settings.llm_route("weekly").base_url,
             "prompt_version": PROMPT_VERSION,
-            "deployment_revision": settings.llm_revision,
+            "deployment_revision": settings.llm_route("weekly").revision,
             "partial": cutoff < end,
         }
         fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -198,7 +198,7 @@ class WeeklyReviews:
             if snapshot["fingerprint"] != job["fingerprint"]:
                 raise EvidenceChanged("Evidence changed while queued")
             items = await generate_items(
-                self.memory.inference,
+                for_task(self.memory.inference, "weekly"),
                 snapshot["sources"],
                 snapshot["timezone"],
                 lambda: self.store.progress(job["id"]),
@@ -209,7 +209,7 @@ class WeeklyReviews:
                     "id": str(uuid4()),
                     "generated_at": stamp(utc_now()),
                     "prompt_version": PROMPT_VERSION,
-                    "model": self.memory.settings.llm_model,
+                    "model": self.memory.settings.llm_route("weekly").model,
                     "items": items,
                 }
             ).model_dump(mode="json")

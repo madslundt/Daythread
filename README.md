@@ -129,7 +129,7 @@ Set these values in `.env`; the example gateway/model names are specific to the 
 | `OMI_LLM_BASE_URL`, `OMI_LLM_MODEL` | Local language-model endpoint base (including `/v1`) and model name. |
 | `OMI_INFERENCE_TOKEN` | Optional credential for your local inference gateway. |
 | `OMI_DATA_DIR`, `OMI_TIMEZONE` | Archive location (default `data/`) and local calendar timezone. |
-| `OMI_AUDIO_RETENTION_DAYS`, `OMI_TRANSCRIPT_RETENTION_DAYS` | Independent retention periods; `0` keeps data indefinitely. |
+| `OMI_AUDIO_RETENTION_DAYS`, `OMI_TRANSCRIPT_RETENTION_DAYS` | Independent retention periods; defaults are 7 days for audio and 30 days for transcripts. `0` keeps data indefinitely. |
 
 See [all starter settings](config/omi.env.example). Saved runtime settings override environment defaults.
 
@@ -177,7 +177,7 @@ uv run python scripts/archive.py backup /path/to/omi-backup.zip
 uv run python scripts/archive.py restore /path/to/omi-backup.zip /path/to/new-data-dir
 ```
 
-Stop the backend before restoring into a new destination, then update `OMI_DATA_DIR`. See [backup details](docs/README.md#archive-and-backup) for encryption.
+Stop the backend before restoring into a new destination, then update `OMI_DATA_DIR`. See [changing the storage location](docs/README.md#change-the-storage-location) for source and Docker migration steps, and [backup details](docs/README.md#archive-and-backup) for encryption.
 
 **Access and limits:** the archive app/API have no authentication (the optional audio webhook requires its own token); use a trusted private LAN or VPN. Physical-device endurance and real model quality still need validation. Device Wi-Fi capture, pendant-storage downloads, semantic embeddings, and speaker identification are not implemented. Markers are approximate context; check generated answers against sources.
 

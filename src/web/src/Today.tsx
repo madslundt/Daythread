@@ -12,6 +12,7 @@ import {
 import { InboxEntry } from "./Inbox";
 import { Decisions } from "./Decisions";
 import { SourceList } from "./SourceList";
+import { RecapContent } from "./RecapContent";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
@@ -21,11 +22,13 @@ export function RecapSection({
   timezone,
   onGenerated,
   onUpload,
+  onChat,
 }: {
   day: string;
   timezone: string;
   onGenerated?: () => void;
   onUpload?: () => void;
+  onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const recap = useResource<Recap>(`/v1/recaps/${day}`);
   const [busy, setBusy] = useState(false);
@@ -84,7 +87,16 @@ export function RecapSection({
         <Loading>Loading recap…</Loading>
       ) : recap.data?.summary ? (
         <div className="recap-content">
-          <RichText text={recap.data.summary} />
+          <RecapContent
+            key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
+            text={recap.data.summary}
+            day={day}
+            version={recap.data.output_id || recap.data.generated_at || "unversioned"}
+            sources={recap.data.sources || []}
+            timezone={timezone}
+            onChat={onChat}
+            onCorrect={recap.refresh}
+          />
           <EvidenceFeedback
             outputId={recap.data.output_id}
             evidence={recap.data.evidence}
@@ -191,7 +203,7 @@ export function Today({
   onUpload: () => void;
   onPrepare: () => void;
   onRewind: (minutes: number) => void;
-  onChat: (scope: ChatScope) => void;
+  onChat: (scope: ChatScope, question?: string) => void;
 }) {
   return (
     <div className="day-layout">
@@ -203,7 +215,7 @@ export function Today({
             Chat with this day
           </button>
         </div>
-        <RecapSection key={day} day={day} timezone={timezone} onUpload={onUpload} />
+        <RecapSection key={day} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} />
         <TranscriptTimeline
           day={day}
           timezone={timezone}

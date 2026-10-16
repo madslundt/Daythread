@@ -25,7 +25,7 @@ function sessionScope(session?: ChatSession): ChatScope {
   return { kind: "all" };
 }
 
-export function Chat({ timezone, initialScope }: { timezone: string; initialScope?: ChatScope }) {
+export function Chat({ timezone, initialScope, initialQuestion }: { timezone: string; initialScope?: ChatScope; initialQuestion?: string }) {
   const [sessionId, setSessionId] = useState<string | undefined>(() => initialScope ? undefined : savedSession());
   const [draftScope, setDraftScope] = useState<ChatScope>(initialScope ?? { kind: "all" });
   const sessions = useResource<{ items: ChatSession[] }>("/v1/chat/sessions");
@@ -33,11 +33,14 @@ export function Chat({ timezone, initialScope }: { timezone: string; initialScop
   const conversation = useResource<Conversation>(
     sessionId ? `/v1/chat/sessions/${encodeURIComponent(sessionId)}` : null,
   );
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(() => (initialQuestion || "").slice(0, 2000));
   const [sending, setSending] = useState("");
   const [error, setError] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (initialQuestion) composer.current?.focus();
+  }, [initialQuestion]);
   const scope = sessionId
     ? sessionScope(conversation.data ?? sessions.data?.items.find((session) => session.id === sessionId))
     : draftScope;

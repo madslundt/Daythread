@@ -329,7 +329,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   label={retentionLabel}
                   onChange={(value) => update("audio_retention_days", value)}
                 />
-                <small id="audio-retention-hint">Expired audio is removed automatically. Keep it until you remove it, or choose a retention period.</small>
+                <small id="audio-retention-hint">Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.</small>
               </label>
               <label className="setting-field" htmlFor="transcript-retention">
                 <span id="transcript-retention-label">Keep transcripts</span>
@@ -341,7 +341,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   onChange={(value) => update("transcript_retention_days", value)}
                 />
                 <small id="transcript-retention-hint">
-                  Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history.
+                  Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.
                 </small>
               </label>
             </div>

@@ -37,6 +37,7 @@ export default function App() {
   const [rewindIntent, setRewindIntent] = useState<RewindIntent>();
   const [chatIntent, setChatIntent] = useState<{
     scope: ChatScope;
+    question?: string;
     id: number;
   }>();
   const [notice, setNotice] = useState("");
@@ -82,9 +83,9 @@ export default function App() {
     setRewindIntent({ minutes, id: Date.now() });
     navigate("rewind");
   }
-  function openChat(scope: ChatScope) {
+  function openChat(scope: ChatScope, question?: string) {
     navigate("chat");
-    setChatIntent({ scope, id: Date.now() });
+    setChatIntent({ scope, question, id: Date.now() });
   }
   const current = pages.find((item) => item.id === page)!;
   const showDate = page === "today" || page === "diary";
@@ -207,6 +208,7 @@ export default function App() {
             key={chatIntent?.id}
             timezone={timezone}
             initialScope={chatIntent?.scope}
+            initialQuestion={chatIntent?.question}
           />
         ) : (
           <Settings

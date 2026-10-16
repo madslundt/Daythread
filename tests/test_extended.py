@@ -89,6 +89,45 @@ def test_settings_are_validated_persisted_and_redacted(client, config):
     assert client.get("/v1/settings").json()["recap_hour"] == 21
 
 
+def test_default_retention_expires_audio_before_transcripts(client):
+    settings = client.get("/v1/settings").json()
+    assert settings["audio_retention_days"] == 7
+    assert settings["transcript_retention_days"] == 30
+    recent = insert(client, AT - timedelta(days=6), "Recent evidence")
+    transcript_only = insert(client, AT - timedelta(days=8), "Older evidence")
+    expired = insert(client, AT - timedelta(days=31), "Expired evidence")
+    store = client.app.state.memory.store
+
+    store.apply_retention(
+        settings["audio_retention_days"], settings["transcript_retention_days"], now=AT
+    )
+
+    assert client.get(f"/v1/audio/{recent}").status_code == 200
+    assert client.get(f"/v1/audio/{transcript_only}").status_code == 404
+    assert store.search("Older", 10)[0]["id"] == transcript_only
+    assert client.get(f"/v1/audio/{expired}").status_code == 404
+    assert store.get_audio(expired)["text"] is None
+    assert store.search("Expired", 10) == []
+
+
+@pytest.mark.parametrize("audio_days,transcript_days", [(13, 47), (0, 0)])
+def test_retention_choices_survive_restart_and_reject_invalid_days(
+    client, config, audio_days, transcript_days
+):
+    choices = {"audio_retention_days": audio_days, "transcript_retention_days": transcript_days}
+    saved = client.patch("/v1/settings", json=choices)
+    assert saved.status_code == 200
+    for field, days in choices.items():
+        assert saved.json()[field] == days
+        for invalid in (-1, 36501):
+            assert client.patch("/v1/settings", json={field: invalid}).status_code == 422
+
+    with TestClient(create_app(config)) as restarted:
+        settings = restarted.get("/v1/settings").json()
+        for field, days in choices.items():
+            assert settings[field] == days
+
+
 def test_transcript_pagination_search_calendar_and_auditable_correction(client):
     first = insert(client, text="A literal 100% kitchen promise")
     insert(client, AT + timedelta(days=1), "Next day")

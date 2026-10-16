@@ -6,6 +6,23 @@
 .prose h3:first-child { margin-top: 0; }
 .prose ul { padding-left: 21px; margin: 0 0 16px; }
 .prose li { padding-left: 4px; margin-bottom: 5px; }
+.recap-items > .prose { margin-bottom: 16px; }
+.recap-items > .recap-item-hint { margin-bottom: 10px; }
+.recap-item { border-bottom: 1px solid var(--line); }
+.recap-item-line { display: flex; align-items: flex-start; gap: 4px; }
+.recap-bullet, .recap-check-target { width: 30px; min-height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding-top: 3px; }
+.recap-check-target { cursor: pointer; }
+.recap-check-target input { margin: 0; }
+.recap-item-button { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; border: 0; background: transparent; text-align: left; padding: 11px 6px; min-height: 44px; line-height: 1.75; border-radius: 5px; }
+.recap-item-button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.recap-item-button > svg { margin-top: 5px; color: var(--secondary); }
+.recap-item-button[aria-expanded='true'] > svg { transform: rotate(90deg); }
+.recap-item-button:hover { background: var(--hover); }
+.recap-item.is-checked .recap-item-button > span { color: var(--muted); text-decoration: line-through; }
+.recap-item-detail { padding: 8px 6px 18px 34px; }
+.recap-item-detail > .caption { margin: 12px 0 5px; }
+.recap-item-detail .source-row { content-visibility: visible; }
+.recap-items > .recap-check-hint { margin-top: 12px; }
 .search-form { background: var(--surface); display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; margin: 18px 0 10px; }
 .search-form > svg { color: var(--muted); }
 .search-form input { width: 100%; min-width: 20px; padding: 11px 0; border: 0; background: transparent; font-size: 13px; }

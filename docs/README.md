@@ -181,7 +181,7 @@ The initial **keyword-only fictional baseline** retrieved 71.7% of labeled sourc
 
 The default `data/` directory holds SQLite WAL, WAV recordings, and generated `diary/YYYY-MM-DD.md` files. Weekly review versions and durable jobs live in SQLite; backups also render immutable `weekly/<version-uuid>.md` projections. Keep one backend worker. Transcription retries survive restart; daily generation uses the configured local calendar, including DST boundaries, and catches up after downtime. Late evidence and corrections invalidate derived recaps. Transcript corrections and generated diary versions are auditable; chat sessions persist locally.
 
-Audio and transcript retention are separate, configurable in Settings; **0 keeps data indefinitely**. Deletion/expiry updates search and derived outputs. No backup includes `.env` or inference credentials.
+Audio and transcript retention are separate, configurable in web and iPhone Settings. Defaults are **7 days for audio** and **30 days for transcripts**; **0 keeps data indefinitely**. Saved runtime settings override environment defaults, and existing explicit settings are preserved on upgrade. Shorter periods apply to existing recordings when saved. Audio expiry removes playback while retained transcripts remain searchable; transcript expiry also removes dependent summaries, notes and related inbox history. Earlier backups retain their own copies. No backup includes `.env` or inference credentials.
 
 ```sh
 uv run python scripts/archive.py backup /path/to/omi-backup.zip
@@ -196,6 +196,50 @@ Optional encrypted archives use the installed `age` CLI and an existing public r
 uv run python scripts/archive.py backup /path/to/omi-backup.zip.age --recipient AGE_PUBLIC_RECIPIENT
 uv run python scripts/archive.py restore /path/to/omi-backup.zip.age /path/to/new-data-dir --identity /path/to/age-identity
 ```
+
+### Change the storage location
+
+The archive location is a backend deployment setting, separate from the retention controls in web and iPhone Settings. It moves the SQLite database, recordings, transcripts, saved settings and generated notes together. It does not change the iPhone's local capture buffer or the storage used by separate model services.
+
+**Source installation:** set an absolute path in the repository's `.env`, then restart the backend:
+
+```dotenv
+OMI_DATA_DIR=/path/to/omi-data
+```
+
+The backend creates the archive directory if needed; its user must be able to write there. For an external drive, use its full mounted path and ensure it is mounted before starting the backend. Changing this setting to an empty directory starts an empty archive; it does not move existing data.
+
+To move an existing source archive, run these steps from the repository root:
+
+1. Stop the backend and any other writers to the old archive.
+2. Back up the old location and restore into the new location. Replace these example paths; the destination's parent directory must exist, but `omi-data` itself must not exist yet.
+
+   ```sh
+   uv run python scripts/archive.py backup /path/to/omi-migration.zip --data-dir /path/to/old-data
+   uv run python scripts/archive.py restore /path/to/omi-migration.zip /path/to/omi-data
+   ```
+
+3. Set `OMI_DATA_DIR` in `.env` to the restored absolute path and restart the backend. Check that existing transcripts, notes and retained audio are available before removing the old copy. Keep only one backend writing to the selected archive.
+
+Restore validates the database and recording checksums and updates stored audio paths. Its default extracted-size limit is 100 GB; for larger archives, pass an appropriate byte limit, for example `--max-bytes 1000000000000` for 1 TB. Allow space for the restored archive and backup, plus temporary export files on the machine creating the backup. The backup excludes `.env`; keep the existing configuration separately.
+
+**Docker Compose:** the supplied configuration explicitly sets `OMI_DATA_DIR=/data` inside the container. Changing only `.env` does not change the host storage location. To select a host folder, replace the backend's named-volume entry in `config/compose.yaml` with an absolute bind mount:
+
+```yaml
+    volumes:
+      - /path/to/omi-data:/data
+```
+
+Keep the container's `OMI_DATA_DIR=/data`. Create the host folder and make it writable by the container user, UID 10001. For standalone Docker, replace `--volume omi-local-data:/data` with `--volume /path/to/omi-data:/data`.
+
+When moving an existing Docker archive, stop the backend first and copy the complete contents of its `/data` directory, including any SQLite WAL files, into the host folder before changing the mount. For example, before editing Compose's volume entry:
+
+```sh
+docker compose --env-file .env -f config/compose.yaml stop backend
+docker compose --env-file .env -f config/compose.yaml cp backend:/data/. /path/to/omi-data
+```
+
+After updating the mount and checking permissions, recreate the backend with `docker compose --env-file .env -f config/compose.yaml up -d`. Verify the archive before removing the old named volume; do not use `down -v` during migration.
 
 ## Container deployment
 

@@ -18,7 +18,7 @@ export function Diary({
   day: string;
   timezone: string;
   onDay: (day: string) => void;
-  onChat: (scope: ChatScope) => void;
+  onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const [mode, setMode] = useState<"day" | "week">("day");
   const diaries = useResource<{ items: Recap[] }>("/v1/diary");
@@ -91,6 +91,7 @@ export function Diary({
           day={day}
           timezone={timezone}
           onGenerated={diaries.refresh}
+          onChat={onChat}
         />
         <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
       </div>

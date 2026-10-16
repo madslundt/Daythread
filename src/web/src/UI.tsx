@@ -81,6 +81,10 @@ function inline(text: string): React.ReactNode[] {
     );
 }
 
+export function InlineText({ text }: { text: string }) {
+  return <>{inline(text)}</>;
+}
+
 // Render a small, safe Markdown subset. Model output never becomes HTML.
 export function RichText({ text }: { text: string }) {
   return (

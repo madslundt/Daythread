@@ -1,0 +1,94 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary [ref=e5]:
+    - link "omi home" [ref=e6] [cursor=pointer]:
+      - /url: "#today"
+      - text: omi
+      - generic [ref=e7]: A little more remembered.
+    - navigation "Main navigation" [ref=e8]:
+      - link "Today" [ref=e9] [cursor=pointer]:
+        - /url: "#today"
+      - link "Rewind" [ref=e13] [cursor=pointer]:
+        - /url: "#rewind"
+      - link "Diary" [ref=e17] [cursor=pointer]:
+        - /url: "#diary"
+      - link "Chat" [ref=e21] [cursor=pointer]:
+        - /url: "#chat"
+      - link "People" [ref=e25] [cursor=pointer]:
+        - /url: "#labels"
+      - link "Inbox" [ref=e29] [cursor=pointer]:
+        - /url: "#inbox"
+      - link "Settings" [ref=e33] [cursor=pointer]:
+        - /url: "#settings"
+    - generic [ref=e37]: Connecting…
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - button "Previous day" [ref=e43] [cursor=pointer]
+          - button "Choose day, October 16, 2026" [ref=e46] [cursor=pointer]: October 16, 2026
+          - button "Next day" [disabled] [ref=e47]
+        - generic [ref=e51]:
+          - button "Mark important" [disabled] [ref=e52]
+          - button "Start meeting" [disabled] [ref=e55]
+      - generic [ref=e58]:
+        - generic [ref=e59]: A space for your everyday
+        - heading "Your day, remembered." [level=1] [ref=e60]
+        - paragraph [ref=e61]: A little context for everything you heard.
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - button "Prepare for a conversation" [ref=e65] [cursor=pointer]
+          - button "Chat with this day" [ref=e68] [cursor=pointer]
+        - generic [ref=e71]:
+          - generic [ref=e72]:
+            - heading "Day recap" [level=2] [ref=e73]
+            - button "Generate recap" [ref=e74] [cursor=pointer]
+          - status [ref=e77]: Loading recap…
+        - generic [ref=e79]:
+          - heading "Timeline" [level=2] [ref=e81]
+          - status [ref=e82]: Loading recordings…
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - heading "Decisions" [level=2] [ref=e86]
+            - button "Find decisions for this day" [ref=e87] [cursor=pointer]
+          - paragraph [ref=e88]: Evidence-backed records, reviewed by you. Create one from a source recording, or ask the local model for proposals.
+          - generic [ref=e89]:
+            - textbox "Search decisions" [ref=e90]
+            - button "Search" [ref=e91] [cursor=pointer]
+          - generic [ref=e92]:
+            - generic [ref=e93]:
+              - checkbox "Across all days" [ref=e94]
+              - text: Across all days
+            - generic [ref=e95]:
+              - text: Review status
+              - combobox "Filter decision review status" [ref=e96]:
+                - option "Active records" [selected]
+                - option "Proposed"
+                - option "Confirmed"
+                - option "Dismissed"
+            - button "Refresh" [ref=e97] [cursor=pointer]
+          - status [ref=e98]: Loading decisions…
+      - complementary [ref=e100]:
+        - generic [ref=e101]:
+          - generic [ref=e102]: Pick up where you left off
+          - heading "A moment, again." [level=2] [ref=e103]
+          - combobox "Rewind duration" [ref=e105]:
+            - option "5 minutes"
+            - option "10 minutes" [selected]
+            - option "15 minutes"
+            - option "30 minutes"
+            - option "60 minutes"
+          - button "Rewind audio" [ref=e106] [cursor=pointer]
+          - paragraph [ref=e109]: Listen back or get a quick recap.
+        - generic [ref=e110]:
+          - heading "Keep it moving" [level=2] [ref=e111]
+          - paragraph [ref=e112]: Promises and open questions, all in one place.
+          - link "Inbox · across all days" [ref=e113] [cursor=pointer]:
+            - /url: "#inbox"
+        - generic [ref=e114]:
+          - heading "Capture status" [level=2] [ref=e115]
+          - paragraph [ref=e116]: No current backend observation.
+        - group [ref=e117]:
+          - generic "Feedback and repairs (…)" [ref=e118] [cursor=pointer]

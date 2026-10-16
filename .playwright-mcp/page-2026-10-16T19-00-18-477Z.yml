@@ -1,0 +1,44 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary [ref=e5]:
+    - link "omi home" [ref=e6] [cursor=pointer]:
+      - /url: "#today"
+      - text: omi
+      - generic [ref=e7]: A little more remembered.
+    - navigation "Main navigation" [ref=e8]:
+      - link "Today" [ref=e9] [cursor=pointer]:
+        - /url: "#today"
+      - link "Rewind" [ref=e13] [cursor=pointer]:
+        - /url: "#rewind"
+      - link "Diary" [ref=e17] [cursor=pointer]:
+        - /url: "#diary"
+      - link "Chat" [ref=e21] [cursor=pointer]:
+        - /url: "#chat"
+      - link "People" [ref=e25] [cursor=pointer]:
+        - /url: "#labels"
+      - link "Inbox" [ref=e29] [cursor=pointer]:
+        - /url: "#inbox"
+      - link "Settings" [ref=e33] [cursor=pointer]:
+        - /url: "#settings"
+    - generic [ref=e37]: Connecting…
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]: Your private memory / Rewind
+      - generic [ref=e43]:
+        - generic [ref=e44]: Rewind
+        - heading "Come back to a moment." [level=1] [ref=e45]
+        - paragraph [ref=e46]: Listen again, with a little context.
+    - generic [ref=e47]:
+      - generic [ref=e48]:
+        - generic [ref=e49]:
+          - text: Last
+          - spinbutton "Last minutes" [ref=e50]: "10"
+          - text: minutes
+        - generic [ref=e51]:
+          - checkbox "Include a quick recap" [checked] [ref=e52]
+          - text: Include a quick recap
+        - button "Rewind" [ref=e53] [cursor=pointer]
+      - generic [ref=e56]:
+        - heading "A moment worth coming back to" [level=3] [ref=e59]
+        - paragraph [ref=e60]: Choose how far back to listen. Your recap and source recordings will appear here.

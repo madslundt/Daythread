@@ -10,6 +10,10 @@ struct SettingsView: View {
     @State private var loading = false
     @State private var language = "auto"
     @State private var timeout = 120
+    @State private var audioRetentionDays = 7
+    @State private var transcriptRetentionDays = 30
+    @State private var retentionLoaded = false
+    private let retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825]
     var body: some View {
         @Bindable var model = model
         Form {
@@ -71,6 +75,7 @@ struct SettingsView: View {
                 LabeledContent("Button notifications", value: model.bluetooth.buttonAvailable ? "Available" : "Not discovered")
                 if model.bluetooth.connected { Button("Disconnect and forget Omi", role: .destructive) { model.flush(); model.bluetooth.disconnect() } }
             }
+            archiveSection
             Section("Local storage") {
                 Picker("Phone capture budget", selection: $model.storageBudgetMB) {
                     Text("1 GB").tag(1000)
@@ -87,6 +92,34 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.interactively)
             .task { address = model.backendAddress; timeout = model.meetingMinutes; await loadSettings() }
     }
+    private var archiveSection: some View {
+        Section {
+            Picker("Keep original audio", selection: $audioRetentionDays) {
+                ForEach(retentionChoices(audioRetentionDays), id: \.self) { days in
+                    Text(retentionLabel(days)).tag(days)
+                }
+            }.accessibilityIdentifier("settings.audioRetention")
+            Text("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.")
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("Keep transcripts", selection: $transcriptRetentionDays) {
+                ForEach(retentionChoices(transcriptRetentionDays), id: \.self) { days in
+                    Text(retentionLabel(days)).tag(days)
+                }
+            }.accessibilityIdentifier("settings.transcriptRetention")
+            Text("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Save archive retention") { Task { await saveRetention() } }
+                .accessibilityIdentifier("settings.saveRetention")
+        } header: { Text("Local archive") } footer: {
+            Text("Saved on home-core and shared with the web app. Shorter retention periods apply to existing recordings when saved. Earlier backups keep their own copies.")
+        }.disabled(loading || !retentionLoaded)
+    }
+    private func retentionChoices(_ current: Int) -> [Int] {
+        Array(Set(retentionOptions + [current])).sorted()
+    }
+    private func retentionLabel(_ days: Int) -> String {
+        days == 0 ? "Until I remove it" : "\(days) \(days == 1 ? "day" : "days")"
+    }
     private func saveConnection() async {
         error = nil; status = nil; loading = true; defer { loading = false }
         do {
@@ -97,12 +130,32 @@ struct SettingsView: View {
         } catch { self.error = error.localizedDescription }
     }
     private func loadSettings() async {
+        retentionLoaded = false
         do {
             let settings = try await model.client().request("v1/settings")
             if settings["meeting_max_minutes"].integer > 0 {
                 model.meetingMinutes = settings["meeting_max_minutes"].integer; timeout = model.meetingMinutes
             }
             if !settings["language"].text.isEmpty { language = settings["language"].text }
+            if case .number = settings["audio_retention_days"],
+               case .number = settings["transcript_retention_days"] {
+                audioRetentionDays = settings["audio_retention_days"].integer
+                transcriptRetentionDays = settings["transcript_retention_days"].integer
+                retentionLoaded = true
+            }
+        } catch { self.error = error.localizedDescription }
+    }
+    private func saveRetention() async {
+        guard retentionLoaded else { return }
+        loading = true; error = nil; status = nil; defer { loading = false }
+        do {
+            let settings = try await model.client().request("v1/settings", method: "PATCH", body: [
+                "audio_retention_days": audioRetentionDays,
+                "transcript_retention_days": transcriptRetentionDays,
+            ])
+            audioRetentionDays = settings["audio_retention_days"].integer
+            transcriptRetentionDays = settings["transcript_retention_days"].integer
+            status = "Archive retention saved"
         } catch { self.error = error.localizedDescription }
     }
     private func savePolicy() async {

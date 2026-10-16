@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     recap_hour: int = Field(default=22, ge=0, le=23)
     worker_enabled: bool = True
     capture_paused: bool = False
-    audio_retention_days: int = Field(default=0, ge=0, le=36500)
-    transcript_retention_days: int = Field(default=0, ge=0, le=36500)
+    audio_retention_days: int = Field(default=7, ge=0, le=36500)
+    transcript_retention_days: int = Field(default=30, ge=0, le=36500)
     inference_timeout_seconds: int = Field(default=120, ge=1, le=1800)
     silence_threshold: int = Field(default=35, ge=0, le=32767)
     stt_segment_timestamps: bool = False

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
 from .weekly_models import markdown as weekly_markdown
 
@@ -48,9 +49,18 @@ class ArchiveStore:
     @staticmethod
     def verify_sources(db: sqlite3.Connection, sources: list[dict]) -> None:
         for source in sources:
-            current = db.execute("SELECT text FROM audio WHERE id=?", (source["id"],)).fetchone()
-            if not current or (
-                source.get("text") is not None and current["text"] != source["text"]
+            current = db.execute(
+                "SELECT text,transcript_version FROM audio WHERE id=?", (source["id"],)
+            ).fetchone()
+            if (
+                not current
+                or (source.get("text") is not None and current["text"] != source["text"])
+                or (
+                    source.get("transcript_version") is not None
+                    and (
+                        not current or current["transcript_version"] != source["transcript_version"]
+                    )
+                )
             ):
                 raise EvidenceChanged("Recorded evidence changed; retry the request")
 
@@ -126,12 +136,14 @@ class ArchiveStore:
                 (str(uuid4()), audio_id, old["text"], text, stamp(utc_now())),
             )
             db.execute(
-                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL WHERE id=?",
+                "UPDATE audio SET text=?,state='done',segments='[]',error=NULL,"
+                "source_version=lower(hex(randomblob(16))) WHERE id=?",
                 (text, audio_id),
             )
             db.execute("DELETE FROM transcript_search WHERE id=?", (audio_id,))
             db.execute("INSERT INTO transcript_search VALUES(?,?)", (audio_id, text))
             row = dict(db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone())
+            self.invalidate_decision_sources(db, [audio_id], purge=False)
             self._invalidate_diaries(db)
         self._prune_files()
         return row
@@ -255,12 +267,31 @@ class ArchiveStore:
             ]
         return dict(row) | {
             "messages": [
-                message | {"sources": json.loads(message["sources"])} for message in messages
+                message
+                | {
+                    "sources": json.loads(message["sources"]),
+                    "retrieval_details": json.loads(message["retrieval_details"] or "null"),
+                    "stale": self.sources_stale(json.loads(message["sources"])),
+                }
+                for message in messages
             ]
         }
 
+    def sources_stale(self, sources: list[dict]) -> bool:
+        try:
+            with self.connect() as db:
+                self.verify_sources(db, sources)
+        except EvidenceChanged:
+            return True
+        return False
+
     def save_exchange(
-        self, session_id: str, question: str, answer: str, sources: list[dict]
+        self,
+        session_id: str,
+        question: str,
+        answer: str,
+        sources: list[dict],
+        retrieval_details: dict | None = None,
     ) -> None:
         now = stamp(utc_now())
         with self.connect() as db:
@@ -270,7 +301,9 @@ class ArchiveStore:
             self.verify_sources(db, sources)
             for role, content, evidence in (("user", question, []), ("assistant", answer, sources)):
                 db.execute(
-                    "INSERT INTO chat_messages VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO chat_messages "
+                    "(id,session_id,role,content,sources,created_at,retrieval_details) "
+                    "VALUES(?,?,?,?,?,?,?)",
                     (
                         str(uuid4()),
                         session_id,
@@ -278,6 +311,7 @@ class ArchiveStore:
                         content,
                         json.dumps(evidence),
                         stamp(utc_now()),
+                        json.dumps(retrieval_details) if role == "assistant" else None,
                     ),
                 )
             db.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
@@ -288,6 +322,7 @@ class ArchiveStore:
             row = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if not row:
                 return False
+            self.invalidate_decision_sources(db, [key], purge=True)
             db.execute("DELETE FROM audio WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_revisions WHERE audio_id=?", (key,))
@@ -326,9 +361,11 @@ class ArchiveStore:
                     (cutoff,),
                 ).fetchall()
                 removed_transcripts = [row["id"] for row in rows]
+                self.invalidate_decision_sources(db, removed_transcripts, purge=True)
                 for key in removed_transcripts:
                     db.execute(
-                        "UPDATE audio SET text=NULL,segments='[]',state='expired' WHERE id=?",
+                        "UPDATE audio SET text=NULL,segments='[]',state='expired',"
+                        "source_version=lower(hex(randomblob(16))) WHERE id=?",
                         (key,),
                     )
                     db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
@@ -382,16 +419,8 @@ class ArchiveStore:
                     archive.writestr(f"audio/{row['id']}.wav", data)
                     (work / f"{row['id']}.wav").unlink()
                 # Render the snapshot's diary projection; live files may already be newer.
-                for row in db.execute("SELECT day,content FROM diary"):
-                    content = json.loads(row["content"])
-                    markdown = (
-                        f"# {row['day']}\n\n{content['summary']}\n\n## Transcript sources\n\n"
-                    )
-                    markdown += "\n".join(
-                        f"- {source['started_at']} [{source['id']}] {source['text']}"
-                        for source in content["sources"]
-                    )
-                    archive.writestr(f"diary/{row['day']}.md", markdown)
+                for day, content in export_days(db):
+                    archive.writestr(f"diary/{day}.md", diary_markdown(db, day, content))
                 for row in db.execute("SELECT id,content FROM weekly_versions"):
                     archive.writestr(
                         f"weekly/{row['id']}.md",

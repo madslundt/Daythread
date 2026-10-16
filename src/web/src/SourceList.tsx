@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { audioUrl, errorMessage, request } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
+import { DecisionEditor } from "./DecisionEditor";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
@@ -56,24 +57,33 @@ function SourceRow({
   showDate: boolean;
   index: number;
 }) {
+  const [creatingDecision, setCreatingDecision] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(source.text || "");
   const [saved, setSaved] = useState<string>();
+  const [currentSource, setCurrentSource] = useState(source);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const text = saved ?? source.text;
+  useEffect(() => { setCurrentSource(source); setSaved(undefined); }, [source]);
+  useEffect(() => {
+    const closeDecision = () => setCreatingDecision(false);
+    window.addEventListener("omi:archive-changed", closeDecision);
+    return () => window.removeEventListener("omi:archive-changed", closeDecision);
+  }, []);
   async function save() {
     setBusy(true);
     setError("");
     try {
-      await request(`/v1/transcripts/${encodeURIComponent(source.id)}`, {
+      const corrected = await request<Source>(`/v1/transcripts/${encodeURIComponent(source.id)}`, {
         method: "PATCH",
         body: JSON.stringify({ text: draft }),
       });
       setSaved(draft);
+      setCurrentSource(corrected);
       setEditing(false);
       onCorrect?.();
       window.dispatchEvent(new Event("omi:archive-changed"));
@@ -86,7 +96,7 @@ function SourceRow({
   async function remove() {
     if (
       !window.confirm(
-        "Delete this recording and transcript? Derived diary entries, weekly reviews and chat history will also be cleared because they may contain this recording. This cannot be undone.",
+        "Delete this recording and transcript? Derived diary entries, weekly reviews and chat history will also be cleared. Related decisions and inbox items, including manual edits and review history, will be removed because they used this recording. This cannot be undone.",
       )
     )
       return;
@@ -108,7 +118,7 @@ function SourceRow({
   if (deleted)
     return (
       <p className="caption" role="status">
-        Recording deleted. Derived diary entries, weekly reviews and chat history were cleared.
+        Recording deleted. Derived diary/chat content, weekly reviews and related decisions and inbox items were removed.
       </p>
     );
   return (
@@ -124,7 +134,7 @@ function SourceRow({
             : timeLabel(source.started_at, timezone)}
         </span>
         <span className="source-preview">
-          {text ||
+          {(saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
             (source.state === "done"
               ? "No speech detected"
               : `Recording · ${source.state}`)}
@@ -145,6 +155,7 @@ function SourceRow({
           </span>
           <span>{source.state === "done" ? "Transcribed" : source.state}</span>
         </div>
+        {source.matches?.length ? <p className="caption">Search excerpt · full transcript below. Timing covers the recording interval.</p> : null}
         {editing ? (
           <div className="transcript-editor">
             <label htmlFor={`edit-${source.id}`}>Correct transcript</label>
@@ -153,7 +164,7 @@ function SourceRow({
               rows={5}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              maxLength={20000}
+              maxLength={200000}
             />
             <div className="button-row">
               <button
@@ -172,8 +183,7 @@ function SourceRow({
               </button>
             </div>
             <p className="caption">
-              Corrections update search and invalidate saved recaps and weekly reviews so they can
-              be regenerated.
+              Corrections update search, invalidate saved recaps and weekly reviews, and require dependent decision evidence to be reviewed.
             </p>
           </div>
         ) : (
@@ -226,6 +236,8 @@ function SourceRow({
             </a>
           </>
         )}
+        {text && currentSource.source_version ? <button className="button small" onClick={() => setCreatingDecision(true)}>Record a decision from this source</button> : null}
+        {creatingDecision ? <DecisionEditor source={currentSource} onClose={() => setCreatingDecision(false)} onSaved={() => {}} /> : null}
         <div className="source-tools">
           <button
             className="text-button"

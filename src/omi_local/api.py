@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import AwareDatetime, ValidationError
 
 from .audio import render_window
+from .decision_api import decision_routes
 from .domain import (
     ButtonEvent,
     CaptureGap,
@@ -28,6 +29,8 @@ from .domain import (
     utc_now,
     wav_duration,
 )
+from .embeddings import Embeddings, run_embedding_worker
+from .inbox_api import inbox_router
 from .inference import Inference, InferenceError
 from .omi_api import ImportRequest, OmiAPI, OmiAPIError
 from .retrieval import DateScopeError
@@ -52,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             timeout=config.inference_timeout_seconds, follow_redirects=False
         ) as client:
             memory = Memory(store, config, Inference(config, client))
+            memory.retriever.embeddings = Embeddings(config, client)
             app.state.memory = memory
             app.state.weekly = WeeklyReviews(memory)
             weekly_task = asyncio.create_task(app.state.weekly.run())
@@ -62,16 +66,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 store.recover()
                 task = asyncio.create_task(run_worker(memory))
             app.state.worker = task
+            embedding_task = None
+            if config.worker_enabled and memory.retriever.set_id:
+                embedding_task = asyncio.create_task(
+                    run_embedding_worker(
+                        store,
+                        memory.retriever.embeddings,
+                        memory.retriever.set_id,
+                    )
+                )
+            app.state.embedding_worker = embedding_task
             try:
                 yield
             finally:
-                weekly_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await weekly_task
-                if task:
-                    task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await task
+                for running in (task, embedding_task, weekly_task):
+                    if running:
+                        running.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await running
 
     app = FastAPI(
         title="Omi Local",
@@ -84,6 +96,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def memory() -> Memory:
         return app.state.memory
+
+    app.include_router(decision_routes(memory))
+    app.include_router(inbox_router(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:
@@ -136,6 +151,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "capture_paused": config.capture_paused,
             "inference": getattr(memory().inference, "health", {}),
             "capture_gaps": len(memory().store.capture_gaps()),
+            "embeddings": memory().retriever.status()
+            | {
+                "worker_running": bool(
+                    app.state.embedding_worker and not app.state.embedding_worker.done()
+                ),
+            },
         }
 
     @app.get("/v1/settings")
@@ -157,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             memory().settings = revised
             memory().inference.settings = revised
             if "timezone" in changes:
+                memory().store.save_decision_timezone(config.timezone)
                 memory().store.invalidate_diaries()
             memory().store.apply_retention(
                 config.audio_retention_days, config.transcript_retention_days
@@ -215,6 +237,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start, end = memory().day_window(day) if day else (None, None)
         rows, total = memory().store.transcripts(start, end, q, limit, offset)
         return {"items": [public_source(row) for row in rows], "total": total}
+
+    @app.get("/v1/transcripts/{audio_id}")
+    def transcript(audio_id: UUID, response: Response) -> dict:
+        row = memory().store.get_audio(str(audio_id))
+        if row is None:
+            raise HTTPException(404, "Transcript not found")
+        response.headers["Cache-Control"] = "no-store"
+        return public_source(row)
 
     @app.patch("/v1/transcripts/{audio_id}")
     def correct_transcript(audio_id: UUID, body: TranscriptCorrection) -> dict:
@@ -327,8 +357,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def diary_markdown(day: date) -> FileResponse:
         record = memory().store.diary(day.isoformat())
         if not record:
-            raise HTTPException(404, "Generate this day's recap first")
-        memory().store.export_diary(day.isoformat(), json.loads(record["content"]))
+            start, end = memory().day_window(day)
+            if not memory().store.decisions(start, end)["total"]:
+                raise HTTPException(404, "Generate a recap or create decisions first")
+        content = json.loads(record["content"]) if record else memory().cached_recap(day)
+        memory().store.export_diary(day.isoformat(), content)
         return FileResponse(
             memory().store.diary_dir / f"{day}.md", media_type="text/markdown", filename=f"{day}.md"
         )
@@ -356,6 +389,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def chat(body: ChatRequest) -> dict:
         try:
             return await memory().chat(
+                body.question,
+                body.limit,
+                str(body.session_id) if body.session_id else None,
+                body.day,
+                str(body.meeting_id) if body.meeting_id else None,
+                bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                body.start_day,
+                body.end_day,
+            )
+        except ChatScopeNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ChatScopeConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(404, "Chat session not found") from exc
+
+    @app.post("/v1/search")
+    async def search(body: ChatRequest) -> dict:
+        try:
+            return await memory().search(
                 body.question,
                 body.limit,
                 str(body.session_id) if body.session_id else None,

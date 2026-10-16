@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { WeeklyReview } from "./WeeklyReview";
 import { dayLabel, localDay } from "./format";
+import { Decisions } from "./Decisions";
 import { MonthCalendar } from "./Calendar";
 import { Icon } from "./Icon";
 import { RecapSection } from "./Today";
@@ -91,6 +92,7 @@ export function Diary({
           timezone={timezone}
           onGenerated={diaries.refresh}
         />
+        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} />
       </div>
     </div>}
     </>

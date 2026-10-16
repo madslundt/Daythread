@@ -1,6 +1,7 @@
 export type Source = {
   id: string;
   device_id: string;
+  source_version?: string;
   started_at: string;
   ended_at: string;
   state: string;
@@ -9,6 +10,8 @@ export type Source = {
   audio_available?: boolean;
   source_kind?: string;
   source_id?: string | null;
+  transcript_version?: string;
+  matches?: { text: string; start_offset: number; end_offset: number; timing: string }[];
   meeting_hint_ids?: string[];
 };
 export type Marker = {
@@ -84,6 +87,8 @@ export type ChatScope =
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
+  stale?: boolean;
+  retrieval_details?: { notice?: string } | null;
   content: string;
   sources: Source[];
   created_at: string;

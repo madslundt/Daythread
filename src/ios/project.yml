@@ -1,21 +1,22 @@
-name: OmiLocal
+name: Daythread
 options:
-  bundleIdPrefix: local.omi
+  bundleIdPrefix: com.daythread
+  xcodeVersion: "27.0"
   deploymentTarget:
     iOS: "17.0"
 packages:
   OmiCore:
     path: .
 targets:
-  OmiLocal:
+  Daythread:
     type: application
     platform: iOS
-    sources: [OmiApp]
+    sources: [DaythreadApp]
     dependencies:
       - package: OmiCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: local.omi.companion
+        PRODUCT_BUNDLE_IDENTIFIER: com.daythread.app
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
@@ -24,7 +25,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: 1
     info:
-      path: OmiApp/Info.plist
+      path: DaythreadApp/Info.plist
       properties:
         CFBundleDisplayName: Daythread
         UILaunchScreen: {}
@@ -36,12 +37,12 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
-        UIBackgroundModes: [bluetooth-central, audio, processing]
-        BGTaskSchedulerPermittedIdentifiers: [local.omi.sync]
+        UIBackgroundModes: [bluetooth-central, audio, processing, fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.daythread.sync]
         ITSAppUsesNonExemptEncryption: false
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
 schemes:
-  OmiLocal:
+  Daythread:
     build:
       targets:
-        OmiLocal: all
+        Daythread: all

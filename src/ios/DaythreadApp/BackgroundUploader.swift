@@ -23,6 +23,8 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
     private var rates: [Int: TransferRate] = [:]
     private var waitingForConnectivity = Set<Int>()
     private var fileSizes: [UUID: Int64] = [:]
+    private var taskEndpoints: [Int: UUID] = [:]
+    private var attemptedEndpoints: [UUID: Set<UUID>] = [:]
     var client: BackendClient? {
         didSet { enforceDestination(); pump() }
     }
@@ -36,7 +38,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         self.store = store
         self.uploadWiFiOnly = uploadWiFiOnly
         super.init()
-        let configuration = URLSessionConfiguration.background(withIdentifier: "local.omi.capture-uploads")
+        let configuration = URLSessionConfiguration.background(withIdentifier: "com.daythread.capture-uploads")
         configuration.sessionSendsLaunchEvents = true; configuration.isDiscretionary = false
         configuration.waitsForConnectivity = true; configuration.allowsCellularAccess = true
         configuration.timeoutIntervalForResource = 7 * 24 * 3600
@@ -146,7 +148,12 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         let task = session.uploadTask(with: request, fromFile: file)
         var rate = TransferRate(); rate.observe(sentBytes: 0, at: ProcessInfo.processInfo.systemUptime)
         rates[task.taskIdentifier] = rate
-        task.taskDescription = item.id.uuidString; active[task.taskIdentifier] = task; task.resume()
+        task.taskDescription = item.id.uuidString
+        if let endpointID = client.activeEndpoint?.id {
+            taskEndpoints[task.taskIdentifier] = endpointID
+            attemptedEndpoints[item.id, default: []].insert(endpointID)
+        }
+        active[task.taskIdentifier] = task; task.resume()
         onProgress?()
     }
     func retry() {
@@ -174,6 +181,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         defer {
             active.removeValue(forKey: task.taskIdentifier); rates.removeValue(forKey: task.taskIdentifier)
             waitingForConnectivity.remove(task.taskIdentifier)
+            taskEndpoints.removeValue(forKey: task.taskIdentifier)
             onChange?(); pump(); Self.scheduleRetry()
         }
         // A preference change preserves the original outbox item and does not count as
@@ -187,17 +195,31 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
             try UploadReceipt.validate(data, for: item)
             try store.acknowledge(id)
             fileSizes.removeValue(forKey: id)
+            attemptedEndpoints.removeValue(forKey: id)
         } catch {
-            do { try store.failed(id, message: error.localizedDescription) }
-            catch { onError?("Could not persist upload retry: \(error.localizedDescription)") }
-            onError?(error.localizedDescription)
+            // A background URLSession task has one destination. On a transport/TLS
+            // failure, spend the remaining endpoints in this ordered cycle before
+            // applying the durable exponential backoff. This bounds retries and
+            // keeps the upload's original ID/body intact.
+            if BackendClient.shouldTryNextEndpoint(error), let client, let failedEndpoint = taskEndpoints[task.taskIdentifier],
+               let next = client.router.orderedCandidates().first(where: { $0.id != failedEndpoint && !(attemptedEndpoints[id] ?? []).contains($0.id) }) {
+                client.router.setActive(next.id)
+                attemptedEndpoints[id, default: []].insert(next.id)
+                do { try store.retryNow(id) }
+                catch { onError?("Could not persist fallback upload retry: \(error.localizedDescription)") }
+            } else {
+                attemptedEndpoints.removeValue(forKey: id)
+                do { try store.failed(id, message: error.localizedDescription) }
+                catch { onError?("Could not persist upload retry: \(error.localizedDescription)") }
+                onError?(error.localizedDescription)
+            }
         }
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Self.backgroundCompletion?(); Self.backgroundCompletion = nil
     }
     static func scheduleRetry() {
-        let request = BGProcessingTaskRequest(identifier: "local.omi.sync")
+        let request = BGProcessingTaskRequest(identifier: "com.daythread.sync")
         request.requiresNetworkConnectivity = true; request.requiresExternalPower = false
         request.earliestBeginDate = Date().addingTimeInterval(60)
         do { try BGTaskScheduler.shared.submit(request) }

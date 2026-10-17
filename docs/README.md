@@ -54,7 +54,7 @@ Current upstream sends webhooks from **Omi’s backend**, whose SSRF checks reje
 
 ## iPhone companion
 
-Open [OmiLocal.xcodeproj](../src/ios/OmiLocal.xcodeproj) in Xcode, choose a signing team and your iPhone, and run. The deployment target is iOS 17+. The app is named **Daythread** and new installs default to **https://daythread.home.arpa**. Existing saved connections are preserved. In app Settings, use that address or a reachable LAN/VPN address including **port 8787** when connecting directly. `localhost` on an iPhone refers to the phone itself. There is no mobile API token.
+Open [Daythread.xcodeproj](../src/ios/Daythread.xcodeproj) in Xcode, choose a signing team and your iPhone, and run. The deployment target is iOS 17+. The app is named **Daythread** and new installs default to **https://daythread.home.arpa**. Existing saved connections are preserved. In app Settings, use that address or a reachable LAN/VPN address including **port 8787** when connecting directly. `localhost` on an iPhone refers to the phone itself. There is no mobile API token.
 
 For the first physical install, connect and trust the iPhone in Xcode, enable Developer Mode on the phone if prompted, and allow Bluetooth and local-network access when the app requests them. The checked-in Xcode project is ready to open; XcodeGen is needed only to regenerate it after changing `project.yml`. Allow package resolution to finish before building. Keep the backend machine awake and allow inbound TCP port 8787 on the private LAN. First open the backend URL in Safari on the iPhone to check reachability, then use **Save & test connection** in app Settings.
 
@@ -71,7 +71,7 @@ cd src/ios
 swift test
 # Only after changing project.yml (requires XcodeGen):
 # xcodegen generate
-xcodebuild -project OmiLocal.xcodeproj -scheme OmiLocal \
+xcodebuild -project Daythread.xcodeproj -scheme Daythread \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/omi-ios-build CODE_SIGNING_ALLOWED=NO build
 ```
@@ -472,13 +472,13 @@ Verified on 2026-10-16 against the [Python release page](https://www.python.org/
 
 Docker uses explicit patch and Debian release tags, with pinned uv/npm installers. `uv.lock` and `src/web/package-lock.json` record the resolved dependencies; builds use frozen/clean installs. Python 3.15 and Node 26 passed the component checks without requiring an older runtime. The development group includes HTTPX2 for Starlette 1.8's test client; application inference continues to use the latest stable HTTPX 0.28.1. Vite 8's Rolldown/Oxc build works with the existing React configuration; TypeScript 7 requires the Vite client declarations for CSS imports, supplied by `src/web/src/vite-env.d.ts`. Vite's default browser floor is Safari 16.4, within the companion's iOS 17+ baseline. See [Vite's migration guide](https://vite.dev/guide/migration).
 
-Upgrade validation: 207 backend tests and Ruff passed on Python 3.15.0; 28 web tests and the TypeScript/Vite production build passed on Node 26.12.0/npm 12.2.0. Clean npm installation reported zero vulnerabilities; npm's default blocking of the optional macOS `fsevents` install script did not affect tests or builds. The Python wheel and source archive both contain the web assets. Docker built on Linux ARM64 and passed API/OpenAPI, bundled asset, upload/playback and settings checks under UID 10001 with a read-only root filesystem, dropped capabilities and no-new-privileges. Audio bytes and settings survived container replacement on a disposable named volume. The default background worker also started with container networking disabled. Desktop (1440×1000) and mobile (390×844) browser checks passed Settings save/reload against the container without console errors or failed requests. Test containers and storage were removed; no deployment, live archive access or real inference calls were performed. iOS was unchanged and its checks were not rerun for this upgrade.
+Upgrade validation: 207 backend tests and Ruff passed on Python 3.15.0; 28 web tests and the TypeScript/Vite production build passed on Node 26.12.0/npm 12.2.0. Clean npm installation reported zero vulnerabilities; npm's default blocking of the optional macOS `fsevents` install script did not affect tests or builds. The Python wheel and source archive both contain the web assets. Docker built on Linux ARM64 and passed API/OpenAPI, bundled asset, upload/playback and settings checks under UID 10001 with a read-only root filesystem, dropped capabilities and no-new-privileges. Audio bytes and settings survived container replacement on a disposable named volume. The default background worker also started with container networking disabled. Desktop (1440×1000) and mobile (390×844) browser checks passed Settings save/reload against the container without console errors or failed requests. Test containers and storage were removed; no deployment, live archive access or real inference calls were performed. The iOS core test suite and simulator build also passed for the endpoint failover update.
 
 ## Before the pendant arrives
 
 1. Build and run the backend, then check `curl --fail http://localhost:8787/v1/status`. A running worker confirms service health; inference states remain `unknown` until a real request uses each model.
 2. Upload a short recording through the web app using its actual recording-start time. Confirm it leaves the transcription queue and the transcript matches speech. Generate a recap and ask a question with a source reference. These checks require reachable STT and LLM services; a successful status response alone does not validate them.
-3. Install the iPhone app, save the backend address, and verify Day/Settings can reach it. Choose **Double click · stock firmware** until a different gesture is verified on the actual pendant. Set the phone storage budget and Wi-Fi upload preference before recording.
+3. Install the iPhone app, open **Settings → Backend endpoints**, add the home LAN address and (if used) a Tailscale/private-VPN address, test each, and choose the active endpoint. Verify Day/Settings can reach it. Choose **Double click · stock firmware** until a different gesture is verified on the actual pendant. Set the phone storage budget and Wi-Fi upload preference before recording.
 4. Run the [physical-device acceptance plan](device-research.md#physical-device-acceptance-plan) when the pendant arrives. Record the model, firmware, codec, capture duration, gaps, and final outbox count. Complete the offline/reconnect and screen-lock checks before relying on all-day capture.
 
 Keep one archive owner and one backend process for a data directory. The app/API have no authentication, so use the intended private LAN or VPN access path.

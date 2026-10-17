@@ -4,7 +4,7 @@ import BackgroundTasks
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: "local.omi.sync", using: .main) { task in
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.daythread.sync", using: .main) { task in
             Task { @MainActor in
                 BackgroundUploader.shared?.pump()
                 task.setTaskCompleted(success: true)
@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 @main
-struct OmiLocalApp: App {
+struct DaythreadApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
     @AppStorage("appearancePreference") private var appearance = AppAppearance.system

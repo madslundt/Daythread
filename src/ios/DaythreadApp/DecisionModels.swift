@@ -132,31 +132,11 @@ struct DecisionSource: Decodable, Identifiable {
 extension BackendClient {
     // Decision content never enters URLCache, LocalCache or the durable capture outbox.
     func decisionRequest<Response: Decodable>(_ path: String, method: String = "GET", query: [String: String] = [:], body: (any Encodable)? = nil) async throws -> Response {
-        var request = URLRequest(url: url(path, query: query), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
-        request.httpMethod = method
-        request.timeoutInterval = path == "v1/decision-extractions" ? 3600 : 180
-        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        if let body {
-            request.httpBody = try JSONEncoder().encode(body)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        let session = URLSession(configuration: configuration)
-        defer { session.finishTasksAndInvalidate() }
-        let (data, response) = try await session.data(for: request)
-        try Self.validate(response, data: data)
+        let data = try await data(path: path, method: method, query: query, body: body.map { try JSONEncoder().encode($0) }, profileHeader: profileID, timeout: path == "v1/decision-extractions" ? 3600 : 180, ephemeral: true)
         return try JSONDecoder().decode(Response.self, from: data)
     }
     func deleteDecision(_ record: DecisionRecord) async throws {
-        var request = URLRequest(url: url("v1/decisions/\(record.id)", query: ["expected_version": "\(record.version)"]), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
-        request.httpMethod = "DELETE"
-        let session = URLSession(configuration: .ephemeral)
-        defer { session.finishTasksAndInvalidate() }
-        let (data, response) = try await session.data(for: request)
-        try Self.validate(response, data: data)
+        _ = try await data(path: "v1/decisions/\(record.id)", method: "DELETE", query: ["expected_version": "\(record.version)"], profileHeader: profileID, ephemeral: true)
     }
 }
 

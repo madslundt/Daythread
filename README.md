@@ -150,6 +150,17 @@ The SwiftUI/CoreBluetooth companion preserves capture timestamps and IDs across 
 
 Browser uploads work without wearable hardware. Decoded audio uses roughly **1.38 GB per 12 hours**, plus compressed originals/metadata. The phone storage budget defaults to 2 GB.
 
+### iPhone backend endpoints
+
+In **iPhone Settings → Backend endpoints**, keep the endpoint for the network you use most often first or mark it active, then add fallbacks with **Add endpoint** and reorder them as needed. For example, a home LAN plus a Tailscale/private-VPN address might be:
+
+```text
+https://daythread.home.arpa
+https://daythread.tailnet.ts.net
+```
+
+Each endpoint can be tested independently. Foreground API requests and background uploads try the active endpoint, then each fallback once when the failure is a DNS/reachability/TLS/network failure or a 502/503/504 gateway response. A successful fallback becomes active for recovery; certificate validation is never disabled. HTTP is supported only for a trusted LAN/VPN and is called out as unencrypted in the app. Keep the backend private; this feature does not publish or authenticate it.
+
 ## Installation
 
 ### Backend and web app
@@ -217,13 +228,13 @@ The image includes the web app and runs one backend worker as a non-root user. T
 
 ### Official app audio forwarding (optional)
 
-You can ingest official-format realtime PCM without installing OmiLocal on the phone. Configure a server token, enable **Settings → Omi connection → Official app audio forwarding**, then set the URL and interval in the official app’s **Settings → Developer Mode → Realtime audio bytes**. Accepted chunks enter the local playback/transcription/archive pipeline.
+You can ingest official-format realtime PCM without installing Daythread on the phone. Configure a server token, enable **Settings → Omi connection → Official app audio forwarding**, then set the URL and interval in the official app’s **Settings → Developer Mode → Realtime audio bytes**. Accepted chunks enter the local playback/transcription/archive pipeline.
 
 Current upstream sends from **Omi’s backend** and rejects private destinations. A phone reaching this app on LAN/VPN does not establish webhook reachability. Hosted delivery needs an operator-provisioned HTTPS ingress restricted to the receiver POST; the rest of this unauthenticated archive must stay private. No ingress is created by this feature. Receipt-based timing, finite retries and device support limits apply; forwarding does not establish cloud-free or continuous capture. See the [first-use walkthrough, contract evidence and physical checks](docs/official-audio-forwarding.md).
 
 ### iPhone companion
 
-1. Open [OmiLocal.xcodeproj](src/ios/OmiLocal.xcodeproj), select your signing team and connected iPhone, and run. Enable Developer Mode if prompted.
+1. Open [Daythread.xcodeproj](src/ios/Daythread.xcodeproj), select your signing team and connected iPhone, and run. Enable Developer Mode if prompted.
 2. Allow Bluetooth and local-network access. In app Settings, enter `http://<server-LAN-address>:8787` and use **Save & test connection**.
 3. Connect the pendant in Capture. Choose **Double click · stock firmware** for meetings until another gesture is verified; single click marks important moments. On-screen controls are also available.
 

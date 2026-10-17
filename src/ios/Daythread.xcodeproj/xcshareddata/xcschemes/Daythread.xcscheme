@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1430"
+   LastUpgradeVersion = "2700"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "06FD900409BBB5C623C3EBC7"
-               BuildableName = "OmiLocal.app"
-               BlueprintName = "OmiLocal"
-               ReferencedContainer = "container:OmiLocal.xcodeproj">
+               BlueprintIdentifier = "9988838A44C51A3E9CAA7CCA"
+               BuildableName = "Daythread.app"
+               BlueprintName = "Daythread"
+               ReferencedContainer = "container:Daythread.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "06FD900409BBB5C623C3EBC7"
-            BuildableName = "OmiLocal.app"
-            BlueprintName = "OmiLocal"
-            ReferencedContainer = "container:OmiLocal.xcodeproj">
+            BlueprintIdentifier = "9988838A44C51A3E9CAA7CCA"
+            BuildableName = "Daythread.app"
+            BlueprintName = "Daythread"
+            ReferencedContainer = "container:Daythread.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -55,10 +55,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "06FD900409BBB5C623C3EBC7"
-            BuildableName = "OmiLocal.app"
-            BlueprintName = "OmiLocal"
-            ReferencedContainer = "container:OmiLocal.xcodeproj">
+            BlueprintIdentifier = "9988838A44C51A3E9CAA7CCA"
+            BuildableName = "Daythread.app"
+            BlueprintName = "Daythread"
+            ReferencedContainer = "container:Daythread.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,10 +72,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "06FD900409BBB5C623C3EBC7"
-            BuildableName = "OmiLocal.app"
-            BlueprintName = "OmiLocal"
-            ReferencedContainer = "container:OmiLocal.xcodeproj">
+            BlueprintIdentifier = "9988838A44C51A3E9CAA7CCA"
+            BuildableName = "Daythread.app"
+            BlueprintName = "Daythread"
+            ReferencedContainer = "container:Daythread.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

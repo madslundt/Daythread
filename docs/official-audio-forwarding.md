@@ -67,7 +67,7 @@ For a compatible direct sender on a private network, LAN access or a private VPN
 
 Last receipt/count persist through restart; sanitized last failure is only for the current backend process and can predate a later success. Counts include previously accepted sources that have since been deleted/expired.
 
-Away from home the stock official app still needs its own supported capture and upstream connection, and its hosted sender needs a reachable ingress. The home archive can be browsed over a private VPN. Losing internet/BLE, killing/backgrounding the official app, switching capture modes, or making the receiver unreachable can cause missing delivery; this adapter adds no phone outbox, storage download, continuous-capture guarantee or offline replay. Native OmiLocal has a separate durable phone outbox for audio it actually received. Neither forwarding nor choosing local STT establishes that official app audio/transcripts avoid Omi’s cloud.
+Away from home the stock official app still needs its own supported capture and upstream connection, and its hosted sender needs a reachable ingress. The home archive can be browsed over a private VPN. Losing internet/BLE, killing/backgrounding the official app, switching capture modes, or making the receiver unreachable can cause missing delivery; this adapter adds no phone outbox, storage download, continuous-capture guarantee or offline replay. Native Daythread has a separate durable phone outbox for audio it actually received. Neither forwarding nor choosing local STT establishes that official app audio/transcripts avoid Omi’s cloud.
 
 ## Validation and hardware acceptance
 

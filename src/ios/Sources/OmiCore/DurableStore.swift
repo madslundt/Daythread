@@ -211,6 +211,10 @@ public final class DurableStore {
         for index in updated.indices where !updated[index].acknowledged { updated[index].retryAt = .distantPast }
         try commit(updated)
     }
+    public func retryNow(_ id: UUID) throws {
+        guard let index = items.firstIndex(where: { $0.id == id }), !items[index].acknowledged else { return }
+        var updated = items; updated[index].retryAt = .distantPast; try commit(updated)
+    }
     public func pruneAcknowledged(before date: Date) throws {
         let expired = items.filter { $0.acknowledged && ($0.endedAt ?? $0.capturedAt) < date }
         for item in expired {

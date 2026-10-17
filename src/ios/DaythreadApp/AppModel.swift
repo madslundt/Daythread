@@ -6,16 +6,9 @@ import AVFoundation
 @MainActor @Observable
 final class AppModel {
     let bluetooth = OmiBluetooth()
-    var backendAddress: String {
-        didSet {
-            UserDefaults.standard.set(backendAddress, forKey: "backendURL")
-            guard backendAddress != oldValue else { return }
-            selectProfile(nil)
-            resetArchive()
-            profiles = []
-            reconnectBackend()
-        }
-    }
+    private(set) var backendConfiguration: BackendEndpointConfiguration
+    var backendAddress: String { backendConfiguration.activeEndpoint?.address ?? "" }
+    var backendEndpoints: [BackendEndpoint] { backendConfiguration.endpoints }
     struct Profile: Codable, Identifiable, Hashable {
         let id: String
         let name: String
@@ -26,7 +19,7 @@ final class AppModel {
     var hasSelectedProfile: Bool { !selectedProfileID.isEmpty }
     var selectedProfileName: String { profiles.first { $0.id == selectedProfileID }?.name ?? selectedProfileID }
     // Preserve legacy default caches while isolating every additional profile.
-    var archiveIdentity: String { selectedProfileID == "default" ? backendAddress : backendAddress + ".profile." + selectedProfileID }
+    var archiveIdentity: String { selectedProfileID == "default" ? backendConfiguration.archiveIdentity : backendConfiguration.archiveIdentity + ".profile." + selectedProfileID }
 
     private func resetArchive() {
         backendGeneration = UUID()
@@ -151,11 +144,26 @@ final class AppModel {
     @ObservationIgnored private var pauseRevision = UUID()
     @ObservationIgnored private var refreshingStatus = false
     @ObservationIgnored private var refreshStatusPending = false
+    @ObservationIgnored private let endpointRouter: BackendEndpointRouter
 
     init() {
         let defaults = UserDefaults.standard
-        selectedProfileID = defaults.string(forKey: "selectedProfileID") ?? ""
-        backendAddress = defaults.string(forKey: "backendURL") ?? "https://daythread.home.arpa"
+        let selectedID = defaults.string(forKey: "selectedProfileID") ?? ""
+        let defaultAddress = defaults.string(forKey: "backendURL") ?? "https://daythread.home.arpa"
+        let storedConfiguration: BackendEndpointConfiguration
+        if let data = defaults.data(forKey: "backendEndpoints.v1"),
+           let stored = try? JSONDecoder().decode(BackendEndpointConfiguration.self, from: data),
+           !stored.endpoints.isEmpty {
+            storedConfiguration = stored
+        } else {
+            let endpoint = BackendEndpoint(address: defaultAddress)
+            storedConfiguration = BackendEndpointConfiguration(endpoints: [endpoint], activeID: endpoint.id, archiveIdentity: defaultAddress)
+        }
+        let activeAddress = storedConfiguration.activeEndpoint?.address ?? defaultAddress
+        let archiveKey = selectedID == "default" ? storedConfiguration.archiveIdentity : storedConfiguration.archiveIdentity + ".profile." + selectedID
+        selectedProfileID = selectedID
+        backendConfiguration = storedConfiguration
+        endpointRouter = BackendEndpointRouter(configuration: storedConfiguration)
         gesture = MeetingGesture(rawValue: defaults.string(forKey: "meetingGesture") ?? "") ?? .doubleClick
         let timeout = defaults.integer(forKey: "meetingMinutes")
         meetingMinutes = timeout == 0 ? 120 : timeout
@@ -164,8 +172,8 @@ final class AppModel {
         paused = defaults.bool(forKey: "capturePaused")
         uploadWiFiOnly = defaults.bool(forKey: "uploadWiFiOnly")
         storageBudgetMB = defaults.object(forKey: "storageBudgetMB") as? Int ?? 2000
-        serverTimeZoneIdentifier = defaults.string(forKey: backendAddress + ".timezone")
-        serverTimeline = LocalCache.load(archiveIdentity + ".timeline") ?? .null
+        serverTimeZoneIdentifier = defaults.string(forKey: activeAddress + ".timezone")
+        serverTimeline = LocalCache.load(archiveKey + ".timeline") ?? .null
         do {
             var root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             var backupPolicy = URLResourceValues(); backupPolicy.isExcludedFromBackup = true
@@ -198,13 +206,89 @@ final class AppModel {
         bluetooth.onDisconnect = { [weak self] in self?.disconnectCapture() }
         bluetooth.onError = { [weak self] message in self?.error = message }
         recordCaptureState(paused && captureFailure == nil ? "paused" : captureFailure != nil ? "blocked" : "unknown", cause: paused && captureFailure == nil ? "user_pause" : captureFailure ?? "unknown")
+        endpointRouter.onChange = { [weak self] configuration in
+            guard let self else { return }
+            Task { @MainActor in
+                self.backendConfiguration = configuration
+                self.persistBackendConfiguration()
+            }
+        }
+        persistBackendConfiguration()
         reconnectBackend()
     }
-    func client() throws -> BackendClient { try BackendClient(address: backendAddress, profileID: selectedProfileID) }
+    func client() throws -> BackendClient { try BackendClient(router: endpointRouter, profileID: selectedProfileID) }
     func reconnectBackend() {
         guard hasSelectedProfile else { uploader?.client = nil; return }
         do { uploader?.client = try client(); uploader?.retry() }
         catch { self.error = error.localizedDescription }
+    }
+
+    func saveEndpoint(address: String, replacing id: UUID? = nil) throws {
+        let normalized = try BackendClient.validatedURL(address).absoluteString
+        var configuration = backendConfiguration
+        if let id, let index = configuration.endpoints.firstIndex(where: { $0.id == id }) {
+            configuration.endpoints[index].address = normalized
+        } else {
+            let endpoint = BackendEndpoint(address: normalized)
+            configuration.endpoints.append(endpoint)
+            if configuration.activeID == nil { configuration.activeID = endpoint.id }
+        }
+        applyEndpointConfiguration(configuration)
+    }
+
+    func removeEndpoint(_ id: UUID) throws {
+        guard backendConfiguration.endpoints.count > 1 else {
+            throw BackendFailure(message: "Keep at least one backend endpoint configured.")
+        }
+        var configuration = backendConfiguration
+        configuration.remove(id: id)
+        applyEndpointConfiguration(configuration)
+    }
+
+    func moveEndpoints(from offsets: IndexSet, to destination: Int) {
+        var configuration = backendConfiguration
+        configuration.move(fromOffsets: offsets, toOffset: destination)
+        applyEndpointConfiguration(configuration)
+    }
+
+    func activateEndpoint(_ id: UUID) {
+        let oldAddress = backendAddress
+        endpointRouter.setActive(id)
+        backendConfiguration = endpointRouter.configuration
+        persistBackendConfiguration()
+        if oldAddress != backendAddress { backendAddressChanged() }
+    }
+
+    func testEndpoint(_ endpoint: BackendEndpoint) async throws {
+        let client = try BackendClient(address: endpoint.address, profileID: selectedProfileID)
+        _ = try await client.request("v1/profiles")
+    }
+
+    private func applyEndpointConfiguration(_ configuration: BackendEndpointConfiguration) {
+        let oldAddress = backendAddress
+        var configuration = configuration
+        if configuration.archiveIdentity.isEmpty { configuration.archiveIdentity = backendConfiguration.archiveIdentity }
+        if configuration.activeEndpoint?.address != oldAddress, let active = configuration.activeEndpoint {
+            configuration.archiveIdentity = active.address
+        }
+        endpointRouter.replace(configuration)
+        backendConfiguration = configuration
+        persistBackendConfiguration()
+        if oldAddress != backendAddress { backendAddressChanged() }
+    }
+
+    private func backendAddressChanged() {
+        UserDefaults.standard.set(backendAddress, forKey: "backendURL")
+        selectProfile(nil)
+        resetArchive()
+        profiles = []
+        reconnectBackend()
+    }
+
+    private func persistBackendConfiguration() {
+        guard let data = try? JSONEncoder().encode(backendConfiguration) else { return }
+        UserDefaults.standard.set(data, forKey: "backendEndpoints.v1")
+        UserDefaults.standard.set(backendAddress, forKey: "backendURL")
     }
     func tick() async {
         now = Date(); refreshLocal(); uploader?.pump()

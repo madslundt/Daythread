@@ -36,7 +36,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     override init() {
         super.init()
         manager = CBCentralManager(delegate: self, queue: .main, options: [
-            CBCentralManagerOptionRestoreIdentifierKey: "local.omi.bluetooth",
+            CBCentralManagerOptionRestoreIdentifierKey: "com.daythread.bluetooth",
             CBCentralManagerOptionShowPowerAlertKey: true
         ])
     }

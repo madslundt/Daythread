@@ -4,7 +4,6 @@ import OmiCore
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearancePreference") private var appearance = AppAppearance.system
-    @State private var address = ""
     @State private var error: String?
     @State private var status: String?
     @State private var loading = false
@@ -29,19 +28,17 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("settings.profiles")
             }
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Backend address").font(.subheadline.weight(.medium))
-                    TextField("https://daythread.home.arpa", text: $address)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                        .accessibilityLabel("Backend address").accessibilityIdentifier("settings.backend")
-                }.padding(.vertical, 4)
-                Button { Task { await saveConnection() } } label: { Label("Save & test connection", systemImage: "network") }
-                    .buttonStyle(PrimaryActionStyle()).disabled(loading)
-                if loading { ProgressView("Connecting…") }
+                NavigationLink { BackendEndpointsView() } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Backend endpoints", systemImage: "network")
+                        Text(model.backendAddress.isEmpty ? "Not configured" : model.backendAddress)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }.accessibilityIdentifier("settings.backendEndpoints")
+                if let url = try? model.client().base { Link(destination: url) { Label("Open active web app", systemImage: "arrow.up.right.square") } }
                 if let status { Label(status, systemImage: "checkmark.circle").font(.callout).foregroundStyle(.secondary) }
                 ErrorNote(message: error)
-                if let url = try? model.client().base { Link(destination: url) { Label("Open web app", systemImage: "arrow.up.right.square") } }
-            } header: { Text("Home-core") } footer: { Text("Use your home-core LAN address or private VPN. No account or authentication is required.") }
+            } header: { Text("Home-core") } footer: { Text("Use an HTTPS LAN or private VPN address. You can keep an ordered fallback list for changing network contexts. HTTP is available only for trusted LAN/VPN use and is unencrypted.") }
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { option in
@@ -117,7 +114,7 @@ struct SettingsView: View {
             }
         }.omiScreen().navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
-            .task { address = model.backendAddress; timeout = model.meetingMinutes; await loadSettings() }
+            .task { timeout = model.meetingMinutes; await loadSettings() }
     }
     private var archiveSection: some View {
         Section {
@@ -146,15 +143,6 @@ struct SettingsView: View {
     }
     private func retentionLabel(_ days: Int) -> String {
         days == 0 ? "Until I remove it" : "\(days) \(days == 1 ? "day" : "days")"
-    }
-    private func saveConnection() async {
-        error = nil; status = nil; loading = true; defer { loading = false }
-        do {
-            let client = try BackendClient(address: address, profileID: model.selectedProfileID)
-            model.backendAddress = client.base.absoluteString; model.reconnectBackend()
-            _ = try await client.request("v1/profiles"); status = "Connected to home-core"
-            await loadSettings(); await model.refreshStatus()
-        } catch { self.error = error.localizedDescription }
     }
     private func loadSettings() async {
         retentionLoaded = false; translationLanguagesLoaded = false
@@ -216,6 +204,160 @@ struct SettingsView: View {
             summaryLanguage = settings["summary_language"].text
             status = "Summary language saved"
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct BackendEndpointDraft: Identifiable {
+    let id: UUID
+    let endpointID: UUID?
+    var address: String
+}
+
+struct BackendEndpointsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var draft: BackendEndpointDraft?
+    @State private var testing: UUID?
+    @State private var results: [UUID: String] = [:]
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(model.backendEndpoints) { endpoint in
+                    BackendEndpointRow(
+                        endpoint: endpoint,
+                        isActive: model.backendAddress == endpoint.address,
+                        isTesting: testing == endpoint.id,
+                        result: results[endpoint.id],
+                        activate: { model.activateEndpoint(endpoint.id) },
+                        test: { test(endpoint) },
+                        edit: { draft = BackendEndpointDraft(id: endpoint.id, endpointID: endpoint.id, address: endpoint.address) },
+                        remove: { remove(endpoint) }
+                    )
+                }
+                .onMove { model.moveEndpoints(from: $0, to: $1) }
+            } header: {
+                Text("Ordered fallback list")
+            } footer: {
+                Text("Requests start at the active endpoint and try each remaining endpoint once only when the failure looks like DNS, reachability, TLS or a 502/503/504 gateway failure. A successful endpoint becomes active for recovery and future uploads.")
+            }
+            ErrorNote(message: error)
+        }
+        .omiScreen()
+        .navigationTitle("Backend endpoints")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { EditButton() }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { draft = BackendEndpointDraft(id: UUID(), endpointID: nil, address: "") } label: { Label("Add endpoint", systemImage: "plus") }
+            }
+        }
+        .sheet(item: $draft) { value in
+            BackendEndpointEditor(draft: value) { saved in
+                do {
+                    try model.saveEndpoint(address: saved.address, replacing: saved.endpointID)
+                    draft = nil
+                    error = nil
+                } catch let failure { self.error = failure.localizedDescription }
+            }
+        }
+    }
+
+    private func test(_ endpoint: BackendEndpoint) {
+        testing = endpoint.id; results[endpoint.id] = nil; error = nil
+        Task {
+            do {
+                try await model.testEndpoint(endpoint)
+                results[endpoint.id] = "Reachable"
+            } catch let failure {
+                results[endpoint.id] = "Failed: \(failure.localizedDescription)"
+            }
+            testing = nil
+        }
+    }
+
+    private func remove(_ endpoint: BackendEndpoint) {
+        do {
+            try model.removeEndpoint(endpoint.id)
+            results.removeValue(forKey: endpoint.id)
+        } catch let failure { error = failure.localizedDescription }
+    }
+}
+
+private struct BackendEndpointRow: View {
+    let endpoint: BackendEndpoint
+    let isActive: Bool
+    let isTesting: Bool
+    let result: String?
+    let activate: () -> Void
+    let test: () -> Void
+    let edit: () -> Void
+    let remove: () -> Void
+
+    private var isHTTP: Bool { URL(string: endpoint.address)?.scheme?.lowercased() == "http" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: activate) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isActive ? Theme.accent : .secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(endpoint.address).font(.body.monospaced()).textSelection(.enabled)
+                        Text(isActive ? "Active endpoint" : "Tap to use this endpoint")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if isHTTP { Label("HTTP is unencrypted; use only on a trusted LAN/VPN.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                        if let result { Text(result).font(.caption).foregroundStyle(result == "Reachable" ? .green : .red) }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }.buttonStyle(.plain)
+            HStack {
+                Button(isTesting ? "Testing…" : "Test connection", action: test).disabled(isTesting)
+                Button("Edit", action: edit)
+                Button("Remove", role: .destructive, action: remove)
+            }.font(.subheadline)
+        }.padding(.vertical, 4)
+    }
+}
+
+private struct BackendEndpointEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: BackendEndpointDraft
+    let save: (BackendEndpointDraft) -> Void
+
+    init(draft: BackendEndpointDraft, save: @escaping (BackendEndpointDraft) -> Void) {
+        _draft = State(initialValue: draft)
+        self.save = save
+    }
+
+    private var isHTTP: Bool { URL(string: draft.address.trimmingCharacters(in: .whitespacesAndNewlines))?.scheme?.lowercased() == "http" }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Endpoint URL") {
+                    TextField("https://daythread.home.arpa", text: $draft.address)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .accessibilityLabel("Backend endpoint URL")
+                    Text("Include the scheme and port when needed. Do not include credentials, a query or a fragment.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if isHTTP {
+                        Label("HTTP is unencrypted. Use this only for a trusted home LAN or private VPN; HTTPS remains the recommended choice.", systemImage: "exclamationmark.triangle")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                }
+            }
+            .navigationTitle(draft.endpointID == nil ? "Add endpoint" : "Edit endpoint")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save(draft); dismiss() }
+                        .disabled(draft.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
     }
 }
 

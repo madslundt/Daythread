@@ -21,9 +21,11 @@ export function modelConnectionRequest(
     changes.llm_enable_thinking = draft.values.llm_enable_thinking;
   const sharedKey = secretChange(draft.secrets.inference_token || keepSecret());
   if (sharedKey !== undefined) changes.inference_token = sharedKey;
+  const providerKey = secretChange(draft.secrets[`${provider}_api_key`] || keepSecret());
+  if (providerKey !== undefined) changes[`${provider}_api_key`] = providerKey;
   if (!row) return { provider, changes };
   const route = row.name.trim().toLowerCase();
-  // Omitted tokens keep the saved route key; null inherits the shared key;
+  // Omitted tokens keep the saved route key; null inherits the provider key;
   // an empty string intentionally sends no authentication.
   const routes = routeChanges([{ ...row, ...(includeModel ? {} : { model: null }), revision: null }], provider === "llm");
   changes[`${provider}_routes`] = routes;

@@ -19,6 +19,8 @@ def settings(tmp_path):
         worker_enabled=False,
         _env_file=None,
         inference_token="shared-secret",
+        stt_api_key="speech-secret",
+        llm_api_key="language-secret",
         omi_api_key="omi-secret",
         stt_routes={"da": {"model": "danish", "token": "route-secret"}},
     )
@@ -39,7 +41,18 @@ def test_every_setting_is_editable_and_read_responses_never_reveal_keys(settings
         assert value["secrets"]["stt_routes.da.token"]
         assert value["values"]["inference_token"] is None
         assert "token" not in value["values"]["stt_routes"]["da"]
-        for secret in ("shared-secret", "omi-secret", "route-secret"):
+        for key in ("stt_api_key", "llm_api_key"):
+            assert value["secrets"][key]
+            assert value["values"][key] is None
+            field = next(field for field in value["fields"] if field["key"] == key)
+            assert field["kind"] == "secret" and field["nullable"]
+        for secret in (
+            "shared-secret",
+            "omi-secret",
+            "route-secret",
+            "speech-secret",
+            "language-secret",
+        ):
             assert secret not in response.text
             assert secret not in client.get("/v1/settings").text
 
@@ -65,7 +78,7 @@ def test_model_routes_keys_and_preferences_apply_live_and_survive_restart(settin
         active = client.app.state.memory.settings
         assert active.stt_route("da").model == "new-danish"
         assert active.stt_route("da").token.get_secret_value() == "route-secret"
-        assert active.stt_route("en").token.get_secret_value() == "replacement-secret"
+        assert active.stt_route("en").token.get_secret_value() == "speech-secret"
         assert active.llm_route("chat").token.get_secret_value() == "chat-secret"
         assert client.app.state.omi.key == "new-omi-secret"
         assert client.get("/v1/settings").json()["summary_language"] == "da"
@@ -109,7 +122,7 @@ def test_route_keys_can_be_replaced_disabled_inherited_and_removed(settings):
         for token, expected in [
             ("new-route-secret", "new-route-secret"),
             ("", ""),
-            (None, "shared-secret"),
+            (None, "speech-secret"),
         ]:
             assert (
                 save(
@@ -176,7 +189,7 @@ def test_conflicting_app_web_and_legacy_settings_edits_are_rejected(settings):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"stt_base_url": "https://example.com/v1"},
+        {"stt_base_url": "http://example.com/v1"},
         {"llm_routes": {"chat": {"base_url": "http://user:secret@localhost/v1"}}},
         {"embedding_enabled": True},
         {"audio_forwarding_token": "invalid-private-key"},
@@ -197,7 +210,17 @@ def test_invalid_changes_are_not_saved_or_echoed(settings, changes):
 
 def test_private_keys_are_excluded_from_archive_export(settings):
     with TestClient(create_app(settings)) as client:
-        assert save(client, {"inference_token": "new-private-key"}).status_code == 200
+        assert (
+            save(
+                client,
+                {
+                    "inference_token": "new-private-key",
+                    "stt_api_key": "private-speech-key",
+                    "llm_api_key": "private-language-key",
+                },
+            ).status_code
+            == 200
+        )
         store = client.app.state.memory.store
         assert "new-private-key" not in json.dumps(store.runtime_settings())
         archive_path = store.export_archive()
@@ -205,5 +228,35 @@ def test_private_keys_are_excluded_from_archive_export(settings):
             with zipfile.ZipFile(archive_path) as archive:
                 assert not any("private-settings" in name for name in archive.namelist())
                 assert b"new-private-key" not in archive.read("omi.sqlite3")
+                assert b"private-speech-key" not in archive.read("omi.sqlite3")
+                assert b"private-language-key" not in archive.read("omi.sqlite3")
         finally:
             shutil.rmtree(archive_path.parent)
+
+
+@pytest.mark.parametrize("provider,route", [("stt", "en"), ("llm", "summary")])
+def test_provider_api_keys_apply_live_preserve_and_survive_restart(settings, provider, route):
+    key = f"{provider}_api_key"
+    with TestClient(create_app(settings)) as client:
+        result = save(
+            client,
+            {
+                key: "replacement-provider-secret",
+                f"{provider}_base_url": "https://models.example.com/v1/",
+            },
+        )
+        assert result.status_code == 200
+        assert result.json()["pending_restart"] == []
+        assert "replacement-provider-secret" not in result.text
+        assert save(client, {f"{provider}_model": "new-model"}).status_code == 200
+    with TestClient(create_app(settings)) as client:
+
+        def resolve(name):
+            return getattr(client.app.state.memory.inference.settings, f"{provider}_route")(name)
+
+        assert resolve(route).base_url == "https://models.example.com/v1"
+        assert resolve(route).token.get_secret_value() == "replacement-provider-secret"
+        assert save(client, {key: ""}).status_code == 200
+        assert resolve(route).token.get_secret_value() == ""
+        assert save(client, {key: None}).status_code == 200
+        assert resolve(route).token.get_secret_value() == "shared-secret"

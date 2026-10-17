@@ -28,6 +28,21 @@ const configuration: ConfigurationData = {
 };
 
 describe("configuration drafts", () => {
+  it("preserves provider keys until explicitly replaced, disabled, or inherited", () => {
+    const data: ConfigurationData = { ...configuration,
+      values: { ...configuration.values, llm_api_key: null },
+      secrets: { ...configuration.secrets, llm_api_key: true },
+      fields: [...configuration.fields, { key: "llm_api_key", label: "LLM API key",
+        group: "Language models & chat", kind: "secret", nullable: true,
+        restart_required: false, description: "Provider credential" }],
+    };
+    const draft = configurationDraft(data);
+    expect(configurationChanges(data, draft)).toEqual({});
+    for (const [mode, key] of [["replace", "provider-key"], ["clear", ""], ["inherit", null]] as const) {
+      draft.secrets.llm_api_key = { mode, value: mode === "replace" ? "provider-key" : "" };
+      expect(configurationChanges(data, draft)).toEqual({ llm_api_key: key });
+    }
+  });
   it("does not send retained write-only keys when model fields change", () => {
     const rows = routeRows({ da: { model: "danish", base_url: null } });
     rows[0].model = "other";
@@ -55,7 +70,7 @@ describe("configuration drafts", () => {
       connectionDraft={configurationDraft(configuration)} revision={configuration.revision}
     />);
     expect(html).toContain("Language code or detector name");
-    expect(html).toContain("Use shared key");
+    expect(html).toContain("Use provider key");
     expect(html).toContain("No authentication");
     expect(html).toContain("Configured");
     expect(html).not.toContain('type="password"');

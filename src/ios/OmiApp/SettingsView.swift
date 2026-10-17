@@ -308,6 +308,7 @@ private struct ServerSecretControl: View {
     let label: String
     let configured: Bool
     var route = false
+    var nullable = false
     @Binding var edit: ServerSecretEdit
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -315,8 +316,8 @@ private struct ServerSecretControl: View {
             Picker(label, selection: $edit.mode) {
                 Text("Keep current key").tag("keep")
                 Text("Replace key").tag("replace")
-                if route { Text("Use shared key").tag("inherit") }
-                Text(route ? "No authentication" : "Clear key").tag("clear")
+                if route || nullable { Text(route ? "Use provider key" : "Use shared key").tag("inherit") }
+                Text(route || nullable ? "No authentication" : "Clear key").tag("clear")
             }.onChange(of: edit.mode) { _, _ in edit.value = "" }
             if edit.mode == "replace" {
                 SecureField("New \(label)", text: $edit.value)
@@ -365,10 +366,30 @@ private struct ServerConfigurationView: View {
     @State private var status: String?
     @State private var search = ""
     private let tasks = ["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
+    private let connectionProviders = ["stt", "llm"]
+
+    private func connectionKeys(_ provider: String) -> [String] {
+        ["\(provider)_base_url", "\(provider)_api_key", "\(provider)_model"]
+    }
+    private func isConnectionField(_ field: ServerSettingField) -> Bool {
+        connectionProviders.contains { connectionKeys($0).contains(field.key) }
+    }
+    private func connectionFields(_ provider: String, _ snapshot: ServerConfiguration) -> [ServerSettingField] {
+        connectionKeys(provider).compactMap { key in snapshot.fields.first { $0.key == key && matches($0) } }
+    }
+    private func optionsTitle(_ group: String) -> String {
+        switch group {
+        case "Transcription": "Transcription options & language routes"
+        case "Language models & chat": "Language model options & task routes"
+        default: group
+        }
+    }
 
     var body: some View {
         Form {
             Section {
+                Text("STT and LLM connections are independent. Each can use a different endpoint, API key, and model.")
+                    .font(.callout).foregroundStyle(.secondary)
                 Text("Shared with the web app. Keys are write-only and stay on home-core.")
                     .font(.callout).foregroundStyle(.secondary)
                 if let snapshot, !snapshot.pending_restart.isEmpty {
@@ -381,9 +402,21 @@ private struct ServerConfigurationView: View {
                 Button("Reload server settings") { Task { await load() } }.disabled(busy)
             }
             if let snapshot {
+                ForEach(connectionProviders, id: \.self) { provider in
+                    let fields = connectionFields(provider, snapshot)
+                    if !fields.isEmpty {
+                        Section {
+                            ForEach(fields) { field in setting(field, snapshot: snapshot) }
+                        } header: {
+                            Text(provider == "stt" ? "Speech-to-text (STT)" : "Language model (LLM)")
+                        } footer: {
+                            Text(provider == "stt" ? "Transcribes your recordings into text. Enter a local or hosted endpoint and its credentials." : "Answers questions and generates summaries. Enter a local or hosted endpoint and its credentials.")
+                        }.disabled(busy)
+                    }
+                }
                 ForEach(groups(snapshot), id: \.self) { group in
-                    Section(group) {
-                        ForEach(snapshot.fields.filter { $0.group == group && matches($0) }) { field in
+                    Section(optionsTitle(group)) {
+                        ForEach(snapshot.fields.filter { $0.group == group && !isConnectionField($0) && matches($0) }) { field in
                             setting(field, snapshot: snapshot)
                         }
                     }.disabled(busy)
@@ -401,7 +434,7 @@ private struct ServerConfigurationView: View {
     }
 
     private func groups(_ snapshot: ServerConfiguration) -> [String] {
-        snapshot.fields.filter(matches).reduce(into: [String]()) { result, field in
+        snapshot.fields.filter { !isConnectionField($0) && matches($0) }.reduce(into: [String]()) { result, field in
             if !result.contains(field.group) { result.append(field.group) }
         }
     }
@@ -449,6 +482,7 @@ private struct ServerConfigurationView: View {
             }.disabled(field.key == "llm_routes" && (routes[field.key]?.count ?? 0) >= tasks.count)
         } else if field.kind == "secret" {
             ServerSecretControl(label: field.label, configured: snapshot.secrets[field.key] ?? false,
+                nullable: field.nullable,
                 edit: Binding(get: { secrets[field.key] ?? ServerSecretEdit() }, set: { secrets[field.key] = $0; status = nil }))
         } else if field.kind == "boolean" {
             if field.nullable {
@@ -500,7 +534,8 @@ private struct ServerConfigurationView: View {
                 var value = values[field.key] ?? .null
                 if field.kind == "secret" {
                     guard let edited = try (secrets[field.key] ?? ServerSecretEdit()).change() else { continue }
-                    value = edited
+                    changes[field.key] = edited
+                    continue
                 } else if field.kind == "routes" {
                     var map: [String: JSONValue] = [:]
                     for row in routes[field.key] ?? [] {

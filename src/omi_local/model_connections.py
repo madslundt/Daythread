@@ -25,6 +25,8 @@ CONNECTION_FIELDS = {
     "llm_routes",
     "llm_enable_thinking",
     "inference_token",
+    "stt_api_key",
+    "llm_api_key",
 }
 
 
@@ -50,7 +52,7 @@ class ConnectionRequest(BaseModel):
             route = ModelRoute(
                 model=getattr(settings, f"{self.provider}_model"),
                 base_url=getattr(settings, f"{self.provider}_base_url"),
-                token=settings.inference_token,
+                token=settings.model_api_key(self.provider),
             )
         if require_model and (not route.model.strip() or len(route.model) > 200):
             raise ValueError("Invalid model name")
@@ -122,7 +124,7 @@ class ModelConnection:
         if status in {401, 403}:
             message = "The server rejected the credential. Check the connection key."
         elif 300 <= status < 400:
-            message = "The server returned a redirect. Enter the final local server address."
+            message = "The server returned a redirect. Enter the final server address."
         elif discovery and status in {404, 405, 501}:
             message = "This server does not support model discovery."
         elif status in {400, 404, 422}:

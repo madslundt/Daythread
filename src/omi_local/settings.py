@@ -24,12 +24,19 @@ def translation_language(value: str) -> str:
     return value.lower()
 
 
-def local_endpoint(value: str) -> str:
+def inference_endpoint(value: str, *, local_only: bool = False) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("Use a local HTTP(S) inference endpoint")
+        raise ValueError("Use an HTTP(S) inference endpoint")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("Endpoint must not contain credentials, query, or fragment")
+    # Validate ports here, before an HTTP client sees the address.
+    try:
+        _ = parsed.port
+    except ValueError:
+        raise ValueError("Endpoint must use a valid port") from None
+    if any(character.isspace() or ord(character) < 32 for character in value):
+        raise ValueError("Endpoint must not contain whitespace or control characters")
     host = parsed.hostname
     try:
         address = ip_address(host)
@@ -40,9 +47,13 @@ def local_endpoint(value: str) -> str:
             or "." not in host
             or host.endswith((".home.arpa", ".local", ".lan"))
         )
-    if not local:
-        raise ValueError("Use a private IP or a local hostname for inference")
+    if not local and (local_only or parsed.scheme != "https"):
+        raise ValueError("Use HTTPS for hosted inference or a private HTTP(S) endpoint")
     return value.rstrip("/")
+
+
+def local_endpoint(value: str) -> str:
+    return inference_endpoint(value, local_only=True)
 
 
 class ModelRouteOverride(BaseModel):
@@ -62,7 +73,7 @@ class ModelRouteOverride(BaseModel):
     @field_validator("base_url")
     @classmethod
     def valid_endpoint(cls, value: str | None) -> str | None:
-        return local_endpoint(value) if value is not None else None
+        return inference_endpoint(value) if value is not None else None
 
 
 class LLMRouteOverride(ModelRouteOverride):
@@ -98,6 +109,8 @@ class Settings(BaseSettings):
     stt_base_url: str = "http://127.0.0.1:4000/v1"
     llm_base_url: str = "http://127.0.0.1:4000/v1"
     inference_token: SecretStr = SecretStr("")
+    stt_api_key: SecretStr | None = None
+    llm_api_key: SecretStr | None = None
     audio_forwarding_enabled: bool = False
     audio_forwarding_token: SecretStr = SecretStr("")
     omi_api_key: SecretStr = SecretStr("")
@@ -192,7 +205,7 @@ class Settings(BaseSettings):
         return ModelRoute(
             model=override.model if override.model is not None else self.stt_model,
             base_url=override.base_url if override.base_url is not None else self.stt_base_url,
-            token=override.token if override.token is not None else self.inference_token,
+            token=override.token if override.token is not None else self.model_api_key("stt"),
         )
 
     def llm_route(self, task: LLMTask) -> LLMRoute:
@@ -200,9 +213,13 @@ class Settings(BaseSettings):
         return LLMRoute(
             model=override.model if override.model is not None else self.llm_model,
             base_url=override.base_url if override.base_url is not None else self.llm_base_url,
-            token=override.token if override.token is not None else self.inference_token,
+            token=override.token if override.token is not None else self.model_api_key("llm"),
             revision=override.revision if override.revision is not None else self.llm_revision,
         )
+
+    def model_api_key(self, provider: Literal["stt", "llm"]) -> SecretStr:
+        key = self.stt_api_key if provider == "stt" else self.llm_api_key
+        return key if key is not None else self.inference_token
 
     @field_validator("audio_forwarding_token")
     @classmethod
@@ -262,7 +279,12 @@ class Settings(BaseSettings):
             raise ValueError("Use an IANA timezone such as Europe/Copenhagen") from exc
         return value
 
-    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url", "diarization_base_url")
+    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url")
+    @classmethod
+    def valid_inference_endpoint(cls, value: str) -> str:
+        return inference_endpoint(value)
+
+    @field_validator("diarization_base_url")
     @classmethod
     def local_endpoint(cls, value: str) -> str:
         return local_endpoint(value)

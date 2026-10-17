@@ -65,6 +65,10 @@ export function configurationChanges(
     if (field.kind === "secret") {
       value = secretChange(draft.secrets[field.key] || keepSecret());
       if (value === undefined) continue;
+      // Reads redact every saved key to null; an explicit inherit action must
+      // still be sent even though it matches that redacted value.
+      changes[field.key] = value;
+      continue;
     } else if (field.kind === "routes") {
       value = routeChanges(draft.routes[field.key] || [], field.key === "llm_routes");
       previous = routeChanges(Object.entries(previous as Record<string, ModelOverride>)

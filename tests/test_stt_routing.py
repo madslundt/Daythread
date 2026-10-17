@@ -71,7 +71,7 @@ def test_nested_language_routes_inherit_and_keep_credentials_private(tmp_path, m
     [
         {"en_US": {"model": "x"}},
         {"DA": {}, "da": {}},
-        {"da": {"base_url": "https://example.com/v1"}},
+        {"da": {"base_url": "http://example.com/v1"}},
         {"da": {"base_url": "http://user:secret@localhost/v1"}},
         {"da": {"model": " "}},
         {"da": {"modle": "x"}},

@@ -9,7 +9,7 @@ Requires Python 3.15.0+, uv 0.13.1+, Node.js 26.12.0+ and npm 12.2.0+. The repos
 ```sh
 bash scripts/build.sh
 uv run python scripts/init_config.py
-# Review local STT/LLM addresses and model names in .env.
+# Set STT/LLM endpoints, API keys and model names in Settings after starting.
 bash scripts/dev.sh
 ```
 
@@ -86,7 +86,7 @@ Commitments are qualified as **explicitly still open** or **follow-through uncon
 
 Generation runs in a durable local queue independently of transcription, survives leaving the page and recovers interrupted work after backend restart (at most three interrupted attempts). Reads never invoke the model; unchanged requests reuse a version, while **Regenerate** forces a new one. The UI polls only the active job. Model/schema failures and processing-budget failures remain visible; they never publish a partial review. The initial bounds are 2 million transcript characters, 256 model calls and eight reduction rounds, with bounded per-call evidence. All eligible evidence enters extraction; no chat sampling is used.
 
-Late evidence in either week, corrections, source states, hints, timezone and model configuration make saved reviews stale. Publication rechecks the full scoped fingerprint inside a write transaction. Historical versions retain the original evidence and timezone; source inspection shows the current transcript. Deletion or transcript expiry conservatively purges all weekly versions/jobs and restored Markdown projections. Downloaded exports and earlier backups are independent copies. Backups preserve version history and queued jobs. Set `OMI_LLM_REVISION` when replacing a model behind the same route name.
+Late evidence in either week, corrections, source states, hints, timezone and model configuration make saved reviews stale. Publication rechecks the full scoped fingerprint inside a write transaction. Historical versions retain the original evidence and timezone; source inspection shows the current transcript. Deletion or transcript expiry conservatively purges all weekly versions/jobs and restored Markdown projections. Downloaded exports and earlier backups are independent copies. Backups preserve version history and queued jobs. Update **LLM revision** in Settings when replacing a model behind the same route name.
 
 Native weekly UI, scheduled generation, notifications and weekly consumption of the existing structured inbox lifecycle are follow-ons. Weekly synthesis currently uses original transcripts directly; it does not read or mutate inbox status or decision records. Current range chat remains useful for follow-up, but its retrieval is not exhaustive. Quote validation checks traceability and format; semantic claim support and real local-model quality still require evaluation.
 
@@ -144,7 +144,7 @@ retained audio. The optional runtime has its own Python/PyTorch dependencies.
 Playback joins the selected speaker's original speaking turns in order; overlapping
 voices can remain audible. Names and assignments can be corrected, merged or reset.
 Text is shown beside turns only when existing transcript timestamps support an
-unambiguous assignment; enable `OMI_STT_SEGMENT_TIMESTAMPS` with a compatible STT
+unambiguous assignment; enable **STT segment timestamps** in Settings with a compatible STT
 provider to request timestamps for future recordings. The original transcript stays intact.
 Transcript edits and late
 chunks mark assignments stale. Detecting again explicitly replaces labels and names.
@@ -229,47 +229,23 @@ STT/LLM configuration, keys and ordinary preferences apply to subsequent work im
 
 The backend stores service overrides and keys in `.private-settings.json` in the **bootstrap** archive directory (the initial `OMI_DATA_DIR` location). Writes are atomic with file mode `0600`; `.env` is preserved. This private file is excluded from application archive export/restore, and keys never enter the SQLite runtime-settings table. Keep a separate private copy when moving the server; general filesystem backups of the directory will include it. Existing archive preferences continue to use SQLite. Saved overrides take precedence over environment defaults. The settings API returns write-only key status and uses `Cache-Control: no-store`; the configuration screen keeps entered replacements only in memory until save/reload.
 
-The example uses the inspected HomeCompute repository configuration:
+Open **Settings → Models & server** and fill in the separate **Speech-to-text (STT)** and **Language model (LLM)** endpoint URL, API key and model fields. Provider keys can use Keep, Replace, Use shared key or No authentication. Route keys take precedence over provider keys; provider keys can inherit the shared gateway credential. These credentials are never app login credentials. Endpoints accept local HTTP(S) and explicitly configured hosted HTTPS URLs. Public HTTP, embedded URL credentials, queries and fragments are rejected. There is no automatic hosted fallback or redirect following.
 
-| Setting | Example |
-|---|---|
-| HTTP gateway base | `http://ai.home.arpa:18080/v1` |
-| Danish transcription route | `stt-danish` |
-| Multilingual alternative | `whisper-turbo` |
-| LLM route | `home` |
-| Language | `auto` omits a forced STT language |
+The starter `.env` omits all `OMI_STT_*` and `OMI_LLM_*` entries. Existing environment defaults remain supported for compatibility, and saved Settings values take precedence. To remove old entries safely, **stop the backend** and run `uv run python scripts/migrate_model_settings.py` in the backend's environment and archive location. Use `--env-file /path/to/.env` for a different environment file. The migration preserves saved UI values, writes effective model defaults and keys to the owner-only private settings file, then removes model entries from `.env`. It preserves unrelated entries and does not open or modify the archive database. For Docker, use the container's archive volume; a host-side run against another data directory would configure the wrong installation. Keep the private settings file with the deployment: application archive exports exclude it.
 
-Configure `OMI_STT_BASE_URL`, `OMI_LLM_BASE_URL`, `OMI_STT_MODEL`, and `OMI_LLM_MODEL` in `.env`. `OMI_INFERENCE_TOKEN` is optional authentication for your own inference gateway and is never an app login credential. Endpoints accept private IPs and local DNS/service names. There is no cloud fallback or redirect following.
+Local models remain the default. Configuring a hosted endpoint sends audio to the transcription provider, prompts and selected transcripts to the language model provider, or indexed transcripts and queries to the embedding provider. Use a provider implementing the existing compatible `/audio/transcriptions`, `/chat/completions`, or `/embeddings` contract; provider-specific protocols and non-Bearer authentication are not supported. Credentials stay on the backend.
 
-**STT chunk seconds** in the **Transcription** settings group controls maximum audio duration per model request (1–120 seconds, default 30). Changes apply to subsequent processing without restarting. Set `OMI_STT_CHUNK_SECONDS` for an environment default. Choose a duration every configured speech route accepts; gateway model lists may expose only token limits, so audio duration is not discovered automatically. Longer recordings are split internally, their text joined in order and segment timestamps adjusted; the archived audio, source identity and capture times stay intact. All pieces share one inference deadline, and no partial transcript is published if a piece fails.
+**STT chunk seconds** in the **Transcription** settings group controls maximum audio duration per model request (1–120 seconds, default 30). Changes apply to subsequent processing without restarting. Choose a duration every configured speech route accepts; gateway model lists may expose only token limits, so audio duration is not discovered automatically. Longer recordings are split internally, their text joined in order and segment timestamps adjusted; the archived audio, source identity and capture times stay intact. All pieces share one inference deadline, and no partial transcript is published if a piece fails.
 
-STT can use a different model/server for each language. Use the **Transcription** group in either client's server settings to edit the default model/endpoint and add language routes. Alternatively, configure initial environment routes and restart:
+STT can use a different model/server for each language. Under **Transcription options & language routes**, add routes such as `da`, `en`, or a detector's full language name such as `danish`. Enter each route's model, endpoint or API key overrides; blank overrides inherit the STT connection defaults.
 
-```dotenv
-# Use aliases available on your own gateway.
-OMI_STT_MODEL=whisper-turbo
-OMI_STT_ROUTES__DA__MODEL=stt-danish
-OMI_STT_ROUTES__EN__MODEL=whisper-turbo
-# Some detectors return full English names rather than ISO codes:
-OMI_STT_ROUTES__DANISH__MODEL=stt-danish
-```
-
-With a language selected in web/iPhone Settings, transcription uses its route directly in one request. Route keys are case-insensitive; regional codes match an exact route first, then the base language (`da-DK` → `da`). Unconfigured languages use the shared STT settings. Each route can override `MODEL`, `BASE_URL`, and `TOKEN` independently; omitted values inherit `OMI_STT_MODEL`, `OMI_STT_BASE_URL`, and `OMI_INFERENCE_TOKEN`. An explicitly empty `TOKEN` removes authentication. Routes use the same local HTTP transcription contract; credentials remain stored on the backend and are write-only in the editors.
+With a language selected in web/iPhone Settings, transcription uses its route directly in one request. Route keys are case-insensitive; regional codes match an exact route first, then the base language (`da-DK` → `da`). Unconfigured languages use the shared STT settings. Each route can override `MODEL`, `BASE_URL`, and `TOKEN` independently; omitted values inherit the STT connection defaults, with the provider key falling back to the shared gateway credential. An explicitly empty `TOKEN` removes authentication. Routes use the same compatible transcription contract over local HTTP(S) or hosted HTTPS; credentials remain stored on the backend and are write-only in the editors.
 
 With **Automatic / mixed languages** and language routes configured, the initial STT receives `response_format=verbose_json` without a forced language. Configure a multilingual model that supports that format and returns a `language` string. When that string matches a route code or configured provider-name key (for example `da` or `danish`), a different route transcribes the same original chunk once more. Only the final result and its timestamps are saved. Missing, unknown or mixed-language metadata keeps the initial result; the same resolved model/endpoint/token is never called twice. Detection and specialist requests share the configured inference deadline. Specialist failures use the existing durable retry path, without publishing preliminary detector text.
 
-An optional `OMI_STT_ROUTES__AUTO__MODEL` (also `BASE_URL`/`TOKEN`) overrides the initial automatic model. With no language routes, automatic transcription retains its existing single request. Automatic routing is per chunk, based on provider metadata; it does not split code-switched speech between models. Use a multilingual route for mixed recordings. Language names are matched literally, so add the names returned by your provider alongside ISO-code routes when needed. No models are downloaded, and language detection/quality still requires validation against your local service.
+An optional `auto` language route overrides the initial automatic model, endpoint and key. With no language routes, automatic transcription retains its existing single request. Automatic routing is per chunk, based on provider metadata; it does not split code-switched speech between models. Use a multilingual route for mixed recordings. Language names are matched literally, so add the names returned by your provider alongside ISO-code routes when needed. No models are downloaded, and language detection/quality still requires validation against your local service.
 
-Every LLM task inherits that shared model, endpoint, token and revision by default. Optional backend-only overrides let each task use a different local model or server:
-
-```dotenv
-OMI_LLM_MODEL=home
-# Optional examples; use aliases actually configured on your local gateway.
-OMI_LLM_ROUTES__CHAT__MODEL=fast-chat
-OMI_LLM_ROUTES__SUMMARY__MODEL=long-context
-```
-
-Supported tasks are `CHAT` (final answers), `SUMMARY` (diary, meeting, rewind and large-chat evidence reduction), `EXTRACTION` (inbox and decisions), `PREPARATION` (conversation briefs), `WEEKLY` (weekly extraction and synthesis), and `RETRIEVAL` (alternate query wording after a miss). Each also accepts `BASE_URL`, `TOKEN`, and `REVISION`, for example `OMI_LLM_ROUTES__SUMMARY__BASE_URL=http://summarizer.local:4000/v1`. Omitted fields inherit the corresponding shared setting; an explicitly empty `TOKEN` removes authentication for that task. Use `REVISION` when replacing weights behind the same model alias. Routes require the same private/local endpoints and HTTP chat-completions contract; they do not download models or enable hosted inference. Restart the backend after editing environment configuration. STT and embeddings retain their separate settings.
+Every LLM task inherits the LLM connection's model, endpoint, API key and revision by default. Under **Language model options & task routes**, add overrides for **chat** (final answers), **summary** (diary, meeting, rewind and evidence reduction), **extraction** (inbox and decisions), **preparation** (conversation briefs), **weekly** (weekly extraction and synthesis), or **retrieval** (alternate query wording after a miss). Each route can override the model, endpoint, key and revision independently. Use No authentication to omit a credential or Use provider key to inherit the default. Change the revision when replacing weights behind the same model alias. Saved changes apply immediately; STT and embeddings retain their separate settings.
 
 Generated output records the selected model. Diary and weekly fingerprints include the task's model, endpoint and revision, and extraction jobs use the extraction route identity. Changing only the chat route leaves diary/weekly caches valid. Task credentials are excluded from public settings, generated output, cache identities and backups.
 
@@ -283,25 +259,25 @@ Streams send `Cache-Control: no-store` and `X-Accel-Buffering: no`; a private re
 
 Adapters use HTTP `/audio/transcriptions` and `/chat/completions`; the existing home-core Wyoming service on port 10300 needs an HTTP bridge before it can be used here. The configured gateway and previous `192.168.30.122:18080` address were unreachable from this Mac during validation, so real STT/LLM quality and latency have not been verified. When models are unreachable, audio remains queued and summary/chat errors remain visible.
 
-Optional `OMI_STT_SEGMENT_TIMESTAMPS=true` requests verbose segment timestamps from compatible providers. Recall-first processing skips only exact digital silence by default; faint audio and noise remain eligible. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
+Optional **STT segment timestamps** in Settings requests verbose segment timestamps from compatible providers. Recall-first processing skips only exact digital silence by default; faint audio and noise remain eligible. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
 
 ### Speech processing and cleanup review
 
 Transcription preserves original archive files, hashes, capture times and playback. By default,
-`OMI_STT_PRESERVE_QUIET=true` skips only recordings made entirely of digital zero samples.
+**STT preserve quiet**, enabled by default in Settings, skips only recordings made entirely of digital zero samples.
 This avoids rejecting faint voices using a volume threshold. Noise-only recordings may reach
 STT too; model output still needs checking. To restore the old RMS gate explicitly, disable
 preserve quiet and set `OMI_SILENCE_THRESHOLD` (35 by default; 0 disables that legacy gate).
 
 Quiet transcription copies receive uniform amplification toward -25 dBFS RMS, with peak
-headroom and at most `OMI_STT_MAX_GAIN_DB=12` dB. Set 0 to disable. This changes amplitude,
+headroom and at most **STT max gain dB** (default 12 dB in Settings). Set 0 to disable. This changes amplitude,
 not signal-to-noise ratio, and cannot uncover a quieter voice masked by a louder one. For
-internal STT request splits, `OMI_STT_BOUNDARY_SEARCH_SECONDS=0.5` searches for a 100 ms quiet
+internal STT request splits, **STT boundary search seconds** (default 0.5 in Settings) searches for a 100 ms quiet
 gap near the boundary; 0 restores fixed cuts. Every sample is retained exactly once. Phone
 chunk boundaries and existing captured gaps are unchanged; there is no cross-source context
 or word deduplication.
 
-`OMI_STT_ENHANCEMENT_MODE=on_empty` creates a cleanup **review reading** only when a chunk's
+**STT enhancement mode**, set to **on_empty** by default in Settings, creates a cleanup **review reading** only when a chunk's
 original pass is empty. Choose `compare` to also compare noisy nonempty transcriptions, or
 `off` to disable. FFmpeg must be installed on home-core and on its process `PATH`; the Docker
 image includes it. On a standalone Mac, an existing Homebrew installation can supply it with
@@ -310,7 +286,7 @@ leveling, compensates its delay, and retains the exact sample count. It uses raw
 pipes, no temporary audio files, no downloaded models and no hosted fallback. Missing FFmpeg,
 invalid output or provider failures leave the original transcript usable and disclose cleanup
 unavailability. Each filter process has a five-second limit; the entire optional pass shares
-`OMI_STT_ENHANCEMENT_TIMEOUT_SECONDS=15` seconds and the remaining inference budget. All
+**STT enhancement timeout seconds** (default 15 in Settings) and the remaining inference budget. All
 required original passes finish first. `compare` can roughly double speech-model requests
 (including language detection/specialist calls); it is not enabled by default.
 
@@ -357,7 +333,7 @@ For a private TLS CA, export `SSL_CERT_FILE=/path/to/trusted-ca-bundle.pem` into
 
 Semantic retrieval is implemented behind **`OMI_EMBEDDING_ENABLED=false` by default**. It uses the same SQLite archive; no vector server or model download is required. No reachable embedding model, bilingual quality, target-machine latency or hardware quality has been verified.
 
-Choose and serve a local model yourself, then configure the separate `OMI_EMBEDDING_*` fields in [the environment example](../config/omi.env.example). Enabling requires a model name, immutable revision identifier and output dimension. The adapter expects an OpenAI-compatible `POST /embeddings` response with indexed float vectors. Configure query/document prefixes according to that model's documented contract. Tokens use a separate `OMI_EMBEDDING_TOKEN`, never the STT/LLM credential. Endpoints use the existing local-address validation, TLS verification, no redirects and no cloud fallback. Requests have a total deadline, input/batch ceilings and a response-byte ceiling; malformed, zero, nonfinite or wrong-dimension vectors mark the adapter unavailable.
+Choose and serve a local model yourself, then configure the separate `OMI_EMBEDDING_*` fields in [the environment example](../config/omi.env.example). Enabling requires a model name, immutable revision identifier and output dimension. The adapter expects an OpenAI-compatible `POST /embeddings` response with indexed float vectors. Configure query/document prefixes according to that model's documented contract. Tokens use a separate `OMI_EMBEDDING_TOKEN`, never the STT/LLM credential. Endpoints accept local HTTP(S) or explicitly configured hosted HTTPS, with TLS verification, no redirects and no automatic hosted fallback. Requests have a total deadline, input/batch ceilings and a response-byte ceiling; malformed, zero, nonfinite or wrong-dimension vectors mark the adapter unavailable.
 
 `OMI_EMBEDDING_PASSAGE_CHARS` defaults to 1000 and `OMI_EMBEDDING_MAX_INPUT_CHARS` to 4000. These are **character bounds, not token estimates**. Confirm the model accepts all configured text plus prefixes without provider-side truncation; this implementation cannot detect a provider that silently truncates or changes weights behind an unchanged alias. Queries exceeding the character ceiling fall back to keywords. Text is never silently shortened for embedding. Change `OMI_EMBEDDING_REVISION` whenever weights change. Endpoint, dimension, prefixes and splitter changes also produce separate embedding sets.
 

@@ -42,6 +42,10 @@
 .settings-layout .server-configuration { margin: 0; }
 .settings-layout .server-configuration > h2 { font-size: 29px; margin-bottom: 9px; }
 .settings-layout .server-configuration > p { font-size: 14px; line-height: 1.6; }
+.model-connections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.settings-layout .model-connection { min-width: 0; margin: 8px 0 24px; background: var(--surface); }
+.settings-layout .model-connection legend { font-size: 21px; }
+.model-connection > div + div { margin-top: 20px; }
 .settings-layout .server-configuration details { padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-bottom: 12px; }
 .settings-layout .server-configuration summary { padding: 16px 18px; font-size: 14px; }
 .configuration-group-description { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin: 5px 0 0 17px; }
@@ -76,6 +80,7 @@
 .model-connection-actions .text-button { min-height: 44px; }
 .settings-grid > .model-picker { grid-column: 1 / -1; }
 @media (max-width: 1150px) {
+  .model-connections { grid-template-columns: 1fr; gap: 0; }
   .settings-content.settings-layout { grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }
   .settings-layout .settings-grid { grid-template-columns: 1fr; }
 }

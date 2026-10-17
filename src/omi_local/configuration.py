@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import get_args
 from uuid import uuid4
 
 from pydantic import SecretStr, ValidationError
@@ -15,7 +16,9 @@ RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
 }
 ROUTE_FIELDS = {"stt_routes", "llm_routes"}
 SECRET_FIELDS = {
-    key for key, field in Settings.model_fields.items() if field.annotation is SecretStr
+    key
+    for key, field in Settings.model_fields.items()
+    if field.annotation is SecretStr or SecretStr in get_args(field.annotation)
 }
 
 
@@ -70,7 +73,7 @@ DESCRIPTIONS = {
     "Default: 5 minutes. "
     "Missing uploads, empty transcripts and capture interruptions do not prove silence. "
     "Speech detection is approximate; originals keep their normal retention.",
-    "stt_model": "Default transcription model served by your local gateway.",
+    "stt_model": "Default transcription model served by your configured provider.",
     "stt_chunk_seconds": "Maximum audio duration per transcription request, in seconds. "
     "Longer recordings are split and their transcripts joined. Default: 30. "
     "Use a duration accepted by every configured STT route; gateway model lists may not "
@@ -93,13 +96,23 @@ DESCRIPTIONS = {
     "stt_enhancement_timeout_seconds": "Total optional cleanup budget per recording, including "
     "FFmpeg and speech requests. Also limited by the remaining inference budget. "
     "Cleanup failures preserve the original transcript.",
-    "stt_base_url": "Local transcription endpoint including /v1, reachable from home-core.",
+    "stt_base_url": "Compatible transcription endpoint including /v1. Local HTTP(S) and hosted "
+    "HTTPS endpoints are supported. Hosted providers receive the audio sent for transcription.",
+    "llm_base_url": "Compatible chat completions endpoint including /v1. Local HTTP(S) and hosted "
+    "HTTPS endpoints are supported. Hosted providers receive prompts and selected transcripts.",
+    "embedding_base_url": "Compatible embeddings endpoint including /v1. Hosted HTTPS providers "
+    "receive indexed transcripts and search queries; local HTTP(S) endpoints are also supported.",
+    "stt_api_key": "Transcription provider API key, sent as a Bearer credential. Use the shared "
+    "key to inherit the gateway credential, or no authentication for an open local server.",
+    "llm_api_key": "Language model provider API key, sent as a Bearer credential. Use the shared "
+    "key to inherit the gateway credential, or no authentication for an open local server.",
     "stt_routes": "Override model, endpoint or token per language code (da, en), detector name "
     "(danish), or auto. Blank model/endpoint inherits the defaults. Automatic routing needs "
     "a multilingual default model that returns language metadata.",
     "llm_routes": "Overrides for chat, summary, extraction, preparation, weekly and retrieval. "
-    "Blank model, endpoint or revision inherits the defaults.",
-    "inference_token": "Shared local STT/LLM gateway credential. Leave unchanged to keep it.",
+    "Blank model, endpoint or revision inherits the defaults. Route keys override provider keys.",
+    "inference_token": "Shared STT/LLM gateway credential, used when no provider key is set. "
+    "Leave unchanged to keep it.",
     "omi_api_key": "Personal Omi developer API key for optional transcript import.",
     "audio_forwarding_token": "Separate receiver secret: 32–128 URL-safe letters, digits, _ or -.",
     "embedding_enabled": "Requires a model, immutable revision and positive output dimension.",
@@ -137,6 +150,12 @@ def descriptors() -> list[dict]:
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
         title = {
+            "stt_base_url": "STT endpoint URL",
+            "stt_api_key": "STT API key",
+            "stt_model": "STT model",
+            "llm_base_url": "LLM endpoint URL",
+            "llm_api_key": "LLM API key",
+            "llm_model": "LLM model",
             "voice_recognition_enabled": "Remember speakers",
             "voice_recognition_report": "Speaker recognition evaluation report",
             "diarization_enabled": "Enable speaker detection",

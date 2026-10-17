@@ -425,7 +425,7 @@ async def test_provider_failure_stays_queued_and_does_not_leak_response_body(sto
 
 def test_local_settings_reject_remote_providers(settings):
     with pytest.raises(ValueError):
-        Settings(llm_base_url="https://example.com/v1", _env_file=None)
+        Settings(llm_base_url="http://example.com/v1", _env_file=None)
     assert "language" not in Settings.model_fields
 
 

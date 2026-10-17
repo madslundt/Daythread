@@ -57,7 +57,7 @@ def test_task_routes_inherit_default_and_support_nested_environment(tmp_path, mo
     "routes",
     [
         {"typo": {"model": "x"}},
-        {"chat": {"base_url": "https://example.com/v1"}},
+        {"chat": {"base_url": "http://example.com/v1"}},
         {"chat": {"base_url": "http://user:secret@localhost/v1"}},
         {"chat": {"model": " "}},
         {"chat": {"modle": "x"}},

@@ -6,7 +6,7 @@ const categories: { id: SettingsSection; label: string; detail: string; icon: Ic
   { id: "gestures", label: "Flags & meetings", detail: "Important moments & context", icon: "star" },
   { id: "storage", label: "Storage & privacy", detail: "Audio & transcript retention", icon: "inbox" },
   { id: "connections", label: "Connections", detail: "iPhone, Omi import & forwarding", icon: "phone" },
-  { id: "server", label: "Models & server", detail: "Local AI, API keys & advanced", icon: "settings" },
+  { id: "server", label: "Models & server", detail: "STT & LLM endpoints, keys & models", icon: "settings" },
 ];
 export type SettingsSection = "profiles" | "general" | "gestures" | "storage" | "connections" | "server";
 

@@ -2,7 +2,7 @@
 
 A private audio memory system: Omi pendant → iPhone → your backend and local AI. Turn recordings into searchable transcripts, daily diaries, meeting notes, and chat with source references. Access your archive through the native companion or responsive web app.
 
-Direct capture needs no Omi account or cloud AI subscription. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
+Direct capture with local models needs no Omi account or cloud AI subscription. You can also configure compatible hosted HTTPS model endpoints with provider API keys. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
 
 <table>
 <tr><th>Desktop</th><th>Mobile · 402 × 874</th></tr>
@@ -161,13 +161,13 @@ Run from the repository root:
 ```sh
 bash scripts/build.sh
 uv run python scripts/init_config.py
-# Edit .env with your local model endpoints and names before starting.
+# Configure STT and LLM connections in Settings → Models & server after starting.
 bash scripts/dev.sh
 ```
 
 Open **http://localhost:8787** or `http://<server-LAN-address>:8787` from another device. Existing `.env` files are preserved. The launcher binds all interfaces; set `OMI_HOST=127.0.0.1` for access from the server only.
 
-Configure models, language/task routes, local endpoints, API keys, embeddings, forwarding and processing options from **web Settings → Models, keys & server settings** or **iPhone Settings → Transcription → Models, keys & all server settings**. Keys are write-only: keep, replace or clear them without displaying the saved value. STT/LLM/key changes apply immediately; embedding, worker and archive-path changes are marked for backend restart. The clients expose all backend `Settings` fields.
+Configure models, language/task routes, local endpoints, API keys, embeddings, forwarding and processing options from **web Settings → Models, keys & server settings** or **iPhone Settings → Transcription → Models, keys & all server settings**. Keys are write-only: keep, replace or clear them without displaying the saved value. In Speech-to-text (STT) and Language model (LLM), set the provider API key or choose Use shared key / No authentication. Route keys override provider keys. Hosted transcription receives audio; hosted language models receive prompts and selected transcripts. STT/LLM/key changes apply immediately; embedding, worker and archive-path changes are marked for backend restart. The clients expose all backend `Settings` fields.
 
 Speech processing preserves faint audio by default, applies capped gain to transcription copies,
 and retains every sample when splitting requests. Optional local FFmpeg cleanup produces a
@@ -184,22 +184,19 @@ Optional [remembered voices](docs/README.md#remembering-speakers-across-conversa
 explicitly confirmed examples to suggest identities in later conversations. Suggestions
 require a passing evaluation on separate real recordings and always need confirmation.
 
-Environment variables remain available as initial defaults; the example gateway/model names are specific to the original home network:
+Configure STT and LLM endpoints, API keys, model names, language/task routes and processing options in **Settings → Models & server**. The starter `.env` no longer duplicates these settings. Existing model environment variables remain compatible as startup defaults, with saved settings taking precedence. To remove them from an older installation without losing unsaved defaults, stop the backend and run:
 
-| Setting | Purpose |
-|---|---|
-| `OMI_STT_BASE_URL`, `OMI_STT_MODEL` | Local transcription endpoint base (including `/v1`) and model name. |
-| `OMI_STT_ROUTES__<LANGUAGE>__MODEL` | Optional STT model per language, e.g. `DA` or `EN`; each also supports `BASE_URL` and `TOKEN`. Automatic routing uses language metadata from a multilingual first pass. See [local inference](docs/README.md#local-inference). |
-| `OMI_LLM_BASE_URL`, `OMI_LLM_MODEL` | Local language-model endpoint base (including `/v1`) and model name. |
-| `OMI_INFERENCE_TOKEN` | Optional credential for your local inference gateway. |
-| `OMI_LLM_ROUTES__<TASK>__MODEL` | Optional model override for `CHAT`, `SUMMARY`, `EXTRACTION`, `PREPARATION`, `WEEKLY`, or `RETRIEVAL`; unset tasks use `OMI_LLM_MODEL`. Each task also supports `BASE_URL`, `TOKEN`, and `REVISION`. See [local inference](docs/README.md#local-inference). |
-| `OMI_CHAT_QUERY_EXPANSION` | Default `true`: try bounded alternate search wording when chat finds no evidence. Successful searches need no extra planning call. |
-| `OMI_DATA_DIR`, `OMI_TIMEZONE` | Archive location (default `data/`) and local calendar timezone. |
-| `OMI_AUDIO_RETENTION_DAYS`, `OMI_TRANSCRIPT_RETENTION_DAYS` | Independent retention periods; defaults are 7 days for audio and 30 days for transcripts. `0` keeps data indefinitely. |
+```sh
+uv run python scripts/migrate_model_settings.py
+```
+
+The migration saves effective model values and keys to private settings before removing only `OMI_STT_*` and `OMI_LLM_*` entries from `.env`. Unrelated entries are preserved. Run it in the same environment and archive location as the backend; for Docker, use the container's archive volume rather than a host-side `data/` directory.
+
+Other environment defaults include `OMI_DATA_DIR` for the archive location, `OMI_TIMEZONE`, and `OMI_HOST`/`OMI_PORT` for the listener. Ordinary preferences are also available in Settings.
 
 See [all starter settings](config/omi.env.example). Saved settings override environment defaults. Service configuration and keys are saved atomically with owner-only permissions in `.private-settings.json` inside the initial archive directory; this file is excluded from application archive exports. Copy it separately when moving the deployment. Changing the archive path selects another archive after restart and does not move recordings.
 
-**Docker alternative:** create `.env` from `config/omi.env.example` if absent, edit the model settings, then run:
+**Docker alternative:** create `.env` from `config/omi.env.example` if absent, then run:
 
 ```sh
 docker compose --env-file .env -f config/compose.yaml up --build -d

@@ -56,6 +56,18 @@ describe("model connection previews", () => {
     }
     expect(keepSecret()).toEqual({ mode: "keep", value: "" });
   });
+  it("previews provider keys for defaults and routes without including another provider's key", () => {
+    const value = draft();
+    value.secrets.llm_api_key = { mode: "replace", value: "" };
+    for (const [mode, key] of [["replace", "speech-key"], ["clear", ""], ["inherit", null]] as const) {
+      value.secrets.stt_api_key = { mode, value: mode === "replace" ? "speech-key" : "" };
+      for (const row of [undefined, value.routes.stt_routes[0]]) {
+        const changes = modelConnectionRequest(value, "stt", row).changes;
+        expect(changes.stt_api_key).toBe(key);
+        expect(changes.llm_api_key).toBeUndefined();
+      }
+    }
+  });
   it("does not tie route catalog requests to the selected model", () => {
     const value = draft();
     const row = value.routes.stt_routes[0];

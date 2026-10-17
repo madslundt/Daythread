@@ -329,7 +329,7 @@ def test_embedding_config_is_explicit_local_and_disabled_by_default(tmp_path):
     assert not Settings(data_dir=tmp_path, _env_file=None).embedding_enabled
     for changes in (
         {"embedding_enabled": True},
-        {"embedding_base_url": "https://example.com/v1"},
+        {"embedding_base_url": "http://example.com/v1"},
         {"embedding_base_url": "http://user:secret@localhost/v1"},
     ):
         with pytest.raises(ValidationError):

@@ -10,18 +10,18 @@ import {
   type RouteRow, type SecretEdit,
 } from "./configurationModel";
 
-function SecretControl({ id, label, configured, edit, onChange, route = false, description }: {
+function SecretControl({ id, label, configured, edit, onChange, route = false, nullable = false, description }: {
   id: string; label: string; configured: boolean; edit: SecretEdit;
-  onChange: (edit: SecretEdit) => void; route?: boolean; description?: string;
+  onChange: (edit: SecretEdit) => void; route?: boolean; nullable?: boolean; description?: string;
 }) {
   return <div className="setting-field">
     <label htmlFor={id}>{label} · {configured ? "Configured" : "Not set"}</label>
     <select id={id} value={edit.mode} aria-describedby={description ? `${id}-hint` : undefined} onChange={(event) =>
       onChange({ mode: event.target.value as SecretEdit["mode"], value: "" })}>
-      <option value="keep">{configured ? "Keep current key" : route ? "Keep current setting" : "Leave key unset"}</option>
+      <option value="keep">{configured ? "Keep current key" : route || nullable ? "Keep current setting" : "Leave key unset"}</option>
       <option value="replace">{configured ? "Replace key" : "Add key"}</option>
-      {route ? <option value="inherit">Use shared key</option> : null}
-      <option value="clear">{route ? "No authentication" : "Clear key"}</option>
+      {route || nullable ? <option value="inherit">{route ? "Use provider key" : "Use shared key"}</option> : null}
+      <option value="clear">{route || nullable ? "No authentication" : "Clear key"}</option>
     </select>
     {edit.mode === "replace" ? <input
       type="password" aria-label={`New ${label}`} value={edit.value}
@@ -89,6 +89,15 @@ const groupDescriptions: Record<string, string> = {
   "Capture & hints": "Fine-tune how flags and meeting gestures are interpreted.",
   "Archive & processing": "Control storage locations and background processing.",
 };
+
+const modelConnections = [
+  { provider: "stt", title: "Speech-to-text (STT)", description: "Transcribes your recordings into text." },
+  { provider: "llm", title: "Language model (LLM)", description: "Answers questions and generates summaries." },
+] as const;
+const connectionKeys = modelConnections.flatMap(({ provider }) =>
+  [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]);
+const optionsTitle = (group: string) => group === "Transcription" ? "Transcription options & language routes" :
+  group === "Language models & chat" ? "Language model options & task routes" : group;
 
 export function Configuration({ onSaved, hiddenFields = [], search: controlledSearch,
   onSearchResults, onDirtyChange, refreshRevision = 0 }: {
@@ -193,6 +202,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         setSaved(false); setError("");
       }} />;
     if (field.kind === "secret") return <SecretControl id={id} label={field.label}
+      nullable={field.nullable}
       configured={Boolean(baseline!.secrets[field.key])} edit={draft!.secrets[field.key] || keepSecret()}
       description={field.description} onChange={(edit) => {
         setDraft((current) => current ? { ...current, secrets: { ...current.secrets, [field.key]: edit } } : current);
@@ -209,7 +219,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         onChange={(event) => update(field.key, event.target.value === "true")}>
         <option value="true">Enabled</option><option value="false">Disabled</option>
-      </select> : <input id={id} type={field.kind === "integer" || field.kind === "number" ? "number" : "text"}
+      </select> : <input id={id} type={field.kind === "integer" || field.kind === "number" ? "number" : field.key.endsWith("_base_url") ? "url" : "text"}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         step={field.kind === "integer" ? 1 : "any"} min={field.minimum} max={field.maximum}
         value={String(draft!.values[field.key] ?? "")} spellCheck={false} autoCapitalize="none"
@@ -218,8 +228,9 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
     </label>;
   }
   const fields = matchingConfigurationFields(baseline?.fields || [], search, hiddenFields);
+  const otherFields = fields.filter((field) => !connectionKeys.includes(field.key));
   const groupOrder = ["Transcription", "Language models & chat", "Local inference", "Omi connections", "Semantic search", "Archive & processing"];
-  const groups = [...new Set(fields.map((field) => field.group))].sort((a, b) => {
+  const groups = [...new Set(otherFields.map((field) => field.group))].sort((a, b) => {
     const rank = (group: string) => groupOrder.includes(group) ? groupOrder.indexOf(group) : groupOrder.length;
     return rank(a) - rank(b);
   });
@@ -229,6 +240,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
   return <section aria-label="Server configuration" className="server-configuration">
     <h2>Models &amp; server</h2>
     <p className="muted">Choose the services that transcribe, summarize, and search your recordings.
+      STT and LLM connections are independent: each can use a different endpoint, API key, and model.
       Changes are shared by the iPhone app and web. Keys stay on your server and are never shown after saving.</p>
     {resource.loading && !baseline ? <Loading>Loading server settings…</Loading> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
@@ -242,11 +254,23 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
       {search.trim() ? <p className="caption" role="status">{fields.length ?
         `${fields.length} matching server ${fields.length === 1 ? "setting" : "settings"}.` :
         "No server settings match your search. Try a model name, connection, or storage setting."}</p> : null}
+      <div className="model-connections">
+        {modelConnections.map(({ provider, title, description }) => {
+          const connectionFields = [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]
+            .flatMap((key) => fields.filter((field) => field.key === key));
+          if (!connectionFields.length) return null;
+          return <fieldset key={provider} disabled={busy} className="model-connection">
+            <legend>{title}</legend>
+            <p className="caption">{description} Enter a local or hosted endpoint and its credentials.</p>
+            {connectionFields.map((field) => <div key={field.key}>{control(field)}</div>)}
+          </fieldset>;
+        })}
+      </div>
       {groups.map((group) => {
-        const groupFields = fields.filter((field) => field.group === group);
+        const groupFields = otherFields.filter((field) => field.group === group);
         return <details key={group} open={search.trim() ? true : undefined}>
           <summary>
-            <span className="configuration-group-heading">{group} <span className="caption">{groupFields.length} {groupFields.length === 1 ? "setting" : "settings"}</span></span>
+            <span className="configuration-group-heading">{optionsTitle(group)} <span className="caption">{groupFields.length} {groupFields.length === 1 ? "setting" : "settings"}</span></span>
             <small className="configuration-group-description">{groupDescriptions[group] || "Additional server preferences."}</small>
           </summary>
           <fieldset disabled={busy} className="configuration-fields">

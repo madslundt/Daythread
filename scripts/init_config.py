@@ -15,7 +15,7 @@ def main() -> None:
         return
     with os.fdopen(descriptor, "w", encoding="utf-8") as config:
         config.write(example)
-    print("Created .env. No application authentication is enabled. Review local model endpoints.")
+    print("Created .env. Configure STT and LLM connections in Settings → Models & server.")
 
 
 if __name__ == "__main__":

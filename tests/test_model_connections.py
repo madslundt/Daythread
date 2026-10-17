@@ -88,6 +88,40 @@ def test_discovery_uses_draft_endpoint_shared_key_and_never_saves(connection, pr
     assert not (settings.data_dir / ".private-settings.json").exists()
 
 
+@pytest.mark.parametrize("provider,route", [("stt", "en"), ("llm", "summary")])
+@pytest.mark.parametrize("action", ["models", "test"])
+@pytest.mark.parametrize(
+    "key,expected",
+    [("provider-secret", "Bearer provider-secret"), ("", None), (None, "Bearer shared-secret")],
+)
+def test_hosted_previews_use_provider_keys_without_saving(
+    connection, provider, route, action, key, expected
+):
+    client, _, calls, replies = connection
+    if action == "test":
+        replies.append(
+            httpx.Response(200, json={"text": "", "choices": [{"message": {"content": "OK"}}]})
+        )
+    before = client.get("/v1/configuration").json()
+    for selected in (None, route):
+        response = post(
+            client,
+            action,
+            provider=provider,
+            route=selected,
+            changes={
+                f"{provider}_base_url": "https://models.example.com/v1/",
+                f"{provider}_api_key": key,
+            },
+        )
+        assert response.status_code == 200
+        if action == "test":
+            assert response.json()["ok"]
+        assert calls[-1].url.host == "models.example.com"
+        assert calls[-1].headers.get("authorization") == expected
+    assert client.get("/v1/configuration").json() == before
+
+
 @pytest.mark.parametrize(
     "provider,route,secret",
     [
@@ -145,7 +179,7 @@ def test_draft_route_secret_can_be_replaced_inherited_or_disabled(connection, to
         {"provider": "llm", "route": "invalid-private-route"},
         {"provider": "stt", "route": "../must-not-echo"},
         {"provider": "llm", "changes": {"data_dir": "must-not-echo"}},
-        {"provider": "llm", "changes": {"llm_base_url": "https://example.com/v1"}},
+        {"provider": "llm", "changes": {"llm_base_url": "http://example.com/v1"}},
         {"provider": "llm", "changes": {"inference_token": 12345}},
         {
             "provider": "llm",

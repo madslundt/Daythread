@@ -39,3 +39,11 @@ clear old titles and sections until the updated transcript has been analyzed.
 Saved recordings, meetings, person/project labels, day recaps and individual recap points/sections have a **Mark important** toggle. Marks are stored on home-core, shared with the iPhone companion, and can be removed later. Recap marks belong to the displayed saved version; they do not move to different text after regeneration. During-recording gesture hints remain separate.
 
 Settings includes a searchable **Models, keys & server settings** editor shared with iPhone. All backend settings are available across the preference controls and server editor, including STT language routes, LLM task routes, local endpoints and write-only keys. Key actions distinguish Keep, Replace, Clear, and route inheritance. Settings requiring a backend restart display that state explicitly. Configuration is fetched without HTTP caching and replacement keys are never stored in browser storage.
+
+Transcript language controls use tabs for **Original** and each configured translation language.
+Targets matching at least 95% of the current transcript or topic passage are hidden, based on
+local passage detection weighted by letter count. Uncertain text keeps translation available.
+Opening a language tab only checks its saved translation; an untranslated tab shows a blurred
+original with an explicit **Translate** action. Generation keeps that preview with a progress
+status, then displays the saved translation. Failures show an error and **Translate again**
+over the blurred preview. Original remains accessible throughout.

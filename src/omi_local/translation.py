@@ -140,12 +140,12 @@ def language_profiles() -> DetectorFactory:
 
 
 def transcript_in_language(text: str, language: str) -> bool:
-    """Suppress translation only when every checked passage confidently matches the target.
+    """Suppress translation when at least 95% of the letters match the target language.
 
-    Whole-document detection hides minority languages behind the dominant language. Check
-    utterances and overlapping word/character windows, including long sentences' tails.
-    Short/ambiguous passages and texts exceeding the local work budget deliberately keep
-    translation available. No text is cached.
+    Classify bounded passages locally rather than mistaking document-level confidence
+    for language coverage. Ambiguous passages count against the target; repeated text
+    reuses its classification but still contributes its full length. No text is cached
+    between requests.
     """
     target = language.lower().split("-")[0]
     if target == "auto" or not text.strip():
@@ -153,55 +153,55 @@ def transcript_in_language(text: str, language: str) -> bool:
     factory = language_profiles()
     if target not in {code.split("-")[0] for code in factory.get_lang_list()}:
         return False
-    checked = set()
+    checked: dict[str, bool] = {}
+    matched, total = 0, 0
     for utterance in re.split(r"[.!?;\n。！？]+", text):
-        # Speaker labels are presentation metadata, not words spoken in the conversation.
+        # Speaker labels are presentation metadata, not spoken text.
         utterance = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", utterance, flags=re.I)
-        letters = "".join(character for character in utterance if character.isalpha())
-        if not letters:
-            continue
-        if len(letters) < 12:
-            return False
-        cjk = target in {"zh", "ja"}
-        if cjk:
-            # These scripts do not require word separators. Keep punctuation as model
-            # context, and reject Latin/other scripts even when they are a small minority.
-            if not CJK_LETTERS.fullmatch(letters):
-                return False
-            units, width, stride, separator = utterance.strip(), 48, 24, ""
-        else:
-            if CJK_LETTERS.search(letters):
-                return False
-            units = re.findall(r"[^\W\d_]+", utterance, flags=re.UNICODE)
-            if len(units) < 3 or all(word.istitle() or word.isupper() for word in units):
-                return False
-            width, stride, separator = 8, 4, " "
-        starts = set(range(0, max(1, len(units) - width + 1), stride)) | {
-            max(0, len(units) - width)
-        }
-        for start in sorted(starts):
-            passage = separator.join(units[start:start + width])
-            if passage in checked:
+        # Script changes are boundaries too, so a brief foreign phrase does not
+        # invalidate a long same-language utterance without punctuation.
+        script_runs = f"({CJK_LETTERS.pattern}(?:[\\W\\d_]+{CJK_LETTERS.pattern})*)"
+        for run in re.split(script_runs, utterance):
+            letters = "".join(character for character in run if character.isalpha())
+            total += len(letters)
+            if len(letters) < 12:
                 continue
-            # Bound CPU work on archive reads; unexamined text must never be assumed to
-            # share the dominant language. Repeated utterances need only one check.
-            if len(checked) >= 256:
-                return False
-            detector = factory.create()
+            cjk = bool(CJK_LETTERS.fullmatch(letters))
             if cjk:
-                # Only Chinese/Japanese profiles fit exclusively Han/kana input. This
-                # avoids Korean false positives on traditional Chinese with no Hangul.
-                detector.set_prior_map({"ja": 1, "zh-cn": 1, "zh-tw": 1})
-            detector.append(passage)
-            try:
-                matches = detector.get_probabilities()
-            except LangDetectException:
-                return False
-            confidence = sum(item.prob for item in matches if item.lang.split("-")[0] == target)
-            if confidence < 0.9:
-                return False
-            checked.add(passage)
-    return bool(checked)
+                if target not in {"zh", "ja"}:
+                    continue
+                units, width, separator = letters, 48, ""
+            else:
+                if target in {"zh", "ja"}:
+                    continue
+                units = re.findall(r"[^\W\d_]+", run, flags=re.UNICODE)
+                if len(units) < 3 or all(word.istitle() or word.isupper() for word in units):
+                    continue
+                width, separator = 8, " "
+            for start in range(0, len(units), width):
+                # Give a short final chunk enough context, but count each letter only once.
+                context_start = min(start, max(0, len(units) - width))
+                passage = separator.join(units[context_start:context_start + width])
+                if passage not in checked:
+                    # Unexamined text must not be assumed to share the dominant language.
+                    if len(checked) >= 256:
+                        return False
+                    detector = factory.create()
+                    if cjk:
+                        detector.set_prior_map({"ja": 1, "zh-cn": 1, "zh-tw": 1})
+                    detector.append(passage)
+                    try:
+                        matches = detector.get_probabilities()
+                    except LangDetectException:
+                        checked[passage] = False
+                    else:
+                        confidence = sum(
+                            item.prob for item in matches if item.lang.split("-")[0] == target
+                        )
+                        checked[passage] = confidence >= 0.9
+                if checked[passage]:
+                    matched += sum(len(unit) for unit in units[start:start + width])
+    return total > 0 and matched * 100 >= total * 95
 
 
 def translation_chunks(text: str, size: int = 4000) -> list[str]:
@@ -241,9 +241,14 @@ def translation_routes(get_memory: Callable[[], Memory]) -> APIRouter:
         already_in_target = bool(language) and source["state"] == "done" and transcript_in_language(
             passage, language
         )
+        redundant = [
+            code for code in languages if source["state"] == "done"
+            and (already_in_target if code == language else transcript_in_language(passage, code))
+        ]
         return {
             "language": language,
             "available_languages": languages,
+            "redundant_languages": redundant,
             "already_in_target_language": already_in_target,
             "translation": (
                 None if already_in_target or not language

@@ -26,16 +26,16 @@ export function TranscriptTranslation({ sourceId, original, passage }: {
   const operation = useRef(0);
   const [target, setTarget] = useState<string>();
   const [data, setData] = useState<TranscriptTranslationData>();
-  const [translated, setTranslated] = useState(true);
+  const [translated, setTranslated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [translationError, setTranslationError] = useState("");
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
     operation.current += 1;
-    setData(undefined);
     busy.current = false;
     setLoading(true);
     setGenerating(false);
@@ -43,12 +43,17 @@ export function TranscriptTranslation({ sourceId, original, passage }: {
     requests.run("GET", target).then((result) => {
       if (active && result) { setData(result); setLoading(false); }
     }).catch((failure) => {
-      if (active) { setError(errorMessage(failure)); setLoading(false); }
+      if (active) {
+        setData((current) => current ? { ...current, translation: null } : undefined);
+        setError(errorMessage(failure)); setLoading(false);
+      }
     });
     return () => { active = false; requests.cancel(); };
   }, [requests, revision, target]);
 
-  useEffect(() => { setTranslated(true); }, [requests]);
+  useEffect(() => {
+    setData(undefined); setTarget(undefined); setTranslated(false); setTranslationError("");
+  }, [requests]);
 
   useEffect(() => {
     const refresh = () => {
@@ -56,12 +61,13 @@ export function TranscriptTranslation({ sourceId, original, passage }: {
       operation.current += 1;
       setData(undefined);
       setTarget(undefined);
-      setTranslated(true);
+      setTranslated(false);
+      setTranslationError("");
       setRevision((value) => value + 1);
     };
     const focus = () => {
       // Returning to the tab must not cancel an explicit Translate click.
-      if (!busy.current) { setTarget(undefined); setRevision((value) => value + 1); }
+      if (!busy.current) setRevision((value) => value + 1);
     };
     window.addEventListener("focus", focus);
     window.addEventListener("omi:settings-changed", refresh);
@@ -73,19 +79,22 @@ export function TranscriptTranslation({ sourceId, original, passage }: {
     };
   }, [requests]);
 
-  async function translate() {
-    if (loading || generating || !data?.available_languages.includes(data.language)) return;
+  async function translate(language: string) {
+    if (loading || busy.current || !data?.available_languages.includes(language)
+      || data.redundant_languages?.includes(language)) return;
     const currentOperation = ++operation.current;
     busy.current = true;
     setGenerating(true);
+    setTranslated(true);
     setError("");
+    setTranslationError("");
     try {
-      const result = await requests.run("POST", data.language);
+      const result = await requests.run("POST", language);
       if (!result || currentOperation !== operation.current) return;
       setData(result);
-      setTranslated(Boolean(result.translation) && !result.already_in_target_language);
+      if (result.already_in_target_language) setTranslated(false);
     } catch (failure) {
-      if (currentOperation === operation.current) setError(errorMessage(failure));
+      if (currentOperation === operation.current) setTranslationError(errorMessage(failure));
     } finally {
       if (currentOperation === operation.current) {
         busy.current = false;
@@ -95,58 +104,85 @@ export function TranscriptTranslation({ sourceId, original, passage }: {
   }
 
   return <TranscriptTranslationView original={original} data={data} translated={translated}
-    loading={loading} generating={generating} error={error}
-    onTranslate={() => void translate()} onSelect={setTranslated}
+    selectedLanguage={target ?? data?.language} loading={loading} generating={generating}
+    error={error} translationError={translationError}
+    onTranslate={(language) => void translate(language)} onSelect={setTranslated}
     onLanguage={(language) => {
+      setTranslated(true);
+      if (language === (target ?? data?.language)) return;
       requests.cancel(); operation.current += 1;
-      setLoading(true); setTranslated(true); setError(""); setTarget(language);
+      setLoading(true); setError(""); setTranslationError(""); setTarget(language);
     }}
     onRetry={() => setRevision((value) => value + 1)} />;
 }
 
-export function TranscriptTranslationView({ original, data, translated = true, loading, generating, error,
-  onTranslate, onSelect, onRetry, onLanguage }: {
+export function TranscriptTranslationView({ original, data, translated = false, selectedLanguage,
+  loading, generating, error, translationError = "", onTranslate, onSelect, onRetry, onLanguage }: {
   original: string;
   data?: TranscriptTranslationData;
   translated?: boolean;
+  selectedLanguage?: string;
   loading: boolean;
   generating: boolean;
   error: string;
-  onTranslate: () => void;
+  translationError?: string;
+  onTranslate: (language: string) => void;
   onSelect: (translated: boolean) => void;
   onRetry: () => void;
   onLanguage: (language: string) => void;
 }) {
-  const selectId = useId();
-  const alreadyInTargetLanguage = !loading && data?.already_in_target_language;
-  const translation = !loading && !alreadyInTargetLanguage ? data?.translation : null;
-  const language = data?.language ? translationLanguageLabel(data.language) : "";
-  const available = data?.available_languages ?? [];
-  return <div>
-    <div className="button-row" aria-label="Transcript language">
-      {available.length ? <>
-        <label htmlFor={selectId}>Translate to</label>
-        <select id={selectId} value={data?.language ?? ""} disabled={loading || generating}
-          onChange={(event) => onLanguage(event.target.value)}>
-          {available.map((code) => <option key={code} value={code}>{translationLanguageLabel(code)}</option>)}
-        </select>
-      </> : null}
-      <button type="button" className="button small" onClick={onTranslate}
-        disabled={loading || generating || !available.length}>
-        {generating ? "Translating…" : language ? `Translate to ${language}` : "Translate"}
-      </button>
-      {translation ? <>
-        <button type="button" className="button small" aria-pressed={!translated} onClick={() => onSelect(false)}>Original</button>
-        <button type="button" className="button small" aria-pressed={translated} onClick={() => onSelect(true)}>{language} translation</button>
-      </> : null}
+  const id = useId();
+  const available = (data?.available_languages ?? []).filter((code) =>
+    !data?.redundant_languages?.includes(code)
+    && !(data?.already_in_target_language && code === data.language));
+  const target = selectedLanguage ?? data?.language ?? "";
+  const active = translated && available.includes(target) ? target : "original";
+  const language = active !== "original" ? translationLanguageLabel(active) : "";
+  const translation = !loading && active === data?.language ? data.translation : null;
+  const placeholder = active !== "original" && !translation;
+  const tabs = ["original", ...available];
+
+  function selectTab(code: string) {
+    if (code === "original") onSelect(false);
+    else onLanguage(code);
+  }
+
+  return <div className="transcript-translation">
+    <div className="translation-tabs" role="tablist" aria-label="Transcript language"
+      onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        // Use manual tab activation so arrow navigation never starts a lookup.
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]:not(:disabled)"));
+        const index = buttons.indexOf(event.target as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      }}>
+      {tabs.map((code) => <button key={code} type="button" role="tab" id={`${id}-${code}`}
+        aria-controls={`${id}-text`} aria-selected={active === code} tabIndex={active === code ? 0 : -1}
+        disabled={generating && code !== "original" && code !== target}
+        onClick={() => selectTab(code)}>
+        {code === "original" ? "Original" : translationLanguageLabel(code)}
+      </button>)}
     </div>
-    {loading ? <p className="caption" role="status">Checking transcript language and saved translation…</p>
-      : data && !available.length ? <p className="caption">Add translation languages in <a href="/settings/general">Settings</a> to translate this transcript.</p>
-      : alreadyInTargetLanguage ? <p className="caption" role="status">Transcript is already in {language}. You can choose another translation language.</p>
-      : <p className="caption" role="status">{generating ? "Translating. Your original transcript is kept." : translated && translation ? `Showing a generated ${language} translation. Corrections apply to the original transcript.` : translation ? `Showing the original transcript. A ${language} translation is available.` : `Original transcript · languages detected automatically.${data ? " Translation is generated only when you click Translate." : ""}`}</p>}
-    <p className="transcript-text" lang={translated && translation ? translation.language : undefined}>
-      {translated && translation ? translation.text : original}
-    </p>
-    {error ? <ErrorState message={error} retry={data ? undefined : onRetry} /> : null}
+    {loading && !placeholder ? <p className="caption" role="status">Checking transcript language and saved translation…</p>
+      : data && !data.available_languages.length ? <p className="caption">Add translation languages in <a href="/settings/general">Settings</a> to translate this transcript.</p>
+      : translation ? <p className="caption">Generated translation · Corrections apply to the original transcript.</p> : null}
+    <div id={`${id}-text`} role="tabpanel" aria-labelledby={`${id}-${active}`} tabIndex={0}>
+      {placeholder ? <div className="translation-preview" aria-busy={loading || generating}>
+        <p className="transcript-text translation-preview-text" aria-hidden="true">{original}</p>
+        <div className="translation-preview-action">
+          {loading || generating ? <p className="caption" role="status">{generating ? "Translating…" : "Checking saved translation…"}</p>
+            : <>
+              {translationError ? <p className="caption translation-error" role="alert">{translationError}</p> : null}
+              <button type="button" className="translation-trigger" onClick={() => onTranslate(active)}>
+                {translationError ? "Translate again" : `Translate to ${language}`}
+              </button>
+            </>}
+        </div>
+      </div> : <p className="transcript-text" lang={translation?.language}>{translation?.text ?? original}</p>}
+    </div>
+    {error ? <ErrorState message={error} retry={!data || loading ? onRetry : undefined} /> : null}
   </div>;
 }

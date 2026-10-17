@@ -103,93 +103,106 @@ describe("transcript translation requests", () => {
 });
 
 describe("transcript translation display", () => {
-  it("defaults to the saved translation and labels it clearly", () => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} translated={undefined} />);
-    expect(html).toContain(data.translation!.text);
-    expect(html).not.toContain(original);
-    expect(html).toContain('aria-pressed="true">English translation');
-    expect(html).toContain("Showing a generated English translation");
-    expect(html).toContain('aria-pressed="false">Original');
-  });
-
-  it("lets the reader select the original when a cached translation exists", () => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} />);
+  it("shows Original and every eligible language as tabs before translation exists", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} />);
+    expect(html).toContain('role="tablist"');
+    for (const label of ["Original", "English", "Danish", "German"]) expect(html).toContain(`>${label}</button>`);
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain("<option");
+    expect(html).not.toContain("translation-trigger");
     expect(html).toContain(original);
-    expect(html).not.toContain(data.translation!.text);
-    expect(html).toContain('aria-pressed="true">Original');
-    expect(html).toContain("English translation");
   });
 
-  it("switches only the display to the translated language", () => {
+  it("selecting an untranslated language shows blurred original and an explicit action", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} translated />);
+    expect(html).toContain('class="transcript-text translation-preview-text" aria-hidden="true"');
+    expect(html).toContain(original);
+    expect(html).toContain("Translate to English");
+    expect(html).toContain('aria-selected="true" tabindex="0">English');
+    expect(html).toContain('role="tabpanel"');
+  });
+
+  it("shows saved translated text with the correct language and selected tab", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} translated />);
     expect(html).toContain(data.translation!.text);
     expect(html).not.toContain(original);
+    expect(html).toContain('aria-selected="true" tabindex="0">English');
     expect(html).toContain('lang="en"');
     expect(html).toContain("Corrections apply to the original transcript");
-    expect(html).toContain('aria-pressed="false">Original');
+    expect(html).not.toContain("translation-preview");
   });
 
-  it("offers exactly the configured target languages without requiring a summary language", () => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} />);
-    expect(html).toContain("Translate to English");
-    expect(html).toContain('<option value="da">Danish</option>');
-    expect(html).toContain('<option value="de">German</option>');
-    expect(html).not.toContain('<option value="fr">');
-    expect(html).not.toContain("summary language");
-    expect(html).not.toContain('disabled=""');
+  it("shows the original when selected even if a translation is cached", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} />);
+    expect(html).toContain(original);
+    expect(html).not.toContain(data.translation!.text);
+    expect(html).toContain('aria-selected="true" tabindex="0">Original');
+    expect(html).not.toContain("translation-preview");
   });
 
-  it("explains how to enable translation when no languages are enabled", () => {
+  it("hides all redundant target tabs while keeping other configured languages", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, redundant_languages: ["en", "da"] }} />);
+    expect(html).not.toContain(">English</button>");
+    expect(html).not.toContain(">Danish</button>");
+    expect(html).toContain(">German</button>");
+    expect(html).toContain(">Original</button>");
+  });
+
+  it("does not offer translation to the current matching target, including stale caches", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, already_in_target_language: true }} translated />);
+    expect(html).toContain(original);
+    expect(html).not.toContain(data.translation!.text);
+    expect(html).not.toContain(">English</button>");
+    expect(html).not.toContain("Translate to English");
+  });
+
+  it("explains how to enable translation when none are configured", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "", available_languages: [], already_in_target_language: false, translation: null }} />);
     expect(html).toContain("Add translation languages");
     expect(html).toContain('href="/settings/general"');
-    expect(html).toContain('disabled=""');
     expect(html).toContain(original);
+    expect(html).not.toContain("translation-trigger");
   });
 
-  it("keeps translation actions and other target languages available for a matching transcript", () => {
-    const sameLanguageOriginal = "We planned our next meeting.";
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} original={sameLanguageOriginal}
-      data={{ ...data, already_in_target_language: true, translation: null }} />);
-    expect(html).toContain(sameLanguageOriginal);
-    expect(html).toContain("Transcript is already in English.");
-    expect(html).toContain("Translate to English");
-    expect(html).toContain('<option value="de">German</option>');
-    expect(html).not.toContain('disabled=""');
-  });
-
-  it("ignores a stale cached translation for a transcript already in the target language", () => {
-    const sameLanguageOriginal = "We planned our next meeting.";
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} original={sameLanguageOriginal}
-      data={{ ...data, already_in_target_language: true }} translated />);
-    expect(html).toContain(sameLanguageOriginal);
-    expect(html).not.toContain(data.translation!.text);
-    expect(html).not.toContain("English translation");
-    expect(html).toContain("Translate to English");
-    expect(html).not.toContain('lang="en"');
-  });
-
-  it("keeps the Translate button visible but disabled while checking language", () => {
-    for (const cached of [undefined, data]) {
-      const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={cached} loading translated />);
+  it("shows a blurred original with status during lookup and generation", () => {
+    for (const state of [{ loading: true }, { generating: true }]) {
+      const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} translated {...state} />);
+      expect(html).toContain("translation-preview-text");
       expect(html).toContain(original);
-      expect(html).toContain("Checking transcript language");
-      expect(html).toContain("Translate");
-      expect(html).not.toContain("English translation");
-      expect(html).not.toContain(data.translation!.text);
-      expect(html).toContain('disabled=""');
+      expect(html).toContain('aria-busy="true"');
+      expect(html).toContain('role="status"');
+      expect(html).toContain(state.loading ? "Checking saved translation…" : "Translating…");
+      expect(html).not.toContain("translation-trigger");
     }
   });
 
-  it("keeps original text visible while generating and after a failure", () => {
-    const pending = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} generating />);
-    expect(pending).toContain("Translating…");
-    expect(pending).toContain(original);
-    expect(pending).toContain('disabled=""');
-    const failure = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} error="Translation model is unavailable" />);
-    expect(failure).toContain(original);
-    expect(failure).toContain("Translation model is unavailable");
-    expect(failure).toContain("Translate to English");
-    expect(failure).not.toContain('disabled=""');
+  it("does not display another language's cache while looking up a selected tab", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} translated selectedLanguage="de" loading />);
+    expect(html).not.toContain(data.translation!.text);
+    expect(html).toContain('aria-selected="true" tabindex="0">German');
+    expect(html).toContain("translation-preview-text");
+  });
+
+  it("allows returning to the original during generation", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} generating />);
+    expect(html).toContain(original);
+    expect(html).not.toContain("translation-preview-text");
+    expect(html).toContain('aria-selected="true" tabindex="0">Original');
+  });
+
+  it("shows the failure and retry action over the blurred original", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} translated translationError="Translation model is unavailable" />);
+    expect(html).toContain("Translation model is unavailable");
+    expect(html).toContain("translation-preview-text");
+    expect(html).toContain('class="caption translation-error" role="alert"');
+    expect(html).toContain("Translate again");
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it("keeps a translation failure out of the Original tab", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} translationError="Translation model is unavailable" />);
+    expect(html).toContain(original);
+    expect(html).not.toContain("Translation model is unavailable");
+    expect(html).not.toContain("translation-preview-text");
   });
 });

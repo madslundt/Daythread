@@ -4,6 +4,7 @@ import { profileScope } from "./profiles";
 export type TranscriptTranslationData = {
   language: string;
   available_languages: string[];
+  redundant_languages?: string[];
   already_in_target_language: boolean;
   translation: {
     text: string;

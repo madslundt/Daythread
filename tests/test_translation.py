@@ -73,7 +73,7 @@ def test_reads_never_generate_and_explicit_translation_preserves_evidence(client
     original = client.get(f"/v1/transcripts/{key}").json()
     assert client.get(path).json() == {
         "language": "da", "available_languages": ["da"],
-        "translation": None, "already_in_target_language": False,
+        "translation": None, "already_in_target_language": False, "redundant_languages": [],
     }
     assert calls == []
     translated = client.post(path).json()["translation"]
@@ -100,7 +100,7 @@ def test_translation_languages_select_separate_cache_independent_of_summary_lang
     }).status_code == 200
     assert client.get(path).json() == {
         "language": "en", "available_languages": ["en", "da"],
-        "translation": None, "already_in_target_language": False,
+        "translation": None, "already_in_target_language": False, "redundant_languages": [],
     }
     assert client.post(path).json()["translation"]["language"] == "en"
     assert len(calls) == 2
@@ -110,7 +110,7 @@ def test_translation_languages_select_separate_cache_independent_of_summary_lang
     client.patch("/v1/settings", json={"translation_languages": []})
     assert client.get(path).json() == {
         "language": "", "available_languages": [],
-        "translation": None, "already_in_target_language": False,
+        "translation": None, "already_in_target_language": False, "redundant_languages": [],
     }
     result = client.post(path)
     assert result.status_code == 409
@@ -146,6 +146,7 @@ def test_target_language_transcripts_return_same_language_result_without_inferen
     assert client.get(path).json() == {
         "language": language.lower(), "available_languages": [language.lower()],
         "translation": None, "already_in_target_language": True,
+        "redundant_languages": [language.lower()],
     }
     response = client.post(path)
     assert response.status_code == 200
@@ -557,3 +558,56 @@ def test_summary_and_whitelist_order_changes_during_inference_keep_enabled_targe
     assert response.json()["available_languages"] == ["en", "da"]
     assert calls[0][1] == "da"
     assert memory.store.transcript_translation(key, "da")
+
+
+@pytest.mark.parametrize("repetitions, redundant", [(18, False), (19, True), (20, True)])
+def test_language_coverage_threshold_counts_letters_not_detector_confidence(
+    monkeypatch, repetitions, redundant
+):
+    from types import SimpleNamespace
+
+    class Detector:
+        def append(self, text):
+            self.language = "en" if text.startswith("English") else "da"
+
+        def get_probabilities(self):
+            return [SimpleNamespace(lang=self.language, prob=1.0)]
+
+    monkeypatch.setattr("omi_local.translation.language_profiles", lambda: SimpleNamespace(
+        get_lang_list=lambda: ["en", "da"], create=Detector,
+    ))
+    # Equal letter counts: 18/19 < 95%, 19/20 = 95%, 20/21 > 95%.
+    english = "English words spoken here."
+    danish = "Danske sproget tales heri."
+    assert sum(map(str.isalpha, english)) == sum(map(str.isalpha, danish))
+    assert transcript_in_language((english + "\n") * repetitions + danish, "en") is redundant
+
+
+@pytest.mark.parametrize("text, language", [(DANISH, "da"), (ENGLISH, "en"),
+                                           (JAPANESE, "ja"), (CHINESE, "zh-CN")])
+def test_small_minority_does_not_offer_redundant_translation(client, text, language):
+    client.patch("/v1/settings", json={"translation_languages": [language, "de"]})
+    _, path = source(client, (text + "\n") * 40 + "Hello.")
+    calls = translator(client)
+    result = client.get(path).json()
+    assert result["redundant_languages"] == [language.lower()]
+    assert client.post(path).json()["already_in_target_language"] is True
+    assert not calls
+
+
+def test_all_targets_are_checked_even_when_first_target_does_not_match(client):
+    client.patch("/v1/settings", json={"translation_languages": ["de", "en", "en-US", "da"]})
+    _, path = source(client, ENGLISH)
+    calls = translator(client)
+    for target in [None, "de", "en", "en-US", "da"]:
+        params = {"language": target} if target else {}
+        assert client.get(path, params=params).json()["redundant_languages"] == ["en", "en-us"]
+    assert not calls
+
+
+@pytest.mark.parametrize("text, language", [
+    (CHINESE.replace("。", "") * 20 + "please check the budget", "zh-CN"),
+    (ENGLISH.replace(".", " ") * 20 + "明天的會議", "en"),
+])
+def test_small_minority_in_another_script_without_sentence_boundaries(text, language):
+    assert transcript_in_language(text, language)

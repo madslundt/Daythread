@@ -1,0 +1,17 @@
+{
+  "tool": "Built-in imagegen",
+  "options": [
+    {
+      "label": "A — Voice thread",
+      "prompt": "Use case: logo-brand\nDesign ONE simple modern app icon for Daythread, an app that saves spoken conversations and turns them into useful memories. Flat vector-like graphic. Symbol: a single bold continuous coral line travels horizontally, forms three calm rounded waveform peaks, and ends in one small circular memory node. Beautiful deliberate geometry, broad consistent stroke, perfectly balanced spacing, distinctive silhouette. Deep nearly-black ink background. Restrained sophisticated identity, similar craft to the best independent productivity apps. No text, no letters, no book, no sun, no microphone, no glow, no gradient, no bevel, no 3D, no drop shadow, no texture, no decorative dots beyond the single endpoint. Exactly two colors. Centered mark fills 60 percent of square, generous safe area. Full-bleed square background, no rounded outside corners. Return one finished icon, not a presentation or sheet."
+    },
+    {
+      "label": "B — Memory loop",
+      "prompt": "Use case: logo-brand\nDesign ONE ultra-simple contemporary app icon for Daythread, a personal audio memory app: conversations captured and connected across days. Flat vector-like graphic. Symbol: an elegant bold broken circular loop whose lower stroke transforms into three rounded audio waveform steps, giving an immediate feeling of replaying a remembered voice. ONE integrated clear glyph, confident generous line weight, intentional negative space, legible at 24px. Warm off-white mark on vivid solid cobalt blue background. Modern Swiss graphic design restraint. No text, no initials, no book, no microphone, no sun, no glow, no gradient, no bevel, no 3D, no shadows, no texture, no extra symbols. Exactly two colors. Centered emblem fills 62 percent of square with generous mask-safe margins, full-bleed square, no outside rounded corners. Return one finished icon, no presentation."
+    },
+    {
+      "label": "C — Captured voice",
+      "prompt": "Use case: logo-brand\nDesign ONE simple premium modern icon for Daythread, a private app that captures conversations and lets you recall them later. Flat vector-like graphic. Symbol: a bold minimal speech bubble, softly squared with a short clean tail, containing a single elegant three-bar voice waveform in negative space. The bubble has a distinctive small open notch at its upper right to suggest a memory being saved. Precise rounded geometry, calm proportions, highly readable silhouette, excellent tiny-size recognition. Forest green symbol on warm pale cream background. Refined independent app design, simple and human. No text, no letters, no book, no sun, no microphone, no glow, no gradient, no bevel, no 3D, no drop shadow, no texture. Exactly two colors. Centered glyph fills 60 percent of square, generous margins, full-bleed square background without outside rounded corners. Exactly one finished icon, not a sheet."
+    }
+  ]
+}

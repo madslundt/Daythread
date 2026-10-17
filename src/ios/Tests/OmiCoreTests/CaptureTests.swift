@@ -3,6 +3,28 @@ import Copus
 @testable import OmiCore
 
 final class CaptureTests: XCTestCase {
+    func testTransferEstimateRequiresMeasuredProgressAndExpiresWhenStalled() {
+        var rate = TransferRate()
+        rate.observe(sentBytes: 0, at: 100)
+        XCTAssertNil(rate.remainingSeconds(for: 1000, at: 100))
+        rate.observe(sentBytes: 500, at: 102)
+        XCTAssertEqual(rate.remainingSeconds(for: 1000, at: 102), 4)
+        XCTAssertNil(rate.remainingSeconds(for: 1000, at: 112))
+        XCTAssertNil(rate.remainingSeconds(for: 0, at: 102))
+    }
+
+    func testTransferEstimateResetsAfterRetryOrRestoringAnExistingTask() {
+        var rate = TransferRate()
+        rate.observe(sentBytes: 500, at: 100)
+        XCTAssertNil(rate.remainingSeconds(for: 1000, at: 102))
+        rate.observe(sentBytes: 1000, at: 102)
+        XCTAssertEqual(rate.remainingSeconds(for: 1000, at: 102), 4)
+        rate.observe(sentBytes: 100, at: 103)
+        XCTAssertNil(rate.remainingSeconds(for: 1000, at: 104))
+        rate.observe(sentBytes: 300, at: 105)
+        XCTAssertEqual(rate.remainingSeconds(for: 1000, at: 105), 10)
+    }
+
     func testDiscoveryAcceptsServiceAndNamedOmiWithoutAdvertisingService() {
         XCTAssertTrue(OmiDeviceDiscovery.matches(localName: nil, peripheralName: nil, serviceUUIDs: [OmiDeviceDiscovery.audioService.uppercased()]))
         XCTAssertTrue(OmiDeviceDiscovery.matches(localName: " OMI ", peripheralName: nil, serviceUUIDs: []))

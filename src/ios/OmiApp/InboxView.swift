@@ -39,7 +39,7 @@ struct InboxView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Follow through", title: "Keep things moving.", subtitle: "Promises, deadlines, and open questions across your days. Review suggestions against the evidence.").editorialRow()
+                EditorialTitle(eyebrow: "Follow through", title: "Keep things moving.").editorialRow()
             }
             Section("Show in your inbox") {
                 Picker("Status", selection: $status) {

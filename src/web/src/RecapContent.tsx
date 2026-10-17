@@ -2,8 +2,10 @@ import { profileStorageKey } from "./profiles";
 import { ImportanceButton, type ImportanceTarget } from "./Importance";
 import { useId, useState } from "react";
 import { Icon } from "./Icon";
-import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, type RecapPart } from "./recapItems";
+import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapTopicText, type RecapPart } from "./recapItems";
 import { RecapEvidence } from "./RecapEvidence";
+import { RecapTopic } from "./RecapTopic";
+import { CopySummary } from "./CopySummary";
 import type { ChatScope, Source } from "./types";
 import { InlineText, RichText } from "./UI";
 
@@ -68,30 +70,30 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
     <div className={`prose recap-items ${compact ? "recap-reading-view" : ""}`}>
       {compact ? <div className="recap-reading-tools">
         {savedVersion ? <ImportanceButton target={target()} label="day recap" compact /> : null}
-        <p className="caption recap-item-hint">Open a topic for its summary, then a point for the original passage.</p>
+        <p className="caption recap-item-hint">Open a topic for its summary. Original passages are available underneath.</p>
       </div> : <>
         {savedVersion ? <ImportanceButton target={target()} label="day recap" /> : null}
-        <p className="caption recap-item-hint">Open any point for recordings and a conversation.</p>
+        <p className="caption recap-item-hint">One summary per topic, with original passages available underneath.</p>
       </>}
-      {compact ? groups.map((group, index) => {
-        const pointCount = group.parts.filter((part) => part.kind === "item").length;
-        return group.title ? (
-        <details className="recap-group" key={`${index}:${group.title}`} open={group.parts.some((part) => part.kind === "item" && part.action)}>
+      {groups.map((group, index) => {
+        const actions = group.parts.some((part) => part.kind === "item" && part.action);
+        if (group.title && !actions) return <RecapTopic key={`${index}:${group.title}`}
+          title={group.title} parts={group.parts} day={day} sources={sources} timezone={timezone}
+          onChat={onChat} onCorrect={onCorrect} compact={compact}
+          importanceTarget={savedVersion ? target(group.title) : undefined} />;
+        // Keep existing optional task checks usable in older recaps.
+        const copy = <CopySummary text={recapTopicText(group.parts).replace(/\*\*/g, "")} />;
+        if (!group.title) return <div key={index}>{copy}{group.parts.map((part, itemIndex) => renderPart(part, itemIndex))}</div>;
+        const content = <>{copy}{group.parts.map((part, itemIndex) => renderPart(part, itemIndex, group.title))}</>;
+        return compact ? <details className="recap-group" key={`${index}:${group.title}`} open={actions}>
           <summary>
             <span className="recap-group-overview"><span><InlineText text={group.title} /></span><span className="recap-group-summary">{recapGroupSummary(group.parts)}</span></span>
             {savedVersion ? <ImportanceButton target={target(group.title)} label={group.title.replace(/\*\*/g, "")} compact /> : null}
-            <small>{pointCount ? `${pointCount} ${pointCount === 1 ? "point" : "points"}` : "Summary"}</small>
             <Icon name="chevron-right" size={15} />
           </summary>
-          <div className="recap-group-content">
-            {group.parts.map((part, index) => renderPart(part, index, group.title))}
-          </div>
-        </details>
-      ) : <div key={index}>{group.parts.map((part, index) => renderPart(part, index))}</div>;
-      }) : groups.flatMap((group) => [
-        ...(group.title ? [{ kind: "heading" as const, text: group.title }] : []),
-        ...group.parts,
-      ]).map((part, index) => renderPart(part, index))}
+          <div className="recap-group-content">{content}</div>
+        </details> : <section key={index}>{renderPart({ kind: "heading", text: group.title }, 0)}{content}</section>;
+      })}
       {parts.some((part) => part.kind === "item" && part.action) ? (
         <p className="caption recap-check-hint" role={storageError ? "status" : undefined}>
           {storageError ? "Checks are kept for this visit only because browser storage is unavailable." : "Optional checkmarks · saved in this browser. Inbox status is managed separately."}

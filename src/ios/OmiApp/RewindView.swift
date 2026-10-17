@@ -12,7 +12,7 @@ struct RewindView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Catch up", title: "What did I miss?", subtitle: "Return to the last few minutes, at your own pace.")
+                EditorialTitle(eyebrow: "Catch up", title: "What did I miss?")
                     .editorialRow()
             }
             Section {

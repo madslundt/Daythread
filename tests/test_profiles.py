@@ -182,6 +182,45 @@ def test_duplicate_profile_names_are_rejected_without_extra_archives(client):
     assert len(client.get("/v1/profiles").json()["profiles"]) == 2
 
 
+def test_renaming_preserves_archive_identity_and_survives_restart(settings):
+    with TestClient(create_app(settings)) as client:
+        profile = create(client)
+        source = upload(client, profile).json()["id"]
+        response = client.patch(f"/v1/profiles/{profile}", json={"name": "  Work  "})
+        assert response.status_code == 200
+        assert response.json() == {"id": profile, "name": "Work"}
+        # Reusing the same name and renaming the original archive are both supported.
+        assert client.patch(f"/v1/profiles/{profile}", json={"name": "Work"}).status_code == 200
+        assert client.patch("/v1/profiles/default", json={"name": "Personal"}).status_code == 200
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/profiles").json() == {
+            "default_profile_id": "default",
+            "profiles": [{"id": "default", "name": "Personal"}, {"id": profile, "name": "Work"}],
+        }
+        assert client.get(f"/v1/sources/{source}?profile_id={profile}").status_code == 200
+        assert client.get(f"/v1/sources/{source}").status_code == 404
+
+
+def test_profile_edits_validate_names_and_leave_conflicts_unchanged(client):
+    profile = create(client)
+    for name in ("", "   ", "x" * 81, "Alice\nBob"):
+        assert client.patch(f"/v1/profiles/{profile}", json={"name": name}).status_code == 422
+    assert client.patch(f"/v1/profiles/{profile}", json={"name": " dEfAuLt "}).status_code == 409
+    assert client.patch("/v1/profiles/missing", json={"name": "Work"}).status_code == 404
+    assert client.get("/v1/profiles").json()["profiles"][1] == {"id": profile, "name": "Alice"}
+
+
+def test_profile_management_is_global_even_with_a_stale_selection(client):
+    profile = create(client)
+    response = client.patch(
+        f"/v1/profiles/{profile}", json={"name": "Work"}, headers={"X-Omi-Profile": "missing"}
+    )
+    assert response.status_code == 200
+    # Removal is intentionally unsupported.
+    assert client.delete(f"/v1/profiles/{profile}").status_code == 405
+    assert len(client.get("/v1/profiles").json()["profiles"]) == 2
+
+
 def test_streaming_chat_history_stays_with_its_profile(client):
     profile = create(client)
     headers = {"X-Omi-Profile": profile}
@@ -198,7 +237,7 @@ def test_streaming_chat_history_stays_with_its_profile(client):
 
 
 def test_workers_process_unselected_profiles_and_stop_cleanly(settings, monkeypatch):
-    async def transcribe(self, data):
+    async def transcribe(self, data, on_progress=None):
         return {"text": "Captured speech", "segments": []}
 
     monkeypatch.setattr(Inference, "transcribe_result", transcribe)

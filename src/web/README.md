@@ -1,6 +1,8 @@
-# Omi local web app
+# Daythread web app
 
 The React app talks to the backend on the same origin. It has no sign-in, remote fonts, analytics, or cloud dependencies. The backend serves the built app at `/`.
+
+Daythread uses the user-selected artwork in `public/icons/daythread-master.png`, copied from the approved attachment without altering the design. PNG sizes 32/192/512, `favicon.ico` and `apple-touch-icon.png` cover browser tabs, desktop installation and phone home screens. The same artwork is packaged in the iPhone AppIcon and DaythreadMark asset catalogs and used by the home-core front page. `public/site.webmanifest` provides the installation name and icons. Icon URLs include an artwork version to refresh browser and dashboard caches when the design changes.
 
 Use Node.js 26.12.0 (pinned in the root `.node-version`) or newer, with npm 12.2.0 or newer. The Docker build uses these exact versions. Upgrade npm with `npm install --global npm@12.2.0`, then run from this directory:
 
@@ -12,7 +14,7 @@ npm run build
 
 For frontend development, run the backend on port 8787, then `npm run dev`. Vite proxies `/v1` to `http://127.0.0.1:8787`. The repository's build/deployment scripts copy `dist/` into the backend package.
 
-Use the **Profile** selector at the bottom of the sidebar (inside **More** on phones) to switch archives, or **Create profile** to start an empty one. Selection is remembered in this browser; existing recordings belong to **Default**. Profiles separate recordings, hints, transcripts, recaps, chats, people/projects, inbox items, and decision records. Switching clears the previous profile’s screen and cancels its pending browser requests. All server settings and connections remain global, and appearance remains a device preference shared across profiles. Profiles have no passwords or access restrictions: anyone with server access can select any profile.
+Open **Settings → Profiles** to select an active profile, see all profiles, edit their names, or create an empty archive. Profile selection appears only in settings and is remembered in this browser. On a first visit, or when a remembered profile no longer exists, choose a profile explicitly before opening recordings, diaries, chat, or other archive pages. Direct links and Back/Forward navigation redirect to **Settings → Profiles** until a profile is selected; all settings pages remain available. Choose **Choose a profile…** again to clear the selection. Existing recordings belong to **Default**. Profiles separate recordings, hints, transcripts, recaps, chats, people/projects, inbox items, and decision records. Switching clears the previous profile’s screen and cancels its pending browser requests. All server settings and connections remain global, and appearance remains a device preference shared across profiles. Imports and receiver details need a selected archive. Profiles have no passwords or access restrictions: anyone with server access can select any profile.
 
 Navigation uses URL paths, with the backend serving the app for direct links and refreshes. Selected dates use paths such as `/today/2026-10-16` and `/diary/2026-10-16`; `/today` and `/diary` follow the current day. Existing hash bookmarks are converted to paths when opened. All dates are rendered in the backend's configured timezone. Recording upload timestamps use the browser's timezone, shown explicitly in the dialog. Supported browser audio files are decoded and converted locally to 16 kHz mono PCM16 WAV, split into chunks of up to two minutes, then sent to the backend.
 

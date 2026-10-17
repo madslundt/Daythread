@@ -26,6 +26,7 @@ export function CaptureStatus({
           <span className="capture-glance"><span className={`status-dot ${status && !stale ? "online" : ""}`} />{stale ? "Status needs a refresh" : status ? "Backend connected" : "Connecting to backend…"}</span>
           <span className="caption">{phone ? `Phone: ${phone.capture_state.replaceAll("_", " ")}` : "Live capture unknown"}</span>
           {processing && (processing.queued > 0 || processing.transcribing > 0) ? <span className="caption">{processing.queued} queued · {processing.transcribing} processing</span> : null}
+          {processing && !stale && status?.worker_running ? <ProcessingProgress processing={processing} compact /> : null}
           {processing?.blocked ? <span className="status-warning caption">{processing.blocked} blocked · needs attention</span> : null}
           {status && !status.worker_running ? <span className="status-warning caption">Transcription {status.worker_enabled ? "worker is not running" : "is disabled"}.</span> : null}
         </summary>
@@ -53,6 +54,7 @@ export function CaptureStatus({
             <div><dt>Processing</dt><dd>{processing.transcribing}</dd></div>
             <div><dt>Blocked</dt><dd>{processing.blocked}</dd></div>
           </dl> : null}
+          {processing && !stale && status.worker_running ? <ProcessingProgress processing={processing} /> : null}
           <p className="caption">{status.phones?.some((phone) => phone.fresh) && !stale
             ? "Phone reports are available in the details below."
             : "No current phone report. Live capture is unknown."}</p>
@@ -139,4 +141,51 @@ export function CaptureStatus({
       )}
     </section>
   );
+}
+
+function remainingTime(seconds: number): string {
+  if (seconds < 60) return "less than a minute";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours} hr${rest ? ` ${rest} min` : ""}`;
+}
+
+function ProcessingProgress({ processing, compact = false }: {
+  processing: NonNullable<Status["processing"]>;
+  compact?: boolean;
+}) {
+  if (!processing.queued && !processing.transcribing) return null;
+  const active = processing.active || [];
+  const labels: Record<string, string> = {
+    analyzing: "Analyzing audio", transcribing: "Transcribing",
+    enhancing: "Checking enhanced audio", saving: "Saving transcript",
+  };
+  const estimate = processing.estimated_remaining_seconds;
+  const time = estimate != null && estimate > 0
+    ? `Approx. ${remainingTime(estimate)} remaining for the processing queue`
+    : processing.retrying || processing.blocked
+      ? "Time remaining unavailable while recordings need retry or repair"
+      : (processing.estimate_sample_count || 0) === 0
+        ? "Estimating time remaining after the first transcription"
+        : "Time remaining unavailable";
+  if (compact) {
+    const item = active[0];
+    return <span className="caption">{item ? `${labels[item.stage] || "Processing audio"}${item.total_chunks ? ` · ${item.completed_chunks} of ${item.total_chunks} chunks complete` : ""}. ` : ""}{time}</span>;
+  }
+  return <div className="processing-progress" role="status" aria-live="polite">
+    {active.map((item) => <div key={item.id}>
+      <p className="caption">
+        {labels[item.stage] || "Processing audio"}
+        {item.total_chunks ? ` · ${item.completed_chunks} of ${item.total_chunks} chunks complete` : ""}
+        {item.elapsed_seconds != null ? ` · ${Math.floor(item.elapsed_seconds)} sec elapsed` : ""}
+      </p>
+      {item.total_chunks > 0 ? <progress
+        aria-label={`${labels[item.stage] || "Processing audio"} chunks complete`}
+        value={item.completed_chunks} max={item.total_chunks}
+      /> : null}
+    </div>)}
+    <p className="caption">{time}. {estimate != null && estimate > 0 ? "Based on recent transcription speed; this may change." : ""}</p>
+  </div>;
 }

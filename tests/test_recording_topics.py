@@ -149,7 +149,7 @@ def test_summary_language_change_reanalyzes_existing_recordings(recording):
 
 @pytest.mark.parametrize("text", [
     "Hej", "\n".join(f"Topic line {i}: a complete sentence." for i in range(1000)) + " TAIL",
-])
+], ids=["short", "long"])
 def test_short_and_long_transcripts_are_covered_completely(recording, text):
     client, memory, key = recording
     memory.store.correct_transcript(key, text)
@@ -176,17 +176,19 @@ def test_short_and_long_transcripts_are_covered_completely(recording, text):
 
 def test_adjacent_matching_topics_merge_but_later_returns_stay_chronological(recording):
     client, memory, key = recording
+    text = TEXT + "\nTilbage til kakao: vi prøver mørk chokolade."
+    memory.store.correct_transcript(key, text)
     memory.inference = Model({
         "title": "Kakao og Omi",
         "sections": [
             {"title": "Kakao", "start_quote": "Vi taler om kakao"},
             {"title": "KAKAO!", "start_quote": "Det kan ikke anbefales"},
             {"title": "Omi", "start_quote": "Jeg har bestilt en OMI"},
-            {"title": "Kakao", "start_quote": "Let's turn to English"},
+            {"title": "Kakao", "start_quote": "Tilbage til kakao"},
         ],
     })
     assert run(memory)
     result = client.get(f"/v1/transcripts/{key}").json()
     assert [section["title"] for section in result["sections"]] == ["Kakao", "Omi", "Kakao"]
     assert result["sections"][0]["end_offset"] == TEXT.index("Jeg har")
-    assert "".join(TEXT[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == TEXT
+    assert "".join(text[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == text

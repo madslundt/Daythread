@@ -5,6 +5,10 @@ export function pageFromPath(path: string): Page {
   return pages.find((page) => page.id === key)?.id ?? "today";
 }
 
+export function profileRoute(path: string, selected: string | null): string {
+  return selected || pageFromPath(path) === "settings" ? path : "/settings/profiles";
+}
+
 export function isDayPage(page: Page): boolean {
   return page === "today" || page === "diary";
 }
@@ -33,9 +37,10 @@ export function legacyRoutePath(pathname: string, hash: string): string | undefi
   return path !== "/" && isAppPath(path) ? path : undefined;
 }
 
-export function navigatePath(path: string): void {
+export function navigatePath(path: string, { replace = false } = {}): void {
   if (`${window.location.pathname}${window.location.search}${window.location.hash}` === path) return;
-  window.history.pushState(null, "", path);
+  if (replace) window.history.replaceState(null, "", path);
+  else window.history.pushState(null, "", path);
   window.dispatchEvent(new Event("omi:navigate"));
 }
 

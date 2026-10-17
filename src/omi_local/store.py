@@ -22,6 +22,8 @@ from .importance import ImportanceStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
+from .processing_progress import SCHEMA as PROCESSING_PROGRESS_SCHEMA
+from .processing_progress import ProcessingProgressStore
 from .recap_store import SCHEMA as RECAP_SCHEMA
 from .recap_store import RecapStore
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
@@ -67,6 +69,7 @@ class Store(
     TranslationStore,
     RecapStore,
     SourceMatchingStore,
+    ProcessingProgressStore,
 ):
     def __init__(self, root: Path):
         self.root = root
@@ -80,6 +83,7 @@ class Store(
             db.executescript(FORWARDING_SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
+            db.executescript(PROCESSING_PROGRESS_SCHEMA)
             db.executescript(WEEKLY_SCHEMA)
             db.executescript(DECISION_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.

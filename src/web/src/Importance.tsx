@@ -17,8 +17,8 @@ const ImportanceContext = createContext<{
   save: (target: ImportanceTarget, important: boolean) => Promise<void>;
 }>({ error: "", pending: new Set(), retry: () => {}, save: async () => {} });
 
-export function ImportanceProvider({ children }: { children: ReactNode }) {
-  const resource = useResource<{ items: ImportanceTarget[] }>("/v1/importance", 30_000);
+export function ImportanceProvider({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
+  const resource = useResource<{ items: ImportanceTarget[] }>(enabled ? "/v1/importance" : null, enabled ? 30_000 : 0);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", resource.refresh);
     return () => window.removeEventListener("omi:archive-changed", resource.refresh);

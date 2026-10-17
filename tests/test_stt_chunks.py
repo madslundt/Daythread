@@ -105,9 +105,10 @@ async def test_worker_transcribes_105_second_upload_atomically(tmp_path, fail_pa
     data = recording(104.725375)
     at = datetime(2026, 10, 16, 21, 10, tzinfo=UTC)
     store.ingest(key, "web", at, data, 104.725375)
-    durations, captured = [], []
+    durations, captured, progress = [], [], []
 
     def handler(request):
+        progress.append(store.observations()["processing"]["active"][0])
         message = BytesParser().parsebytes(
             f"Content-Type: {request.headers['content-type']}\r\n\r\n".encode()
             + request.content
@@ -135,6 +136,10 @@ async def test_worker_transcribes_105_second_upload_atomically(tmp_path, fail_pa
         )
         assert await process_one(memory)
     result = store.get_audio(key)
+    assert [item["stage"] for item in progress] == ["transcribing"] * len(durations)
+    assert [item["completed_chunks"] for item in progress] == list(range(len(durations)))
+    assert [item["total_chunks"] for item in progress] == [4] * len(durations)
+    assert store.observations()["processing"]["active"] == []
     assert Path(result["path"]).read_bytes() == data
     assert result["started_at"] == at.isoformat(timespec="microseconds")
     if fail_part:

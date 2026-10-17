@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RecapContent } from "./RecapContent";
 import { RecapEvidence } from "./RecapEvidence";
-import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections } from "./recapItems";
+import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText } from "./recapItems";
 import type { Source } from "./types";
 
 const sources: Source[] = [
@@ -60,14 +60,22 @@ describe("day recap interactions", () => {
     expect(parts.filter((part) => part.kind === "item" && !part.action)).toHaveLength(2);
   });
 
-  it("shows a topic summary and counts points without counting summary paragraphs", () => {
+  it("shows one copyable topic summary without nested point controls", () => {
     const text = `## Cocoa\nA test with dark chocolate.\n- Milk frother and cocoa [${sources[0].id}].`;
     expect(recapGroupSummary(recapParts(text).slice(1))).toBe("A test with dark chocolate.");
     expect(recapGroupSummary(recapParts(`- Cocoa [${sources[0].id}].`))).toBe("Cocoa.");
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact />);
     expect(html).toContain('class="recap-group-summary">A test with dark chocolate.');
-    expect(html).toContain("1 point");
-    expect(html).not.toContain("2 points");
+    expect(html).not.toContain("1 point");
+    expect(html).not.toContain("recap-item-button");
+    expect(html).toContain('aria-label="Copy summary: Cocoa"');
+    expect(html).toContain("Original passages");
+    expect(html).toContain("Milk frother and cocoa.");
+  });
+
+  it("copies the complete topic text, removing citations and exact repeated paragraphs", () => {
+    const parts = recapParts(`A useful detail [${sources[0].id}].\n- A useful detail [${sources[0].id}].\n- Another useful detail.`);
+    expect(recapTopicText(parts)).toBe("A useful detail.\n\nAnother useful detail.");
   });
 
   it("reveals the matching original passage without repeating unrelated recording topics", () => {
@@ -87,12 +95,24 @@ describe("day recap interactions", () => {
     expect(html).toContain("Full recording &amp; tools");
   });
 
-  it("shows the full original transcript when no passage can be identified", () => {
+  it("does not expose unrelated transcript text when no passage can be identified", () => {
     const source = { ...sources[0], sections: [{ title: "Gym", start_offset: 0, end_offset: 14 }] };
     const html = renderToStaticMarkup(<RecapEvidence source={source} point={`Unrelated point [${source.id}]`} timezone="UTC" onCorrect={() => {}} />);
     expect(html).toContain("no specific topic passage identified");
-    expect(html).toContain("Gym discussion");
+    expect(html).not.toContain("Gym discussion");
+    expect(html).toContain("Full recording &amp; tools");
     expect(recapSourceSections("Gym", { ...source, text: null })).toEqual([]);
+  });
+
+  it("does not match another Danish topic merely because generic words overlap", () => {
+    const omi = "OMI lydoptager: Det kan optage lyd på arbejdet og give et recap af dagen. ";
+    const tesla = "Tesla Roadster: Bilen kan køre på vægge og loftet ifølge samtalen.";
+    const source: Source = { ...sources[0], text: omi + tesla, sections: [
+      { title: "Oplevelse af OMI lydoptager", start_offset: 0, end_offset: Array.from(omi).length },
+      { title: "Diskussion af Tesla Roadster", start_offset: Array.from(omi).length, end_offset: Array.from(omi + tesla).length },
+    ] };
+    const point = `Tesla Roadster\nDet nævnes, at bilen kan køre på vægge og loftet [${source.id}]`;
+    expect(recapSourceSections(point, source)).toEqual([source.sections![1]]);
   });
 
   it("supports heading lists, numbered lists, task syntax and continuation lines", () => {

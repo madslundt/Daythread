@@ -1,13 +1,14 @@
 import { Icon, type IconName } from "./Icon";
 
 const categories: { id: SettingsSection; label: string; detail: string; icon: IconName }[] = [
+  { id: "profiles", label: "Profiles", detail: "Choose, create & edit profiles", icon: "people" },
   { id: "general", label: "Daily preferences", detail: "Appearance, recording & recaps", icon: "home" },
   { id: "gestures", label: "Flags & meetings", detail: "Important moments & context", icon: "star" },
   { id: "storage", label: "Storage & privacy", detail: "Audio & transcript retention", icon: "inbox" },
   { id: "connections", label: "Connections", detail: "iPhone, Omi import & forwarding", icon: "phone" },
   { id: "server", label: "Models & server", detail: "Local AI, API keys & advanced", icon: "settings" },
 ];
-export type SettingsSection = "general" | "gestures" | "storage" | "connections" | "server";
+export type SettingsSection = "profiles" | "general" | "gestures" | "storage" | "connections" | "server";
 
 export function sectionFromPath(): SettingsSection {
   const value = window.location.pathname.split("/")[2];
@@ -15,8 +16,9 @@ export function sectionFromPath(): SettingsSection {
 }
 
 const searchTerms: Record<string, string> = {
+  profiles: "profiles profile archive active select selection choose switch name rename edit create new manage",
   appearance: "daily preferences appearance theme system light dark device display",
-  daily: "daily preferences recording capture pause language transcription summary summaries automatic home timezone time zone diary daily recap time hour schedule daytime interval refresh evening silence noise quiet conversation grace wait",
+  daily: "daily preferences recording capture pause language translation translate whitelist allowed transcription summary summaries automatic home timezone time zone diary daily recap time hour schedule daytime interval refresh evening silence noise quiet conversation grace wait",
   gestures: "flags meetings gestures important moments context speech before after cooldown time between minimum length maximum duration automatically end auto stop",
   storage: "storage privacy local archive retention keep original audio transcripts days delete remove expire history sign in access",
   connections: "connections omi iphone bluetooth pendant companion cloud import conversations transcripts official app audio forwarding receiver webhook",

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .domain import EvidenceChanged, stamp, utc_now
+from .processing_progress import processing_observation
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS phone_observations (
@@ -107,6 +108,7 @@ class CompletenessStore:
                 if completed
                 else None
             )
+            queue.update(processing_observation(db, now))
             phones = []
             for row in db.execute("SELECT * FROM phone_observations ORDER BY received_at DESC"):
                 age = max(0, (now - datetime.fromisoformat(row["observed_at"])).total_seconds())

@@ -320,7 +320,11 @@
 .chat-starter { display: flex; justify-content: space-between; align-items: center; gap: 16px; text-align: left; min-height: 48px; padding: 12px 15px; background: var(--canvas); border: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
 .chat-starter:hover { background: var(--hover); border-color: var(--hover-line); }
 .settings-save-status { margin: 0 auto 0 0; font-size: 13px; color: var(--muted); }
-.upload-progress { width: 100%; height: 8px; accent-color: var(--accent); margin-bottom: 18px; }
+.upload-feedback { margin-block: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.upload-stage { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 0 0 10px; font-size: 13px; }
+.upload-stage span { font-variant-numeric: tabular-nums; }
+.upload-feedback .caption { margin: 8px 0 0; }
+.upload-progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .upload-dialog input::file-selector-button { font: inherit; padding: 7px 10px; margin-right: 10px; color: var(--ink); border: 1px solid var(--line); border-radius: 5px; background: var(--rail); cursor: pointer; }
 .rewind-form { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
 .inbox-open { padding-inline: 16px; border-radius: 8px; }

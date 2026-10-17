@@ -84,7 +84,7 @@ struct ChatView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Personal recall", title: "Ask your days.", subtitle: "A little help finding what you remember.")
+                EditorialTitle(eyebrow: "Personal recall", title: "Ask your days.")
                     .editorialRow()
             }
             Section {
@@ -119,7 +119,7 @@ struct ChatView: View {
                 }
             }
             ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                Section(message["role"].text == "user" ? "You" : "Omi Local") {
+                Section(message["role"].text == "user" ? "You" : "Daythread") {
                     if message["stale"] == .bool(true) {
                         Text("Historical answer: transcript evidence changed. Ask again for a current answer.").font(.caption).foregroundStyle(.secondary)
                     }
@@ -133,7 +133,7 @@ struct ChatView: View {
             }
             if !pendingQuestion.isEmpty {
                 Section("You") { Text(pendingQuestion) }
-                Section("Omi Local") {
+                Section("Daythread") {
                     if !streamingText.isEmpty {
                         Text(streamingText).textSelection(.enabled)
                         Text("Draft answer · sources are checked before saving.").font(.caption).foregroundStyle(.secondary)

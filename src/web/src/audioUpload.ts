@@ -78,15 +78,19 @@ export function recordingTimes(
   return { startedAt: new Date(end - duration), endedAt: new Date(end) };
 }
 
-export async function decodeRecording(file: File): Promise<Float32Array> {
+export async function decodeRecording(file: File, onStage?: (stage: string) => void): Promise<Float32Array> {
   selectRecording([file]);
   const decoder = new AudioContext();
   try {
-    const decoded = await decoder.decodeAudioData(await file.arrayBuffer());
+    onStage?.("Reading the recording on this device…");
+    const bytes = await file.arrayBuffer();
+    onStage?.("Decoding audio on this device…");
+    const decoded = await decoder.decodeAudioData(bytes);
     if (decoded.duration > 7200)
       throw new Error(
         "Split recordings longer than two hours before uploading.",
       );
+    onStage?.("Converting audio for upload…");
     const offline = new OfflineAudioContext(
       1,
       Math.ceil(decoded.duration * 16000),
@@ -105,6 +109,17 @@ export async function decodeRecording(file: File): Promise<Float32Array> {
   } finally {
     await decoder.close();
   }
+}
+
+export function progressTime(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.ceil(seconds))} sec`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
+  return `${Math.floor(seconds / 3600)} hr ${Math.ceil((seconds % 3600) / 60)} min`;
+}
+
+export function uploadEstimate(sent: number, total: number, elapsed: number): number | undefined {
+  if (elapsed < 1 || sent <= 0 || sent >= total) return undefined;
+  return (total - sent) * elapsed / sent;
 }
 
 export function validateUploadReceipt(

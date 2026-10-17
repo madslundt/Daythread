@@ -1,5 +1,5 @@
-import { savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
-import { ProfileSelector } from "./ProfileSelector";
+import { resolveProfile, savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
+import { ImportanceProvider } from "./Importance";
 import { useEffect, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
 import { Labels } from "./Labels";
@@ -15,48 +15,58 @@ import { errorMessage, newId, post } from "./api";
 import { localDay, remainingCooldown, timeLabel } from "./format";
 import { Icon } from "./Icon";
 import { Navigation, pages, type Page } from "./Navigation";
-import { dayFromPath, isDayPage, pageFromPath, pagePath, navigatePath, subscribeNavigation } from "./routing";
+import { dayFromPath, isDayPage, pageFromPath, pagePath, profileRoute, navigatePath, subscribeNavigation } from "./routing";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { ErrorState, Loading, Notice } from "./UI";
+import { Loading, Notice } from "./UI";
 
 export default function App() {
   const directory = useResource<ProfileDirectory>("/v1/profiles");
-  const [selected, setSelected] = useState<string>();
+  const [selected, setSelected] = useState<string | null>();
   useEffect(() => {
-    if (!directory.data || selected) return;
-    const saved = savedProfile();
-    const id = directory.data.profiles.some((profile) => profile.id === saved)
-      ? saved! : directory.data.default_profile_id;
-    selectProfile(id);
+    if (!directory.data || selected !== undefined) return;
+    const id = resolveProfile(directory.data.profiles, savedProfile());
+    selectProfile(id ?? "");
     setSelected(id);
   }, [directory.data, selected]);
-  function choose(id: string) {
-    selectProfile(id);
+  function choose(id: string | null) {
+    selectProfile(id ?? "");
     setSelected(id);
   }
   function created(profile: Profile) {
     directory.setData((current) => current ? { ...current, profiles: [...current.profiles, profile] } : current);
-    choose(profile.id);
   }
-  if (!selected || !directory.data) return <div className="profile-loading">
-    <h1>omi</h1>
-    {directory.error ? <ErrorState message={directory.error} retry={directory.refresh} /> : <Loading>Loading profiles…</Loading>}
+  function updated(profile: Profile) {
+    directory.setData((current) => current ? { ...current, profiles: current.profiles.map((item) => item.id === profile.id ? profile : item) } : current);
+  }
+  if (selected === undefined && !directory.error) return <div className="profile-loading">
+    <h1><img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" /> Daythread</h1>
+    <Loading>Loading profiles…</Loading>
   </div>;
-  return <ProfileApp key={selected} profiles={directory.data.profiles} selected={selected} onSelect={choose} onCreate={created} />;
+  return <ImportanceProvider key={selected ?? "unselected"} enabled={Boolean(selected)}>
+    <ProfileApp profiles={directory.data?.profiles ?? []} selected={selected ?? null} onSelect={choose}
+      onCreate={created} onUpdate={updated} profileError={directory.error} onRetryProfiles={directory.refresh} />
+  </ImportanceProvider>;
 }
 
-function ProfileApp({ profiles, selected, onSelect, onCreate }: {
+function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileError, onRetryProfiles }: {
   profiles: Profile[];
-  selected: string;
-  onSelect: (id: string) => void;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
   onCreate: (profile: Profile) => void;
+  onUpdate: (profile: Profile) => void;
+  profileError: string;
+  onRetryProfiles: () => void;
 }) {
-  const status = useResource<Status>("/v1/status", 30_000);
-  const timeline = useResource<Timeline>("/v1/timeline", 15_000);
+  const [statusInterval, setStatusInterval] = useState(30_000);
+  const status = useResource<Status>(selected ? "/v1/status" : null, selected ? statusInterval : 0);
+  const processingBusy = !!status.data?.processing &&
+    (status.data.processing.queued > 0 || status.data.processing.transcribing > 0);
+  useEffect(() => setStatusInterval(processingBusy ? 2_000 : 30_000), [processingBusy]);
+  const timeline = useResource<Timeline>(selected ? "/v1/timeline" : null, selected ? 15_000 : 0);
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const timezone = status.data?.timezone || browserTimezone;
-  const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname));
+  const [page, setPage] = useState<Page>(() => pageFromPath(profileRoute(window.location.pathname, selected)));
   // An absent date means Today; resolve it in the configured timezone on every render.
   const [selectedDay, setSelectedDay] = useState(() => dayFromPath(window.location.pathname));
   const today = localDay(timezone);
@@ -75,12 +85,18 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   const [notice, setNotice] = useState("");
   useEffect(() => {
     const sync = () => {
-      const next = pageFromPath(window.location.pathname);
+      const path = profileRoute(window.location.pathname, selected);
+      if (path !== window.location.pathname) {
+        navigatePath(path, { replace: true });
+        return;
+      }
+      const next = pageFromPath(path);
       setPage(next);
       if (isDayPage(next)) setSelectedDay(dayFromPath(window.location.pathname));
     };
+    sync();
     return subscribeNavigation(sync);
-  }, []);
+  }, [selected]);
   useEffect(() => {
     const update = () => {
       status.refresh();
@@ -89,13 +105,14 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
     window.addEventListener("omi:archive-changed", update);
     return () => window.removeEventListener("omi:archive-changed", update);
   }, [status.refresh, timeline.refresh]);
-  function navigate(next: Page) {
+  function navigate(next: Page, path = hrefForPage(next)) {
     if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
     setPrepOpen(false);
     setChatIntent(undefined);
     if (next === "today") setSelectedDay(undefined);
-    setPage(next);
-    navigatePath(hrefForPage(next));
+    const allowed = profileRoute(path, selected);
+    setPage(pageFromPath(allowed));
+    navigatePath(allowed);
   }
   function selectDay(value: string) {
     if (value) {
@@ -109,7 +126,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
     timeline.refresh();
     setVersion((value) => value + 1);
     setNotice(
-      "Recording uploaded. Your local worker will transcribe it when ready.",
+      "Recording uploaded. Follow transcription progress under Capture & sync.",
     );
   }
   function rewind(minutes: number) {
@@ -123,11 +140,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
   const current = pages.find((item) => item.id === page)!;
   const showDate = page === "today" || page === "diary";
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
-  useEffect(() => { document.title = `${prepOpen ? "Prepare" : current.label} · omi`; }, [current.label, prepOpen]);
-  const profileSelector = <ProfileSelector profiles={profiles} selected={selected} onSelect={(id) => {
-    if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
-    onSelect(id);
-  }} onCreate={onCreate} beforeCreate={() => !prepOpen || !prepDirty || window.confirm("Discard this preparation and unsaved context?")} />;
+  useEffect(() => { document.title = `${prepOpen ? "Prepare" : current.label} · Daythread`; }, [current.label, prepOpen]);
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to content</a>
@@ -136,22 +149,22 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           className="brand"
           href={hrefForPage("today")}
           onClick={(event) => { event.preventDefault(); navigate("today"); }}
-          aria-label="omi home"
+          aria-label="Daythread home"
         >
-          omi<span className="brand-caption">A little more remembered.</span>
+          <img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" />
+          <span>Daythread</span>
         </a>
         <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} />
         <div className="sidebar-footer">
-          {profileSelector}
           <div className="backend-indicator">
             <span
               className={`status-dot ${status.data && !status.error ? "online" : ""}`}
             />
             {status.error
               ? "Backend offline"
-              : status.data
-                ? "Local backend"
-                : "Connecting…"}
+              : !selected
+                ? "Choose a profile in settings"
+                : status.data ? "Local backend" : "Connecting…"}
           </div>
         </div>
       </aside>
@@ -163,7 +176,8 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
               href={hrefForPage("today")}
               onClick={(event) => { event.preventDefault(); navigate("today"); }}
             >
-              omi
+              <img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="28" height="28" />
+              <span>Daythread</span>
             </a>
             {showDate ? (
               <DateNavigator
@@ -172,7 +186,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
                 onDay={selectDay}
               />
             ) : (
-              <span className="desktop-spacer eyebrow">Your private memory / {current.label}</span>
+              <span className="desktop-spacer" />
             )}
             {page === "today" ? (
               <div className="desktop-actions">
@@ -188,7 +202,6 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           <div className="intro">
             {page !== "today" || prepOpen ? <span className="eyebrow intro-eyebrow">{prepOpen ? "Look ahead" : current.label}</span> : null}
             <h1>{prepOpen ? "Prepare for what comes next." : page === "today" ? day === localDay(timezone) ? "Today" : "Your day" : current.title}</h1>
-            <p>{prepOpen ? "A little context, with the evidence beside it." : page === "today" ? "Your recordings and the moments that matter." : current.subtitle}</p>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">
@@ -252,6 +265,9 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           />
         ) : (
           <Settings
+            profiles={profiles} selectedProfile={selected} onCreateProfile={onCreate}
+            onUpdateProfile={onUpdate} onSelectProfile={onSelect}
+            profileError={profileError} onRetryProfiles={onRetryProfiles}
             onSaved={() => {
               status.refresh();
               timeline.refresh();
@@ -259,7 +275,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate }: {
           />
         )}
       </main>
-      <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} mobile profileSelector={profileSelector} />
+      <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} mobile />
       {uploadOpen ? (
         <UploadDialog
           onClose={() => setUploadOpen(false)}

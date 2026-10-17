@@ -19,19 +19,20 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: QK69VT259D
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: 1
     info:
       path: OmiApp/Info.plist
       properties:
-        CFBundleDisplayName: Omi Local
+        CFBundleDisplayName: Daythread
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        NSBluetoothAlwaysUsageDescription: Omi Local connects to your pendant to save audio and button hints on your iPhone and home-core.
-        NSLocalNetworkUsageDescription: Omi Local sends recordings to your own home-core on your local network.
-        NSRemindersFullAccessUsageDescription: Omi Local adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
+        NSBluetoothAlwaysUsageDescription: Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.
+        NSLocalNetworkUsageDescription: Daythread sends recordings to your own home-core on your local network.
+        NSRemindersFullAccessUsageDescription: Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true

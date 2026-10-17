@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import OmiCore
 
 struct DayView: View {
@@ -8,6 +9,7 @@ struct DayView: View {
     @State private var month = Date()
     @State private var daySelected = false
     @State private var recap: JSONValue = .null
+    @State private var copiedSummary = ""
     @State private var recordingGroups: [JSONValue] = []
     @State private var error: String?
     @State private var loading = false
@@ -31,7 +33,7 @@ struct DayView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.", subtitle: "Return to your conversations, ideas, and little details.")
+                EditorialTitle(eyebrow: "Your diary", title: "A day, remembered.")
                     .editorialRow()
             }
             Section {
@@ -67,7 +69,19 @@ struct DayView: View {
                 }
                 if !recap["boundary_note"].text.isEmpty { Text(recap["boundary_note"].text).font(.caption).foregroundStyle(.secondary) }
                 if !recap["summary"].text.isEmpty {
-                    Text(.init(recap["summary"].text)).textSelection(.enabled)
+                    ForEach(Array(RecapSections.topics(recap["summary"].text).enumerated()), id: \.offset) { _, topic in
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let title = topic.title { Text(title).font(.headline) }
+                            Text(.init(topic.text)).textSelection(.enabled)
+                            Button {
+                                UIPasteboard.general.string = topic.copyText
+                                copiedSummary = topic.copyText
+                            } label: {
+                                Label(copiedSummary == topic.copyText ? "Copied" : "Copy summary", systemImage: "doc.on.doc")
+                            }.buttonStyle(.borderless)
+                                .accessibilityLabel("Copy summary: \(topic.title ?? "Day recap")")
+                        }.padding(.vertical, 4)
+                    }
                     RecapImportanceView(recap: recap)
                     EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
                     if !recap["generated_at"].text.isEmpty { Text("Generated \(recap["generated_at"].text)").font(.caption).foregroundStyle(.secondary) }
@@ -204,9 +218,15 @@ struct DayView: View {
         guard !loading else { return }
         let key = cacheKey, requestedDay = dayKey, request = dayRequest
         do {
-            let result = try await model.client().request("v1/recaps/\(requestedDay)")
+            let client = try model.client()
+            async let recapRequest = client.request("v1/recaps/\(requestedDay)")
+            async let groupsRequest = client.request("v1/recording-groups", query: [
+                "day": requestedDay, "limit": "\(min(200, max(30, recordingGroups.count)))"
+            ])
+            let (result, groups) = try await (recapRequest, groupsRequest)
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
-            recap = result; recapRefreshError = nil; save(key)
+            recap = result; recordingGroups = groups["items"].array; total = groups["total"].integer
+            recapRefreshError = nil; save(key)
         } catch {
             guard !Task.isCancelled, dayRequest == request, cacheKey == key else { return }
             recapRefreshError = "Could not refresh the recap. \(error.localizedDescription)"
@@ -312,7 +332,6 @@ private struct MonthCalendar: View {
     }
 }
 
-
 struct TimelineRecordingGroups: View {
     let groups: [JSONValue]
     let day: String
@@ -354,6 +373,9 @@ private struct TimelineRecordingSession: View {
                 Text(group["title"].text).foregroundStyle(.primary)
                 Text("\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · \(group["recording_count"].integer) recordings")
                     .font(.caption).foregroundStyle(.secondary)
+                if group["estimated_times"] == .bool(true) {
+                    Text("Estimated times").font(.caption).foregroundStyle(.secondary)
+                }
             }.padding(.vertical, 5)
         }
         .task(id: "\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(group["recording_count"].integer)") {

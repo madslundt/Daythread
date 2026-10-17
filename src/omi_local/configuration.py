@@ -34,7 +34,9 @@ def group(key: str) -> str:
         return "Speaker detection"
     if key.startswith("stt_"):
         return "Transcription"
-    if key.startswith("llm_") or key.startswith("chat_") or key == "summary_language":
+    if key.startswith(("llm_", "chat_")) or key in {
+        "summary_language", "translation_languages"
+    }:
         return "Language models & chat"
     if key.startswith("embedding_"):
         return "Semantic search"
@@ -110,6 +112,9 @@ DESCRIPTIONS = {
     "web_dir": "Optional custom web asset directory on home-core. Empty uses bundled assets.",
     "summary_language": "Language for summaries, independently of transcription. "
     "auto follows the source language; use a language code such as da or en to choose one.",
+    "translation_languages": "Languages available for transcript translation, independently of "
+    "summary language. Use language codes such as en or da; the first is the default target. "
+    "An empty list disables translation until a language is added.",
     "timezone": "IANA timezone used for calendar boundaries, for example Europe/Copenhagen.",
     "audio_retention_days": "Days to keep audio. 0 keeps it indefinitely. "
     "Applies to existing audio.",

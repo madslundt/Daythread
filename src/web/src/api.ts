@@ -56,6 +56,48 @@ export function post<T>(path: string, data: unknown = {}): Promise<T> {
   return request<T>(path, { method: "POST", body: JSON.stringify(data) });
 }
 
+// Fetch does not expose upload byte progress. Keep the same profile and abort
+// boundaries while using XHR for recording transfers.
+export function uploadRecording<T>(
+  path: string,
+  body: Blob,
+  onProgress: (sent: number) => void,
+  signal: AbortSignal,
+  scope: ProfileScope = profileScope(),
+): Promise<T> {
+  const prepared = profileRequestOptions(path, { signal }, scope);
+  return new Promise((resolve, reject) => {
+    const activeSignal = prepared.signal!;
+    if (activeSignal.aborted) { reject(activeSignal.reason); return; }
+    const xhr = new XMLHttpRequest();
+    const cleanup = () => activeSignal.removeEventListener("abort", abort);
+    const abort = () => { xhr.abort(); cleanup(); reject(activeSignal.reason); };
+    xhr.open("PUT", path);
+    new Headers(prepared.headers).forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.setRequestHeader("Content-Type", "audio/wav");
+    xhr.upload.onprogress = (event) => onProgress(Math.min(body.size, event.loaded));
+    xhr.onerror = () => {
+      cleanup();
+      reject(new ApiError("The local backend could not be reached. Check your connection and try again.", 0));
+    };
+    xhr.onload = () => {
+      cleanup();
+      if (activeSignal.aborted) { reject(activeSignal.reason); return; }
+      let result: unknown;
+      try { result = JSON.parse(xhr.responseText); } catch { /* Invalid receipt is rejected below. */ }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const detail = (result as { detail?: unknown } | undefined)?.detail;
+        reject(new ApiError(typeof detail === "string" ? detail
+          : `The request could not be completed (${xhr.status}). Please try again.`, xhr.status));
+      } else if (result === undefined) {
+        reject(new ApiError("The server returned an invalid upload receipt. Retry to confirm this part.", xhr.status));
+      } else resolve(result as T);
+    };
+    activeSignal.addEventListener("abort", abort, { once: true });
+    xhr.send(body);
+  });
+}
+
 export function audioUrl(id: string): string {
   return profileResourceUrl(`/v1/audio/${encodeURIComponent(id)}`);
 }

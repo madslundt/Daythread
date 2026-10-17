@@ -261,15 +261,21 @@ async def test_cleanup_policy_controls_optional_requests(
 
     monkeypatch.setattr("omi_local.inference.enhance_audio", unchanged)
     settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode=mode)
-    calls = []
+    calls, progress = [], []
 
     def handler(request):
         calls.append(request)
         return httpx.Response(200, json={"text": original if len(calls) == 1 else "Alternative"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await Inference(settings, client).transcribe_result(tone())
+        result = await Inference(settings, client).transcribe_result(
+            tone(), on_progress=lambda *update: progress.append(update),
+        )
     assert len(calls) == count
+    expected = [("transcribing", 0, 1), ("transcribing", 1, 1)]
+    if count == 2:
+        expected += [("enhancing", 0, 1), ("enhancing", 1, 1)]
+    assert progress == expected
     assert result["text"] == original  # Even empty-original alternatives stay out of evidence.
 
 

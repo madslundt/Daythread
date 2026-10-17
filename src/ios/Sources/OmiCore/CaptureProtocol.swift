@@ -103,3 +103,27 @@ public struct CaptureClock: Codable {
     }
     public func date(at uptime: TimeInterval) -> Date { wall.addingTimeInterval(max(0, uptime - self.uptime)) }
 }
+
+/// Uses monotonic transfer observations; drops estimates when a transfer stalls or restarts.
+public struct TransferRate {
+    private var startedAt: TimeInterval?
+    private var initialBytes: Int64 = 0
+    private var sentBytes: Int64 = 0
+    private var lastProgressAt: TimeInterval = 0
+    public init() {}
+    public mutating func observe(sentBytes: Int64, at uptime: TimeInterval) {
+        let bytes = max(0, sentBytes)
+        if startedAt == nil || bytes < self.sentBytes {
+            startedAt = uptime; initialBytes = bytes; lastProgressAt = uptime
+        }
+        if bytes > self.sentBytes { lastProgressAt = uptime }
+        self.sentBytes = bytes
+    }
+    public func remainingSeconds(for bytes: Int64, at uptime: TimeInterval) -> TimeInterval? {
+        guard let startedAt, uptime - startedAt >= 1, uptime - lastProgressAt < 10,
+              uptime >= lastProgressAt, sentBytes > initialBytes, bytes > 0 else { return nil }
+        let rate = Double(sentBytes - initialBytes) / (uptime - startedAt)
+        let seconds = Double(bytes) / rate
+        return seconds.isFinite ? seconds : nil
+    }
+}

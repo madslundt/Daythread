@@ -1,7 +1,7 @@
 import { profileScope } from "./profiles";
 import { useEffect, useId, useRef, useState } from "react";
-import { decodeRecording, encodeWav, recordingEndTime, recordingTimes, selectRecording, validateUploadReceipt, type RecordingTimeReference } from "./audioUpload";
-import { errorMessage, newId, request } from "./api";
+import { decodeRecording, encodeWav, progressTime, recordingEndTime, recordingTimes, selectRecording, uploadEstimate, validateUploadReceipt, type RecordingTimeReference } from "./audioUpload";
+import { errorMessage, newId, uploadRecording } from "./api";
 import { dateTimeLabel, localDateTimeInput } from "./format";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
@@ -18,6 +18,7 @@ export function UploadDialog({
   const scope = useRef(profileScope());
   const controller = useRef(new AbortController());
   const dialog = useRef<HTMLDialogElement>(null);
+  const feedback = useRef<HTMLDivElement>(null);
   const heading = useId();
   const description = useId();
   const plan = useRef<
@@ -37,7 +38,12 @@ export function UploadDialog({
   const [timeReference, setTimeReference] = useState<RecordingTimeReference>("end");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
-  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number }>();
+  const [uploadProgress, setUploadProgress] = useState<{
+    sent: number; total: number; completed: number; parts: number;
+    attemptStarted: number; attemptBytes: number; updated: number; confirming: boolean;
+  }>();
+  const [started, setStarted] = useState(0);
+  const [now, setNow] = useState(0);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [linkExisting, setLinkExisting] = useState(false);
@@ -46,6 +52,15 @@ export function UploadDialog({
   const conversations = useResource<{ items: Source[] }>(linkExisting
     ? `/v1/transcripts?limit=50&q=${encodeURIComponent(sourceQuery)}` : null);
   const locked = busy || Boolean(plan.current?.completed);
+  const transferring = Boolean(uploadProgress);
+  useEffect(() => {
+    if (busy) feedback.current?.scrollIntoView({ block: "nearest" });
+  }, [busy, transferring]);
+  useEffect(() => {
+    if (!busy) return;
+    const timer = window.setInterval(() => setNow(performance.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
   useEffect(() => {
     controller.current = new AbortController();
     const element = dialog.current;
@@ -80,6 +95,8 @@ export function UploadDialog({
     setBusy(true);
     setError("");
     setUploadProgress(undefined);
+    setStarted(performance.now());
+    setNow(performance.now());
     setProgress("Preparing audio locally…");
     try {
       const form = new FormData(event.currentTarget);
@@ -89,7 +106,7 @@ export function UploadDialog({
       setTimeReference(reference);
       const samples = plan.current?.file === file
         ? plan.current.samples
-        : await decodeRecording(file);
+        : await decodeRecording(file, setProgress);
       controller.current.signal.throwIfAborted();
       scope.current.signal.throwIfAborted();
       const { startedAt: start } = recordingTimes(timestamp, samples.length, reference);
@@ -117,11 +134,21 @@ export function UploadDialog({
         };
       }
       const current = plan.current;
-      setUploadProgress({ completed: current.completed, total: current.ids.length });
+      const totalBytes = current.samples.length * 2 + current.ids.length * 44;
+      const initialBytes = Math.min(current.samples.length, current.completed * chunkLength) * 2 + current.completed * 44;
+      const attemptStarted = performance.now();
+      let confirmedBytes = initialBytes;
       for (let i = current.completed; i < current.ids.length; i++) {
         const offset = i * chunkLength;
         const samples = current.samples.subarray(offset, offset + chunkLength);
         const partStartedAt = new Date(start.getTime() + offset / 16).toISOString();
+        const body = new Blob([encodeWav(samples)], { type: "audio/wav" });
+        const reportProgress = (bytes: number) => {
+          const sent = confirmedBytes + bytes;
+          setUploadProgress({ sent, total: totalBytes, completed: current.completed, parts: current.ids.length,
+            attemptStarted, attemptBytes: sent - initialBytes, updated: performance.now(), confirming: bytes === body.size });
+        };
+        reportProgress(0);
         setProgress(`Uploading part ${i + 1} of ${current.ids.length}… Keep this window open.`);
         const query = new URLSearchParams({
           device_id: "manual-web",
@@ -135,15 +162,8 @@ export function UploadDialog({
           recording_ended_at: new Date(start.getTime() + current.samples.length / 16).toISOString(),
         });
         if (current.conversationSourceId) query.set("conversation_source_id", current.conversationSourceId);
-        const receipt = await request(`/v1/audio/${current.ids[i]}?${query}`, {
-          method: "PUT",
-          signal: controller.current.signal,
-          headers: { "Content-Type": "audio/wav" },
-          body: new Blob(
-            [encodeWav(samples)],
-            { type: "audio/wav" },
-          ),
-        }, scope.current);
+        const receipt = await uploadRecording(`/v1/audio/${current.ids[i]}?${query}`,
+          body, reportProgress, controller.current.signal, scope.current);
         validateUploadReceipt(receipt, {
           id: current.ids[i],
           device_id: "manual-web",
@@ -151,7 +171,8 @@ export function UploadDialog({
           ended_at: new Date(start.getTime() + (offset + samples.length) / 16).toISOString(),
         });
         current.completed = i + 1;
-        setUploadProgress({ completed: current.completed, total: current.ids.length });
+        reportProgress(body.size);
+        confirmedBytes += body.size;
       }
       onUploaded();
       onClose();
@@ -164,6 +185,13 @@ export function UploadDialog({
       setProgress("");
     }
   }
+  const elapsed = Math.max(0, (now - started) / 1000);
+  const estimate = uploadProgress && !uploadProgress.confirming && now - uploadProgress.updated < 15_000
+    ? uploadEstimate(uploadProgress.attemptBytes,
+      uploadProgress.total - uploadProgress.sent + uploadProgress.attemptBytes,
+      (Math.max(now, uploadProgress.updated) - uploadProgress.attemptStarted) / 1000)
+    : undefined;
+  const percent = uploadProgress ? Math.floor(uploadProgress.sent / uploadProgress.total * 100) : undefined;
   return (
     <dialog
       ref={dialog}
@@ -254,17 +282,26 @@ export function UploadDialog({
             recordings with different wording. Keep each recording’s original capture time.</p>
         </> : null}
         {error ? <ErrorState message={error} /> : null}
-        {busy ? <progress className="upload-progress" aria-label="Recording upload progress"
-          value={uploadProgress?.completed} max={uploadProgress?.total ?? 1} /> : null}
-        {progress ? (
-          <p role="status" className="caption">
-            {progress}
+        {busy ? <div ref={feedback} className="upload-feedback">
+          <p role="status" className="upload-stage">
+            <strong>{uploadProgress?.confirming ? `Saving part ${Math.min(uploadProgress.completed + 1, uploadProgress.parts)} of ${uploadProgress.parts} on the server…` : progress}</strong>
+            {percent !== undefined ? <span>{percent}% sent</span> : null}
           </p>
-        ) : null}
+          <progress className="upload-progress" aria-label={uploadProgress ? "Recording upload progress" : "Preparing audio"}
+            value={uploadProgress?.sent} max={uploadProgress?.total ?? 1} />
+          <p className="caption">{uploadProgress
+            ? `${(uploadProgress.sent / 1_000_000).toFixed(1)} of ${(uploadProgress.total / 1_000_000).toFixed(1)} MB · ${uploadProgress.completed} of ${uploadProgress.parts} parts saved`
+            : "Preparing on this device. A time estimate is not available for this step."}</p>
+          <p className="caption">{progressTime(elapsed)} elapsed · {estimate !== undefined
+            ? `About ${progressTime(estimate)} left to upload`
+            : uploadProgress?.confirming ? "Waiting for the server to confirm this part"
+              : uploadProgress ? "Estimating upload time…" : "Keep this window open"}</p>
+          <p className="caption">Transcription continues on the server after upload. Follow its progress under Capture &amp; sync.</p>
+        </div> : null}
         <div className="button-row">
           <button className="button accent" disabled={!file || busy || (linkExisting && !conversationSourceId)}>
             <Icon name="upload" size={18} />
-            {busy ? "Uploading…" : error && plan.current?.completed ? "Resume upload" : "Upload recording"}
+            {busy ? uploadProgress ? "Uploading…" : "Preparing audio…" : error && plan.current?.completed ? "Resume upload" : "Upload recording"}
           </button>
           <button
             className="button"

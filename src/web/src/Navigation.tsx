@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 
 export type Page = "inbox" | "today" | "rewind" | "diary" | "chat" | "settings" | "labels";
@@ -7,62 +7,54 @@ export const pages: {
   label: string;
   icon: IconName;
   title: string;
-  subtitle: string;
 }[] = [
   {
     id: "today",
     label: "Today",
     icon: "home",
     title: "Your day, remembered.",
-    subtitle: "A little context for everything you heard.",
   },
   {
     id: "rewind",
     label: "Rewind",
     icon: "rewind",
     title: "Come back to a moment.",
-    subtitle: "Listen again, with a little context.",
   },
   {
     id: "diary",
     label: "Diary",
     icon: "diary",
     title: "The days add up.",
-    subtitle: "Your daily notes, kept for what comes next.",
   },
   {
     id: "chat",
     label: "Chat",
     icon: "chat",
     title: "A conversation with your days.",
-    subtitle: "Ask a question. Follow it back to the source.",
   },
-  { id: "labels", label: "People", icon: "people", title: "People & projects.", subtitle: "Follow related recordings across your days." },
+  { id: "labels", label: "People", icon: "people", title: "People & projects." },
   {
     id: "inbox",
     label: "Inbox",
     icon: "inbox",
     title: "Follow through.",
-    subtitle: "Promises and open questions, across your days.",
   },
   {
     id: "settings",
     label: "Settings",
     icon: "settings",
     title: "Settings",
-    subtitle: "Preferences, connections, and local AI shared by all profiles.",
   },
 ];
 
 const primaryPages = pages.slice(0, 4);
 const morePages = pages.slice(4);
 
-export function Navigation({ page, navigate, hrefForPage, mobile = false, profileSelector }: {
+export function Navigation({ page, navigate, hrefForPage, mobile = false }: {
   page: Page;
   navigate: (page: Page) => void;
   hrefForPage?: (page: Page) => string;
   mobile?: boolean;
-  profileSelector?: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -102,8 +94,6 @@ export function Navigation({ page, navigate, hrefForPage, mobile = false, profil
           <button className="icon-button" aria-label="Close navigation" onClick={() => setMoreOpen(false)}><Icon name="close" /></button>
         </div>
         <nav aria-label="More navigation">{morePages.map(link)}</nav>
-        <p className="caption">Keep track of people, follow through, and make omi yours.</p>
-        {profileSelector ? <div className="navigation-profile">{profileSelector}</div> : null}
       </div>
     </dialog> : null}
   </>;

@@ -76,6 +76,15 @@ export type Status = {
     oldest_received_at: string | null;
     oldest_age_seconds?: number | null;
     last_completion_delay_seconds?: number | null;
+    active?: {
+      id: string;
+      stage: string;
+      completed_chunks: number;
+      total_chunks: number;
+      elapsed_seconds: number | null;
+    }[];
+    estimated_remaining_seconds?: number | null;
+    estimate_sample_count?: number;
     recent_errors: {
       id: string;
       error_code: string;
@@ -168,6 +177,7 @@ export type Settings = {
   timezone: string;
   language: string;
   summary_language: string;
+  translation_languages?: string[];
   meeting_max_minutes: number;
   meeting_min_seconds: number;
   meeting_context_seconds: number;

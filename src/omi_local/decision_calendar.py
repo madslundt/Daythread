@@ -103,7 +103,7 @@ def export_calendar(memory, key: str, body: CalendarExportRequest) -> dict:
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            "PRODID:-//Omi Local//Decision follow-ups//EN",
+            "PRODID:-//Daythread//Decision follow-ups//EN",
             "CALSCALE:GREGORIAN",
             f"BEGIN:{component}",
             f"UID:{uid}@omi-local",

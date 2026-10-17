@@ -26,6 +26,25 @@ const status: Status = {
 };
 
 describe("truthful capture observations", () => {
+  it("shows real chunk counts and a measured queue estimate without opening diagnostics", () => {
+    const html = renderToStaticMarkup(<CaptureStatus status={{ ...status, processing: {
+      ...status.processing!, active: [{ id: "source", stage: "transcribing",
+        completed_chunks: 1, total_chunks: 4, elapsed_seconds: 25 }],
+      estimated_remaining_seconds: 125, estimate_sample_count: 3,
+    } }} compact />);
+    expect(html.split("</summary>")[0]).toContain("Transcribing · 1 of 4 chunks complete");
+    expect(html.split("</summary>")[0]).toContain("Approx. 3 min remaining");
+    expect(html).toContain('value="1" max="4"');
+    expect(html).toContain("25 sec elapsed");
+  });
+  it("withholds processing estimates when observations are stale or the worker is stopped", () => {
+    const current = { ...status, processing: { ...status.processing!,
+      estimated_remaining_seconds: 120, estimate_sample_count: 2 } };
+    expect(renderToStaticMarkup(<CaptureStatus status={current} error="Offline" compact />))
+      .not.toContain("Approx.");
+    expect(renderToStaticMarkup(<CaptureStatus status={{ ...current, worker_running: false }} />))
+      .not.toContain("Approx.");
+  });
   it("keeps processing problems visible while compact diagnostics are closed", () => {
     const html = renderToStaticMarkup(<CaptureStatus status={{ ...status, worker_running: false }} compact />);
     const summary = html.split("</summary>")[0];

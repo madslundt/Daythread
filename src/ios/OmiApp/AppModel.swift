@@ -10,8 +10,9 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(backendAddress, forKey: "backendURL")
             guard backendAddress != oldValue else { return }
+            selectProfile(nil)
             resetArchive()
-            profiles = [.init(id: "default", name: "Default")]
+            profiles = []
             reconnectBackend()
         }
     }
@@ -22,6 +23,7 @@ final class AppModel {
     struct ProfileDirectory: Decodable { let profiles: [Profile] }
     private(set) var profiles: [Profile] = [.init(id: "default", name: "Default")]
     private(set) var selectedProfileID: String
+    var hasSelectedProfile: Bool { !selectedProfileID.isEmpty }
     var selectedProfileName: String { profiles.first { $0.id == selectedProfileID }?.name ?? selectedProfileID }
     // Preserve legacy default caches while isolating every additional profile.
     var archiveIdentity: String { selectedProfileID == "default" ? backendAddress : backendAddress + ".profile." + selectedProfileID }
@@ -38,19 +40,21 @@ final class AppModel {
         error = nil; lastStatusCheck = .distantPast
         refreshLocal()
     }
-    func selectProfile(_ profile: Profile) {
-        guard profile.id != selectedProfileID else { return }
+    func selectProfile(_ profile: Profile?) {
+        let id = profile?.id ?? ""
+        guard id != selectedProfileID else { return }
         // Finish under the old owner before accepting any frames for the next profile.
         flush()
         guard store?.isRecording != true else { return }
-        selectedProfileID = profile.id
-        UserDefaults.standard.set(profile.id, forKey: "selectedProfileID")
-        store?.profileID = profile.id
+        selectedProfileID = id
+        UserDefaults.standard.set(id, forKey: "selectedProfileID")
+        store?.profileID = id
+        bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
         nextAudioDate = nil; disconnectedAt = nil
         lastDecodedAt = nil; lastPersistedAt = nil
         resetArchive()
         recordCaptureState(paused ? "paused" : "unknown", cause: paused ? "user_pause" : "unknown")
-        notice = "Profile: " + profile.name
+        notice = profile.map { "Profile: " + $0.name } ?? "Choose a profile in Settings"
         reconnectBackend()
         Task { await refreshStatus() }
     }
@@ -59,8 +63,8 @@ final class AppModel {
         let directory = try await client().decoded("v1/profiles", as: ProfileDirectory.self)
         guard backendGeneration == generation, !Task.isCancelled else { return }
         profiles = directory.profiles
-        if !profiles.contains(where: { $0.id == selectedProfileID }), let fallback = profiles.first(where: { $0.id == "default" }) {
-            selectProfile(fallback)
+        if hasSelectedProfile && !profiles.contains(where: { $0.id == selectedProfileID }) {
+            selectProfile(nil)
         }
     }
     func createProfile(name: String) async throws {
@@ -68,7 +72,12 @@ final class AppModel {
         let profile = try await client().decoded("v1/profiles", method: "POST", body: ["name": name.trimmingCharacters(in: .whitespacesAndNewlines)], as: Profile.self)
         guard backendGeneration == generation, !Task.isCancelled else { return }
         profiles.append(profile)
-        selectProfile(profile)
+    }
+    func renameProfile(_ profile: Profile, name: String) async throws {
+        let generation = backendGeneration
+        let updated = try await client().decoded("v1/profiles/" + profile.id, method: "PATCH", body: ["name": name.trimmingCharacters(in: .whitespacesAndNewlines)], as: Profile.self)
+        guard backendGeneration == generation, !Task.isCancelled else { return }
+        if let index = profiles.firstIndex(where: { $0.id == profile.id }) { profiles[index] = updated }
     }
     var importanceMarks: Set<ImportanceTarget> = []
     var importanceLoaded = false
@@ -102,6 +111,7 @@ final class AppModel {
     var error: String?
     var notice = "Pair your Omi to begin"
     var queueCount = 0
+    var uploadFeedback: UploadFeedback?
     var unsyncedMinutes = 0.0
     var storageMB = 0.0
     var recentGaps: [OutboxItem] = []
@@ -144,8 +154,8 @@ final class AppModel {
 
     init() {
         let defaults = UserDefaults.standard
-        selectedProfileID = defaults.string(forKey: "selectedProfileID") ?? "default"
-        backendAddress = defaults.string(forKey: "backendURL") ?? "http://home-core.local:8787"
+        selectedProfileID = defaults.string(forKey: "selectedProfileID") ?? ""
+        backendAddress = defaults.string(forKey: "backendURL") ?? "https://daythread.home.arpa"
         gesture = MeetingGesture(rawValue: defaults.string(forKey: "meetingGesture") ?? "") ?? .doubleClick
         let timeout = defaults.integer(forKey: "meetingMinutes")
         meetingMinutes = timeout == 0 ? 120 : timeout
@@ -175,9 +185,10 @@ final class AppModel {
                 }
             }
             uploader?.onError = { [weak self] in self?.serverStatus = $0 }
+            uploader?.onProgress = { [weak self] in self?.refreshLocal() }
             refreshLocal()
         } catch { self.error = error.localizedDescription }
-        bluetooth.captureEnabled = !paused && store != nil
+        bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
         bluetooth.onCodec = { [weak self] codec in
             do { self?.decoder = try FrameDecoder(codec: codec) }
             catch { self?.failCapture(error) }
@@ -191,12 +202,15 @@ final class AppModel {
     }
     func client() throws -> BackendClient { try BackendClient(address: backendAddress, profileID: selectedProfileID) }
     func reconnectBackend() {
+        guard hasSelectedProfile else { uploader?.client = nil; return }
         do { uploader?.client = try client(); uploader?.retry() }
         catch { self.error = error.localizedDescription }
     }
     func tick() async {
         now = Date(); refreshLocal(); uploader?.pump()
-        if now.timeIntervalSince(lastStatusCheck) >= 15 { await refreshStatus() }
+        let processing = completenessStatus["processing"]
+        let busy = queueCount > 0 || processing["queued"].integer > 0 || processing["transcribing"].integer > 0
+        if now.timeIntervalSince(lastStatusCheck) >= (busy ? 2 : 15) { await refreshStatus() }
     }
     func refreshStatus() async {
         guard !refreshingStatus else { refreshStatusPending = true; return }
@@ -216,6 +230,7 @@ final class AppModel {
             let backend = try client()
             try await loadProfiles()
             guard backendGeneration == generation else { return }
+            guard hasSelectedProfile else { serverStatus = "Choose a profile in Settings"; return }
             let status = try await backend.request("v1/status")
             guard backendGeneration == generation else { return }
             LocalCache.reconcile(address: identity, revision: status["archive_revision"].text)
@@ -289,7 +304,7 @@ final class AppModel {
         }
         captureFailure = nil; UserDefaults.standard.removeObject(forKey: "captureFailure")
         recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
-        paused = value; bluetooth.captureEnabled = !value && store != nil
+        paused = value; bluetooth.captureEnabled = hasSelectedProfile && !value && store != nil
         notice = value ? "Capture paused" : "Capture resumed"
         if value {
             disconnectedAt = nil
@@ -303,7 +318,7 @@ final class AppModel {
         }
     }
     private func audio(_ data: Data, date suppliedDate: Date, uptime: TimeInterval) {
-        guard !paused, decoder != nil, store != nil else { return }
+        guard hasSelectedProfile, !paused, decoder != nil, store != nil else { return }
         let date = clock.date(at: uptime)
         if let lastNotification, date.timeIntervalSince(lastNotification) > 1 {
             flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: "BLE audio delivery interrupted", cause: "delivery_interrupted")
@@ -368,6 +383,7 @@ final class AppModel {
         nextAudioDate = nil; decoder = nil
     }
     private func addGap(start: Date, end: Date, reason: String, cause: String = "unknown") {
+        guard hasSelectedProfile else { return }
         do { try store?.gap(deviceID: bluetooth.identifier, start: start, end: end, reason: reason, cause: cause); refreshLocal() }
         catch { failCapture(error) }
     }
@@ -388,6 +404,7 @@ final class AppModel {
         if let action = policy.resolve(data, at: Date()) { event(action) }
     }
     func event(_ action: SemanticAction) {
+        guard hasSelectedProfile else { error = "Choose a profile in Settings first."; return }
         let date = clock.date(at: ProcessInfo.processInfo.systemUptime)
         if action == .mark, let nextMarkAt, date < nextMarkAt {
             notice = "Already marked nearby. Another flag is available in \(Int(ceil(nextMarkAt.timeIntervalSince(date)))) seconds."
@@ -412,6 +429,7 @@ final class AppModel {
         let items = store.items.filter { $0.resolvedProfileID == selectedProfileID }
         let pending = items.filter { !$0.acknowledged && $0.ready }
         queueCount = pending.count
+        uploadFeedback = uploader?.feedback(profileID: selectedProfileID)
         unsyncedMinutes = items.filter { $0.kind == .audio && !$0.acknowledged }.reduce(0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) } / 60
         storageMB = Double(store.storageBytes) / 1_000_000
         recentGaps = Array(items.filter { $0.kind == .gap }.suffix(5).reversed())
@@ -441,12 +459,13 @@ final class AppModel {
         meetingStart = start; meetingDeadline = deadline; meetingQualifiesAt = start == nil ? nil : qualifies
     }
     private func recordCaptureState(_ state: String, cause: String) {
+        guard hasSelectedProfile else { return }
         observedCaptureState = state
         do { try store?.captureState(phoneID: phoneID, at: Date(), state: state, cause: cause) }
         catch { self.error = "Could not persist capture observation: \(error.localizedDescription)" }
     }
     private func publishObservation(using backend: BackendClient) async throws {
-        guard let store else { return }
+        guard hasSelectedProfile, let store else { return }
         let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
         UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
         let pending = store.items.filter { $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }

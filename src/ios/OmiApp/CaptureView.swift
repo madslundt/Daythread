@@ -6,7 +6,7 @@ struct CaptureView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Omi Local", title: "Keep the day.", subtitle: "Connect your pendant. Keep the moments that matter.")
+                EditorialTitle(eyebrow: "Daythread", title: "Keep the day.")
                     .editorialRow()
             }
             Section {
@@ -61,6 +61,22 @@ struct CaptureView: View {
                 if statusStale { Text("Current backend state unknown; showing the last successful observation.").font(.caption).foregroundStyle(.orange) }
                 if let failure = model.captureFailure { Text("Capture stopped: \(failure). Resume explicitly after resolving the failure.").font(.caption).foregroundStyle(.red) }
                 LabeledContent("Waiting to sync", value: "\(model.queueCount) items · \(model.unsyncedMinutes.formatted(.number.precision(.fractionLength(1)))) min")
+                if let upload = model.uploadFeedback {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(upload.title).font(.subheadline.weight(.medium))
+                        if let fraction = upload.fraction {
+                            ProgressView(value: fraction)
+                                .accessibilityLabel("Current upload")
+                            Text("Current item: \(Int(fraction * 100))% · \(bytes(upload.sentBytes)) of \(bytes(upload.totalBytes))")
+                                .font(.caption).monospacedDigit()
+                        }
+                        Text("\(bytes(upload.remainingBytes)) left in upload queue")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(upload.estimatedSeconds.map { "About \(duration($0)) to upload queued items" } ?? "Upload time estimate unavailable until transfer speed is measured.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.accessibilityElement(children: .combine)
+                }
+                processingFeedback
                 LabeledContent("Phone storage", value: "\(model.storageMB.formatted(.number.precision(.fractionLength(1)))) MB / \(model.storageBudgetMB) MB")
                 ProgressView(value: min(model.storageMB, Double(model.storageBudgetMB)), total: Double(model.storageBudgetMB))
                     .accessibilityLabel("Phone storage used").accessibilityValue("\(Int(model.storageMB)) of \(model.storageBudgetMB) megabytes")
@@ -94,6 +110,66 @@ struct CaptureView: View {
     private var statusStale: Bool {
         guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }
         return model.now.timeIntervalSince(at) > 120 || !model.serverStatus.hasPrefix("Home-core connected")
+    }
+    @ViewBuilder
+    private var processingFeedback: some View {
+        let processing = model.completenessStatus["processing"]
+        let active = processing["active"].array
+        let waiting = processing["queued"].integer
+        if !active.isEmpty || waiting > 0 || processing["blocked"].integer > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Processing · \(active.count) active · \(waiting) queued").font(.subheadline.weight(.medium))
+                if model.completenessStatus["worker_running"] == .bool(false) {
+                    Text("Processing is waiting for the worker to start.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(Array(active.enumerated()), id: \.offset) { _, item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(stageName(item["stage"].text)).font(.caption.weight(.medium))
+                        let total = item["total_chunks"].integer
+                        let completed = max(0, min(total, item["completed_chunks"].integer))
+                        if total > 0 {
+                            ProgressView(value: Double(completed), total: Double(total))
+                                .accessibilityLabel(stageName(item["stage"].text))
+                            Text("\(completed) of \(total) parts complete").font(.caption).monospacedDigit()
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                        if case .number(let elapsed) = item["elapsed_seconds"], elapsed > 0 {
+                            Text("Running for \(duration(elapsed))").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !statusStale, model.completenessStatus["worker_running"] == .bool(true),
+                   case .number(let seconds) = processing["estimated_remaining_seconds"], seconds >= 0, seconds.isFinite {
+                    Text("About \(duration(seconds)) to finish the processing queue")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Processing time estimate unavailable yet.").font(.caption).foregroundStyle(.secondary)
+                }
+                if processing["blocked"].integer > 0 {
+                    Text("\(processing["blocked"].integer) items need attention.").font(.caption).foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+    private func bytes(_ count: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+    private func duration(_ seconds: Double) -> String {
+        let rounded = max(1, Int(ceil(seconds)))
+        if rounded < 60 { return "\(rounded) sec" }
+        if rounded < 3600 { return "\(Int(ceil(Double(rounded) / 60))) min" }
+        let hours = rounded / 3600, minutes = Int(ceil(Double(rounded % 3600) / 60))
+        return minutes == 0 ? "\(hours) hr" : "\(hours) hr \(minutes) min"
+    }
+    private func stageName(_ stage: String) -> String {
+        switch stage {
+        case "analyzing": "Analyzing audio"
+        case "transcribing": "Transcribing audio"
+        case "enhancing": "Improving transcript"
+        case "saving": "Saving transcript"
+        default: "Processing audio"
+        }
     }
     private var markLabel: String {
         if let next = model.nextMarkAt, next > model.now { return "Flag added · wait \(Int(ceil(next.timeIntervalSince(model.now))))s" }

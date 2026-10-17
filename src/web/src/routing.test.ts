@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dayFromPath, pageFromPath, pagePath, legacyRoutePath, navigatePath, subscribeNavigation } from "./routing";
+import { dayFromPath, pageFromPath, pagePath, profileRoute, legacyRoutePath, navigatePath, subscribeNavigation } from "./routing";
 import { localDay } from "./format";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -84,5 +84,17 @@ describe("path navigation", () => {
     navigatePath("/diary/2026-10-16");
     browser.dispatchEvent(new Event("popstate"));
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe("profile selection routes", () => {
+  it.each(["/", "/today", "/today/2026-10-16", "/diary/2026-10-16", "/rewind", "/chat", "/inbox", "/labels/person-id"])("requires a profile before opening %s", (path) => {
+    expect(profileRoute(path, null)).toBe("/settings/profiles");
+    expect(profileRoute(path, "work")).toBe(path);
+  });
+
+  it.each(["/settings", "/settings/profiles", "/settings/general", "/settings/connections", "/settings/storage", "/settings/gestures", "/settings/server"])("allows %s without a profile", (path) => {
+    expect(profileRoute(path, null)).toBe(path);
   });
 });

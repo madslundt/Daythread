@@ -85,7 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.profiles.close()
 
     app = FastAPI(
-        title="Omi Local",
+        title="Daythread",
         version="0.2.0",
         lifespan=lifespan,
         docs_url=None,
@@ -100,7 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         headers = request.headers.getlist("x-omi-profile")
         query = request.query_params.getlist("profile_id")
         if request.url.path in ("/v1/profiles", "/v1/settings") or (
-            request.url.path == "/v1/configuration"
+            request.url.path.startswith("/v1/profiles/")
+            or request.url.path == "/v1/configuration"
             or request.url.path.startswith("/v1/configuration/")
         ):
             headers, query = [], []
@@ -149,6 +150,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(409, str(exc)) from exc
             app.state.profiles.start(profile["id"], config)
         return profile
+
+    @app.patch("/v1/profiles/{profile_id}")
+    def rename_profile(profile_id: str, body: NewProfile) -> dict:
+        try:
+            return app.state.profiles.rename(profile_id, body)
+        except KeyError:
+            raise HTTPException(404, "Profile not found") from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     app.include_router(forwarding_routes(memory))
     app.include_router(decision_routes(memory))
@@ -355,7 +365,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 revised = Settings.model_validate(config.model_dump() | changes)
             except ValidationError as exc:
                 raise HTTPException(422, "Invalid setting value") from exc
-            app.state.memory.store.save_settings(changes)
+            app.state.memory.store.save_settings({key: getattr(revised, key) for key in changes})
             activate_settings(revised, changes)
             configuration.revision = str(uuid4())
             return public_settings(config)

@@ -53,8 +53,10 @@ struct BackendClient {
         return components.url!
     }
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: [String: Any]? = nil) async throws -> JSONValue {
+        let global = ["v1/settings", "v1/configuration", "v1/profiles"].contains { path == $0 || path.hasPrefix($0 + "/") }
+        if !global { try requireProfile() }
         var request = URLRequest(url: url(path, query: query)); request.httpMethod = method
-        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
+        if !global { request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile") }
         // A day recap makes multiple sequential model calls, each with its own server
         // timeout. Keep ordinary controls responsive while allowing that reduction to finish.
         let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || (path.hasPrefix("v1/transcripts/") && path.hasSuffix("/translation")))
@@ -68,8 +70,12 @@ struct BackendClient {
         let value = try await request(path, method: method, query: query, body: body)
         return try JSONDecoder().decode(type, from: JSONEncoder().encode(value))
     }
+    private func requireProfile() throws {
+        guard !profileID.isEmpty else { throw BackendFailure(message: "Choose a profile in Settings first.") }
+    }
     @MainActor
     func chat(body: [String: Any], onEvent: @MainActor (JSONValue) -> Void) async throws -> JSONValue {
+        try requireProfile()
         var request = URLRequest(url: url("v1/chat/stream"), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = "POST"
@@ -114,6 +120,7 @@ struct BackendClient {
         }
     }
     func prep<Body: Encodable, Result: Decodable>(_ action: String, body: Body) async throws -> Result {
+        try requireProfile()
         var request = URLRequest(url: url("v1/conversation-prep/" + action), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         request.httpMethod = "POST"
@@ -129,6 +136,7 @@ struct BackendClient {
         return try JSONDecoder().decode(Result.self, from: data)
     }
     func download(_ path: String, query: [String: String]) async throws -> URL {
+        try requireProfile()
         var request = URLRequest(url: url(path, query: query), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
         let (temporary, response) = try await URLSession.shared.download(for: request)

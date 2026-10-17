@@ -119,6 +119,69 @@ def test_transient_failure_counts_retry_as_subset_of_queue_and_survives_restart(
     assert store.get_audio(key)["processing_started_at"] is not None
 
 
+def test_processing_stages_and_eta_use_completed_timings_and_current_elapsed_time(client):
+    store = client.app.state.memory.store
+    now = datetime.now(UTC)
+    sample = insert(client, duration=60)
+    store.start_processing(sample)
+    store.finish_processing(sample)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE processing_progress SET started_at=?,finished_at=? WHERE audio_id=?",
+            (stamp(now - timedelta(seconds=40)), stamp(now - timedelta(seconds=10)), sample),
+        )
+    active = insert(client, start=AT + timedelta(minutes=1), duration=60, text=None)
+    insert(client, start=AT + timedelta(minutes=2), duration=120, text=None)
+    assert store.claim()["id"] == active
+    store.start_processing(active)
+    store.update_processing(active, "transcribing", 1, 2)
+    with store.connect() as db:
+        db.execute("UPDATE processing_progress SET started_at=? WHERE audio_id=?",
+                   (stamp(now - timedelta(seconds=10)), active))
+    processing = store.observations(now)["processing"]
+    assert processing["queued"] == 1 and processing["transcribing"] == 1
+    assert processing["active"] == [{
+        "id": active, "stage": "transcribing", "completed_chunks": 1,
+        "total_chunks": 2, "elapsed_seconds": 10,
+    }]
+    assert processing["estimate_sample_count"] == 1
+    assert processing["estimated_remaining_seconds"] == 80
+    assert Store(store.root).observations(now)["processing"]["active"] == processing["active"]
+    assert store.observations(now + timedelta(minutes=2))["processing"][
+        "estimated_remaining_seconds"
+    ] is None
+    store.retry(store.get_audio(active), "Transcription failed: TimeoutError")
+    retrying = store.observations(now)["processing"]
+    assert retrying["estimate_sample_count"] == 1
+    assert retrying["estimated_remaining_seconds"] is None
+
+
+def test_processing_eta_is_unknown_without_samples_or_during_retry(client):
+    store = client.app.state.memory.store
+    key = insert(client, text=None)
+    assert store.observations()["processing"]["estimated_remaining_seconds"] is None
+    row = store.claim()
+    store.start_processing(key)
+    store.update_processing(key, "transcribing", 0, 2)
+    store.retry(row, "Transcription failed: TimeoutError")
+    processing = store.observations()["processing"]
+    assert processing["active"] == []
+    assert processing["estimated_remaining_seconds"] is None
+
+
+def test_completed_work_does_not_keep_a_progress_indicator(client):
+    store = client.app.state.memory.store
+    key = insert(client, text=None)
+    store.claim()
+    store.start_processing(key)
+    store.update_processing(key, "transcribing", 1, 1)
+    store.complete(key, "Done", claimed=True)
+    store.finish_processing(key)
+    processing = store.observations()["processing"]
+    assert processing["active"] == []
+    assert processing["estimated_remaining_seconds"] == 0
+
+
 def observation(sequence=1):
     return {
         "sequence": sequence,

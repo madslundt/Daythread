@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Omi Local</string>
+	<string>Daythread</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -34,11 +34,11 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Omi Local connects to your pendant to save audio and button hints on your iPhone and home-core.</string>
+	<string>Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Omi Local sends recordings to your own home-core on your local network.</string>
+	<string>Daythread sends recordings to your own home-core on your local network.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Omi Local adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.</string>
+	<string>Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

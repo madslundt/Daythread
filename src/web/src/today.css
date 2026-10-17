@@ -86,7 +86,9 @@
 }
 @media (max-width: 760px) {
   .today-header { display: flex; flex-direction: column; gap: 0; margin-bottom: 24px; }
-  .today-header .topbar { width: 100%; padding: 0; }
+  .today-header .topbar { width: 100%; padding: 0; gap: 12px 8px; }
+  .today-header .date-picker { min-width: 110px; font-size: 12px; }
+  .today-header .date-navigator .icon-button { min-width: 36px; width: 36px; }
   .today-header .intro { margin-top: 22px; }
   .today-header .intro h1 { font-size: 36px; }
   .today-header .intro > p { font-size: 14px; max-width: none; }
@@ -246,3 +248,12 @@
 .timeline-section > .source-list > .recording-session + .source-list,
 .timeline-section > .source-list > .source-list + .source-list { border-top: 1px solid var(--line); }
 .recording-session > .source-detail > .source-list { margin-top: 12px; }
+
+.recap-topic-summary { font-size: 13px; line-height: 1.7; color: var(--secondary); }
+.recap-topic-summary > .prose { font-size: inherit; }
+.recap-topic-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 8px 0 12px; }
+.recap-topic-actions > button { display: inline-flex; align-items: center; gap: 7px; }
+.copy-summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.copy-summary > button { min-height: 44px; }
+.recap-topic-evidence > summary { min-height: 44px; padding: 10px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+.recap-topic { padding: 8px 0 20px; border-top: 1px solid var(--line); }

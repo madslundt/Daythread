@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { audioUrl, request, rewindAudioUrl } from "./api";
-import { profileResourceUrl, profileScope, profileStorageKey, savedProfile, selectProfile } from "./profiles";
+import { profileResourceUrl, profileScope, profileStorageKey, resolveProfile, savedProfile, selectProfile } from "./profiles";
 import { ProfileSelector } from "./ProfileSelector";
+import { ProfileManagement } from "./ProfileManagement";
+import { matchesSettings, sectionFromPath, SettingsNavigation } from "./SettingsNavigation";
 
 afterEach(() => { selectProfile("default"); vi.unstubAllGlobals(); });
 
@@ -13,6 +15,16 @@ function mockFetch() {
 }
 
 describe("profile isolation", () => {
+  it("requires an explicit valid selection instead of falling back to Default", () => {
+    const profiles = [{ id: "default", name: "Default" }, { id: "work", name: "Work" }];
+    expect(resolveProfile(profiles, null)).toBeNull();
+    expect(resolveProfile(profiles, "")).toBeNull();
+    expect(resolveProfile(profiles, "missing")).toBeNull();
+    expect(resolveProfile([], "default")).toBeNull();
+    expect(resolveProfile(profiles, "default")).toBe("default");
+    expect(resolveProfile(profiles, "work")).toBe("work");
+  });
+
   it("selects a profile for each API call, including writes", async () => {
     const fetch = mockFetch();
     selectProfile("alice");
@@ -32,10 +44,22 @@ describe("profile isolation", () => {
   it("keeps settings, model configuration and the directory global", async () => {
     const fetch = mockFetch();
     selectProfile("alice");
-    for (const path of ["/v1/settings", "/v1/configuration", "/v1/configuration/models", "/v1/profiles"]) {
+    for (const path of ["/v1/settings", "/v1/configuration", "/v1/configuration/models", "/v1/profiles", "/v1/profiles/alice"]) {
       await request(path, { headers: { "X-Omi-Profile": "removed-profile" } });
     }
     for (const [, options] of fetch.mock.calls) expect(new Headers(options.headers).has("X-Omi-Profile")).toBe(false);
+  });
+
+  it("blocks archive requests without a profile while allowing settings and profile management", async () => {
+    const fetch = mockFetch();
+    selectProfile("");
+    await expect(request("/v1/status")).rejects.toThrow("Choose a profile");
+    await expect(request("/v1/events", { method: "POST", body: "{}" })).rejects.toThrow("Choose a profile");
+    expect(fetch).not.toHaveBeenCalled();
+    await request("/v1/settings");
+    await request("/v1/configuration");
+    await request("/v1/profiles");
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("puts the profile on playback and exports, preserving other query parameters", () => {
@@ -81,12 +105,30 @@ describe("profile isolation", () => {
     expect(savedProfile()).toBe("bob");
   });
 
-  it("shows a named accessible selector and profile creation action", () => {
-    const html = renderToStaticMarkup(<ProfileSelector profiles={[{ id: "default", name: "Default" }, { id: "alice", name: "Alice" }]} selected="alice" onSelect={() => {}} onCreate={() => {}} />);
-    const selectorId = html.match(/<label for="([^"]+)">Profile<\/label>/)?.[1];
+  it("shows an active profile selector for the settings page", () => {
+    const html = renderToStaticMarkup(<ProfileSelector profiles={[{ id: "default", name: "Default" }, { id: "alice", name: "Alice" }]} selected="alice" onSelect={() => {}} />);
+    const selectorId = html.match(/<label for="([^"]+)">Active profile<\/label>/)?.[1];
     expect(selectorId).toBeTruthy();
     expect(html).toContain(`<select id="${selectorId}">`);
     expect(html).toContain('<option value="alice" selected="">Alice</option>');
+    expect(html).toContain("Choose a profile…");
+    expect(html).not.toContain("Manage profiles");
+  });
+
+  it("lists profiles with editing and creation in their own settings category", () => {
+    vi.stubGlobal("window", { location: { pathname: "/settings/profiles" } });
+    expect(sectionFromPath()).toBe("profiles");
+    expect(matchesSettings("profiles", "rename profile")).toBe(true);
+    const navigation = renderToStaticMarkup(<SettingsNavigation section="profiles" search="" onSearch={() => {}}
+      onSelect={() => {}} preferencesDirty={false} serverDirty={false} />);
+    expect(navigation).toContain('href="/settings/profiles" aria-current="page"');
+    const html = renderToStaticMarkup(<ProfileManagement profiles={[{ id: "default", name: "Default" }, { id: "work", name: "Work" }]}
+      selected="work" onSelect={() => {}} onCreate={() => {}} onUpdate={() => {}} />);
+    expect(html).toContain('aria-label="Profiles"');
+    expect(html).toContain('aria-label="Edit Default"');
+    expect(html).toContain('aria-label="Edit Work"');
+    expect(html).toContain("Current profile");
     expect(html).toContain("Create profile");
+    expect(html).not.toContain("Remove");
   });
 });

@@ -62,61 +62,77 @@ enum Theme {
     })
 }
 
+enum SettingsDestination: Hashable { case profiles }
+private enum RootTab: Hashable { case day, rewind, capture, chat, settings }
+
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @State private var creatingProfile = false
+    @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .day : .settings
+    @State private var settingsPath: [SettingsDestination] = []
     var body: some View {
-        TabView {
-            NavigationStack { DayView() }.tabItem { Label("Day", systemImage: "book.closed") }
-            NavigationStack { RewindView() }.tabItem { Label("Rewind", systemImage: "gobackward.10") }
-            NavigationStack { CaptureView() }.tabItem { Label("Capture", systemImage: "waveform") }
-            NavigationStack { ChatView() }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
-            NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
+        TabView(selection: Binding(get: { model.hasSelectedProfile ? selectedTab : .settings }, set: { tab in
+            if !model.hasSelectedProfile && tab != .settings { settingsPath = [.profiles] }
+            selectedTab = model.hasSelectedProfile ? tab : .settings
+        })) {
+            NavigationStack { if model.hasSelectedProfile { DayView() } }.tabItem { Label("Day", systemImage: "book.closed") }.tag(RootTab.day)
+            NavigationStack { if model.hasSelectedProfile { RewindView() } }.tabItem { Label("Rewind", systemImage: "gobackward.10") }.tag(RootTab.rewind)
+            NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label("Capture", systemImage: "waveform") }.tag(RootTab.capture)
+            NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
+            NavigationStack(path: $settingsPath) {
+                SettingsView().navigationDestination(for: SettingsDestination.self) { destination in
+                    switch destination { case .profiles: ProfilesSettingsView() }
+                }
+            }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }.tag(RootTab.settings)
         }
         .id(model.archiveIdentity)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack {
-                Menu {
-                    ForEach(model.profiles) { profile in
-                        Button { model.selectProfile(profile) } label: {
-                            if profile.id == model.selectedProfileID { Label(profile.name, systemImage: "checkmark") }
-                            else { Text(profile.name) }
-                        }
-                    }
-                    Divider()
-                    Button("Create profile", systemImage: "person.badge.plus") { creatingProfile = true }
-                } label: {
-                    Label(model.selectedProfileName, systemImage: "person.crop.circle")
-                        .font(.subheadline.weight(.medium))
-                }.accessibilityLabel("Select profile").accessibilityIdentifier("profiles.select")
-                Spacer()
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image("DaythreadMark")
+                        .resizable().scaledToFit().frame(width: 24, height: 24)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .accessibilityHidden(true)
+                    Text("Daythread").font(.headline)
+                }
+                Spacer(minLength: 8)
+                if model.hasSelectedProfile {
+                    Text(model.selectedProfileName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
             }.padding(.horizontal, 20).padding(.vertical, 8).background(Theme.canvas)
         }
-        .sheet(isPresented: $creatingProfile) { CreateProfileView() }
         .task {
+            if !model.hasSelectedProfile { settingsPath = [.profiles] }
             await model.refreshStatus()
             while !Task.isCancelled {
                 await model.tick()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+        .onChange(of: model.selectedProfileID) { _, _ in
+            if !model.hasSelectedProfile { selectedTab = .settings; settingsPath = [.profiles] }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { model.checkpoint(); BackgroundUploader.scheduleRetry() }
             if phase == .active { model.reconnectBackend(); Task { await model.refreshStatus() } }
         }
-        .alert("Omi Local", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
     }
 }
 
-struct CreateProfileView: View {
+struct ProfileEditorView: View {
+    let profile: AppModel.Profile?
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
+    @State private var name: String
     @State private var saving = false
     @State private var error: String?
+    init(profile: AppModel.Profile? = nil) {
+        self.profile = profile
+        _name = State(initialValue: profile?.name ?? "")
+    }
     var body: some View {
         NavigationStack {
             Form {
@@ -127,37 +143,36 @@ struct CreateProfileView: View {
                     Text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this app can select a profile.")
                 }
                 ErrorNote(message: error)
-            }.navigationTitle("Create profile").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle(profile == nil ? "Create profile" : "Edit profile").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(saving ? "Creating…" : "Create") {
+                        Button(saving ? "Saving…" : profile == nil ? "Create" : "Save") {
                             saving = true
                             Task {
                                 defer { saving = false }
-                                do { try await model.createProfile(name: name); dismiss() }
+                                do {
+                                    if let profile { try await model.renameProfile(profile, name: name) }
+                                    else { try await model.createProfile(name: name) }
+                                    dismiss()
+                                }
                                 catch { self.error = error.localizedDescription }
                             }
                         }.disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
                     }
                 }
-        }
+        }.interactiveDismissDisabled(saving)
     }
 }
 
 struct EditorialTitle: View {
     let eyebrow: String
     let title: String
-    var subtitle: String? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(eyebrow.uppercased()).font(.caption.weight(.semibold)).tracking(1.8).foregroundStyle(Theme.accent)
             Text(title).font(.system(.largeTitle, design: .serif)).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
-            if let subtitle {
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
             .accessibilityElement(children: .combine)
     }
@@ -267,8 +282,13 @@ struct SourceDetail: View {
                     NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
                     ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: "recording").disabled(evidence == .null)
-                    SourceTranscriptView(source: evidence, editing: editing)
+                    SourceTranscriptTopicsView(source: evidence, editing: editing)
                     Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                if !source["alternate_sources"].array.isEmpty && evidence != .null {
+                    Section("Other uploads of this recording") {
+                        SourceList(sources: source["alternate_sources"].array)
+                    }
                 }
                 NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label("People & projects", systemImage: "person.2") }.disabled(evidence == .null)
                 NavigationLink {

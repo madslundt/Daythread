@@ -14,6 +14,16 @@ from .domain import HintPolicy
 LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
 
 
+def translation_language(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", value
+    ) or len(value) > 35 or value.lower() == "auto":
+        raise ValueError(
+            "Use a translation language code such as en, da or zh-CN; auto is not a target"
+        )
+    return value.lower()
+
+
 def local_endpoint(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -122,6 +132,7 @@ class Settings(BaseSettings):
     summary_language: str = Field(
         default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
     )
+    translation_languages: list[str] = Field(default_factory=lambda: ["en"])
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)
     marker_after_seconds: int = Field(default=60, ge=0, le=600)
@@ -146,6 +157,11 @@ class Settings(BaseSettings):
     voice_recognition_enabled: bool = False
     voice_recognition_report: Path | None = None
     web_dir: Path | None = None
+
+    @field_validator("translation_languages")
+    @classmethod
+    def valid_translation_languages(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(translation_language(value) for value in values))
 
     @field_validator("voice_recognition_report", mode="before")
     @classmethod
@@ -265,6 +281,7 @@ RUNTIME_FIELDS = (
     "recap_interval_minutes",
     "recap_quiet_minutes",
     "summary_language",
+    "translation_languages",
     "capture_paused",
     "audio_retention_days",
     "transcript_retention_days",

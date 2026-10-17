@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from .service import Memory
 
 PROMPT_VERSION = "completed-conversations-4-topic-notes"
-DAY_PROMPT_VERSION = "daily-topics-1"
+DAY_PROMPT_VERSION = "daily-topics-2-one-summary"
 NO_CONTENT = "[[NO_RECAP_CONTENT]]"
 BOUNDARY_NOTE = (
     "Includes completed conversations and finished uploads. Ongoing or uncertain conversations "
@@ -227,12 +227,15 @@ class Recaps:
             purpose = (
                 f"a readable diary recap for {day.isoformat()} from completed conversation notes. "
                 "Use the fewest meaningful topic sections that keep it easy to read. "
-                "For a recording covering three subjects, use one compact section with three "
-                "clearly labeled points or three topic sections, not extra category sections. "
+                "For a recording covering three distinct subjects, use three topic sections "
+                "with one summary each, not extra category sections. "
                 "Group related discussions across recordings, rather than making a section "
                 "for each recording, utterance or minor detail. Use short, specific subject "
-                "headings (##) and concise bullet points; use a flat structure "
-                "without subheadings. "
+                "headings (##). Write one coherent summary per topic: one concise paragraph, "
+                "or two when needed to retain important details. Do not create separate short "
+                "and long summaries, a preview followed by repeated bullet points, nested point "
+                "lists or subheadings. Each topic summary must contain only that topic's "
+                "relevant details; do not mix in unrelated subjects from the same recording. "
                 "Start directly with useful content, without a recap title, date heading, "
                 "introductory overview or generic highlights/events section. "
                 "Keep decisions, commitments and genuine unresolved questions in their relevant "

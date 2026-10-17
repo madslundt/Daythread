@@ -131,6 +131,24 @@ class Profiles:
         self.runtimes[profile_id] = runtime
         return runtime
 
+    def rename(self, profile_id: str, body: NewProfile) -> dict:
+        with closing(self.connect()) as db:
+            try:
+                with db:
+                    updated = db.execute(
+                        "UPDATE profiles SET name=?,name_key=? WHERE id=?",
+                        (body.name, body.name.casefold(), profile_id),
+                    )
+                    if not updated.rowcount:
+                        raise KeyError(profile_id)
+                    db.execute(
+                        "INSERT INTO profile_events(profile_id,action,name) VALUES (?,'renamed',?)",
+                        (profile_id, body.name),
+                    )
+            except sqlite3.IntegrityError:
+                raise ValueError("A profile with this name already exists") from None
+        return {"id": profile_id, "name": body.name}
+
     async def close(self) -> None:
         tasks = [
             task

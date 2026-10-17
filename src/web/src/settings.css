@@ -102,3 +102,27 @@
   .connection-local { padding: 18px; }
   .settings-layout legend .settings-badge { margin-left: 4px; font-size: 9px; }
 }
+
+.translation-language-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.translation-language-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.translation-language-list .text-button { min-height: 44px; }
+
+.settings-profile-list { list-style: none; padding: 0; margin: 24px 0 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.settings-profile-list > li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
+.settings-profile-list > li + li { border-top: 1px solid var(--line); }
+.settings-profile-name { min-width: 0; overflow-wrap: anywhere; }
+.settings-profile-name strong { display: block; font-weight: 600; }
+.settings-profile-name small { display: block; margin-top: 5px; color: var(--muted); }
+.settings-profile-list .button-row { flex-shrink: 0; margin: 0; }
+@media (max-width: 540px) {
+  .settings-profile-list > li { align-items: flex-start; flex-direction: column; padding: 16px; }
+  .settings-profile-list .button-row { width: 100%; }
+  .settings-profile-list .button-row > button { flex: 1; }
+}
+
+.settings-profile-selector { display: grid; gap: 8px; margin: 24px 0 18px; }
+.settings-profile-selector label { font-size: 14px; font-weight: 500; }
+.settings-profile-selector select { width: 100%; min-height: 46px; }
+@media (max-width: 760px) {
+  .settings-profile-selector select { font-size: 16px; }
+}

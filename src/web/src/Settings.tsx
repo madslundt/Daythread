@@ -1,3 +1,5 @@
+import { ProfileManagement } from "./ProfileManagement";
+import type { Profile } from "./profiles";
 import { navigatePath, subscribeNavigation } from "./routing";
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, request } from "./api";
@@ -66,7 +68,7 @@ const hintFields: {
 ];
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
 const editableSettings: (keyof SettingsData)[] = [
-  "timezone", "summary_language", "meeting_max_minutes", "meeting_min_seconds",
+  "timezone", "summary_language", "translation_languages", "meeting_max_minutes", "meeting_min_seconds",
   "meeting_context_seconds", "marker_context_seconds", "marker_after_seconds",
   "marker_cooldown_seconds", "recap_hour", "recap_interval_minutes", "recap_quiet_minutes", "capture_paused",
   "audio_retention_days", "transcript_retention_days",
@@ -135,7 +137,16 @@ function NumberSelect({ id, value, options, onChange, label, unavailable }: {
   );
 }
 
-export function Settings({ onSaved }: { onSaved: () => void }) {
+export function Settings({ onSaved, profiles = [], selectedProfile = null, onCreateProfile, onUpdateProfile, onSelectProfile, profileError, onRetryProfiles }: {
+  onSaved: () => void;
+  profiles?: Profile[];
+  selectedProfile?: string | null;
+  onSelectProfile?: (id: string | null) => void;
+  profileError?: string;
+  onRetryProfiles?: () => void;
+  onCreateProfile?: (profile: Profile) => void;
+  onUpdateProfile?: (profile: Profile) => void;
+}) {
   const theme = useThemePreference();
   const resource = useResource<SettingsData>("/v1/settings");
   const [draft, setDraft] = useState<SettingsData>();
@@ -165,7 +176,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
     || show("gestures", "gestures") || show("storage", "storage");
-  const noMatches = query && !["appearance", "daily", "gestures", "storage", "connections"].some((group) => matchesSettings(group, query))
+  const noMatches = query && !["profiles", "appearance", "daily", "gestures", "storage", "connections"].some((group) => matchesSettings(group, query))
     && serverMatches?.query === search && serverMatches.count === 0;
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
@@ -227,9 +238,11 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
       {noMatches ? <div className="settings-empty" role="status"><Icon name="search" size={28} />
         <h2>No settings found</h2><p>Try “language”, “audio”, “recap”, or “model”.</p>
         <button type="button" className="button" onClick={() => setSearch("")}>Clear search</button></div> : null}
+      {show("profiles", "profiles") && onCreateProfile && onUpdateProfile && onSelectProfile ? <ProfileManagement
+        profiles={profiles} selected={selectedProfile} onCreate={onCreateProfile}
+        onUpdate={onUpdateProfile} onSelect={onSelectProfile} error={profileError} onRetry={onRetryProfiles} /> : null}
       <section hidden={!show("appearance", "general")}>
-      {!query ? <div className="settings-section-heading"><h2>Daily preferences</h2>
-        <p>Make Omi fit your routine, from appearance to your daily recap.</p></div> : null}
+      {!query ? <div className="settings-section-heading"><h2>Daily preferences</h2></div> : null}
       <fieldset>
         <legend>Appearance <span className="settings-badge">Saves automatically</span></legend>
         <label className="setting-field" htmlFor="appearance">
@@ -304,9 +317,29 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
                   ))}
                 </select>
                 <small id="summary-language-hint">
-                  Choose the language for recaps, summaries, and optional transcript translations. Automatic follows the source language. Transcripts are translated only when you click Translate.
+                  Choose the language for recaps and summaries. Automatic follows the source language.
                 </small>
               </label>
+              <div className="setting-field translation-language-settings">
+                <span id="translation-languages-label">Translation languages</span>
+                <small id="translation-languages-hint">Choose the languages offered by the transcript Translate button. These are independent of the summary language. Translations are generated only when you click Translate.</small>
+                <ul className="translation-language-list" aria-labelledby="translation-languages-label">
+                  {(draft.translation_languages ?? ["en"]).map((code) => <li key={code}>
+                    <span>{languageLabel(code)}</span>
+                    <button type="button" className="text-button" aria-label={`Remove ${languageLabel(code)} translation language`}
+                      onClick={() => update("translation_languages", (draft.translation_languages ?? ["en"]).filter((value) => value !== code))}>Remove</button>
+                  </li>)}
+                </ul>
+                {draft.translation_languages?.length === 0 ? <small>No translation languages enabled. Add a language to use Translate.</small> : null}
+                <label htmlFor="translation-language-add" className="sr-only">Add translation language</label>
+                <select id="translation-language-add" value="" aria-describedby="translation-languages-hint"
+                  onChange={(event) => { if (event.target.value) update("translation_languages", [...(draft.translation_languages ?? ["en"]), event.target.value]); }}>
+                  <option value="">Add translation language…</option>
+                  {languages.filter(({ value }) => !(draft.translation_languages ?? ["en"]).includes(value)).map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
               <p className="caption">Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.</p>
               <label className="setting-field" htmlFor="recap-quiet">
                 <span id="recap-quiet-label">Wait after speech before including a conversation</span>
@@ -336,7 +369,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           <fieldset disabled={busy} hidden={!show("gestures", "gestures")}>
             <legend>Flags & meetings</legend>
             <p className="muted settings-description">
-              Mark an important moment or a meeting to help Omi understand nearby speech.
+              Mark an important moment or a meeting to help Daythread understand nearby speech.
               These gestures provide context; they do not trim your recordings.
             </p>
             {[{ title: "Important flags", fields: hintFields.slice(0, 3) },
@@ -416,7 +449,7 @@ export function Settings({ onSaved }: { onSaved: () => void }) {
           hiddenFields={serverHiddenFields} />
       </div>
       <div hidden={!show("connections", "connections")}>
-        <OmiIntegration refreshRevision={connectionRevision} search={search}
+        <OmiIntegration profileSelected={Boolean(selectedProfile)} refreshRevision={connectionRevision} search={search}
           onConfigure={() => { setSection("server"); setSearch("Omi connections"); }}
           onSaved={() => { setConfigurationRevision((value) => value + 1); onSaved(); }} />
       </div>

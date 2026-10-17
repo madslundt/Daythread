@@ -8,6 +8,7 @@ import httpx
 
 from .audio import amplify_quiet_audio, contains_speech_energy, transcription_chunks
 from .domain import stamp, utc_now, wav_duration
+from .processing_progress import ProgressCallback
 from .settings import LLMTask, ModelRoute, Settings
 from .speech_processing import enhance_audio
 
@@ -127,7 +128,9 @@ class Inference:
     async def transcribe(self, data: bytes) -> str:
         return (await self.transcribe_result(data))["text"]
 
-    async def transcribe_result(self, data: bytes) -> dict:
+    async def transcribe_result(
+        self, data: bytes, on_progress: ProgressCallback | None = None,
+    ) -> dict:
         settings = self.settings
         chunks = []
         originals = []
@@ -135,9 +138,12 @@ class Inference:
             # Finish every original pass before optional work can consume its budget.
             async with asyncio.timeout(settings.inference_timeout_seconds) as deadline:
                 texts, segments = [], []
-                for offset, chunk in transcription_chunks(
+                parts = list(transcription_chunks(
                     data, settings.stt_chunk_seconds, settings.stt_boundary_search_seconds
-                ):
+                ))
+                if on_progress:
+                    on_progress("transcribing", 0, len(parts))
+                for offset, chunk in parts:
                     quiet = settings.stt_preserve_quiet and not contains_speech_energy(chunk, None)
                     prepared, gain = await asyncio.to_thread(
                         amplify_quiet_audio, chunk, settings.stt_max_gain_db
@@ -166,6 +172,8 @@ class Inference:
                         "enhancement_status": status,
                     })
                     originals.append((prepared, result))
+                    if on_progress:
+                        on_progress("transcribing", len(originals), len(parts))
         except TimeoutError as exc:
             self.health["stt"] = {"state": "unavailable", "checked_at": stamp(utc_now())}
             raise InferenceError("Inference deadline exceeded") from exc
@@ -173,7 +181,7 @@ class Inference:
         # cannot discard successful recognition. Its budget still uses that deadline.
         remaining = deadline.when() - asyncio.get_running_loop().time()
         budget = min(settings.stt_enhancement_timeout_seconds, remaining)
-        await self._enhancement_candidates(chunks, originals, settings, budget)
+        await self._enhancement_candidates(chunks, originals, settings, budget, on_progress)
         return {
             "text": "\n".join(texts), "segments": segments,
             "processing": {
@@ -185,6 +193,7 @@ class Inference:
     async def _enhancement_candidates(
         self, chunks: list[dict], originals: list[tuple[bytes, dict]],
         settings: Settings, budget: float,
+        on_progress: ProgressCallback | None = None,
     ) -> None:
         health = self.health["stt"]
         pending = [chunk for chunk in chunks if chunk["enhancement_status"] == "pending"]
@@ -193,6 +202,9 @@ class Inference:
                 chunk["enhancement_status"] = "budget_exhausted"
             return
         status = "budget_exhausted"
+        completed = 0
+        if on_progress and pending:
+            on_progress("enhancing", completed, len(pending))
         try:
             async with asyncio.timeout(budget):
                 for chunk, (audio, original) in zip(chunks, originals, strict=True):
@@ -219,6 +231,9 @@ class Inference:
                     except Exception:
                         # Do not leak provider bodies, executable paths or audio in diagnostics.
                         chunk["enhancement_status"] = "failed"
+                    completed += 1
+                    if on_progress:
+                        on_progress("enhancing", completed, len(pending))
         except TimeoutError:
             status = "timeout"
         finally:

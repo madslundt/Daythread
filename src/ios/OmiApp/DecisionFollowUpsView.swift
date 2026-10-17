@@ -146,17 +146,17 @@ struct DecisionFollowUpLinks: View {
                 let status = EKEventStore.authorizationStatus(for: .reminder)
                 if status == .notDetermined {
                     guard try await store.requestFullAccessToReminders() else {
-                        throw BackendFailure(message: "Reminders access was declined. Enable access for Omi Local in Settings to save a reminder.")
+                        throw BackendFailure(message: "Reminders access was declined. Enable access for Daythread in Settings to save a reminder.")
                     }
                 } else if status != .fullAccess {
-                    throw BackendFailure(message: "Reminders access is unavailable. Check Omi Local's Reminders access in Settings.")
+                    throw BackendFailure(message: "Reminders access is unavailable. Check Daythread's Reminders access in Settings.")
                 }
                 try await currentDecision(client: client)
             }
             guard !Task.isCancelled, exportID == token, model.archiveIdentity == identity, model.archiveRevision == revision else { return }
             let timeZone = TimeZone(identifier: timezone) ?? .current
             var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
-            let provenance = "Omi decision \(record.id) · version \(record.version)"
+            let provenance = "Daythread decision \(record.id) · version \(record.version)"
             let notes = [suggestion.notes, provenance].filter { !$0.isEmpty }.joined(separator: "\n\n")
             if suggestion.kind == .event {
                 let event = EKEvent(eventStore: store)

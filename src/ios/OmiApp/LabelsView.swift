@@ -13,7 +13,7 @@ struct LabelsView: View {
     var body: some View {
         List {
             Section {
-                EditorialTitle(eyebrow: "Your library", title: "People & projects.", subtitle: "Keep related conversations close together.").editorialRow()
+                EditorialTitle(eyebrow: "Your library", title: "People & projects.").editorialRow()
             }
             Section {
                 Button { creating = true } label: { Label("New person or project", systemImage: "plus") }.buttonStyle(PrimaryActionStyle())

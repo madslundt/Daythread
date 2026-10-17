@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { recordingEndTime, recordingTimes, selectRecording, validateUploadReceipt } from "./audioUpload";
+import { progressTime, recordingEndTime, recordingTimes, selectRecording, uploadEstimate, validateUploadReceipt } from "./audioUpload";
 import { localDateTimeInput } from "./format";
 import { SourceList } from "./SourceList";
 import { AudioDropArea, UploadDialog } from "./UploadDialog";
@@ -9,6 +9,25 @@ const expected = {
   id: "c397bc72-f37c-4d2d-b699-7cf913211194", device_id: "manual-web",
   started_at: "2026-10-15T12:00:00.000Z", ended_at: "2026-10-15T12:02:00.000Z",
 };
+
+describe("upload time estimates", () => {
+  it("uses observed bytes and elapsed time for the remaining transfer", () => {
+    expect(uploadEstimate(250, 1000, 5)).toBe(15);
+    // A resumed attempt measures only its remaining bytes, without crediting
+    // already-saved bytes to the new connection's speed.
+    expect(uploadEstimate(100, 500, 2)).toBe(8);
+  });
+  it("waits for a speed sample and does not estimate completed transfers", () => {
+    expect(uploadEstimate(0, 1000, 5)).toBeUndefined();
+    expect(uploadEstimate(100, 1000, 0.5)).toBeUndefined();
+    expect(uploadEstimate(1000, 1000, 5)).toBeUndefined();
+  });
+  it("formats estimates without implying fractional-second accuracy", () => {
+    expect(progressTime(0.2)).toBe("1 sec");
+    expect(progressTime(91)).toBe("2 min");
+    expect(progressTime(3900)).toBe("1 hr 5 min");
+  });
+});
 
 describe("recordings chosen or dropped from another device", () => {
   it("requires an explicit timestamp until a file provides one", () => {

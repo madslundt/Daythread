@@ -15,16 +15,17 @@ type OmiImportResult = {
   items: Source[];
 };
 
-export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search }: {
+export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search, profileSelected = true }: {
+  profileSelected?: boolean;
   onSaved: () => void; onConfigure: () => void; refreshRevision: number; search: string;
 }) {
-  const resource = useResource<{ configured: boolean }>("/v1/integrations/omi");
+  const resource = useResource<{ configured: boolean }>(profileSelected ? "/v1/integrations/omi" : null);
   useEffect(() => { resource.refresh(); }, [refreshRevision, resource.refresh]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<OmiImportResult>();
   const [nextPage, setNextPage] = useState<{ end: string; offset: number }>();
-  const unavailable = busy || resource.loading || Boolean(resource.error) || !resource.data?.configured;
+  const unavailable = !profileSelected || busy || resource.loading || Boolean(resource.error) || !resource.data?.configured;
   async function importPage(next = false) {
     if (unavailable || (next && !nextPage)) return;
     const page = next && nextPage ? nextPage : { end: new Date().toISOString(), offset: 0 };
@@ -68,6 +69,7 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search }
         Optionally import existing conversations from Omi’s cloud into your local
         archive. Imports include transcripts only, without original audio.
       </p>
+      {!profileSelected ? <p className="caption">Choose a profile in Settings → Profiles to import conversations.</p> : null}
       {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
       {resource.loading ? <Loading>Checking Omi API connection…</Loading> : resource.data ? (
         <p className="caption">
@@ -105,7 +107,7 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search }
       </details>
       <details className="settings-disclosure" open={search.trim() ? true : undefined}>
         <summary>Forward audio from the official app <span>Advanced · optional</span></summary>
-        <div className="settings-disclosure-body"><AudioForwarding onSaved={onSaved} /></div>
+        <div className="settings-disclosure-body">{profileSelected ? <AudioForwarding onSaved={onSaved} /> : <p className="caption">Choose a profile in Settings → Profiles to set up an audio receiver for its archive.</p>}</div>
       </details>
     </section>
   );

@@ -9,6 +9,10 @@ export function savedProfile(): string | null {
   try { return window.localStorage.getItem(selectionKey); } catch { return null; }
 }
 
+export function resolveProfile(profiles: Profile[], id: string | null): string | null {
+  return profiles.some((profile) => profile.id === id) ? id : null;
+}
+
 export function selectProfile(id: string): void {
   if (selected !== id) {
     controller.abort();
@@ -33,6 +37,7 @@ export function globalEndpoint(path: string): boolean {
 }
 
 export function profileRequestOptions(path: string, options: RequestInit, scope = profileScope()): RequestInit {
+  if (!globalEndpoint(path) && !scope.id) throw new Error("Choose a profile in Settings → Profiles first.");
   const headers = new Headers(options.headers);
   if (globalEndpoint(path)) headers.delete("X-Omi-Profile");
   else headers.set("X-Omi-Profile", scope.id);

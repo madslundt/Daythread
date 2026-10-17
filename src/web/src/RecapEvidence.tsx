@@ -2,28 +2,28 @@ import { useId, useState } from "react";
 import { timeLabel } from "./format";
 import { ImportanceButton } from "./Importance";
 import { recapSourceSections } from "./recapItems";
+import { TranscriptPassage } from "./TranscriptTranslation";
 import { SourceList } from "./SourceList";
 import type { Source } from "./types";
 
-// A recap point reveals its evidence directly. The complete recording is optional.
-export function RecapEvidence({ source, point, timezone, onCorrect }: {
-  source: Source; point: string; timezone: string; onCorrect: () => void;
+// Topic passages stay separate from the optional complete recording.
+export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }: {
+  source: Source; point: string; topic?: string; timezone: string; onCorrect: () => void;
 }) {
   const [fullRecording, setFullRecording] = useState(false);
   const id = useId();
-  const sections = recapSourceSections(point, source);
-  const characters = Array.from(source.text || "");
+  const sections = recapSourceSections(point, source, topic);
   return <article className="recap-evidence">
     <div className="recap-evidence-heading">
       <span className="caption">{timeLabel(source.started_at, timezone)}</span>
-      <span>{source.title || "Recording"}</span>
+      <span>{sections.length === 1 ? sections[0].title : source.title || "Recording"}</span>
       <ImportanceButton target={{ kind: "source", id: source.id }} label="recording" compact />
     </div>
-    <p className="caption">{sections.length ? "Matching topic passages · original transcript" : "Original transcript · no specific topic passage identified"}</p>
+    <p className="caption">{sections.length ? "Matching topic passages" : "Original transcript · no specific topic passage identified. Open the full recording to inspect its context."}</p>
     {sections.length ? sections.map((section) => <blockquote key={section.start_offset}>
-      <p className="caption">{section.title}</p>
-      <p className="transcript-text">{characters.slice(section.start_offset, section.end_offset).join("")}</p>
-    </blockquote>) : <p className="transcript-text">{source.text || "Transcript unavailable for this recording."}</p>}
+      {sections.length > 1 ? <p className="caption">{section.title}</p> : null}
+      <TranscriptPassage source={source} section={section} />
+    </blockquote>) : null}
     <details className="recap-full-recording" onToggle={(event) => {
       if (event.target === event.currentTarget) setFullRecording(event.currentTarget.open);
     }}>

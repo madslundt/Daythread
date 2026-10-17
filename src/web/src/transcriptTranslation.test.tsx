@@ -6,12 +6,13 @@ import { selectProfile } from "./profiles";
 
 const data: TranscriptTranslationData = {
   language: "en",
+  available_languages: ["en", "da", "de"],
   already_in_target_language: false,
   translation: { text: "Hello, how are you?", language: "en", transcript_version: "version-1", created_at: "2026-10-16T12:00:00Z" },
 };
 const original = "Hej, hvordan har du det?";
 const view = { original, translated: false, loading: false, generating: false, error: "",
-  onTranslate: () => {}, onSelect: () => {}, onRetry: () => {} };
+  onTranslate: () => {}, onSelect: () => {}, onRetry: () => {}, onLanguage: () => {} };
 
 afterEach(() => { selectProfile("default"); vi.unstubAllGlobals(); });
 
@@ -33,6 +34,36 @@ describe("transcript translation requests", () => {
     expect(fetch.mock.calls[1][1].body).toBeUndefined();
   });
 
+  it("scopes topic translation to the same versioned Unicode passage for lookup and generation", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
+    vi.stubGlobal("fetch", fetch);
+    const requests = new TranscriptTranslationRequests("source", {
+      start_offset: 27, end_offset: 108, transcript_version: "version+1",
+    });
+    await requests.run("GET");
+    await requests.run("POST");
+    for (const [url] of fetch.mock.calls) {
+      expect(url).toBe("/v1/transcripts/source/translation?start_offset=27&end_offset=108&transcript_version=version%2B1");
+    }
+  });
+
+  it("sends the selected target alongside versioned passage bounds for both methods", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
+    vi.stubGlobal("fetch", fetch);
+    const requests = new TranscriptTranslationRequests("source", {
+      start_offset: 2, end_offset: 20, transcript_version: "version-1",
+    });
+    await requests.run("GET", "de");
+    await requests.run("POST", "de");
+    for (const [url] of fetch.mock.calls) {
+      const query = new URL(url, "http://localhost").searchParams;
+      expect(query.get("language")).toBe("de");
+      expect(query.get("start_offset")).toBe("2");
+      expect(query.get("end_offset")).toBe("20");
+      expect(query.get("transcript_version")).toBe("version-1");
+    }
+  });
+
   it("discards generation completing after a correction, close, or new lookup", async () => {
     let finish!: (response: Response) => void;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
@@ -43,14 +74,14 @@ describe("transcript translation requests", () => {
     await expect(pending).resolves.toBeUndefined();
   });
 
-  it("does not let a late response replace a refreshed summary language", async () => {
+  it("does not let a late response replace a newly selected translation language", async () => {
     let finish!: (response: Response) => void;
     const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ language: "da", already_in_target_language: false, translation: null })));
     vi.stubGlobal("fetch", fetch);
     const requests = new TranscriptTranslationRequests("source");
-    const generating = requests.run("POST");
-    await expect(requests.run("GET")).resolves.toEqual({ language: "da", already_in_target_language: false, translation: null });
+    const generating = requests.run("POST", "en");
+    await expect(requests.run("GET", "da")).resolves.toEqual({ language: "da", already_in_target_language: false, translation: null });
     finish(new Response(JSON.stringify(data)));
     await expect(generating).resolves.toBeUndefined();
   });
@@ -72,7 +103,16 @@ describe("transcript translation requests", () => {
 });
 
 describe("transcript translation display", () => {
-  it("keeps original selected when a cached translation exists", () => {
+  it("defaults to the saved translation and labels it clearly", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} translated={undefined} />);
+    expect(html).toContain(data.translation!.text);
+    expect(html).not.toContain(original);
+    expect(html).toContain('aria-pressed="true">English translation');
+    expect(html).toContain("Showing a generated English translation");
+    expect(html).toContain('aria-pressed="false">Original');
+  });
+
+  it("lets the reader select the original when a cached translation exists", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} />);
     expect(html).toContain(original);
     expect(html).not.toContain(data.translation!.text);
@@ -89,22 +129,33 @@ describe("transcript translation display", () => {
     expect(html).toContain('aria-pressed="false">Original');
   });
 
-  it("explains how to enable translation when the summary language is automatic", () => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "auto", already_in_target_language: false, translation: null }} />);
-    expect(html).toContain("Choose a summary language");
+  it("offers exactly the configured target languages without requiring a summary language", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} />);
+    expect(html).toContain("Translate to English");
+    expect(html).toContain('<option value="da">Danish</option>');
+    expect(html).toContain('<option value="de">German</option>');
+    expect(html).not.toContain('<option value="fr">');
+    expect(html).not.toContain("summary language");
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it("explains how to enable translation when no languages are enabled", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "", available_languages: [], already_in_target_language: false, translation: null }} />);
+    expect(html).toContain("Add translation languages");
     expect(html).toContain('href="/settings/general"');
     expect(html).toContain('disabled=""');
     expect(html).toContain(original);
   });
 
-  it("hides translation actions when the transcript already uses the summary language", () => {
+  it("keeps translation actions and other target languages available for a matching transcript", () => {
     const sameLanguageOriginal = "We planned our next meeting.";
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} original={sameLanguageOriginal}
       data={{ ...data, already_in_target_language: true, translation: null }} />);
     expect(html).toContain(sameLanguageOriginal);
     expect(html).toContain("Transcript is already in English.");
-    expect(html).not.toContain("Translate");
-    expect(html).not.toContain("<button");
+    expect(html).toContain("Translate to English");
+    expect(html).toContain('<option value="de">German</option>');
+    expect(html).not.toContain('disabled=""');
   });
 
   it("ignores a stale cached translation for a transcript already in the target language", () => {
@@ -114,19 +165,19 @@ describe("transcript translation display", () => {
     expect(html).toContain(sameLanguageOriginal);
     expect(html).not.toContain(data.translation!.text);
     expect(html).not.toContain("English translation");
-    expect(html).not.toContain("<button");
+    expect(html).toContain("Translate to English");
     expect(html).not.toContain('lang="en"');
   });
 
-  it("keeps translation controls hidden until the language check finishes", () => {
+  it("keeps the Translate button visible but disabled while checking language", () => {
     for (const cached of [undefined, data]) {
       const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={cached} loading translated />);
       expect(html).toContain(original);
       expect(html).toContain("Checking transcript language");
-      expect(html).not.toContain("Translate");
+      expect(html).toContain("Translate");
       expect(html).not.toContain("English translation");
       expect(html).not.toContain(data.translation!.text);
-      expect(html).not.toContain("<button");
+      expect(html).toContain('disabled=""');
     }
   });
 

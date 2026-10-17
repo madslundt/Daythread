@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var status: String?
     @State private var loading = false
     @State private var summaryLanguage = "auto"
+    @State private var translationLanguages: [String] = ["en"]
+    @State private var translationLanguagesLoaded = false
     @State private var timeout = 120
     @State private var audioRetentionDays = 7
     @State private var transcriptRetentionDays = 30
@@ -18,13 +20,18 @@ struct SettingsView: View {
         @Bindable var model = model
         Form {
             Section {
-                EditorialTitle(eyebrow: "Make it yours", title: "Your space.", subtitle: "Connection and preferences shared by every profile.")
+                EditorialTitle(eyebrow: "Make it yours", title: "Your space.")
                     .editorialRow()
+            }
+            Section {
+                NavigationLink(value: SettingsDestination.profiles) {
+                    Label("Profiles", systemImage: "person.crop.circle")
+                }.accessibilityIdentifier("settings.profiles")
             }
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Backend address").font(.subheadline.weight(.medium))
-                    TextField("http://home-core.local:8787", text: $address)
+                    TextField("https://daythread.home.arpa", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                         .accessibilityLabel("Backend address").accessibilityIdentifier("settings.backend")
                 }.padding(.vertical, 4)
@@ -75,8 +82,19 @@ struct SettingsView: View {
                 Button("Save summary language") { Task { await saveSummaryLanguage() } }
                     .disabled(loading).accessibilityIdentifier("settings.saveSummaryLanguage")
             } header: { Text("Summaries") } footer: {
-                Text("Choose the language for recaps, summaries and translations you request. Automatic follows the source language; select a language to enable transcript translation.")
+                Text("Choose the language for recaps and summaries. Automatic follows the source language.")
             }
+            Section {
+                NavigationLink {
+                    TranslationLanguageSelectionView(languages: $translationLanguages)
+                } label: {
+                    LabeledContent("Allowed languages", value: "\(translationLanguages.count) selected")
+                }.accessibilityIdentifier("settings.translationLanguages")
+                Button("Save translation languages") { Task { await saveTranslationLanguages() } }
+                    .accessibilityIdentifier("settings.saveTranslationLanguages")
+            } header: { Text("Transcript translations") } footer: {
+                Text("Choose the languages offered by the Translate button. The first selected language is the default. Translations are available for every summary language, including Automatic. Save an empty list to disable translation.")
+            }.disabled(loading || !translationLanguagesLoaded)
             Section("Pendant information") {
                 LabeledContent("Model", value: model.bluetooth.model)
                 LabeledContent("Firmware", value: model.bluetooth.firmware)
@@ -134,18 +152,22 @@ struct SettingsView: View {
         do {
             let client = try BackendClient(address: address, profileID: model.selectedProfileID)
             model.backendAddress = client.base.absoluteString; model.reconnectBackend()
-            _ = try await client.request("v1/status"); status = "Connected to home-core"
+            _ = try await client.request("v1/profiles"); status = "Connected to home-core"
             await loadSettings(); await model.refreshStatus()
         } catch { self.error = error.localizedDescription }
     }
     private func loadSettings() async {
-        retentionLoaded = false
+        retentionLoaded = false; translationLanguagesLoaded = false
         do {
             let settings = try await model.client().request("v1/settings")
             if settings["meeting_max_minutes"].integer > 0 {
                 model.meetingMinutes = settings["meeting_max_minutes"].integer; timeout = model.meetingMinutes
             }
             if !settings["summary_language"].text.isEmpty { summaryLanguage = settings["summary_language"].text }
+            if case .array = settings["translation_languages"] {
+                translationLanguages = settings["translation_languages"].array.map(\.text)
+                translationLanguagesLoaded = true
+            }
             if case .number = settings["audio_retention_days"],
                case .number = settings["transcript_retention_days"] {
                 audioRetentionDays = settings["audio_retention_days"].integer
@@ -176,16 +198,16 @@ struct SettingsView: View {
         } catch { self.error = error.localizedDescription }
     }
     private var summaryLanguageChoices: [String] {
-        let codes = ("aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
-            "da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz " +
-            "ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv " +
-            "mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt " +
-            "qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr " +
-            "ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu").split(separator: " ").map(String.init)
-        return Set(codes + (summaryLanguage == "auto" ? [] : [summaryLanguage])).sorted {
-            (Locale.current.localizedString(forLanguageCode: $0) ?? $0)
-                .localizedStandardCompare(Locale.current.localizedString(forLanguageCode: $1) ?? $1) == .orderedAscending
-        }
+        languageChoices(including: summaryLanguage == "auto" ? [] : [summaryLanguage])
+    }
+    private func saveTranslationLanguages() async {
+        guard translationLanguagesLoaded else { return }
+        loading = true; error = nil; status = nil; defer { loading = false }
+        do {
+            let settings = try await model.client().request("v1/settings", method: "PATCH", body: ["translation_languages": translationLanguages])
+            translationLanguages = settings["translation_languages"].array.map(\.text)
+            status = "Translation languages saved"
+        } catch { self.error = error.localizedDescription }
     }
     private func saveSummaryLanguage() async {
         loading = true; error = nil; status = nil; defer { loading = false }
@@ -194,6 +216,48 @@ struct SettingsView: View {
             summaryLanguage = settings["summary_language"].text
             status = "Summary language saved"
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+private func languageChoices(including additional: [String] = []) -> [String] {
+    let codes = ("aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
+            "da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz " +
+            "ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv " +
+            "mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt " +
+            "qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr " +
+            "ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu").split(separator: " ").map(String.init)
+    return Set(codes + additional).sorted {
+        (Locale.current.localizedString(forLanguageCode: $0) ?? $0)
+            .localizedStandardCompare(Locale.current.localizedString(forLanguageCode: $1) ?? $1) == .orderedAscending
+    }
+}
+
+private struct TranslationLanguageSelectionView: View {
+    @Binding var languages: [String]
+    @State private var search = ""
+    private var choices: [String] {
+        languageChoices(including: languages).filter { code in
+            search.isEmpty || code.localizedCaseInsensitiveContains(search) ||
+                (Locale.current.localizedString(forLanguageCode: code) ?? code).localizedCaseInsensitiveContains(search)
+        }
+    }
+    var body: some View {
+        List {
+            if let first = languages.first {
+                Text("Default: \(Locale.current.localizedString(forLanguageCode: first) ?? first)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(choices, id: \.self) { code in
+                Toggle(Locale.current.localizedString(forLanguageCode: code) ?? code, isOn: Binding(
+                    get: { languages.contains(code) },
+                    set: { enabled in
+                        if enabled && !languages.contains(code) { languages.append(code) }
+                        else if !enabled { languages.removeAll { $0 == code } }
+                    }
+                )).accessibilityIdentifier("settings.translationLanguage.\(code)")
+            }
+        }.navigationTitle("Translation languages")
+            .searchable(text: $search, prompt: "Find a language")
     }
 }
 
@@ -356,7 +420,16 @@ private struct ServerConfigurationView: View {
     @ViewBuilder
     private func setting(_ field: ServerSettingField, snapshot: ServerConfiguration) -> some View {
         let title = field.label + (field.restart_required ? " · restart required" : "")
-        if field.kind == "routes" {
+        if field.key == "translation_languages" {
+            NavigationLink {
+                TranslationLanguageSelectionView(languages: Binding(
+                    get: { values[field.key]?.array.map(\.text) ?? [] },
+                    set: { values[field.key] = .array($0.map(JSONValue.string)); status = nil }
+                ))
+            } label: {
+                LabeledContent(title, value: "\(values[field.key]?.array.count ?? 0) selected")
+            }
+        } else if field.kind == "routes" {
             Text(field.label).font(.headline)
             ForEach(routes[field.key] ?? []) { row in
                 ServerRouteControl(route: Binding(get: {
@@ -454,5 +527,71 @@ private struct ServerConfigurationView: View {
             apply(result); status = "Server settings saved on home-core"
             await model.refreshStatus()
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+private struct ProfileEditor: Identifiable {
+    let profile: AppModel.Profile?
+    var id: String { profile?.id ?? "create" }
+}
+
+struct ProfilesSettingsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var editor: ProfileEditor?
+    @State private var loading = false
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Active profile", selection: Binding(get: { model.selectedProfileID }, set: { id in
+                    model.selectProfile(model.profiles.first { $0.id == id })
+                })) {
+                    Text("Choose a profile…").tag("")
+                    ForEach(model.profiles) { profile in Text(profile.name).tag(profile.id) }
+                }.accessibilityIdentifier("profiles.select")
+                if !model.hasSelectedProfile {
+                    Text("Choose a profile to open recordings, diary and other pages. All settings remain available.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                ForEach(model.profiles) { profile in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(profile.name).font(.body.weight(.medium))
+                            if profile.id == model.selectedProfileID {
+                                Text("Current profile").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Edit") { editor = ProfileEditor(profile: profile) }
+                            .accessibilityLabel("Edit " + profile.name)
+                    }.padding(.vertical, 4)
+                }
+                Button { editor = ProfileEditor(profile: nil) } label: {
+                    Label("Create profile", systemImage: "person.badge.plus")
+                }.accessibilityIdentifier("profiles.create")
+            } footer: {
+                Text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this server can select any profile.")
+            }
+            if loading { ProgressView("Loading profiles…") }
+            if let error {
+                Section {
+                    ErrorNote(message: error)
+                    Button("Try again") { Task { await load() } }
+                }
+            }
+        }.omiScreen().navigationTitle("Profiles").navigationBarTitleDisplayMode(.inline)
+            .task { await load() }
+            .sheet(item: $editor) { selection in ProfileEditorView(profile: selection.profile) }
+    }
+
+    private func load() async {
+        loading = true; error = nil
+        defer { loading = false }
+        do { try await model.loadProfiles() }
+        catch { self.error = error.localizedDescription }
     }
 }

@@ -39,7 +39,8 @@ TRADITIONAL_CHINESE = (
 @pytest.fixture
 def client(tmp_path):
     settings = Settings(
-        data_dir=tmp_path, summary_language="da", worker_enabled=False, _env_file=None
+        data_dir=tmp_path, summary_language="auto", translation_languages=["da"],
+        worker_enabled=False, _env_file=None
     )
     with TestClient(create_app(settings)) as client:
         yield client
@@ -71,7 +72,8 @@ def test_reads_never_generate_and_explicit_translation_preserves_evidence(client
     calls = translator(client)
     original = client.get(f"/v1/transcripts/{key}").json()
     assert client.get(path).json() == {
-        "language": "da", "translation": None, "already_in_target_language": False,
+        "language": "da", "available_languages": ["da"],
+        "translation": None, "already_in_target_language": False,
     }
     assert calls == []
     translated = client.post(path).json()["translation"]
@@ -89,23 +91,30 @@ def test_reads_never_generate_and_explicit_translation_preserves_evidence(client
     assert reopened.transcript_translation(key, "DA") == translated
 
 
-def test_language_changes_select_separate_cache_and_auto_requires_target(client):
+def test_translation_languages_select_separate_cache_independent_of_summary_language(client):
     _, path = source(client)
     calls = translator(client)
     first = client.post(path).json()["translation"]
-    assert client.patch("/v1/settings", json={"summary_language": "en"}).status_code == 200
+    assert client.patch("/v1/settings", json={
+        "summary_language": "en", "translation_languages": ["en", "da"]
+    }).status_code == 200
     assert client.get(path).json() == {
-        "language": "en", "translation": None, "already_in_target_language": False,
+        "language": "en", "available_languages": ["en", "da"],
+        "translation": None, "already_in_target_language": False,
     }
     assert client.post(path).json()["translation"]["language"] == "en"
     assert len(calls) == 2
-    client.patch("/v1/settings", json={"summary_language": "da"})
-    assert client.get(path).json()["translation"] == first
     client.patch("/v1/settings", json={"summary_language": "auto"})
+    assert client.get(path, params={"language": "DA"}).json()["translation"] == first
+    assert client.post(path, params={"language": "da"}).json()["translation"] == first
+    client.patch("/v1/settings", json={"translation_languages": []})
     assert client.get(path).json() == {
-        "language": "auto", "translation": None, "already_in_target_language": False,
+        "language": "", "available_languages": [],
+        "translation": None, "already_in_target_language": False,
     }
-    assert client.post(path).status_code == 409
+    result = client.post(path)
+    assert result.status_code == 409
+    assert "Settings" in result.json()["detail"]
     assert len(calls) == 2
 
 
@@ -128,16 +137,19 @@ def test_language_changes_select_separate_cache_and_auto_requires_target(client)
         (TRADITIONAL_CHINESE, "zh-CN"),
     ],
 )
-def test_target_language_transcripts_hide_translate_without_inference(client, text, language):
-    client.patch("/v1/settings", json={"summary_language": language})
+def test_target_language_transcripts_return_same_language_result_without_inference(
+    client, text, language
+):
+    client.patch("/v1/settings", json={"translation_languages": [language]})
     _, path = source(client, text)
     calls = translator(client)
     assert client.get(path).json() == {
-        "language": language, "translation": None, "already_in_target_language": True,
+        "language": language.lower(), "available_languages": [language.lower()],
+        "translation": None, "already_in_target_language": True,
     }
     response = client.post(path)
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Transcript is already in the summary language"
+    assert response.status_code == 200
+    assert response.json()["already_in_target_language"] is True
     assert calls == []
 
 
@@ -157,7 +169,7 @@ def test_target_language_transcripts_hide_translate_without_inference(client, te
 def test_mixed_language_transcripts_remain_translatable_when_target_dominates(
     client, text, language
 ):
-    client.patch("/v1/settings", json={"summary_language": language})
+    client.patch("/v1/settings", json={"translation_languages": [language]})
     _, path = source(client, text)
     calls = translator(client)
     assert client.get(path).json()["already_in_target_language"] is False
@@ -179,15 +191,15 @@ def test_empty_and_unknown_text_is_not_assumed_to_match_target(text):
     assert not transcript_in_language(text, "zh-CN")
 
 
-def test_redundant_cached_translation_is_hidden_and_post_rejected_before_cache_return(client):
+def test_redundant_cached_translation_is_hidden_and_post_returns_same_language_result(client):
     key, path = source(client, DANISH)
     store = client.app.state.memory.store
-    store.save_translation(store.get_audio(key), "da", "An old redundant translation", "da")
+    store.save_translation(store.get_audio(key), "da", "An old redundant translation", ["da"])
     assert store.transcript_translation(key, "da")
     calls = translator(client)
     assert client.get(path).json()["translation"] is None
     assert client.get(path).json()["already_in_target_language"] is True
-    assert client.post(path).status_code == 409
+    assert client.post(path).status_code == 200
     assert calls == []
 
 
@@ -216,7 +228,7 @@ def test_imported_transcript_without_stt_language_is_classified_offline(client, 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", forbidden_network)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", forbidden_network)
     assert client.get(path).json()["already_in_target_language"] is True
-    assert client.post(path).status_code == 409
+    assert client.post(path).status_code == 200
     assert calls == []
 
 
@@ -226,7 +238,7 @@ def test_correction_reclassifies_current_text_without_stale_language_metadata(cl
     assert client.post(path).status_code == 200
     assert client.patch(f"/v1/transcripts/{key}", json={"text": DANISH}).status_code == 200
     assert client.get(path).json()["already_in_target_language"] is True
-    assert client.post(path).status_code == 409
+    assert client.post(path).status_code == 200
     assert client.patch(
         f"/v1/transcripts/{key}", json={"text": DANISH + "\n" + ENGLISH}
     ).status_code == 200
@@ -260,7 +272,7 @@ def test_correction_during_language_classification_rejects_stale_snapshot(
 
 
 @pytest.mark.parametrize("cached", [False, True])
-def test_summary_language_change_during_classification_rejects_stale_target(
+def test_whitelist_removal_during_classification_rejects_stale_target(
     client, monkeypatch, cached
 ):
     _, path = source(client, ENGLISH)
@@ -272,8 +284,8 @@ def test_summary_language_change_during_classification_rejects_stale_target(
 
     def classify_then_change_language(text, language):
         assert language == "da"
-        memory.settings.summary_language = "en"
-        memory.store.save_settings({"summary_language": "en"})
+        memory.settings.translation_languages = ["en"]
+        memory.store.save_settings({"translation_languages": ["en"]})
         return False
 
     monkeypatch.setattr(
@@ -281,7 +293,9 @@ def test_summary_language_change_during_classification_rejects_stale_target(
     )
     result = client.post(path)
     assert result.status_code == 409
-    assert result.json()["detail"] == "Summary language changed; try again"
+    assert result.json()["detail"] == (
+        "Translation languages changed; choose a language and try again"
+    )
     assert calls == []
 
 
@@ -298,7 +312,7 @@ def test_inflight_changes_reject_translation_without_saving_stale_text(client, a
         elif action == "expire":
             store.apply_retention(0, 1, utc_now() + timedelta(days=2))
         else:
-            store.save_settings({"summary_language": "en"})
+            store.save_settings({"translation_languages": ["en"]})
 
     translator(client, change)
     assert client.post(path).status_code == 409
@@ -445,3 +459,101 @@ def test_concurrent_clicks_coalesce_and_partial_failure_is_not_saved(client):
     memory.inference.translate = fail_later
     assert client.post(path).status_code == 502
     assert client.get(path).json()["translation"] is None
+
+
+@pytest.mark.parametrize("language", ["en", "da", "auto"])
+def test_default_translation_language_does_not_follow_summary_language(tmp_path, language):
+    settings = Settings(
+        data_dir=tmp_path, summary_language=language, worker_enabled=False, _env_file=None
+    )
+    with TestClient(create_app(settings)) as api:
+        _, path = source(api)
+        calls = translator(api)
+        assert api.get(path).json()["language"] == "en"
+        assert api.post(path).status_code == 200
+        assert calls[0][1] == "en"
+
+
+@pytest.mark.parametrize("value", [
+    ["auto"], ["AUTO"], ["English"], ["en_US"], ["en-"], [" en"], ["e"], [""],
+    ["en/da"], [123], "en", None,
+])
+def test_invalid_whitelist_is_rejected_without_mutation(client, value):
+    result = client.patch("/v1/settings", json={"translation_languages": value})
+    assert result.status_code == 422
+    assert client.get("/v1/settings").json()["translation_languages"] == ["da"]
+
+
+def test_whitelist_is_normalized_persisted_and_shared_globally(tmp_path):
+    settings = Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None)
+    with TestClient(create_app(settings)) as api:
+        other = api.post("/v1/profiles", json={"name": "Other"}).json()["id"]
+        # Start the other runtime before editing Settings through it.
+        headers = {"X-Omi-Profile": other}
+        assert api.get("/v1/transcripts", headers=headers).status_code == 200
+        result = api.patch("/v1/settings", headers=headers, json={
+            "translation_languages": ["EN-US", "da", "en-us", "DA", "zh-Hant"],
+        })
+        assert result.status_code == 200
+        expected = ["en-us", "da", "zh-hant"]
+        assert result.json()["translation_languages"] == expected
+        for runtime in api.app.state.profiles.runtimes.values():
+            assert runtime.memory.settings.translation_languages == expected
+            assert runtime.memory.store.runtime_settings()["translation_languages"] == expected
+        # The full server configuration also exposes and validates the same preference.
+        config = api.get("/v1/configuration").json()
+        assert config["values"]["translation_languages"] == expected
+    with TestClient(create_app(settings)) as reopened:
+        assert reopened.get("/v1/settings").json()["translation_languages"] == expected
+
+
+@pytest.mark.parametrize("language", ["fr", "auto", "en_US", ""])
+def test_explicit_invalid_or_disallowed_target_never_generates(client, language):
+    _, path = source(client)
+    calls = translator(client)
+    for method in (client.get, client.post):
+        assert method(path, params={"language": language}).status_code == 422
+    assert calls == []
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_summary_language_change_during_classification_keeps_target(client, monkeypatch, cached):
+    _, path = source(client, ENGLISH)
+    calls = translator(client)
+    if cached:
+        assert client.post(path).status_code == 200
+        calls.clear()
+    memory = client.app.state.memory
+
+    def classify_then_change_summary(text, language):
+        memory.settings.summary_language = "en"
+        memory.store.save_settings({"summary_language": "en"})
+        return False
+
+    monkeypatch.setattr(
+        "omi_local.translation.transcript_in_language", classify_then_change_summary
+    )
+    response = client.post(path)
+    assert response.status_code == 200
+    assert response.json()["language"] == "da"
+    assert len(calls) == (0 if cached else 1)
+
+
+def test_summary_and_whitelist_order_changes_during_inference_keep_enabled_target(client):
+    key, path = source(client)
+    memory = client.app.state.memory
+
+    def change():
+        memory.settings.summary_language = "en"
+        memory.settings.translation_languages = ["en", "da"]
+        memory.store.save_settings({
+            "summary_language": "en", "translation_languages": ["en", "da"]
+        })
+
+    calls = translator(client, change)
+    response = client.post(path)
+    assert response.status_code == 200
+    assert response.json()["language"] == "da"
+    assert response.json()["available_languages"] == ["en", "da"]
+    assert calls[0][1] == "da"
+    assert memory.store.transcript_translation(key, "da")

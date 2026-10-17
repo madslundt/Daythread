@@ -385,6 +385,9 @@ def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(c
     assert len(memory.inference.calls) == 3  # Reuse notes; rewrite only the daily recap.
     purpose = memory.inference.calls[-1][1]
     assert "fewest meaningful topic sections" in purpose
+    assert "one coherent summary per topic" in purpose
+    assert "Do not create separate short and long summaries" in purpose
+    assert "do not mix in unrelated subjects" in purpose
     assert "without a recap title, date heading" in purpose
     assert "do not create separate decisions/commitments or open-questions sections" in purpose
     assert "Rewrite, rename, merge or reorganize" in purpose

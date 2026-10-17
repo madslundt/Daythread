@@ -1,4 +1,4 @@
-# Omi Local
+# Daythread
 
 A private audio memory system: Omi pendant → iPhone → your backend and local AI. Turn recordings into searchable transcripts, daily diaries, meeting notes, and chat with source references. Access your archive through the native companion or responsive web app.
 

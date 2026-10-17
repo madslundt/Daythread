@@ -16,6 +16,8 @@ import { SourceList } from "./SourceList";
 import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
 import { RecapContent } from "./RecapContent";
+import { CopySummary } from "./CopySummary";
+import { recapReadingText } from "./recapItems";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
@@ -45,7 +47,6 @@ export function RecapSection({
       <div className="section-heading">
         <div>
           <h2>Day recap</h2>
-          {compact ? <p className="section-description">The important parts, brought together.</p> : null}
         </div>
       </div>
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
@@ -81,6 +82,7 @@ export function RecapSection({
           <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
           <EvidenceFeedback outputId={recap.data.output_id} evidence={recap.data.evidence} outputText={recap.data.summary} />
           <div className="recap-footer">
+            <CopySummary text={recapReadingText(recap.data.summary)} label="Copy recap" />
             {recap.data.generated_at ? (
               <span className="caption">
                 Generated at {timeLabel(recap.data.generated_at, timezone)}
@@ -235,16 +237,16 @@ export function Today({
           <h2>Day tools</h2>
           <button className="day-tool" onClick={() => onChat({ kind: "day", day })}>
             <Icon name="chat" size={19} />
-            <span>Chat with this day<small>Ask about your recordings</small></span>
+            <span>Chat with this day</span>
             <Icon name="chevron-right" size={15} />
           </button>
           <button className="day-tool" onClick={onPrepare}>
             <Icon name="people" size={19} />
-            <span>Prepare for a conversation<small>Bring the right context</small></span>
+            <span>Prepare for a conversation</span>
             <Icon name="chevron-right" size={15} />
           </button>
         </section>
-        <section className="follow-through"><h2>Follow-through</h2><p className="caption">Promises and open questions.</p><InboxEntry /></section>
+        <section className="follow-through"><h2>Follow-through</h2><InboxEntry /></section>
         <CaptureStatus status={status} error={statusError} compact />
         <div className="day-feedback"><FeedbackReview /></div>
       </aside>
@@ -257,7 +259,6 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
   return (
     <section className="quick-rewind">
       <h2>Quick rewind</h2>
-      <p className="caption">Jump back into the conversation.</p>
       <label className="select-with-icon">
         <Icon name="clock" size={19} />
         <select

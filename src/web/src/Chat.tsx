@@ -285,7 +285,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                 key={message.id}
               >
                 <div className="message-label">
-                  {message.role === "user" ? "You" : "omi"}
+                  {message.role === "user" ? "You" : "Daythread"}
                 </div>
                 {message.stale ? <p className="caption" role="status">Historical answer: its transcript evidence has changed. Ask again for a current answer.</p> : null}
                 <RichText text={message.content} />
@@ -335,7 +335,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <p>{sending}</p>
             </article>
             <article className="chat-message assistant pending" aria-busy="true">
-              <div className="message-label">omi</div>
+              <div className="message-label">Daythread</div>
               {streamedText ? <p style={{ whiteSpace: "pre-wrap" }}>{streamedText}</p> : null}
               <Loading>{stage === "expanding" ? "Trying alternate search wording…" : stage === "generating" ? "Writing your answer…" : "Looking through your recordings…"}</Loading>
               {streamedText ? <p className="caption">Draft answer · sources are checked before saving.</p> : null}

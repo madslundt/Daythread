@@ -12,6 +12,7 @@ from .decision_service import extract
 from .decisions import ExtractionRequest
 from .domain import utc_now
 from .inbox_jobs import InboxJobs
+from .inference import Inference
 from .recording_topics import run_topics
 from .service import Memory
 from .source_matching import recognition_contract
@@ -25,6 +26,7 @@ async def process_one(memory: Memory) -> bool:
     if row is None:
         return False
     try:
+        memory.store.start_processing(row["id"])
         contract = recognition_contract(memory.settings)
         duplicate = memory.store.reusable_transcription(row, contract)
         if duplicate:
@@ -44,14 +46,27 @@ async def process_one(memory: Memory) -> bool:
             memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate",
                                   details={"recognition_contract": contract})
         elif hasattr(memory.inference, "transcribe_result"):
-            result = await memory.inference.transcribe_result(data)
+            if isinstance(memory.inference, Inference):
+                result = await memory.inference.transcribe_result(
+                    data, on_progress=lambda stage, completed, total:
+                    memory.store.update_processing(row["id"], stage, completed, total),
+                )
+            else:
+                memory.store.update_processing(row["id"], "transcribing")
+                result = await memory.inference.transcribe_result(data)
+            memory.store.update_processing(row["id"], "saving")
             memory.store.complete(
                 row["id"], result["text"], result["segments"], claimed=True,
                 details={**(result.get("processing") or {}), "recognition_contract": contract},
             )
+            memory.store.finish_processing(row["id"])
         else:
-            memory.store.complete(row["id"], await memory.inference.transcribe(data), claimed=True,
+            memory.store.update_processing(row["id"], "transcribing")
+            text = await memory.inference.transcribe(data)
+            memory.store.update_processing(row["id"], "saving")
+            memory.store.complete(row["id"], text, claimed=True,
                                   details={"recognition_contract": contract})
+            memory.store.finish_processing(row["id"])
     except Exception as exc:
         # Avoid putting transcripts, credentials, URLs or provider bodies into logs.
         memory.store.retry(

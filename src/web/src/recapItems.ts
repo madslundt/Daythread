@@ -32,16 +32,54 @@ export function recapGroupSummary(parts: RecapPart[]): string {
     .map((part) => recapReadingText(part.text).replace(/\*\*/g, "")).join(" ");
 }
 
-export function recapSourceSections(point: string, source: Source): NonNullable<Source["sections"]> {
+export function recapTopicText(parts: RecapPart[]): string {
+  const seen = new Set<string>();
+  return parts.filter((part) => part.kind !== "heading").map((part) => recapReadingText(part.text))
+    .filter((text) => {
+      const key = text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).join("\n\n");
+}
+
+const danishCommonWords = new Set("det den der dette denne disse som til med om eller og en et kan vil har var være bliver blev bruger brugeren taler nævnte nævnes beskriver beskrevet samt her også deres vores min mit mine man jeg mig dig han hun dem sin sit sine sig skal skulle kunne have havde ikke fra ved for på af at ind ud dag dagen andet første anden meget noget nogle alle hver hvad hvordan hvor hvorfor hvis når fordi optagelse optagelsen samtalen emne emnet diskussion discussion details mentioned said".split(" "));
+
+function passageWords(text: string): string[] {
+  return words(text).filter((word) => word.length >= 3 && !commonWords.has(word) && !danishCommonWords.has(word) && !/^\d+$/.test(word));
+}
+
+export function recapSourceSections(point: string, source: Source, topic = ""): NonNullable<Source["sections"]> {
   if (!source.text || !source.sections?.length) return [];
   const characters = Array.from(source.text);
-  const candidates = source.sections.map((section, index) => ({
-    ...source, id: String(index),
-    text: `${section.title} ${characters.slice(section.start_offset, section.end_offset).join("")}`,
+  const lines = recapReadingText(point).split("\n").filter((line) => line.trim());
+  const subject = topic || (lines.length > 1 ? lines[0] : "");
+  const candidates = source.sections.map((section) => ({
+    section, title: words(section.title).join(" "),
+    text: characters.slice(section.start_offset, section.end_offset).join(""),
   }));
-  // A citation links a recording, not an exact span. Match passage words separately.
-  const matching = new Set(itemSources(recapReadingText(point), candidates).sources.map((candidate) => candidate.id));
-  return source.sections.filter((_section, index) => matching.has(String(index)));
+  const phrase = words(subject).join(" ");
+  const keywords = new Set(passageWords(subject));
+  if (phrase && keywords.size) {
+    // The selected topic outranks incidental words shared with other passages.
+    const named = candidates.filter((candidate) => ` ${candidate.title} `.includes(` ${phrase} `));
+    if (named.length) return named.map((candidate) => candidate.section);
+    const mentioned = candidates.filter((candidate) => ` ${words(candidate.text).join(" ")} `.includes(` ${phrase} `));
+    if (mentioned.length) return mentioned.map((candidate) => candidate.section);
+    const titleMatches = candidates.map((candidate) => ({ candidate,
+      score: new Set(passageWords(candidate.section.title).filter((word) => keywords.has(word))).size,
+    }));
+    const best = Math.max(...titleMatches.map((match) => match.score));
+    if (best > 0) return titleMatches.filter((match) => match.score === best).map((match) => match.candidate.section);
+  }
+  const terms = new Set(passageWords(recapReadingText(point)));
+  const scored = candidates.map((candidate) => ({ candidate,
+    score: new Set(passageWords(`${candidate.section.title} ${candidate.text}`).filter((word) => terms.has(word))).size,
+  }));
+  const best = Math.max(...scored.map((match) => match.score));
+  const matches = scored.filter((match) => match.score === best);
+  // Ambiguous keyword overlap is not sufficient to display a passage as topic evidence.
+  return best >= 2 && matches.length === 1 ? [matches[0].candidate.section] : [];
 }
 
 const actionHeading = /^(?:to follow[ -]?up|follow[ -]?ups?|action (?:items?|points?)|next steps?|to[ -]?dos?|tasks?)$/i;

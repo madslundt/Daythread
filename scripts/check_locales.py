@@ -61,4 +61,7 @@ if __name__ == "__main__":
     info = ios_catalogs("InfoPlist.strings")
     assert {"en", "da"} <= set(web) and {"en", "da"} <= set(ios)
     assert set(ios) == set(info), "Each iOS locale needs permission descriptions"
-    print(f"Web: {len(web['en'])} keys; iOS: {len(ios['en'])} UI and {len(info['en'])} permission keys. Catalogs match.")
+    print(
+        f"Web: {len(web['en'])} keys; iOS: {len(ios['en'])} UI "
+        f"and {len(info['en'])} permission keys. Catalogs match."
+    )

@@ -128,6 +128,13 @@ def restore(source: Path, destination: Path, max_bytes: int, identity: Path | No
         store = Store(destination)  # Migrate supported versions and rebase audio paths.
         with store.connect() as db:
             db.execute("UPDATE phone_observations SET historical=1")
+            # Also protect restores of backups made before device bindings were
+            # excluded from exports. Phones register again with the restored archive.
+            db.execute("DELETE FROM notification_deliveries")
+            db.execute("DELETE FROM notification_devices")
+        with store.connect() as db:
+            db.execute("VACUUM")
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     except BaseException:
         shutil.rmtree(destination)
         raise

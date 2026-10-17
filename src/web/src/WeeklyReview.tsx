@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { useEffect, useState } from "react";
 import { errorMessage, newId, post } from "./api";
@@ -111,72 +112,71 @@ export function WeeklyReview({ timezone, onChat }: {
   return (
     <section className="weekly-review">
       <div className="section-heading weekly-navigation">
-        <button className="button" onClick={() => select(shiftDay(week, -7))}>← Previous week</button>
-        <label>Week beginning
-          <input type="date" value={week} max={currentWeek} onChange={(event) => {
+        <button className="button" onClick={() => select(shiftDay(week, -7))}>{t("← Previous week")}</button>
+        <label>{t("Week beginning")}{" "}<input type="date" value={week} max={currentWeek} onChange={(event) => {
             if (event.target.value) select(dateRangeForShortcut("this_week", event.target.value).start_day);
           }} />
         </label>
         <button className="button" disabled={week >= currentWeek}
-          onClick={() => select(shiftDay(week, 7))}>Next week →</button>
+          onClick={() => select(shiftDay(week, 7))}>{t("Next week →")}</button>
       </div>
       <div className="button-row">
-        <button className="text-button" onClick={() => select(shiftDay(currentWeek, -7))}>Last completed week</button>
-        <button className="text-button" onClick={() => select(currentWeek)}>This week so far</button>
+        <button className="text-button" onClick={() => select(shiftDay(currentWeek, -7))}>{t("Last completed week")}</button>
+        <button className="text-button" onClick={() => select(currentWeek)}>{t("This week so far")}</button>
       </div>
       <h2>{dayLabel(week, true)} – {dayLabel(shiftDay(week, 6), true)}</h2>
-      <p className="caption">Compared with {dayLabel(shiftDay(week, -7), true)} – {dayLabel(shiftDay(week, -1), true)} · {timezone}</p>
-      <p className="caption">Two weeks of recorded evidence, including commitments needing follow-up. This is not a complete backlog of older commitments. Absence of later mention never establishes completion.</p>
+      <p className="caption">{t("Compared with")}{" "}{dayLabel(shiftDay(week, -7), true)} – {dayLabel(shiftDay(week, -1), true)} · {timezone}</p>
+      <p className="caption">{t("Two weeks of recorded evidence, including commitments needing follow-up. This is not a complete backlog of older commitments. Absence of later mention never establishes completion.")}</p>
       {error || review.error || jobResource.error ? <ErrorState message={error || review.error || jobResource.error} retry={review.refresh} /> : null}
       {!data && review.loading ? <Loading /> : null}
       {data ? <>
-        {data.partial ? <Notice>This week is still in progress. Evidence cutoff: {dateTimeLabel(data.cutoff, data.timezone)}.</Notice> : null}
-        <p className="caption">Current archive coverage · {data.timezone}</p>
+        {data.partial ? <Notice>{t("This week is still in progress. Evidence cutoff:")}{" "}{dateTimeLabel(data.cutoff, data.timezone)}.</Notice> : null}
+        <p className="caption">{t("Current archive coverage ·")}{" "}{data.timezone}</p>
         <div className="weekly-coverage">
-          <CoverageSummary title="Selected week" coverage={data.coverage} />
-          <CoverageSummary title="Previous week" coverage={data.comparison_coverage} />
+          <CoverageSummary title={t("Selected week")} coverage={data.coverage} />
+          <CoverageSummary title={t("Previous week")} coverage={data.comparison_coverage} />
         </div>
-        <p className="caption">Coverage describes received evidence only. Unuploaded phone backlog is unknown. Missing recordings do not establish silence or device failure. Transcripts cover whole overlapping chunks; dates and audio boundaries can differ.</p>
-        {!data.comparison_coverage.speech_sources ? <Notice>Insufficient recorded evidence to compare with the previous week.</Notice> : null}
+        <p className="caption">{t("Coverage describes received evidence only. Unuploaded phone backlog is unknown. Missing recordings do not establish silence or device failure. Transcripts cover whole overlapping chunks; dates and audio boundaries can differ.")}</p>
+        {!data.comparison_coverage.speech_sources ? <Notice>{t("Insufficient recorded evidence to compare with the previous week.")}</Notice> : null}
         <div className="button-row">
           <button className="button dark" disabled={busy || running || !data.coverage.speech_sources}
-            onClick={() => void generate(false)}>{busy ? "Requesting…" : running ? "Generating…" : version ? data.stale ? "Refresh review" : "Use saved review" : "Generate review"}</button>
+            onClick={() => void generate(false)}>{busy ? t("Requesting…") : running ? t("Generating…") : version ? data.stale ? t("Refresh review") : t("Use saved review") : t("Generate review")}</button>
           {version ? <>
-            <button className="button" disabled={busy || running} onClick={() => void generate(true)}>Regenerate</button>
-            <a className="button" href={profileResourceUrl(`${path}.md${selectedVersion ? `?version_id=${selectedVersion}` : ""}`)} download>Export Markdown</a>
+            <button className="button" disabled={busy || running} onClick={() => void generate(true)}>{t("Regenerate")}</button>
+            <a className="button" href={profileResourceUrl(`${path}.md${selectedVersion ? `?version_id=${selectedVersion}` : ""}`)} download>{t("Export Markdown")}</a>
           </> : null}
-          <button className="button" onClick={() => onChat({ kind: "range", start_day: week, end_day: shiftDay(week, 6) })}>Chat about this week</button>
-          <button className="text-button" onClick={() => setShowHistory((value) => !value)}>Review history</button>
+          <button className="button" onClick={() => onChat({ kind: "range", start_day: week, end_day: shiftDay(week, 6) })}>{t("Chat about this week")}</button>
+          <button className="text-button" onClick={() => setShowHistory((value) => !value)}>{t("Review history")}</button>
         </div>
-        {running ? <p role="status">{job.state === "queued" ? "Queued for local generation" : `Generating locally · ${job.completed_calls} model calls completed`}. You can leave this view; the backend keeps working.</p> : null}
+        {running ? <p role="status">{job.state === "queued" ? t("Queued for local generation") : `Generating locally · ${job.completed_calls} model calls completed`}{t(". You can leave this view; the backend keeps working.")}</p> : null}
         {job?.state === "failed" ? <ErrorState message={job.error || "Generation failed. Try again."} /> : null}
-        {data.state === "empty" ? <p role="status">No transcribed speech received for this week. Pending audio may appear later.</p> : null}
-        {data.stale ? <Notice>Recorded evidence or configuration changed. This saved interpretation is stale; refresh it before relying on it. Source inspection shows current transcripts.</Notice> : null}
-        {selectedVersion ? <Notice>Historical version. Its claims and quotes reflect the generation cutoff. Source inspection shows current transcripts. <button className="text-button" onClick={() => setSelectedVersion("")}>Return to latest</button></Notice> : null}
+        {data.state === "empty" ? <p role="status">{t("No transcribed speech received for this week. Pending audio may appear later.")}</p> : null}
+        {data.stale ? <Notice>{t("Recorded evidence or configuration changed. This saved interpretation is stale; refresh it before relying on it. Source inspection shows current transcripts.")}</Notice> : null}
+        {selectedVersion ? <Notice>{t("Historical version. Its claims and quotes reflect the generation cutoff. Source inspection shows current transcripts.")}{" "}<button className="text-button" onClick={() => setSelectedVersion("")}>{t("Return to latest")}</button></Notice> : null}
         {showHistory ? <div className="weekly-history">
           {history.error ? <ErrorState message={history.error} retry={history.refresh} /> : null}
           {history.data?.items.length ? history.data.items.map((item) => <button className="button small" key={item.id}
             onClick={() => { setSelectedVersion(item.id); setSelectedSource(""); }}>
             {dateTimeLabel(item.created_at, timezone)} · {item.id.slice(0, 8)}
-          </button>) : <p className="caption">No saved versions.</p>}
+          </button>) : <p className="caption">{t("No saved versions.")}</p>}
         </div> : null}
         {version ? <>
-          <p className="caption">Saved version coverage: selected {version.coverage.speech_sources} speech sources, comparison {version.comparison_coverage.speech_sources} · bounds {dateTimeLabel(version.start, version.timezone)} to {dateTimeLabel(version.end, version.timezone)} (exclusive) · {version.timezone}</p>
-          <p className="caption">Saved {dateTimeLabel(version.generated_at, version.timezone)} · cutoff {dateTimeLabel(version.cutoff, version.timezone)} · {version.timezone}{version.partial ? " · partial week" : ""}</p>
+          <p className="caption">{t("Saved version coverage: selected")}{" "}{version.coverage.speech_sources} {t("speech sources, comparison")}{" "}{version.comparison_coverage.speech_sources} {t("· bounds")}{" "}{dateTimeLabel(version.start, version.timezone)} {t("to")}{" "}{dateTimeLabel(version.end, version.timezone)} {t("(exclusive) ·")}{" "}{version.timezone}</p>
+          <p className="caption">{t("Saved")}{" "}{dateTimeLabel(version.generated_at, version.timezone)} {t("· cutoff")}{" "}{dateTimeLabel(version.cutoff, version.timezone)} · {version.timezone}{version.partial ? t("· partial week") : ""}</p>
           {groups.map(([category, title]) => <section className="weekly-group" key={category}>
             <h3>{title}</h3>
             {version.items.filter((item) => item.category === category).length ? version.items.filter((item) => item.category === category).map((item, index) => <article className="weekly-item" key={index}>
               <p><strong>{item.claim}</strong></p>
-              {category === "commitment" ? <p className="caption">{item.status === "explicitly_open" ? "Explicitly still open" : "Follow-through unconfirmed"}</p> : null}
+              {category === "commitment" ? <p className="caption">{item.status === "explicitly_open" ? t("Explicitly still open") : t("Follow-through unconfirmed")}</p> : null}
               <p>{item.qualification}</p>
               {item.evidence.map((ref, citationIndex) => <div className="weekly-citation" key={citationIndex}>
                 <blockquote>{ref.quote}</blockquote>
-                <button className="text-button" onClick={() => setSelectedSource(ref.source_id)}>Inspect source {ref.source_id.slice(0, 8)}</button>
+                <button className="text-button" onClick={() => setSelectedSource(ref.source_id)}>{t("Inspect source")}{" "}{ref.source_id.slice(0, 8)}</button>
               </div>)}
-            </article>) : <p className="caption">No supported items found in the recorded evidence.</p>}
+            </article>) : <p className="caption">{t("No supported items found in the recorded evidence.")}</p>}
           </section>)}
-          {cited ? <section className="weekly-evidence" aria-label="Selected evidence">
-            <h3>Original evidence · current transcript</h3>
+          {cited ? <section className="weekly-evidence" aria-label={t("Selected evidence")}>
+            <h3>{t("Original evidence · current transcript")}</h3>
             <SourceList key={`${cited.id}-${cited.text}`} sources={[cited]} timezone={timezone} showDate expanded onCorrect={review.refresh} onDeleted={() => { setSelectedVersion(""); review.refresh(); history.refresh(); }} />
           </section> : null}
         </> : null}
@@ -187,7 +187,7 @@ export function WeeklyReview({ timezone, onChat }: {
 
 function CoverageSummary({ title, coverage }: { title: string; coverage: Coverage }) {
   return <div className="weekly-coverage-panel"><strong>{title}</strong>
-    <p>{coverage.speech_days} days with speech · {coverage.speech_sources} speech sources · {Math.round(coverage.captured_seconds / 60)} recorded interval minutes</p>
-    <p className="caption">{coverage.pending_chunks} pending · {coverage.empty_chunks} empty/silence · {coverage.expired_chunks} expired transcripts · {coverage.capture_gaps} known capture gaps ({Math.round(coverage.known_gap_seconds)} seconds) · {coverage.audio_unavailable} sources without audio</p>
+    <p>{coverage.speech_days} {t("days with speech ·")}{" "}{coverage.speech_sources} {t("speech sources ·")}{" "}{Math.round(coverage.captured_seconds / 60)} {t("recorded interval minutes")}</p>
+    <p className="caption">{coverage.pending_chunks} {t("pending ·")}{" "}{coverage.empty_chunks} {t("empty/silence ·")}{" "}{coverage.expired_chunks} {t("expired transcripts ·")}{" "}{coverage.capture_gaps} {t("known capture gaps (")}{Math.round(coverage.known_gap_seconds)} {t("seconds) ·")}{" "}{coverage.audio_unavailable} {t("sources without audio")}</p>
   </div>;
 }

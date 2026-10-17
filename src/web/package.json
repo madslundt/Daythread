@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
+    "i18n:check": "python3 ../../scripts/check_locales.py",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run"
   },

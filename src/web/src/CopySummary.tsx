@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 
 export async function copySummary(text: string): Promise<void> {
@@ -33,9 +34,9 @@ export function CopySummary({ text, label = "Copy summary", context }: { text: s
     <button type="button" className="text-button" aria-label={context ? `${label}: ${context}` : label} onClick={async (event) => {
       event.preventDefault(); event.stopPropagation();
       try { await copySummary(text); setStatus("copied"); } catch { setStatus("failed"); }
-    }}>{status === "copied" ? "Copied" : label}</button>
+    }}>{status === "copied" ? t("Copied") : label}</button>
     <span className={status === "failed" ? "caption" : "sr-only"} role="status">
-      {status === "copied" ? "Summary copied to clipboard." : status === "failed" ? "Could not copy. Select the summary text to copy it." : ""}
+      {status === "copied" ? t("Summary copied to clipboard.") : status === "failed" ? t("Could not copy. Select the summary text to copy it.") : ""}
     </span>
   </span>;
 }

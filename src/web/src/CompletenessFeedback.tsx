@@ -1,3 +1,4 @@
+import { displayLocale, t } from "./i18n";
 import { useState } from "react";
 import { errorMessage, newId, post, request } from "./api";
 import { SourceList } from "./SourceList";
@@ -12,66 +13,49 @@ export function CompletenessDetails({ value }: { value?: Completeness }) {
     `${Math.round((value.seconds[key] || 0) / 60)} min`;
   return (
     <details className="completeness-details">
-      <summary>Evidence available in this period</summary>
+      <summary>{t("Evidence available in this period")}</summary>
       {value.as_of ? (
         <p className="caption">
-          Observed {new Date(value.as_of).toLocaleString()}. Future time is
-          excluded.
-        </p>
+          {t("Observed")}{" "}{new Date(value.as_of).toLocaleString(displayLocale())}{t(". Future time is excluded.")}{" "}</p>
       ) : null}
       <p className="caption">
-        {minutes("available_audio")} playable audio · {minutes("transcript")}{" "}
-        transcript intervals · {minutes("intentional_pause")} intentional pauses
-        · {minutes("reported_interruption")} reported interruptions. Overlaps
-        are counted once per track.
-      </p>
+        {minutes("available_audio")} {t("playable audio ·")}{" "}{minutes("transcript")}{" "}
+        {t("transcript intervals ·")}{" "}{minutes("intentional_pause")} {t("intentional pauses ·")}{" "}{minutes("reported_interruption")} {t("reported interruptions. Overlaps are counted once per track.")}{" "}</p>
       {value.counts.webhook_receipt_estimates ? <p className="caption">
-        {value.counts.webhook_receipt_estimates} official audio chunks use receipt estimates:
-        {" "}{minutes("estimated_audio")} playable audio and {minutes("estimated_transcript")} transcript estimates.
-        These do not establish capture coverage or remove unknown intervals.
-      </p> : null}
+        {value.counts.webhook_receipt_estimates} {t("official audio chunks use receipt estimates:")}{" "}{" "}{minutes("estimated_audio")} {t("playable audio and")}{" "}{minutes("estimated_transcript")} {t("transcript estimates. These do not establish capture coverage or remove unknown intervals.")}{" "}</p> : null}
       <p className="caption">
-        {value.counts.pending} awaiting transcription · {value.counts.blocked}{" "}
-        blocked · {value.counts.transcript_only_imports} transcript-only imports
-        · {value.counts.expired_audio} expired audio ·{" "}
-        {value.counts.missing_audio} missing files.
-      </p>
+        {value.counts.pending} {t("awaiting transcription ·")}{" "}{value.counts.blocked}{" "}
+        {t("blocked ·")}{" "}{value.counts.transcript_only_imports} {t("transcript-only imports ·")}{" "}{value.counts.expired_audio} {t("expired audio ·")}{" "}
+        {value.counts.missing_audio} {t("missing files.")}{" "}</p>
       <p className="caption">
-        {value.counts.expired_transcripts || 0} transcripts unavailable after
-        retention.
-      </p>
+        {value.counts.expired_transcripts || 0} {t("transcripts unavailable after retention.")}{" "}</p>
       <p className="caption">
-        {value.counts.silence_gate} silence-gated · {value.counts.empty_stt}{" "}
-        empty STT results. Neither proves no speech occurred.
-      </p>
+        {value.counts.silence_gate} {t("silence-gated ·")}{" "}{value.counts.empty_stt}{" "}
+        {t("empty STT results. Neither proves no speech occurred.")}{" "}</p>
       <p className="caption">
-        {value.unknown_count} intervals have no known coverage. Available
-        transcripts do not prove continuous capture.
-      </p>
+        {value.unknown_count} {t("intervals have no known coverage. Available transcripts do not prove continuous capture.")}{" "}</p>
       {value.capture_intervals?.map((interval) => (
         <p className="caption" key={interval.event_id}>
-          {interval.state}: {new Date(interval.start).toLocaleString()} –{" "}
-          {new Date(interval.end).toLocaleString()} · {interval.cause}
-          {interval.open ? " (no closing transition reported)" : ""}
+          {interval.state}: {new Date(interval.start).toLocaleString(displayLocale())} –{" "}
+          {new Date(interval.end).toLocaleString(displayLocale())} · {interval.cause}
+          {interval.open ? t("(no closing transition reported)") : ""}
         </p>
       ))}
       {value.capture_gaps.map((gap) => (
         <p key={gap.gap_id} className="caption">
-          {new Date(gap.started_at).toLocaleString()} –{" "}
-          {new Date(gap.ended_at).toLocaleString()}: {gap.cause} · {gap.reason}
+          {new Date(gap.started_at).toLocaleString(displayLocale())} –{" "}
+          {new Date(gap.ended_at).toLocaleString(displayLocale())}: {gap.cause} · {gap.reason}
         </p>
       ))}
       {value.unknown_intervals.map((gap) => (
         <p className="caption" key={gap.start}>
-          Unknown: {new Date(gap.start).toLocaleString()} –{" "}
-          {new Date(gap.end).toLocaleString()}
+          {t("Unknown:")}{" "}{new Date(gap.start).toLocaleString(displayLocale())} –{" "}
+          {new Date(gap.end).toLocaleString(displayLocale())}
         </p>
       ))}
       {value.truncated ? (
         <p className="caption">
-          Showing the first 100 interval details; totals include the whole
-          period.
-        </p>
+          {t("Showing the first 100 interval details; totals include the whole period.")}{" "}</p>
       ) : null}
       <FeedbackForm start={value.start} end={value.end} />
     </details>
@@ -94,8 +78,7 @@ export function EvidenceFeedback({
   if (!outputId)
     return (
       <p className="caption">
-        This older output has no saved selection diagnostics.
-      </p>
+        {t("This older output has no saved selection diagnostics.")}{" "}</p>
     );
   return (
     <div className="evidence-feedback">
@@ -104,27 +87,20 @@ export function EvidenceFeedback({
       ) : null}
       {value ? (
         <p className="caption">
-          {value.selected.length} of {value.eligible_transcripts} eligible
-          transcript sources selected · {value.cited_ids.length} cited ·{" "}
+          {value.selected.length} {t("of")}{" "}{value.eligible_transcripts} {t("eligible transcript sources selected ·")}{" "}{value.cited_ids.length} {t("cited ·")}{" "}
           {value.retrieval_mode.replaceAll("_", " ")}. {value.pending_chunks}{" "}
-          pending and {value.blocked_chunks} blocked when generated. Evidence
-          may pass through summarization. Selection and citations do not verify
-          accuracy.
-        </p>
+          {t("pending and")}{" "}{value.blocked_chunks} {t("blocked when generated. Evidence may pass through summarization. Selection and citations do not verify accuracy.")}{" "}</p>
       ) : null}
       {value?.pipeline ? (
         <p className="caption">
           {value.pipeline.reduction_used
             ? `Evidence was summarized before the final call; ${value.pipeline.final_prompt_source_ids.length} selected source IDs remained in its prompt.`
-            : "The final prompt included source evidence directly."}{" "}
-          Intermediate omissions are not assessed.
-        </p>
+            : t("The final prompt included source evidence directly.")}{" "}
+          {t("Intermediate omissions are not assessed.")}{" "}</p>
       ) : null}
       {value?.changed_source_ids?.length ? (
         <p role="status" className="caption">
-          Sources changed since this output. Recaps update automatically; ask again
-          to use current evidence in chat.
-        </p>
+          {t("Sources changed since this output. Recaps update automatically; ask again to use current evidence in chat.")}{" "}</p>
       ) : null}
       <FeedbackForm outputId={outputId} outputText={outputText} />
     </div>
@@ -151,15 +127,12 @@ export function FeedbackReview() {
   );
   return (
     <details className="feedback-review" onToggle={() => resource.refresh()}>
-      <summary>Feedback and repairs ({resource.data?.total ?? "…"})</summary>
+      <summary>{t("Feedback and repairs (")}{resource.data?.total ?? "…"})</summary>
       {resource.error ? (
         <ErrorState message={resource.error} retry={resource.refresh} />
       ) : null}
       <p className="caption">
-        Sync pending recordings on the phone; listen and correct the source
-        transcript; the recap will update automatically. You can also ask again
-        with a narrower scope. Mark resolved only after checking the repair.
-      </p>
+        {t("Sync pending recordings on the phone; listen and correct the source transcript; the recap will update automatically. You can also ask again with a narrower scope. Mark resolved only after checking the repair.")}{" "}</p>
       {resource.data?.items.map((item) => (
         <FeedbackReviewRow
           key={item.id}
@@ -168,10 +141,10 @@ export function FeedbackReview() {
         />
       ))}
       {resource.data && !resource.data.total ? (
-        <p className="caption">No reports saved.</p>
+        <p className="caption">{t("No reports saved.")}</p>
       ) : null}
       {(resource.data?.total || 0) > 50 ? (
-        <p className="caption">Showing the latest 50 reports.</p>
+        <p className="caption">{t("Showing the latest 50 reports.")}</p>
       ) : null}
     </details>
   );
@@ -215,8 +188,7 @@ function FeedbackReviewRow({
   return (
     <article>
       <p>
-        {item.issue} · {item.status} · user stage: {item.stage} · diagnostic
-        suggestion: {item.suggested_stage.replaceAll("_", " ")}
+        {item.issue} · {item.status} {t("· user stage:")}{" "}{item.stage} {t("· diagnostic suggestion:")}{" "}{item.suggested_stage.replaceAll("_", " ")}
       </p>
       <p>{item.note}</p>
       {item.excerpt ? <blockquote>{item.excerpt}</blockquote> : null}
@@ -226,8 +198,7 @@ function FeedbackReviewRow({
             className="text-button"
             onClick={() => setSourceOpen(!sourceOpen)}
           >
-            Inspect or correct source
-          </button>
+            {t("Inspect or correct source")}{" "}</button>
           {source.data ? (
             <SourceList
               sources={[source.data]}
@@ -240,11 +211,11 @@ function FeedbackReviewRow({
         </>
       ) : null}
       {item.output_id ? (
-        <p className="caption">Output {item.output_id}</p>
+        <p className="caption">{t("Output")}{" "}{item.output_id}</p>
       ) : null}
       {item.expected_source_ids.length ? (
         <p className="caption">
-          Expected sources: {item.expected_source_ids.join(", ")}
+          {t("Expected sources:")}{" "}{item.expected_source_ids.join(", ")}
         </p>
       ) : null}
       <p className="caption">
@@ -253,9 +224,9 @@ function FeedbackReviewRow({
           .join(" · ")}
       </p>
       <label>
-        Reviewed stage{" "}
+        {t("Reviewed stage")}{" "}
         <select
-          aria-label="Reviewed stage"
+          aria-label={t("Reviewed stage")}
           value={stage}
           onChange={(e) => setStage(e.target.value)}
         >
@@ -265,7 +236,7 @@ function FeedbackReviewRow({
         </select>
       </label>
       <label>
-        Repair checked{" "}
+        {t("Repair checked")}{" "}
         <input
           value={note}
           maxLength={2000}
@@ -273,15 +244,14 @@ function FeedbackReviewRow({
         />
       </label>
       <button className="text-button" disabled={busy} onClick={() => update()}>
-        {item.status === "open" ? "Mark resolved" : "Reopen"}
+        {item.status === "open" ? t("Mark resolved") : t("Reopen")}
       </button>{" "}
       <button
         className="text-button"
         disabled={busy}
         onClick={() => update(true)}
       >
-        Delete report
-      </button>
+        {t("Delete report")}{" "}</button>
       {error ? <ErrorState message={error} /> : null}
     </article>
   );

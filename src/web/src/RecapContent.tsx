@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { profileStorageKey } from "./profiles";
 import { ImportanceButton, type ImportanceTarget } from "./Importance";
 import { useId, useState } from "react";
@@ -49,7 +50,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   const renderPart = (part: RecapPart, index: number, topic = "") => part.kind === "heading" ? (
         <div key={index} className="recap-section-heading"><h3><InlineText text={part.text} /></h3>{savedVersion ? <ImportanceButton target={target(part.text)} label={part.text} /> : null}</div>
       ) : part.kind === "text" ? (
-        <div key={index} className="recap-paragraph"><RichText text={compact ? recapReadingText(part.text) : part.text} />{savedVersion ? <ImportanceButton target={target(part.text)} label="recap section" compact={compact} /> : null}</div>
+        <div key={index} className="recap-paragraph"><RichText text={compact ? recapReadingText(part.text) : part.text} />{savedVersion ? <ImportanceButton target={target(part.text)} label={t("recap section")} compact={compact} /> : null}</div>
       ) : (
         <RecapItem
           key={`${index}:${part.text}`}
@@ -69,11 +70,11 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
   return (
     <div className={`prose recap-items ${compact ? "recap-reading-view" : ""}`}>
       {compact ? <div className="recap-reading-tools">
-        {savedVersion ? <ImportanceButton target={target()} label="day recap" compact /> : null}
-        <p className="caption recap-item-hint">Open a topic for its summary. Original passages are available underneath.</p>
+        {savedVersion ? <ImportanceButton target={target()} label={t("day recap")} compact /> : null}
+        <p className="caption recap-item-hint">{t("Open a topic for its summary. Original passages are available underneath.")}</p>
       </div> : <>
-        {savedVersion ? <ImportanceButton target={target()} label="day recap" /> : null}
-        <p className="caption recap-item-hint">One summary per topic, with original passages available underneath.</p>
+        {savedVersion ? <ImportanceButton target={target()} label={t("day recap")} /> : null}
+        <p className="caption recap-item-hint">{t("One summary per topic, with original passages available underneath.")}</p>
       </>}
       {groups.map((group, index) => {
         const actions = group.parts.some((part) => part.kind === "item" && part.action);
@@ -96,7 +97,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
       })}
       {parts.some((part) => part.kind === "item" && part.action) ? (
         <p className="caption recap-check-hint" role={storageError ? "status" : undefined}>
-          {storageError ? "Checks are kept for this visit only because browser storage is unavailable." : "Optional checkmarks · saved in this browser. Inbox status is managed separately."}
+          {storageError ? t("Checks are kept for this visit only because browser storage is unavailable.") : t("Optional checkmarks · saved in this browser. Inbox status is managed separately.")}
         </p>
       ) : null}
     </div>
@@ -133,15 +134,15 @@ function RecapItem({ text, topic, importanceTarget, action, checked, onToggle, s
         </button>
         {compact && importanceTarget ? <ImportanceButton target={importanceTarget} label={`recap point: ${recapReadingText(text).replace(/\*\*/g, "")}`} compact /> : null}
       </div>
-      {!compact && importanceTarget ? <ImportanceButton target={importanceTarget} label="recap point" /> : null}
+      {!compact && importanceTarget ? <ImportanceButton target={importanceTarget} label={t("recap point")} /> : null}
       <div id={id} hidden={!open} className="recap-item-detail">
         {open ? <>
-          <button type="button" className="button small" onClick={onChat}><Icon name="chat" size={16} />Chat about this</button>
+          <button type="button" className="button small" onClick={onChat}><Icon name="chat" size={16} />{t("Chat about this")}</button>
           <p className="caption">
-            {related.basis === "citation" ? "Cited recordings · check the original context below."
-              : related.basis === "subject" ? "Recordings mentioning this subject · check the original context below."
-                : related.basis === "words" ? "Recordings matching words in this point · check the original context below."
-                  : "This point has no linked or matching recordings."}
+            {related.basis === "citation" ? t("Cited recordings · check the original context below.")
+              : related.basis === "subject" ? t("Recordings mentioning this subject · check the original context below.")
+                : related.basis === "words" ? t("Recordings matching words in this point · check the original context below.")
+                  : t("This point has no linked or matching recordings.")}
           </p>
           {related.sources.length ? (
             related.sources.map((source) => <RecapEvidence key={source.id} source={source} point={`${topic}\n${text}`} timezone={timezone} onCorrect={onCorrect} />)

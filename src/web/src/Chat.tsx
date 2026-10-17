@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { profileStorageKey } from "./profiles";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "./api";
@@ -158,7 +159,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     <div className="chat-layout">
       <aside className="chat-index">
         <div className="chat-index-heading">
-          <h2>Conversations</h2>
+          <h2>{t("Conversations")}</h2>
           {sessions.data?.items.length ? <span aria-label={`${sessions.data.items.length} saved conversations`}>{sessions.data.items.length}</span> : null}
         </div>
         <button
@@ -168,13 +169,12 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           disabled={Boolean(sending)}
         >
           <Icon name="plus" size={17} />
-          New conversation
-        </button>
+          {t("New conversation")}{" "}</button>
         {sessions.error ? (
           <ErrorState message={sessions.error} retry={sessions.refresh} />
         ) : null}
-        {sessions.loading && !sessions.data ? <Loading>Loading conversations…</Loading> : null}
-        <nav aria-label="Saved conversations">
+        {sessions.loading && !sessions.data ? <Loading>{t("Loading conversations…")}</Loading> : null}
+        <nav aria-label={t("Saved conversations")}>
           {sessions.data?.items.map((session) => (
             <button
               type="button"
@@ -187,21 +187,21 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <span>{session.title}</span>
               <small>{session.day ? dayLabel(session.day, true)
                 : session.start_day && session.end_day ? `${dayLabel(session.start_day, true)} – ${dayLabel(session.end_day, true)}`
-                  : session.meeting_id ? "Meeting" : "All days"}</small>
+                  : session.meeting_id ? t("Meeting") : t("All days")}</small>
               <small>{dateTimeLabel(session.updated_at, timezone)}</small>
             </button>
           ))}
         </nav>
         {!sessions.loading && !sessions.error && !sessions.data?.items.length ? (
-          <p className="caption">Your conversations will appear here. They stay on your home-core.</p>
+          <p className="caption">{t("Your conversations will appear here. They stay on your home-core.")}</p>
         ) : null}
       </aside>
-      <section className="conversation-panel" aria-label="Conversation">
+      <section className="conversation-panel" aria-label={t("Conversation")}>
         <div className="chat-scope">
           <label>
-            <span>Chat with</span>
+            <span>{t("Chat with")}</span>
             <select
-              aria-label="Chat scope"
+              aria-label={t("Chat scope")}
               value={scope.kind}
               disabled={Boolean(sending) || conversation.loading}
               onChange={(event) => {
@@ -211,24 +211,24 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                 else changeScope({ kind: "all" });
               }}
             >
-              <option value="all">All diaries (all days)</option>
-              <option value="day">Specific date</option>
-              <option value="range">Date range</option>
-              <option value="meeting" disabled={!meetings.length && scope.kind !== "meeting"}>Meeting</option>
+              <option value="all">{t("All diaries (all days)")}</option>
+              <option value="day">{t("Specific date")}</option>
+              <option value="range">{t("Date range")}</option>
+              <option value="meeting" disabled={!meetings.length && scope.kind !== "meeting"}>{t("Meeting")}</option>
             </select>
           </label>
           {scope.kind === "day" ? (
             <label>
-              <span>Date</span>
-              <input type="date" aria-label="Chat date" value={scope.day}
+              <span>{t("Date")}</span>
+              <input type="date" aria-label={t("Chat date")} value={scope.day}
                 disabled={Boolean(sending) || conversation.loading}
                 onChange={(event) => { if (event.target.value) changeScope({ kind: "day", day: event.target.value }); }} />
             </label>
           ) : scope.kind === "range" ? (
             <>
               <label>
-                <span>From</span>
-                <input type="date" aria-label="Chat start date" value={scope.start_day}
+                <span>{t("From")}</span>
+                <input type="date" aria-label={t("Chat start date")} value={scope.start_day}
                   disabled={Boolean(sending) || conversation.loading}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -236,8 +236,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                   }} />
               </label>
               <label>
-                <span>Through</span>
-                <input type="date" aria-label="Chat end date" value={scope.end_day}
+                <span>{t("Through")}</span>
+                <input type="date" aria-label={t("Chat end date")} value={scope.end_day}
                   disabled={Boolean(sending) || conversation.loading}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -245,7 +245,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                   }} />
               </label>
               <fieldset className="chat-range-shortcuts" disabled={Boolean(sending) || conversation.loading}>
-                <legend>Date shortcuts</legend>
+                <legend>{t("Date shortcuts")}</legend>
                 {dateRangeShortcuts.map((shortcut) => {
                   const range = dateRangeForShortcut(shortcut.id, today);
                   const selected = range.start_day === scope.start_day && range.end_day === scope.end_day;
@@ -253,31 +253,31 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                     type="button" className={`button small${selected ? " dark" : ""}`} key={shortcut.id}
                     aria-pressed={selected}
                     onClick={() => changeScope({ kind: "range", ...range })}
-                  >{shortcut.label}</button>;
+                  >{t(shortcut.label)}</button>;
                 })}
               </fieldset>
-              <p className="caption">Both dates included · {timezone}. Weeks run Monday–Sunday; shortcuts select full calendar periods.</p>
+              <p className="caption">{t("Both dates included ·")}{" "}{timezone}{t(". Weeks run Monday–Sunday; shortcuts select full calendar periods.")}</p>
             </>
           ) : scope.kind === "meeting" ? (
             <label className="chat-meeting-picker">
-              <span>Meeting</span>
-              <select aria-label="Chat meeting" value={scope.meeting_id}
+              <span>{t("Meeting")}</span>
+              <select aria-label={t("Chat meeting")} value={scope.meeting_id}
                 disabled={Boolean(sending) || conversation.loading}
                 onChange={(event) => changeScope({ kind: "meeting", meeting_id: event.target.value })}>
-                {!selectedMeeting ? <option value={scope.meeting_id}>Selected meeting</option> : null}
+                {!selectedMeeting ? <option value={scope.meeting_id}>{t("Selected meeting")}</option> : null}
                 {meetings.map((meeting) => <option key={meeting.id} value={meeting.id}>
-                  {dateTimeLabel(meeting.started_at, timezone)}{meeting.ended_at ? "" : " · in progress"}
+                  {dateTimeLabel(meeting.started_at, timezone)}{meeting.ended_at ? "" : t("· in progress")}
                 </option>)}
               </select>
             </label>
           ) : null}
-          <p className="caption">{scopeLabel}. Changing context starts a new conversation and keeps your draft question.</p>
+          <p className="caption">{scopeLabel}{t(". Changing context starts a new conversation and keeps your draft question.")}</p>
           {timeline.error && scope.kind === "meeting" ? <ErrorState message={timeline.error} retry={timeline.refresh} /> : null}
-          {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">Meetings appear here after a meeting has been recorded.</p> : null}
+          {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">{t("Meetings appear here after a meeting has been recorded.")}</p> : null}
         </div>
-        <div className="messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
+        <div className="messages" role="log" aria-label={t("Conversation messages")} aria-live="polite" aria-relevant="additions text">
           {conversation.loading && !visibleMessages.length ? (
-            <Loading>Loading conversation…</Loading>
+            <Loading>{t("Loading conversation…")}</Loading>
           ) : visibleMessages.length ? (
             visibleMessages.map((message) => (
               <article
@@ -285,16 +285,16 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                 key={message.id}
               >
                 <div className="message-label">
-                  {message.role === "user" ? "You" : "Daythread"}
+                  {message.role === "user" ? t("You") : t("Daythread")}
                 </div>
-                {message.stale ? <p className="caption" role="status">Historical answer: its transcript evidence has changed. Ask again for a current answer.</p> : null}
+                {message.stale ? <p className="caption" role="status">{t("Historical answer: its transcript evidence has changed. Ask again for a current answer.")}</p> : null}
                 <RichText text={message.content} />
                 {message.role === "assistant" ? <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} /> : null}
                 {message.retrieval_details?.notice ? <p className="caption">{message.retrieval_details.notice}</p> : null}
                 {message.sources.length ? (
                   <details className="chat-sources">
                     <summary>
-                      {message.sources.length} source {message.sources.length === 1 ? "recording" : "recordings"}
+                      {message.sources.length} {t("source")}{" "}{message.sources.length === 1 ? t("recording") : t("recordings")}
                     </summary>
                     <SourceList
                       sources={message.sources}
@@ -313,8 +313,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               </article>
             ))
           ) : !sending && !conversation.error ? (
-            <EmptyState icon="chat" title={scope.kind === "day" ? "Ask about this day" : scope.kind === "range" ? "Ask about this date range" : scope.kind === "meeting" ? "Ask about this meeting" : "A little help remembering"}
-              action={<div className="chat-starters" aria-label="Suggested questions">
+            <EmptyState icon="chat" title={scope.kind === "day" ? t("Ask about this day") : scope.kind === "range" ? t("Ask about this date range") : scope.kind === "meeting" ? t("Ask about this meeting") : t("A little help remembering")}
+              action={<div className="chat-starters" aria-label={"Suggested questions"}>
                 {["What were the key decisions?", "What should I follow up on?", "Summarize the main themes."].map((prompt) => (
                   <button type="button" className="chat-starter" key={prompt} onClick={() => {
                     setQuestion(prompt);
@@ -322,23 +322,23 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                   }}>{prompt}<Icon name="chevron-right" size={16} /></button>
                 ))}
               </div>}>
-              {scope.kind === "day" ? "Revisit this date’s diary and recordings."
-                : scope.kind === "range" ? "Explore diary entries and recordings between the selected dates."
-                : scope.kind === "meeting" ? "Explore the recordings around this meeting."
-                  : "Find a detail or connect the threads across all your diary entries and recordings."}
+              {scope.kind === "day" ? t("Revisit this date’s diary and recordings.")
+                : scope.kind === "range" ? t("Explore diary entries and recordings between the selected dates.")
+                : scope.kind === "meeting" ? t("Explore the recordings around this meeting.")
+                  : t("Find a detail or connect the threads across all your diary entries and recordings.")}
             </EmptyState>
           ) : null}
           {sending ? (
             <div>
             <article className="chat-message user pending">
-              <div className="message-label">You</div>
+              <div className="message-label">{t("You")}</div>
               <p>{sending}</p>
             </article>
             <article className="chat-message assistant pending" aria-busy="true">
-              <div className="message-label">Daythread</div>
+              <div className="message-label">{t("Daythread")}</div>
               {streamedText ? <p style={{ whiteSpace: "pre-wrap" }}>{streamedText}</p> : null}
-              <Loading>{stage === "expanding" ? "Trying alternate search wording…" : stage === "generating" ? "Writing your answer…" : "Looking through your recordings…"}</Loading>
-              {streamedText ? <p className="caption">Draft answer · sources are checked before saving.</p> : null}
+              <Loading>{stage === "expanding" ? t("Trying alternate search wording…") : stage === "generating" ? t("Writing your answer…") : t("Looking through your recordings…")}</Loading>
+              {streamedText ? <p className="caption">{t("Draft answer · sources are checked before saving.")}</p> : null}
             </article>
             </div>
           ) : null}
@@ -353,12 +353,11 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
         </div>
         <form className="chat-form" onSubmit={send}>
           <label className="sr-only" htmlFor="chat-question">
-            Ask your memory
-          </label>
+            {t("Ask your memory")}{" "}</label>
           <textarea
             ref={composer}
             id="chat-question"
-            placeholder="What would you like to remember?"
+            placeholder={t("What would you like to remember?")}
             rows={2}
             value={question}
             maxLength={2000}
@@ -379,21 +378,19 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           {sending ? <button key="stop" type="button" className="button" onClick={(event) => {
             event.preventDefault();
             activeRequest.current?.abort();
-          }}>Stop</button> : <button key="send" type="submit"
+          }}>{t("Stop")}</button> : <button key="send" type="submit"
             className="button dark"
             disabled={
               !question.trim() || Boolean(sending) || conversation.loading
               || Boolean(sessionId && !conversation.data)
             }
-            aria-label={sending ? "Asking your memory" : "Send question"}
+            aria-label={sending ? t("Asking your memory") : t("Send question")}
           >
             <Icon name="send" size={18} />
-            <span>{sending ? "Asking…" : "Send"}</span>
+            <span>{sending ? t("Asking…") : t("Send")}</span>
           </button>}
           <p className="caption" id="chat-composer-hint">
-            Enter to send · Shift + Enter for a new line. Answers use your selected context;
-            open the sources to check the details.
-          </p>
+            {t("Enter to send · Shift + Enter for a new line. Answers use your selected context; open the sources to check the details.")}{" "}</p>
         </form>
       </section>
     </div>

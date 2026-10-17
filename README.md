@@ -24,6 +24,11 @@ Screenshots reflect the current redesign, captured in the Codex browser. Mobile 
 - **Recall:** transcript search and correction, audio rewind, and persistent chat grounded in recorded sources.
 - **Diary:** automatic daily recaps, meeting notes, history, and Markdown export.
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.
+- **Languages:** English and Danish interfaces on web and iPhone, with a device-level language choice separate from transcription and recap languages.
+
+## Contribute a localization
+
+The web and iPhone apps have English and Danish interface catalogs. To add a language, translate the web JSON catalog and iPhone `Localizable.strings`, register the language in each app, then run the catalog check and app builds. See the [localization contributor guide](docs/localization.md) for file paths and steps. New interface text should be added to every catalog; recordings and generated content are not translated by this setting.
 
 ## More screenshots
 

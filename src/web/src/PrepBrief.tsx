@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useState } from "react";
 import { dateTimeLabel } from "./format";
 import { prepSections, type PrepResult, type PrepSource } from "./prep";
@@ -14,10 +15,9 @@ export function PrepBrief({
   return (
     <div aria-live="polite">
       <p className="caption">
-        Generated {dateTimeLabel(result.generated_at, timezone)} ·{" "}
-        {result.model}. Evidence checked {dateTimeLabel(result.as_of, timezone)}
-        . Interpretation of selected excerpts; review citations.
-      </p>
+        {t("Generated")}{" "}{dateTimeLabel(result.generated_at, timezone)} ·{" "}
+        {result.model}{t(". Evidence checked")}{" "}{dateTimeLabel(result.as_of, timezone)}
+        {t(". Interpretation of selected excerpts; review citations.")}{" "}</p>
       {prepSections.map(([key, title]) => (
         <section key={key}>
           <h3>{title}</h3>
@@ -45,33 +45,29 @@ export function PrepBrief({
             ))
           ) : (
             <p className="caption">
-              No supported items in the reviewed excerpts.
-            </p>
+              {t("No supported items in the reviewed excerpts.")}{" "}</p>
           )}
         </section>
       ))}
       <details>
-        <summary>Evidence coverage and limits</summary>
+        <summary>{t("Evidence coverage and limits")}</summary>
         {result.coverage.limitations.map((text) => (
           <p key={text}>{text}</p>
         ))}
         <p>
-          {result.coverage.omitted_matches} matching recordings were not
-          selected.
-        </p>
+          {result.coverage.omitted_matches} {t("matching recordings were not selected.")}{" "}</p>
         {result.reviewed_excerpts.map((excerpt) => (
           <details key={excerpt.id}>
             <summary>
-              {dateTimeLabel(excerpt.started_at, timezone)} · reviewed excerpt ·{" "}
-              {excerpt.omitted_characters} characters omitted
-            </summary>
+              {dateTimeLabel(excerpt.started_at, timezone)} {t("· reviewed excerpt ·")}{" "}
+              {excerpt.omitted_characters} {t("characters omitted")}{" "}</summary>
             <p className="transcript-text">{excerpt.text}</p>
           </details>
         ))}
       </details>
       {viewSource ? (
         <section>
-          <h3>Cited recording</h3>
+          <h3>{t("Cited recording")}</h3>
           <SourceList
             key={viewSource.version}
             sources={[viewSource]}

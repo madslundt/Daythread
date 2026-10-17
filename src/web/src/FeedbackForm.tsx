@@ -1,3 +1,4 @@
+import { displayLocale, t } from "./i18n";
 import { useState } from "react";
 import { errorMessage, newId, request } from "./api";
 import { useResource } from "./useResource";
@@ -74,7 +75,7 @@ export function FeedbackForm({
   if (saved)
     return (
       <p role="status" className="caption">
-        Feedback saved on the backend.{" "}
+        {t("Feedback saved on the backend.")}{" "}
         <button
           className="text-button"
           onClick={() => {
@@ -82,36 +83,34 @@ export function FeedbackForm({
             setId(newId());
           }}
         >
-          Report another problem
-        </button>
+          {t("Report another problem")}{" "}</button>
       </p>
     );
   return (
     <div className="feedback-form">
       <button className="text-button" onClick={() => setOpen(!open)}>
-        Report incorrect or missing information
-      </button>
+        {t("Report incorrect or missing information")}{" "}</button>
       {open ? (
         <form onSubmit={save}>
           <fieldset disabled={busy}>
             <label>
-              Problem{" "}
+              {t("Problem")}{" "}
               <select
-                aria-label="Problem"
+                aria-label={t("Problem")}
                 value={issue}
                 onChange={(e) => {
                   setIssue(e.target.value);
                   setId(newId());
                 }}
               >
-                <option value="incorrect">Incorrect information</option>
-                <option value="missing">Missing information</option>
+                <option value="incorrect">{t("Incorrect information")}</option>
+                <option value="missing">{t("Missing information")}</option>
               </select>
             </label>
             <label>
-              Suspected stage{" "}
+              {t("Suspected stage")}{" "}
               <select
-                aria-label="Suspected stage"
+                aria-label={t("Suspected stage")}
                 value={stage}
                 onChange={(e) => {
                   setStage(e.target.value);
@@ -121,22 +120,18 @@ export function FeedbackForm({
                 {stages.map((s) => (
                   <option key={s} value={s}>
                     {s === "unknown"
-                      ? "I don’t know"
+                      ? t("I don’t know")
                       : s === "stt"
-                        ? "Transcription (STT)"
+                        ? t("Transcription (STT)")
                         : s}
                   </option>
                 ))}
               </select>
             </label>
             <p className="caption">
-              Capture: recording absent. STT: audio differs from transcript.
-              Retrieval: expected transcript was not selected. Generation:
-              supplied evidence was misrepresented. Leave unknown if unsure.
-            </p>
+              {t("Capture: recording absent. STT: audio differs from transcript. Retrieval: expected transcript was not selected. Generation: supplied evidence was misrepresented. Leave unknown if unsure.")}{" "}</p>
             <label>
-              Find an expected recording (optional)
-              <input
+              {t("Find an expected recording (optional)")}{" "}<input
                 value={search}
                 maxLength={200}
                 onChange={(e) => setSearch(e.target.value)}
@@ -147,8 +142,7 @@ export function FeedbackForm({
               className="text-button"
               onClick={() => setQuery(search.trim())}
             >
-              Search recordings
-            </button>
+              {t("Search recordings")}{" "}</button>
             {recordings.error ? (
               <ErrorState
                 message={recordings.error}
@@ -173,13 +167,13 @@ export function FeedbackForm({
                     setId(newId());
                   }}
                 />
-                {new Date(source.started_at).toLocaleString()} ·{" "}
+                {new Date(source.started_at).toLocaleString(displayLocale())} ·{" "}
                 {(source.text || source.state).slice(0, 160)}
               </label>
             ))}
             {expectedIDs.length ? (
               <p className="caption">
-                {expectedIDs.length} expected recordings selected.{" "}
+                {expectedIDs.length} {t("expected recordings selected.")}{" "}
                 <button
                   type="button"
                   className="text-button"
@@ -188,8 +182,7 @@ export function FeedbackForm({
                     setId(newId());
                   }}
                 >
-                  Clear selection
-                </button>
+                  {t("Clear selection")}{" "}</button>
               </p>
             ) : null}
             {outputText ? (
@@ -202,11 +195,9 @@ export function FeedbackForm({
                     setId(newId());
                   }}
                 >
-                  Use beginning of shown answer as passage
-                </button>
+                  {t("Use beginning of shown answer as passage")}{" "}</button>
                 <label>
-                  Passage to include (optional)
-                  <textarea
+                  {t("Passage to include (optional)")}{" "}<textarea
                     maxLength={1000}
                     value={excerpt}
                     onChange={(e) => {
@@ -218,8 +209,7 @@ export function FeedbackForm({
               </>
             ) : null}
             <label>
-              What was wrong or missing?
-              <textarea
+              {t("What was wrong or missing?")}{" "}<textarea
                 maxLength={2000}
                 value={note}
                 onChange={(e) => {
@@ -229,11 +219,9 @@ export function FeedbackForm({
               />
             </label>
             <p className="caption">
-              Only references and this note are stored locally. Feedback does
-              not edit transcripts or train a model.
-            </p>
+              {t("Only references and this note are stored locally. Feedback does not edit transcripts or train a model.")}{" "}</p>
             <button className="button small" disabled={busy}>
-              {busy ? "Saving…" : "Save feedback"}
+              {busy ? t("Saving…") : t("Save feedback")}
             </button>
             {error ? <ErrorState message={error} /> : null}
           </fieldset>

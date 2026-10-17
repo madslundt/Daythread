@@ -478,6 +478,13 @@ class ArchiveStore:
                 with self.connect() as source, closing(sqlite3.connect(snapshot)) as target:
                     source.backup(target)
                     target.execute("PRAGMA journal_mode=DELETE")
+                    # Device bindings belong to this running archive. A restored copy
+                    # must not send old or future completions to its original phones.
+                    target.execute("DELETE FROM notification_deliveries")
+                    target.execute("DELETE FROM notification_devices")
+                    target.commit()
+                    # Remove token bytes from freed SQLite pages as well as live rows.
+                    target.execute("VACUUM")
                     for row in target.execute("SELECT id FROM audio WHERE audio_available=1"):
                         filename = f"{row[0]}.wav"
                         original = self.audio_dir / filename

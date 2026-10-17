@@ -44,6 +44,7 @@ enum ChatScope: Equatable {
 struct ChatView: View {
     @Environment(AppModel.self) private var model
     let initialScope: ChatScope?
+    let initialQuestion: String
     @State private var scope: ChatScope
     @State private var question = ""
     @State private var sessions: [JSONValue] = []
@@ -60,9 +61,11 @@ struct ChatView: View {
     @State private var pendingQuestion = ""
     @FocusState private var focused: Bool
 
-    init(initialScope: ChatScope? = nil) {
+    init(initialScope: ChatScope? = nil, initialQuestion: String = "") {
         self.initialScope = initialScope
+        self.initialQuestion = String(initialQuestion.prefix(2000))
         _scope = State(initialValue: initialScope ?? .all)
+        _question = State(initialValue: String(initialQuestion.prefix(2000)))
     }
 
     private var cacheKey: String { model.archiveIdentity + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
@@ -265,8 +268,8 @@ struct ChatView: View {
         let key = cacheKey, request = UUID()
         requestID = request; loading = true; error = nil
         if restore {
-            scope = initialScope ?? .all; sessionID = nil; messages = []; sessions = []; question = ""; cached = false
-            if let value = LocalCache.load(key) {
+            scope = initialScope ?? .all; sessionID = nil; messages = []; sessions = []; question = initialQuestion; cached = false
+            if initialQuestion.isEmpty, let value = LocalCache.load(key) {
                 sessions = value["sessions"].array
                 let savedScope = ChatScope(value)
                 if initialScope == nil || initialScope == savedScope {
@@ -274,6 +277,7 @@ struct ChatView: View {
                     sessionID = value["session_id"].text.isEmpty ? nil : value["session_id"].text; cached = true
                 }
             }
+            if !initialQuestion.isEmpty { focused = true }
         }
         defer { if requestID == request { loading = false } }
         do {

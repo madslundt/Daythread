@@ -22,6 +22,8 @@ struct InboxDetail: View {
     @State private var busy = false
     @State private var error: String?
     @State private var saved: String?
+    @State private var requestID = UUID()
+    @State private var mutationID = UUID()
     private var conflict: Bool { base?.version != latest?.version }
 
     var body: some View {
@@ -84,7 +86,15 @@ struct InboxDetail: View {
                 Button("Retry") { Task { await load() } }
             }
         }.omiScreen().disabled(busy).navigationTitle("Review item").navigationBarTitleDisplayMode(.inline)
-            .task(id: model.archiveIdentity) { base = nil; latest = nil; await load(); alternatives = (try? await model.client().decoded("v1/inbox", query: ["limit": "200"], as: InboxPage.self).items) ?? [] }
+            .task(id: model.archiveIdentity) {
+                base = nil; latest = nil; alternatives = []; await load()
+                let identity = model.archiveIdentity
+                let items = (try? await model.client().decoded("v1/inbox", query: ["limit": "200"], as: InboxPage.self).items) ?? []
+                guard !Task.isCancelled, model.archiveIdentity == identity else { return }
+                alternatives = items
+            }
+            .onChange(of: model.archiveRevision) { _, _ in Task { await load() } }
+            .onDisappear { requestID = UUID(); mutationID = UUID(); busy = false }
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
             .refreshable { await load() }
             .onChange(of: title) { _, value in if value != base?.proposal.title { resets.remove("title") } }
@@ -101,13 +111,15 @@ struct InboxDetail: View {
         timezone = item.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC"
     }
     private func load() async {
-        let address = model.archiveIdentity
+        let address = model.archiveIdentity, token = UUID()
+        requestID = token
         do {
             let item = try await model.client().decoded("v1/inbox/\(id)", as: InboxItem.self)
-            guard !Task.isCancelled, address == model.archiveIdentity else { return }
-            latest = item
+            guard !Task.isCancelled, address == model.archiveIdentity, requestID == token else { return }
+            latest = item; error = nil
             if base == nil { base = item; fill(item) }
         } catch {
+            guard !Task.isCancelled, address == model.archiveIdentity, requestID == token else { return }
             self.error = error.localizedDescription
             if (error as? BackendFailure)?.status == 404 { latest = nil }
         }
@@ -127,7 +139,11 @@ struct InboxDetail: View {
     }
     private func save() async {
         guard let base else { return }
-        busy = true; saved = nil; error = nil; defer { busy = false }
+        let identity = model.archiveIdentity, token = UUID()
+        let client: BackendClient
+        do { client = try model.client() } catch { self.error = error.localizedDescription; return }
+        mutationID = token; busy = true; saved = nil; error = nil
+        defer { if mutationID == token { busy = false } }
         var changes: [String: Any] = [:]
         if title != base.title { changes["title"] = title }
         if kind != base.kind { changes["kind"] = kind }
@@ -142,15 +158,20 @@ struct InboxDetail: View {
             let fingerprint = String(data: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), encoding: .utf8)!
             if operation?.fingerprint != fingerprint { operation = (fingerprint, UUID().uuidString) }
             body["operation_id"] = operation!.id
-            let result = try await model.client().decoded("v1/inbox/\(id)", method: "PATCH", body: body, as: InboxItem.self)
+            let result = try await client.decoded("v1/inbox/\(id)", method: "PATCH", body: body, as: InboxItem.self)
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
             accept(result)
         } catch {
-            if let operation, let result = try? await model.client().decoded("v1/inbox/\(id)", as: InboxItem.self),
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
+            if let operation, let result = try? await client.decoded("v1/inbox/\(id)", as: InboxItem.self),
                result.history?.contains(where: { $0.id.caseInsensitiveCompare(operation.id) == .orderedSame }) == true {
+                guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
                 accept(result); return
             }
-            self.error = (error as? BackendFailure)?.status == 409 ? "Saved version changed. Your draft is preserved. Refresh and compare before applying it." : error.localizedDescription
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
             await load()
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
+            self.error = (error as? BackendFailure)?.status == 409 ? "Saved version changed. Your draft is preserved. Refresh and compare before applying it." : error.localizedDescription
         }
     }
     private func accept(_ result: InboxItem) {
@@ -158,8 +179,16 @@ struct InboxDetail: View {
         saved = "Saved to your local backend."
     }
     private func play(_ source: String) async {
-        busy = true; defer { busy = false }
-        do { model.play(try await model.client().download("v1/audio/\(source)", query: [:])) }
-        catch { self.error = error.localizedDescription }
+        let identity = model.archiveIdentity, token = UUID()
+        mutationID = token; busy = true
+        defer { if mutationID == token { busy = false } }
+        do {
+            let file = try await model.client().download("v1/audio/\(source)", query: [:])
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
+            model.play(file)
+        } catch {
+            guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
+            self.error = error.localizedDescription
+        }
     }
 }

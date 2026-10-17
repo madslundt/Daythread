@@ -36,12 +36,14 @@ from .domain import (
     utc_now,
     wav_duration,
 )
+from .generation_jobs import generation_routes
 from .importance import router as importance_router
 from .inbox_api import inbox_router
 from .inference import InferenceError
 from .label_api import router as label_router
 from .label_models import LabelError
 from .model_connections import model_connection_routes
+from .notification_api import notification_routes
 from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
@@ -165,6 +167,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decision_routes(memory))
     app.include_router(inbox_router(memory))
     app.include_router(translation_routes(memory))
+    app.include_router(notification_routes(memory))
+    app.include_router(generation_routes(lambda: runtime().jobs))
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
@@ -301,6 +305,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         config = revised
         for profile in app.state.profiles.runtimes.values():
             profile.memory.settings = revised
+            profile.memory.notifications.settings = revised
             profile.memory.inference.settings = revised
             profile.omi.key = revised.omi_api_key.get_secret_value().strip()
             if profile.memory is not app.state.memory:

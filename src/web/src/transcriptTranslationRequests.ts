@@ -1,5 +1,6 @@
 import { request } from "./api";
 import { profileScope } from "./profiles";
+import { interfaceLanguage } from "./i18n";
 
 export type TranscriptTranslationData = {
   language: string;
@@ -58,7 +59,7 @@ export class TranscriptTranslationRequests {
 
 export function translationLanguageLabel(code: string): string {
   try {
-    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) || code;
+    return new Intl.DisplayNames([interfaceLanguage()], { type: "language" }).of(code) || code;
   } catch {
     return code;
   }

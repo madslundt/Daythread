@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { newId } from "./api";
 import {
@@ -18,7 +19,7 @@ export function SourceLabels({ sourceId }: { sourceId: string }) {
       className="label-source-tools"
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary>People & projects</summary>
+      <summary>{t("People & projects")}</summary>
       {open ? <SourceLabelEditor sourceId={sourceId} /> : null}
     </details>
   );
@@ -53,21 +54,19 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
   return (
     <div className="label-fields">
       {data ? (
-        <section aria-label="Current evidence for association review">
-          <h4>Current transcript · review this version</h4>
+        <section aria-label={t("Current evidence for association review")}>
+          <h4>{t("Current transcript · review this version")}</h4>
           <p className="transcript-text">
             {data.source.text ?? "Transcript expired"}
           </p>
-          <p className="caption">Source version {data.source.source_version}</p>
+          <p className="caption">{t("Source version")}{" "}{data.source.source_version}</p>
         </section>
       ) : null}
       <p className="caption">
-        Imported speaker names and numbers are unverified Omi attributions.
-        Numbers apply only to that source.
-      </p>
+        {t("Imported speaker names and numbers are unverified Omi attributions. Numbers apply only to that source.")}{" "}</p>
       {data?.source.source_kind === "omi_api" ? (
         <p className="caption">
-          Imported Omi conversation · {data.source.source_id}
+          {t("Imported Omi conversation ·")}{" "}{data.source.source_id}
         </p>
       ) : null}
       {data?.links.map((link) => {
@@ -79,7 +78,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
             <a href={`/labels/${link.entity_id}`}>{entity?.name || "Label"}</a>
             <span>
               {meanings[link.relation]}
-              {link.needs_review ? " · Needs review" : ""}
+              {link.needs_review ? t("· Needs review") : ""}
             </span>
             {link.needs_review ? (
               <button
@@ -96,8 +95,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
                   })
                 }
               >
-                Confirm after review
-              </button>
+                {t("Confirm after review")}{" "}</button>
             ) : null}
             <button
               className="text-button danger"
@@ -110,29 +108,26 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
                 })
               }
             >
-              Detach
-            </button>
+              {t("Detach")}{" "}</button>
           </div>
         );
       })}
       <label>
-        Find a person or project
-        <input
+        {t("Find a person or project")}{" "}<input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
       <label>
-        Choose label
-        <select
+        {t("Choose label")}{" "}<select
           value={entityId}
           onChange={(e) => {
             setEntityId(e.target.value);
             setRelation("related");
           }}
         >
-          <option value="">Select a label</option>
+          <option value="">{t("Select a label")}</option>
           {directory.data?.items
             .filter((e) =>
               [e.name, ...e.aliases].some((v) =>
@@ -151,8 +146,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
         <>
           <p>{selected.description}</p>
           <label>
-            Association meaning
-            <select
+            {t("Association meaning")}{" "}<select
               value={selected.kind === "project" ? "about_project" : relation}
               onChange={(e) => setRelation(e.target.value)}
             >
@@ -185,13 +179,11 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
               })
             }
           >
-            Add explicit association
-          </button>
+            {t("Add explicit association")}{" "}</button>
         </>
       ) : null}
       <a className="text-link" href="/labels">
-        Create or manage labels and cited notes
-      </a>
+        {t("Create or manage labels and cited notes")}{" "}</a>
       {mutation.error || state.error || directory.error ? (
         <ErrorState
           message={mutation.error || state.error || directory.error}

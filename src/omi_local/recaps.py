@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from .completion_events import publish_recap
 from .conversation_state import Conversation, activity, conversations, manual_upload
 from .domain import EvidenceChanged, stamp
 from .inference import InferenceError, validate_citations
@@ -268,4 +269,5 @@ class Recaps:
             )
         if ready or existing:
             memory.store.save_diary(day.isoformat(), key, result, guard=guard)
+            publish_recap(memory, result, key, guard=guard)
         return result

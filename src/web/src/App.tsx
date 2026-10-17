@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { resolveProfile, savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
 import { ImportanceProvider } from "./Importance";
 import { useEffect, useState } from "react";
@@ -19,8 +20,10 @@ import { dayFromPath, isDayPage, pageFromPath, pagePath, profileRoute, navigateP
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Loading, Notice } from "./UI";
+import { useInterfaceLanguage } from "./i18n";
 
 export default function App() {
+  useInterfaceLanguage();
   const directory = useResource<ProfileDirectory>("/v1/profiles");
   const [selected, setSelected] = useState<string | null>();
   useEffect(() => {
@@ -40,8 +43,8 @@ export default function App() {
     directory.setData((current) => current ? { ...current, profiles: current.profiles.map((item) => item.id === profile.id ? profile : item) } : current);
   }
   if (selected === undefined && !directory.error) return <div className="profile-loading">
-    <h1><img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" /> Daythread</h1>
-    <Loading>Loading profiles…</Loading>
+    <h1><img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" /> {t("Daythread")}</h1>
+    <Loading>{t("Loading profiles…")}</Loading>
   </div>;
   return <ImportanceProvider key={selected ?? "unselected"} enabled={Boolean(selected)}>
     <ProfileApp profiles={directory.data?.profiles ?? []} selected={selected ?? null} onSelect={choose}
@@ -140,19 +143,19 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
   const current = pages.find((item) => item.id === page)!;
   const showDate = page === "today" || page === "diary";
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
-  useEffect(() => { document.title = `${prepOpen ? "Prepare" : current.label} · Daythread`; }, [current.label, prepOpen]);
+  useEffect(() => { document.title = `${prepOpen ? t("Prepare") : t(current.label)} · Daythread`; }, [current.label, prepOpen]);
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to content</a>
+      <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>{t("Skip to content")}</a>
       <aside className="sidebar">
         <a
           className="brand"
           href={hrefForPage("today")}
           onClick={(event) => { event.preventDefault(); navigate("today"); }}
-          aria-label="Daythread home"
+          aria-label={t("Daythread home")}
         >
           <img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" />
-          <span>Daythread</span>
+          <span>{t("Daythread")}</span>
         </a>
         <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} />
         <div className="sidebar-footer">
@@ -161,10 +164,10 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
               className={`status-dot ${status.data && !status.error ? "online" : ""}`}
             />
             {status.error
-              ? "Backend offline"
+              ? t("Backend offline")
               : !selected
-                ? "Choose a profile in settings"
-                : status.data ? "Local backend" : "Connecting…"}
+                ? t("Choose a profile in settings")
+                : status.data ? t("Local backend") : t("Connecting…")}
           </div>
         </div>
       </aside>
@@ -188,7 +191,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
               onClick={(event) => { event.preventDefault(); navigate("today"); }}
             >
               <img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="28" height="28" />
-              <span>Daythread</span>
+              <span>{t("Daythread")}</span>
             </a>
             {showDate ? (
               <DateNavigator
@@ -211,8 +214,8 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
             ) : null}
           </div>
           <div className="intro">
-            {page !== "today" || prepOpen ? <span className="eyebrow intro-eyebrow">{prepOpen ? "Look ahead" : current.label}</span> : null}
-            <h1>{prepOpen ? "Prepare for what comes next." : page === "today" ? day === localDay(timezone) ? "Today" : "Your day" : current.title}</h1>
+            {page !== "today" || prepOpen ? <span className="eyebrow intro-eyebrow">{prepOpen ? t("Look ahead") : t(current.label)}</span> : null}
+            <h1>{prepOpen ? t("Prepare for what comes next.") : page === "today" ? day === localDay(timezone) ? t("Today") : t("Your day") : t(current.title)}</h1>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">
@@ -229,8 +232,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
           <Notice tone="error">
             {status.error}
             <button className="text-button" onClick={status.refresh}>
-              Try again
-            </button>
+              {t("Try again")}{" "}</button>
           </Notice>
         ) : null}
         {notice ? (
@@ -365,11 +367,11 @@ function HintActions({
         title={
           remaining
             ? `Another flag can be added in ${remaining} seconds`
-            : "Mark the surrounding conversation as important"
+            : t("Mark the surrounding conversation as important")
         }
       >
         <Icon name="star" />
-        {remaining ? `Marked · wait ${remaining}s` : "Mark important"}
+        {remaining ? `Marked · wait ${remaining}s` : t("Mark important")}
       </button>
       <button
         className={`button ${active ? "dark" : "accent"}`}
@@ -377,7 +379,7 @@ function HintActions({
         disabled={busy || !timeline}
       >
         <Icon name="mic" />
-        {active ? "End meeting" : "Start meeting"}
+        {active ? t("End meeting") : t("Start meeting")}
       </button>
     </div>
   );
@@ -395,10 +397,8 @@ function ActiveMeeting({
     <div className="meeting-notice">
       <Icon name="mic" size={17} />
       <span>
-        Meeting hint in progress · auto stops at{" "}
-        {timeLabel(active.auto_stop_at, timezone)}. Timing is approximate; short
-        meeting hints are ignored.
-      </span>
+        {t("Meeting hint in progress · auto stops at")}{" "}
+        {timeLabel(active.auto_stop_at, timezone)}{t(". Timing is approximate; short meeting hints are ignored.")}{" "}</span>
     </div>
   );
 }

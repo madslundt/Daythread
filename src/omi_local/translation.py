@@ -256,45 +256,105 @@ def translation_chunks(text: str, size: int = 4000) -> list[str]:
     return chunks
 
 
+def read_translation(
+    memory: Memory, audio_id: str, start: int | None, end: int | None, version: str | None,
+    requested_language: str | None,
+) -> tuple[dict, dict]:
+    source = memory.store.get_audio(audio_id)
+    if source is None:
+        raise HTTPException(404, "Transcript not found")
+    passage = translation_passage(source, start, end, version)
+    languages = list(memory.settings.translation_languages)
+    language = languages[0] if languages else ""
+    if requested_language is not None:
+        try:
+            language = translation_language(requested_language)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if language not in languages:
+            raise HTTPException(422, "Choose a translation language enabled in Settings")
+    already_in_target = bool(language) and source["state"] == "done" and transcript_in_language(
+        passage, language
+    )
+    redundant = [
+        code for code in languages if source["state"] == "done"
+        and (already_in_target if code == language else transcript_in_language(passage, code))
+    ]
+    return {
+        "language": language,
+        "available_languages": languages,
+        "redundant_languages": redundant,
+        "already_in_target_language": already_in_target,
+        "translation": (
+            None if already_in_target or not language
+            else memory.store.transcript_translation(
+                audio_id, language, (start, end) if start is not None else None
+            )
+        ),
+    }, source
+
+
+async def generate_translation(
+    memory: Memory, audio_id: UUID, start_offset: int | None = None,
+    end_offset: int | None = None, transcript_version: str | None = None,
+    language: str | None = None,
+) -> dict:
+    key = str(audio_id)
+    # Coalesce repeat clicks by reading the cache again after acquiring the lock.
+    async with memory.translation_lock:
+        result, source = await run_in_threadpool(
+            read_translation, memory, key, start_offset, end_offset, transcript_version, language
+        )
+        language = result["language"]
+        if not language:
+            raise HTTPException(
+                409, "Add a translation language in Settings before translating"
+            )
+        if language not in memory.settings.translation_languages:
+            raise HTTPException(
+                409, "Translation languages changed; choose a language and try again"
+            )
+        result["available_languages"] = list(memory.settings.translation_languages)
+        current = memory.store.get_audio(key)
+        if not current or any(
+            current[field] != source[field] for field in ("state", "transcript_version", "text")
+        ):
+            raise HTTPException(409, "Transcript changed; try again")
+        if result["already_in_target_language"]:
+            return result
+        if result["translation"]:
+            return result
+        if source["state"] != "done" or not (source["text"] or "").strip():
+            raise HTTPException(409, "A completed, nonempty transcript is required")
+        try:
+            async with asyncio.timeout(memory.settings.inference_timeout_seconds):
+                parts = []
+                for chunk in translation_chunks(translation_passage(
+                    source, start_offset, end_offset, transcript_version
+                )):
+                    translated = await memory.inference.translate(chunk, language)
+                    if not isinstance(translated, str) or not translated.strip():
+                        raise InferenceError("Empty translation")
+                    parts.append(translated.strip())
+                text = "\n".join(parts)
+        except (InferenceError, httpx.HTTPError, TimeoutError) as exc:
+            raise HTTPException(
+                502, "Translation failed. The original transcript is available."
+            ) from exc
+        if language not in memory.settings.translation_languages:
+            raise HTTPException(
+                409, "Translation languages changed; choose a language and try again"
+            )
+        result["translation"] = memory.store.save_translation(
+            source, language, text, memory.settings.translation_languages,
+            (start_offset, end_offset) if start_offset is not None else None,
+        )
+        result["available_languages"] = list(memory.settings.translation_languages)
+        return result
+
+
 def translation_routes(get_memory: Callable[[], Memory]) -> APIRouter:
     router = APIRouter(prefix="/v1/transcripts")
-
-    def read(
-        memory: Memory, audio_id: str, start: int | None, end: int | None, version: str | None,
-        requested_language: str | None,
-    ) -> tuple[dict, dict]:
-        source = memory.store.get_audio(audio_id)
-        if source is None:
-            raise HTTPException(404, "Transcript not found")
-        passage = translation_passage(source, start, end, version)
-        languages = list(memory.settings.translation_languages)
-        language = languages[0] if languages else ""
-        if requested_language is not None:
-            try:
-                language = translation_language(requested_language)
-            except ValueError as exc:
-                raise HTTPException(422, str(exc)) from exc
-            if language not in languages:
-                raise HTTPException(422, "Choose a translation language enabled in Settings")
-        already_in_target = bool(language) and source["state"] == "done" and transcript_in_language(
-            passage, language
-        )
-        redundant = [
-            code for code in languages if source["state"] == "done"
-            and (already_in_target if code == language else transcript_in_language(passage, code))
-        ]
-        return {
-            "language": language,
-            "available_languages": languages,
-            "redundant_languages": redundant,
-            "already_in_target_language": already_in_target,
-            "translation": (
-                None if already_in_target or not language
-                else memory.store.transcript_translation(
-                    audio_id, language, (start, end) if start is not None else None
-                )
-            ),
-        }, source
 
     @router.get("/{audio_id}/translation")
     def translation(
@@ -302,7 +362,7 @@ def translation_routes(get_memory: Callable[[], Memory]) -> APIRouter:
         end_offset: int | None = Query(None, ge=1), transcript_version: str | None = None,
         language: str | None = None,
     ) -> dict:
-        return read(
+        return read_translation(
             get_memory(), str(audio_id), start_offset, end_offset, transcript_version, language
         )[0]
 
@@ -312,57 +372,8 @@ def translation_routes(get_memory: Callable[[], Memory]) -> APIRouter:
         end_offset: int | None = Query(None, ge=1), transcript_version: str | None = None,
         language: str | None = None,
     ) -> dict:
-        memory, key = get_memory(), str(audio_id)
-        # Coalesce repeat clicks by reading the cache again after acquiring the lock.
-        async with memory.translation_lock:
-            result, source = await run_in_threadpool(
-                read, memory, key, start_offset, end_offset, transcript_version, language
-            )
-            language = result["language"]
-            if not language:
-                raise HTTPException(
-                    409, "Add a translation language in Settings before translating"
-                )
-            if language not in memory.settings.translation_languages:
-                raise HTTPException(
-                    409, "Translation languages changed; choose a language and try again"
-                )
-            result["available_languages"] = list(memory.settings.translation_languages)
-            current = memory.store.get_audio(key)
-            if not current or any(
-                current[field] != source[field] for field in ("state", "transcript_version", "text")
-            ):
-                raise HTTPException(409, "Transcript changed; try again")
-            if result["already_in_target_language"]:
-                return result
-            if result["translation"]:
-                return result
-            if source["state"] != "done" or not (source["text"] or "").strip():
-                raise HTTPException(409, "A completed, nonempty transcript is required")
-            try:
-                async with asyncio.timeout(memory.settings.inference_timeout_seconds):
-                    parts = []
-                    for chunk in translation_chunks(translation_passage(
-                        source, start_offset, end_offset, transcript_version
-                    )):
-                        translated = await memory.inference.translate(chunk, language)
-                        if not isinstance(translated, str) or not translated.strip():
-                            raise InferenceError("Empty translation")
-                        parts.append(translated.strip())
-                    text = "\n".join(parts)
-            except (InferenceError, httpx.HTTPError, TimeoutError) as exc:
-                raise HTTPException(
-                    502, "Translation failed. The original transcript is available."
-                ) from exc
-            if language not in memory.settings.translation_languages:
-                raise HTTPException(
-                    409, "Translation languages changed; choose a language and try again"
-                )
-            result["translation"] = memory.store.save_translation(
-                source, language, text, memory.settings.translation_languages,
-                (start_offset, end_offset) if start_offset is not None else None,
-            )
-            result["available_languages"] = list(memory.settings.translation_languages)
-            return result
+        return await generate_translation(
+            get_memory(), audio_id, start_offset, end_offset, transcript_version, language
+        )
 
     return router

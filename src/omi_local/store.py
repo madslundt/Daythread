@@ -22,6 +22,8 @@ from .importance import ImportanceStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
+from .notification_store import SCHEMA as NOTIFICATION_SCHEMA
+from .notification_store import NotificationStore
 from .processing_progress import SCHEMA as PROCESSING_PROGRESS_SCHEMA
 from .processing_progress import ProcessingProgressStore
 from .recap_store import SCHEMA as RECAP_SCHEMA
@@ -61,6 +63,7 @@ CREATE TABLE IF NOT EXISTS diary (
 
 
 class Store(
+    NotificationStore,
     ArchiveStore,
     CompletenessStore,
     DecisionStore,
@@ -155,6 +158,7 @@ class Store(
             db.executescript(LABEL_SCHEMA)
             db.executescript(IMPORTANCE_SCHEMA)
             db.executescript(RECAP_SCHEMA)
+            db.executescript(NOTIFICATION_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
             db.executescript(RECORDING_UPLOADS_SCHEMA)

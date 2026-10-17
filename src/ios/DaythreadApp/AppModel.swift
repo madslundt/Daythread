@@ -584,7 +584,7 @@ final class AppModel {
         checkpoint(); guard let store else { throw BackendFailure(message: "Capture storage unavailable") }
         let result = try store.rewind(minutes: minutes, end: end); play(result.url); return result.gaps
     }
-    static func date(_ string: String) -> Date? {
+    nonisolated static func date(_ string: String) -> Date? {
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: string) ?? ISO8601DateFormatter().date(from: string)
     }

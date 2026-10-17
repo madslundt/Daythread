@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { SourceList } from "./SourceList";
@@ -41,7 +42,7 @@ function RecordingSession({ group, day, query, timezone, onCorrect, timeline }: 
     <summary>
       <span className="source-time">{timeLabel(group.started_at, timezone)}<br />–{timeLabel(group.ended_at, timezone)}</span>
       <span className="source-overview"><span className="source-preview">{group.title}</span>
-        <span className="source-glance">{group.recording_count} recordings{group.estimated_times ? " · estimated times" : ""}</span></span>
+        <span className="source-glance">{group.recording_count} {t("recordings")}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
@@ -58,14 +59,14 @@ function SessionSources({ group, day, query, timezone, onCorrect, timeline }: {
   const resource = useResource<{ items: Source[]; total: number }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
-    <p className="caption">Nearby recordings, grouped for browsing. Each recording keeps its own audio and transcript.</p>
+    <p className="caption">{t("Nearby recordings, grouped for browsing. Each recording keeps its own audio and transcript.")}</p>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
-    {resource.loading && !resource.data ? <Loading>Loading recordings…</Loading> : null}
+    {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}
     {resource.data ? <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} /> : null}
     {resource.data && (resource.data.total > 30 || page > 0) ? <div className="pagination">
-      <span className="caption">Recordings {page * 30 + 1}–{page * 30 + resource.data.items.length} of {resource.data.total}</span>
-      <button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous recordings</button>
-      <button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>Next recordings</button>
+      <span className="caption">{t("Recordings")}{" "}{page * 30 + 1}–{page * 30 + resource.data.items.length} {t("of")}{" "}{resource.data.total}</span>
+      <button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t("Previous recordings")}</button>
+      <button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>{t("Next recordings")}</button>
     </div> : null}
   </>;
 }

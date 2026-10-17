@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, errorMessage, request } from "./api";
 import { dateTimeLabel } from "./format";
@@ -199,9 +200,9 @@ export function ConversationPrep({
     if (!included && latest === source.id) setLatest("");
   }
   return (
-    <section className="prep-screen" aria-label="Prepare for a conversation">
+    <section className="prep-screen" aria-label={t("Prepare for a conversation")}>
       <div className="section-heading">
-        <h2>Prepare for a conversation</h2>
+        <h2>{t("Prepare for a conversation")}</h2>
         <button
           className="button"
           onClick={() => {
@@ -212,32 +213,26 @@ export function ConversationPrep({
               onClose();
           }}
         >
-          Close
-        </button>
+          {t("Close")}{" "}</button>
       </div>
       <p>
-        Find dated recordings, confirm their relevance, then prepare a cited
-        brief. Names are literal phrases; a mention does not verify who
-        participated.
-      </p>
+        {t("Find dated recordings, confirm their relevance, then prepare a cited brief. Names are literal phrases; a mention does not verify who participated.")}{" "}</p>
       <div className="prep-form">
         <label>
-          Subject type
-          <select
+          {t("Subject type")}{" "}<select
             value={kind}
             onChange={(e) => {
               invalidate();
               setKind(e.target.value as PrepSearch["kind"]);
             }}
           >
-            <option value="person">Person</option>
-            <option value="project">Project</option>
-            <option value="topic">Topic</option>
+            <option value="person">{t("Person")}</option>
+            <option value="project">{t("Project")}</option>
+            <option value="topic">{t("Topic")}</option>
           </select>
         </label>
         <label>
-          Name or phrase
-          <input
+          {t("Name or phrase")}{" "}<input
             maxLength={200}
             value={subject}
             onChange={(e) => {
@@ -247,8 +242,7 @@ export function ConversationPrep({
           />
         </label>
         <label>
-          Alternate names · one per line
-          <textarea
+          {t("Alternate names · one per line")}{" "}<textarea
             rows={2}
             value={aliases}
             maxLength={2010}
@@ -259,8 +253,7 @@ export function ConversationPrep({
           />
         </label>
         <label>
-          Qualifier · must also appear
-          <input
+          {t("Qualifier · must also appear")}{" "}<input
             maxLength={200}
             value={qualifier}
             onChange={(e) => {
@@ -271,8 +264,7 @@ export function ConversationPrep({
         </label>
         <div className="button-row">
           <label>
-            From
-            <input
+            {t("From")}{" "}<input
               type="date"
               value={start}
               onChange={(e) => {
@@ -282,8 +274,7 @@ export function ConversationPrep({
             />
           </label>
           <label>
-            Through
-            <input
+            {t("Through")}{" "}<input
               type="date"
               value={end}
               onChange={(e) => {
@@ -294,13 +285,9 @@ export function ConversationPrep({
           </label>
         </div>
         <p className="caption">
-          {start || end ? `Inclusive dates in ${zone}` : "All retained dates"}.
-          Literal matches can miss unnamed discussions. Add an alternate phrase
-          or browse Rewind if no match appears.
-        </p>
+          {start || end ? `Inclusive dates in ${zone}` : t("All retained dates")}{t(". Literal matches can miss unnamed discussions. Add an alternate phrase or browse Rewind if no match appears.")}{" "}</p>
         <label>
-          My context and goals · user-authored, not recorded evidence
-          <textarea
+          {t("My context and goals · user-authored, not recorded evidence")}{" "}<textarea
             rows={3}
             value={context}
             maxLength={4000}
@@ -311,38 +298,30 @@ export function ConversationPrep({
           />
         </label>
         <p className="caption">
-          This draft stays in this screen only. It is sent to your local model
-          separately from recorded evidence.
-        </p>
+          {t("This draft stays in this screen only. It is sent to your local model separately from recorded evidence.")}{" "}</p>
         <button
           className="button dark"
           disabled={busy || !subject.trim() || !!start !== !!end}
           onClick={() => void run(false)}
         >
-          Find discussions
-        </button>
+          {t("Find discussions")}{" "}</button>
         {busy ? (
           <button className="button" onClick={cancel}>
-            Cancel request
-          </button>
+            {t("Cancel request")}{" "}</button>
         ) : null}
       </div>
       {error ? <ErrorState message={error} /> : null}
-      {checking ? <p role="status">Checking current evidence…</p> : null}
+      {checking ? <p role="status">{t("Checking current evidence…")}</p> : null}
       {found && !checking ? (
         <>
-          <h3>Matching recordings · {found.coverage.total_matches}</h3>
+          <h3>{t("Matching recordings ·")}{" "}{found.coverage.total_matches}</h3>
           <p className="caption">
-            {found.coverage.pending_chunks} pending chunks ·{" "}
-            {found.coverage.capture_gaps} known capture gaps in searched dates.
-            Phone uploads not yet received are unknown. Page omits{" "}
-            {found.coverage.omitted_matches} matches.
-          </p>
+            {found.coverage.pending_chunks} {t("pending chunks ·")}{" "}
+            {found.coverage.capture_gaps} {t("known capture gaps in searched dates. Phone uploads not yet received are unknown. Page omits")}{" "}
+            {found.coverage.omitted_matches} {t("matches.")}{" "}</p>
           {!found.sources.length ? (
             <p>
-              No matching transcribed recordings. Try alternate names or
-              different dates.
-            </p>
+              {t("No matching transcribed recordings. Try alternate names or different dates.")}{" "}</p>
           ) : null}
           {found.sources.map((source) => (
             <div className="prep-candidate" key={source.id}>
@@ -357,8 +336,8 @@ export function ConversationPrep({
                   }
                   onChange={(e) => toggle(source, e.target.checked)}
                 />{" "}
-                Include {dateTimeLabel(source.started_at, zone)}
-                {prepIsOld(source.started_at) ? " · over 30 days old" : ""}
+                {t("Include")}{" "}{dateTimeLabel(source.started_at, zone)}
+                {prepIsOld(source.started_at) ? t("· over 30 days old") : ""}
               </label>
               <p>{source.text?.slice(0, 500)}</p>
               <SourceList sources={[source]} timezone={zone} showDate />
@@ -372,8 +351,7 @@ export function ConversationPrep({
                 void run(false, Math.max(0, found.search.offset - 10))
               }
             >
-              Previous
-            </button>
+              {t("Previous")}{" "}</button>
             <button
               className="button"
               disabled={
@@ -381,19 +359,17 @@ export function ConversationPrep({
               }
               onClick={() => void run(false, found.search.offset + 10)}
             >
-              Next
-            </button>
+              {t("Next")}{" "}</button>
           </div>
           <label>
-            Confirm latest relevant recording
-            <select
+            {t("Confirm latest relevant recording")}{" "}<select
               value={latest}
               onChange={(e) => {
                 invalidate(false);
                 setLatest(e.target.value);
               }}
             >
-              <option value="">Choose after checking the evidence</option>
+              <option value="">{t("Choose after checking the evidence")}</option>
               {selected.map((source) => (
                 <option key={source.id} value={source.id}>
                   {dateTimeLabel(source.started_at, zone)} ·{" "}
@@ -403,15 +379,13 @@ export function ConversationPrep({
             </select>
           </label>
           <p className="caption">
-            {selected.length} selected. Excerpts are bounded to 4,000 characters
-            each and 16,000 total. Narrow selection if the budget is exceeded.
-          </p>
+            {selected.length} {t("selected. Excerpts are bounded to 4,000 characters each and 16,000 total. Narrow selection if the budget is exceeded.")}{" "}</p>
           <button
             className="button dark"
             disabled={busy || !latest || !selected.length}
             onClick={() => void run(true)}
           >
-            {busy ? "Working…" : "Prepare from confirmed evidence"}
+            {busy ? t("Working…") : t("Prepare from confirmed evidence")}
           </button>
         </>
       ) : null}

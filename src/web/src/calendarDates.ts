@@ -1,3 +1,5 @@
+import { interfaceLanguage } from "./i18n";
+
 // Date-only arithmetic stays in UTC so the month grid is independent of DST
 // and the browser's timezone. The selected day comes from the home timezone.
 export function shiftMonth(month: string, offset: number): string {
@@ -19,7 +21,7 @@ export function monthDays(month: string): (string | null)[] {
 }
 
 export function monthLabel(month: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(interfaceLanguage() === "en" ? "en-US" : interfaceLanguage(), {
     month: "long", year: "numeric", timeZone: "UTC",
   }).format(new Date(`${month}-01T12:00:00Z`));
 }

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { AudioForwarding } from "./AudioForwarding";
@@ -50,64 +51,56 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search, 
     }
   }
   return (
-    <section className="connection-options" aria-label="Omi connections">
-      <div className="settings-section-heading"><h2>Connections</h2>
-        <p>Choose how recordings reach your private archive.</p></div>
+    <section className="connection-options" aria-label={t("Omi connections")}>
+      <div className="settings-section-heading"><h2>{t("Connections")}</h2>
+        <p>{t("Choose how recordings reach your private archive.")}</p></div>
       <section className="connection-local">
-      <span className="settings-badge">Local capture</span>
-      <h3>Omi + iPhone companion</h3>
+      <span className="settings-badge">{t("Local capture")}</span>
+      <h3>{t("Omi + iPhone companion")}</h3>
       <p className="muted settings-description">
-        Connect your Omi to the iPhone app over Bluetooth for local audio capture.
-        This path does not need an Omi API key.
-      </p>
-      <p className="caption">Pair your pendant in the iPhone app’s Capture tab. Set your server address in the app’s Settings.</p>
+        {t("Connect your Omi to the iPhone app over Bluetooth for local audio capture. This path does not need an Omi API key.")}{" "}</p>
+      <p className="caption">{t("Pair your pendant in the iPhone app’s Capture tab. Set your server address in the app’s Settings.")}</p>
       </section>
       <details className="settings-disclosure" open={search.trim() ? true : undefined}>
-        <summary>Import from Omi cloud <span>Optional · transcripts only</span></summary>
+        <summary>{t("Import from Omi cloud")}{" "}<span>{t("Optional · transcripts only")}</span></summary>
         <div className="settings-disclosure-body">
       <p className="muted settings-description">
-        Optionally import existing conversations from Omi’s cloud into your local
-        archive. Imports include transcripts only, without original audio.
-      </p>
-      {!profileSelected ? <p className="caption">Choose a profile in Settings → Profiles to import conversations.</p> : null}
+        {t("Optionally import existing conversations from Omi’s cloud into your local archive. Imports include transcripts only, without original audio.")}{" "}</p>
+      {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Profiles to import conversations.")}</p> : null}
       {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
-      {resource.loading ? <Loading>Checking Omi API connection…</Loading> : resource.data ? (
+      {resource.loading ? <Loading>{t("Checking Omi API connection…")}</Loading> : resource.data ? (
         <p className="caption">
           {resource.data.configured
-            ? "Omi API is configured on your server. Import up to 25 conversations at a time, newest first."
-            : <>To enable cloud import, add your Omi API key in Models &amp; server → Omi connections.
-              Saved keys stay on your server and are never displayed here.</>}
+            ? t("Omi API is configured on your server. Import up to 25 conversations at a time, newest first.")
+            : <>{t("To enable cloud import, add your Omi API key in Models & server → Omi connections. Saved keys stay on your server and are never displayed here.")}</>}
         </p>
       ) : null}
-      {!resource.data?.configured ? <button type="button" className="text-button" onClick={onConfigure}>Set up an Omi API key <Icon name="chevron-right" size={14} /></button> : null}
+      {!resource.data?.configured ? <button type="button" className="text-button" onClick={onConfigure}>{t("Set up an Omi API key")}{" "}<Icon name="chevron-right" size={14} /></button> : null}
       {error ? <ErrorState message={error} /> : null}
       {result ? (
         <Notice tone="success">
-          Last page: {result.imported} imported, {result.existing} already in your archive,
-          {" "}{result.skipped} skipped.
-          {!result.has_more ? " No more conversations in this import." : " More conversations are available."}
+          {t("Last page:")}{" "}{result.imported} {t("imported,")}{" "}{result.existing} {t("already in your archive,")}{" "}{" "}{result.skipped} {t("skipped.")}{" "}{!result.has_more ? t("No more conversations in this import.") : t("More conversations are available.")}
         </Notice>
       ) : null}
       <div className="button-row">
         <button type="button" className="button" disabled={unavailable}
           onClick={() => void importPage()}>
-          {busy ? "Importing…" : "Import latest conversations"}
+          {busy ? t("Importing…") : t("Import latest conversations")}
         </button>
         {nextPage ? (
           <button type="button" className="button" disabled={unavailable}
             onClick={() => void importPage(true)}>
-            Load next 25
-          </button>
+            {t("Load next 25")}{" "}</button>
         ) : null}
         {!resource.loading && !resource.error && !resource.data?.configured ? (
-          <button type="button" className="text-button" onClick={resource.refresh}>Check connection again</button>
+          <button type="button" className="text-button" onClick={resource.refresh}>{t("Check connection again")}</button>
         ) : null}
       </div>
         </div>
       </details>
       <details className="settings-disclosure" open={search.trim() ? true : undefined}>
-        <summary>Forward audio from the official app <span>Advanced · optional</span></summary>
-        <div className="settings-disclosure-body">{profileSelected ? <AudioForwarding onSaved={onSaved} /> : <p className="caption">Choose a profile in Settings → Profiles to set up an audio receiver for its archive.</p>}</div>
+        <summary>{t("Forward audio from the official app")}{" "}<span>{t("Advanced · optional")}</span></summary>
+        <div className="settings-disclosure-body">{profileSelected ? <AudioForwarding onSaved={onSaved} /> : <p className="caption">{t("Choose a profile in Settings → Profiles to set up an audio receiver for its archive.")}</p>}</div>
       </details>
     </section>
   );

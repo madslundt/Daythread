@@ -1,5 +1,7 @@
 # Daythread
 
+The web and iPhone interfaces support English and Danish through separate on-device language preferences. Translation contributors can follow the [localization guide](localization.md) to add a language and verify both catalogs.
+
 A local audio memory system: **Omi → iPhone → your backend and local models → rewind, diary, and chat**. The native app captures wearable audio; the responsive web app works from a computer or phone. Both share one backend. Application and API authentication are intentionally disabled.
 
 ## Run web and backend
@@ -78,6 +80,18 @@ xcodebuild -project Daythread.xcodeproj -scheme Daythread \
 
 The project file is included; regenerate it when changing `project.yml`. Physical signing/install, actual pendant pairing, button timing, and screen-locked/background endurance still need the purchased hardware. See [device evidence and acceptance checks](device-research.md).
 
+## Completion notifications on iPhone
+
+Rewinds, daily and meeting recaps, and transcript translations requested from the iPhone use durable home-core jobs. Once accepted, work continues when the app is closed, with saved results available from the completion notification. Weekly reviews and automatically generated daily recaps also publish completion notices. While Daythread is active, a foreground feed shows internal banners and the Notifications list; the notification delegate suppresses system banners and sounds even when a push races with reopening the app.
+
+To enable background delivery, configure **Push notifications** in server configuration with the Apple developer team ID (`apns_team_id`), APNs signing key ID (`apns_key_id`), private `.p8` key contents (`apns_private_key`), and app bundle ID (`apns_topic`, normally `com.daythread.app`). Equivalent environment variables are `OMI_APNS_TEAM_ID`, `OMI_APNS_KEY_ID`, `OMI_APNS_PRIVATE_KEY`, and `OMI_APNS_TOPIC`. The private key remains on home-core and is redacted from configuration reads and archive exports. Home-core needs outbound HTTPS access to Apple's APNs service. Inference remains on the configured model service; notification titles, previews and routing metadata go through Apple.
+
+Build the iPhone app with a provisioning profile that enables Push Notifications for its bundle ID. The project includes the `aps-environment` entitlement; `APS_ENVIRONMENT` defaults to `development` for Debug and `production` for Release. Enable push notifications in the app's Settings and grant iOS permission. No Apple credentials or provisioning changes are included in the repository. Without configured APNs credentials or permission, foreground internal notifications still work.
+
+Messages include the rewind duration and window time, recap date and preview, translation language and recording, or weekly review date. Tapping opens the saved result. Control lock-screen previews in iPhone notification settings. Foreground devices renew a 60-second presence lease and acknowledge consumed events; unacknowledged events become eligible for push after backgrounding or lease expiry. Failed delivery retries for up to one day. Accepted generation jobs recover after a backend restart. Device registrations and delivery queues are excluded from backups and must be registered again after restoration.
+
+Simulator builds and mocked APNs tests validate code paths; physical-device delivery with valid Apple credentials, permission, background/terminated state, and a foreground transition still requires an end-to-end device check.
+
 ## Weekly review (web)
 
 Open **Diary → Weeks** to generate an on-demand review of the last completed Monday–Sunday week, compared with the previous calendar week. Week boundaries use the saved backend IANA timezone, including DST; **This week so far** shows a partial cutoff. Daily recaps are not required. Every item includes an exact quote and an inspectable original transcript, with correction, history, deletion and audio when available. The four groups cover supported decisions, commitments needing attention, recurring discussions and supported changes.
@@ -88,7 +102,7 @@ Generation runs in a durable local queue independently of transcription, survive
 
 Late evidence in either week, corrections, source states, hints, timezone and model configuration make saved reviews stale. Publication rechecks the full scoped fingerprint inside a write transaction. Historical versions retain the original evidence and timezone; source inspection shows the current transcript. Deletion or transcript expiry conservatively purges all weekly versions/jobs and restored Markdown projections. Downloaded exports and earlier backups are independent copies. Backups preserve version history and queued jobs. Update **LLM revision** in Settings when replacing a model behind the same route name.
 
-Native weekly UI, scheduled generation, notifications and weekly consumption of the existing structured inbox lifecycle are follow-ons. Weekly synthesis currently uses original transcripts directly; it does not read or mutate inbox status or decision records. Current range chat remains useful for follow-up, but its retrieval is not exhaustive. Quote validation checks traceability and format; semantic claim support and real local-model quality still require evaluation.
+Scheduled generation and weekly consumption of the existing structured inbox lifecycle are follow-ons. Native completion notifications are described above. Weekly synthesis currently uses original transcripts directly; it does not read or mutate inbox status or decision records. Current range chat remains useful for follow-up, but its retrieval is not exhaustive. Quote validation checks traceability and format; semantic claim support and real local-model quality still require evaluation.
 
 ## Editable inbox
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import OmiCore
 
 struct DecisionsSection: View {
     let day: String
@@ -8,7 +9,10 @@ struct DecisionsSection: View {
     @State private var total = 0
     @State private var error: String?
     @State private var busy = false
-    @State private var showDismissed = false
+    @State private var allDays = false
+    @State private var query = ""
+    @State private var submitted = ""
+    @State private var review = ""
     @State private var revision = 0
     @State private var requestID = UUID()
 
@@ -16,7 +20,19 @@ struct DecisionsSection: View {
         Section("Decisions") {
             Text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final.")
                 .font(.caption).foregroundStyle(.secondary)
-            Toggle("Include dismissed", isOn: $showDismissed)
+            DisclosureGroup("Search & filter") {
+                TextField("Search decisions", text: $query).submitLabel(.search)
+                    .onSubmit { submitted = String(query.prefix(200)) }
+                    .accessibilityIdentifier("decisions.search")
+                Button("Search") { submitted = String(query.prefix(200)) }.disabled(busy)
+                Toggle("Across all days", isOn: $allDays).accessibilityIdentifier("decisions.allDays")
+                Picker("Review status", selection: $review) {
+                    Text("Active records").tag("")
+                    Text("Proposed").tag("proposed")
+                    Text("Confirmed").tag("confirmed")
+                    Text("Dismissed").tag("dismissed")
+                }.accessibilityIdentifier("decisions.reviewStatus")
+            }
             ForEach(items) { item in
                 NavigationLink { DecisionDetail(id: item.id) } label: { DecisionRow(record: item) }
             }
@@ -24,12 +40,12 @@ struct DecisionsSection: View {
             if items.count < total {
                 Button("Load more decisions") { Task { await loadMore() } }.disabled(busy)
             }
-            if items.isEmpty && !busy { Text("No decision records for this day.").foregroundStyle(.secondary) }
+            if items.isEmpty && !busy { Text(allDays || !submitted.isEmpty || !review.isEmpty ? "No matching decision records." : "No decision records for this day.").foregroundStyle(.secondary) }
             Button("Refresh decisions") { revision += 1 }.disabled(busy)
             if busy { ProgressView("Reading decisions…") }
             ErrorNote(message: error)
         }
-        .task(id: "\(model.archiveIdentity).\(day).\(showDismissed).\(revision)") { await load() }
+        .task(id: "\(model.archiveIdentity).\(model.archiveRevision).\(day).\(allDays).\(submitted).\(review).\(revision)") { await load() }
         .task(id: model.archiveIdentity + day + ".automatic-decisions") {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
@@ -43,11 +59,17 @@ struct DecisionsSection: View {
         }
         .onDisappear { requestID = UUID(); items = [] }
     }
+    private func filters(offset: Int) -> [String: String] {
+        var result = ["q": submitted, "include_dismissed": review == "dismissed" ? "true" : "false", "limit": "50", "offset": String(offset)]
+        if !allDays { result["day"] = day }
+        if !review.isEmpty { result["review_status"] = review }
+        return result
+    }
     private func load() async {
         let token = UUID(); requestID = token; busy = true; error = nil; items = []; total = 0
         defer { if requestID == token { busy = false } }
         do {
-            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)", "limit": "50", "offset": "0"])
+            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: filters(offset: 0))
             guard !Task.isCancelled, requestID == token else { return }
             items = result.items; total = result.total
         } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
@@ -57,7 +79,7 @@ struct DecisionsSection: View {
         let token = requestID; busy = true; error = nil
         defer { if requestID == token { busy = false } }
         do {
-            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: ["day": day, "include_dismissed": "\(showDismissed)", "limit": "50", "offset": "\(items.count)"])
+            let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: filters(offset: items.count))
             guard !Task.isCancelled, requestID == token else { return }
             let existing = Set(items.map(\.id))
             items.append(contentsOf: result.items.filter { !existing.contains($0.id) }); total = result.total
@@ -68,12 +90,17 @@ struct DecisionsSection: View {
 
 struct DecisionRow: View {
     let record: DecisionRecord
+    @Environment(AppModel.self) private var model
+    private var dateLabel: String {
+        guard let date = AppModel.date(record.started_at) else { return record.started_at }
+        return DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM yyyy HHmm")
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(record.title).foregroundStyle(.primary)
             Text("\(record.display_state.capitalized) · \(record.review_status) · evidence \(record.evidence_condition)")
                 .font(.caption).foregroundStyle(.secondary)
-            Text(record.started_at).font(.caption).foregroundStyle(.secondary)
+            Text(dateLabel).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -108,25 +135,27 @@ struct DecisionDetail: View {
                     }
                 }
                 if let content = record.content {
-                    DecisionClaims(content: content)
+                    DecisionClaims(content: content, historical: record.evidence_condition != "current")
                     if !content.owner_notes.isEmpty {
                         Section("Owner note · not recorded speech") { Text(content.owner_notes).textSelection(.enabled) }
                     }
                     Section("Review") {
                         Text("Confirm that the record represents its sources. Missing rationale must remain unstated.").font(.caption).foregroundStyle(.secondary)
                         Button("Edit record and evidence") { editor = DecisionEditSelection(record: record) }
-                        if record.predecessor_id == nil && record.successor_id == nil {
+                        if record.review_status != "confirmed" && record.predecessor_id == nil && record.successor_id == nil {
                             Button(predecessor == nil ? "Choose earlier decision this revises…" : "Revises: \(predecessor!.title)") { choosingPredecessor = true }
                             if predecessor != nil { Button("Clear earlier decision") { predecessor = nil } }
                         }
-                        Button(predecessor == nil ? "Confirm accuracy" : "Confirm accuracy and revision") { Task { await event("confirm") } }
-                            .disabled(record.evidence_condition != "current")
-                        if record.predecessor_id == nil && record.successor_id == nil {
+                        if record.review_status != "confirmed" {
+                            Button(predecessor == nil ? "Confirm accuracy" : "Confirm accuracy and revision") { Task { await event("confirm") } }
+                                .disabled(record.evidence_condition != "current")
+                        }
+                        if record.review_status != "confirmed" && record.predecessor_id == nil && record.successor_id == nil {
                             Button("Dismiss proposal") { Task { await event("dismiss") } }
                         }
                         Button(record.evidence_condition == "conflicted" ? "Resolve conflict after review" : "Mark contradictory evidence") {
                             Task { await event(record.evidence_condition == "conflicted" ? "resolve" : "conflict") }
-                        }
+                        }.disabled(record.evidence_condition == "stale")
                         Button("Delete record", role: .destructive) { deleting = true }
                     }.disabled(busy)
                 }
@@ -144,7 +173,7 @@ struct DecisionDetail: View {
                                 NavigationLink(content.choice.text) {
                                     List {
                                         Text("Historical version · may no longer reflect current evidence").font(.caption).foregroundStyle(.secondary)
-                                        DecisionClaims(content: content)
+                                        DecisionClaims(content: content, historical: true)
                                         if !content.owner_notes.isEmpty { Section("Historical owner note") { Text(content.owner_notes) } }
                                     }.navigationTitle("Version \(entry.version)")
                                 }
@@ -163,7 +192,7 @@ struct DecisionDetail: View {
         .sheet(item: $editor, onDismiss: { Task { await load() } }) { selection in
             NavigationStack { DecisionEditor(record: selection.record, source: nil) }
         }
-        .sheet(isPresented: $choosingPredecessor) { NavigationStack { DecisionPredecessorPicker(excluding: id, selection: $predecessor) } }
+        .sheet(isPresented: $choosingPredecessor) { NavigationStack { DecisionPredecessorPicker(excluding: id, before: record?.started_at ?? "", selection: $predecessor) } }
         .confirmationDialog("Delete this decision and its content history?", isPresented: $deleting, titleVisibility: .visible) {
             Button("Delete decision", role: .destructive) { Task { await delete() } }
         }
@@ -220,6 +249,7 @@ struct DecisionEditSelection: Identifiable { let id = UUID(); let record: Decisi
 
 struct DecisionClaims: View {
     let content: DecisionContent
+    var historical = false
     var body: some View {
         claim("Choice", content.choice)
         if let context = content.context { claim("Recorded context", context) }
@@ -239,7 +269,8 @@ struct DecisionClaims: View {
             ForEach(Array(claim.evidence.enumerated()), id: \.offset) { _, anchor in
                 VStack(alignment: .leading) {
                     Text("“\(anchor.quote)”").textSelection(.enabled)
-                    NavigationLink("Open original source") { DecisionEvidenceSource(id: anchor.source_id, expectedVersion: anchor.source_version) }
+                    if historical { Text("Historical evidence · inspect the current transcript before relying on it.").font(.caption).foregroundStyle(.secondary) }
+                    NavigationLink("Inspect passage in source") { DecisionEvidenceSource(anchor: anchor) }
                     Text("Source \(anchor.source_id) · characters \(anchor.start)–\(anchor.end)").font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -248,28 +279,60 @@ struct DecisionClaims: View {
 }
 
 struct DecisionEvidenceSource: View {
-    let id: String
-    let expectedVersion: String
+    let anchor: DecisionAnchor
     @Environment(AppModel.self) private var model
     @State private var source: JSONValue?
     @State private var error: String?
+    @State private var loading = false
+    private var passage: TranscriptPassage? {
+        guard let source else { return nil }
+        return TranscriptEvidence.passage(text: source["text"].text, sourceID: source["id"].text,
+                                          sourceVersion: source["source_version"].text, expectedID: anchor.source_id,
+                                          expectedVersion: anchor.source_version, start: anchor.start, end: anchor.end, quote: anchor.quote)
+    }
     var body: some View {
-        Group {
-            if let source { SourceDetail(source: source) }
-            else { List { ProgressView(); ErrorNote(message: error) } }
-        }.task {
-            do {
-                let result: JSONValue = try await model.client().decisionRequest("v1/transcripts/\(id)")
-                guard !Task.isCancelled else { return }
-                guard result["source_version"].text == expectedVersion else { throw BackendFailure(message: "This source changed. Refresh the decision and review its evidence again.") }
-                source = result
-            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
-        }.onDisappear { source = nil }
+        List {
+            Section("Saved quotation") {
+                Text("“\(anchor.quote)”").textSelection(.enabled)
+                Text("Transcript characters \(anchor.start)–\(anchor.end)").font(.caption).foregroundStyle(.secondary)
+            }
+            if let source {
+                Section("Current source transcript") {
+                    if let passage {
+                        (Text(passage.before) + Text(passage.quote).bold().foregroundColor(Theme.accent) + Text(passage.after))
+                            .textSelection(.enabled)
+                    } else {
+                        Label("The transcript or passage changed. Edit the decision and attach current evidence before confirming.", systemImage: "exclamationmark.circle")
+                            .font(.callout).foregroundStyle(.orange)
+                        Text(source["text"].text.isEmpty ? "No transcript remains." : source["text"].text).textSelection(.enabled)
+                    }
+                    NavigationLink("Open recording, audio & correction tools") { SourceDetail(source: source) }
+                }
+            }
+            if loading { ProgressView("Loading source…") }
+            ErrorNote(message: error)
+            if error != nil { Button("Try again") { Task { await load() } } }
+        }.omiScreen().navigationTitle("Decision evidence").navigationBarTitleDisplayMode(.inline)
+            .task(id: model.archiveIdentity + model.archiveRevision + anchor.source_id) { await load() }
+            .onDisappear { source = nil }
+    }
+    private func load() async {
+        let identity = model.archiveIdentity
+        source = nil; error = nil; loading = true; defer { loading = false }
+        do {
+            let result: JSONValue = try await model.client().decisionRequest("v1/transcripts/\(anchor.source_id)")
+            guard !Task.isCancelled, identity == model.archiveIdentity else { return }
+            source = result
+        } catch {
+            guard !Task.isCancelled, identity == model.archiveIdentity else { return }
+            self.error = error.localizedDescription
+        }
     }
 }
 
 struct DecisionPredecessorPicker: View {
     let excluding: String
+    let before: String
     @Binding var selection: DecisionRecord?
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -282,7 +345,7 @@ struct DecisionPredecessorPicker: View {
     var body: some View {
         List {
             Text("Select the earlier choice this decision explicitly replaces. Check the source and date; later capture alone is insufficient.").font(.caption)
-            ForEach(items.filter { $0.id != excluding && $0.review_status == "confirmed" && $0.successor_id == nil && $0.evidence_condition == "current" }) { record in
+            ForEach(items.filter { $0.id != excluding && $0.review_status == "confirmed" && $0.successor_id == nil && $0.evidence_condition == "current" && $0.content != nil && (AppModel.date($0.started_at) ?? .distantFuture) < (AppModel.date(before) ?? .distantPast) }) { record in
                 VStack(alignment: .leading) {
                     DecisionRow(record: record)
                     NavigationLink("Inspect evidence") { DecisionDetail(id: record.id) }

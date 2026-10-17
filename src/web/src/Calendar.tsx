@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { monthDays, monthLabel, shiftMonth } from "./calendarDates";
 import { dayLabel, shiftDay } from "./format";
@@ -57,27 +58,27 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
   return (
     <section className="month-calendar" aria-labelledby={heading}>
       <div className="calendar-heading">
-        <button type="button" className="icon-button" aria-label="Previous month" disabled={month <= "0001-01"}
+        <button type="button" className="icon-button" aria-label={t("Previous month")} disabled={month <= "0001-01"}
           onClick={() => setMonth(shiftMonth(month, -1))}>
           <Icon name="chevron-left" size={18} />
         </button>
         <label className="calendar-month-picker">
           <span id={heading}>{monthLabel(month)}</span>
-          <input type="month" aria-label="Choose month" value={month} min="0001-01" max={today.slice(0, 7)}
+          <input type="month" aria-label={t("Choose month")} value={month} min="0001-01" max={today.slice(0, 7)}
             onChange={(event) => {
               const value = event.target.value;
               if (/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(value) && value <= today.slice(0, 7)) setMonth(value);
             }} />
         </label>
-        <button type="button" className="icon-button" aria-label="Next month" disabled={month >= today.slice(0, 7)}
+        <button type="button" className="icon-button" aria-label={t("Next month")} disabled={month >= today.slice(0, 7)}
           onClick={() => setMonth(shiftMonth(month, 1))}>
           <Icon name="chevron-right" size={18} />
         </button>
       </div>
-      <p id={keyboardHint} className="sr-only">Use arrow keys to move between days. Home and End move to the start and end of a week. Press Enter to choose a day.</p>
+      <p id={keyboardHint} className="sr-only">{t("Use arrow keys to move between days. Home and End move to the start and end of a week. Press Enter to choose a day.")}</p>
       <table ref={grid} className="calendar-grid" aria-label={monthLabel(month)} aria-describedby={keyboardHint}>
         <thead><tr>{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
-          <th key={weekday} scope="col">{weekday}</th>
+          <th key={weekday} scope="col">{t(weekday)}</th>
         ))}</tr></thead>
         <tbody>{Array.from({ length: days.length / 7 }, (_, week) => (
           <tr key={week}>{days.slice(week * 7, week * 7 + 7).map((value, index) => (
@@ -112,13 +113,13 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
         ))}</tbody>
       </table>
       <div className="calendar-footer">
-        <span className="calendar-legend"><span className="summary-dot" /> Saved summary</span>
-        <button type="button" className="text-button" onClick={() => { setMonth(today.slice(0, 7)); onDay(today); }}>Today</button>
+        <span className="calendar-legend"><span className="summary-dot" /> {t("Saved summary")}</span>
+        <button type="button" className="text-button" onClick={() => { setMonth(today.slice(0, 7)); onDay(today); }}>{t("Today")}</button>
       </div>
       <div className="calendar-status" aria-live="polite">
         {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} />
-          : resource.loading ? "Checking summaries…"
-          : resource.data && !summaries.size ? "No saved summaries this month." : null}
+          : resource.loading ? t("Checking summaries…")
+          : resource.data && !summaries.size ? t("No saved summaries this month.") : null}
       </div>
     </section>
   );
@@ -129,7 +130,7 @@ export function DateNavigator({ day, today, onDay }: CalendarProps) {
   return (
     <div className="date-navigator">
       <button type="button" className="icon-button" onClick={() => onDay(shiftDay(day, -1))}
-        disabled={day <= "0001-01-01"} aria-label="Previous day">
+        disabled={day <= "0001-01-01"} aria-label={t("Previous day")}>
         <Icon name="chevron-left" size={19} />
       </button>
       <button type="button" className="date-picker calendar-trigger" aria-label={`Choose day, ${dayLabel(day)}`}
@@ -137,7 +138,7 @@ export function DateNavigator({ day, today, onDay }: CalendarProps) {
         <span>{dayLabel(day)}</span>
       </button>
       <button type="button" className="icon-button" onClick={() => onDay(shiftDay(day, 1))}
-        disabled={day >= today} aria-label="Next day">
+        disabled={day >= today} aria-label={t("Next day")}>
         <Icon name="chevron-right" size={19} />
       </button>
       {open ? <CalendarDialog day={day} today={today} onDay={onDay} onClose={() => setOpen(false)} /> : null}
@@ -163,8 +164,8 @@ function CalendarDialog({ day, today, onDay, onClose }: CalendarProps & { onClos
       onClick={(event) => { if (event.target === dialog.current) onClose(); }}>
       <div className="calendar-dialog-content">
         <div className="section-heading">
-          <h2 id={heading}>Choose a day</h2>
-          <button type="button" className="icon-button" aria-label="Close calendar" onClick={onClose}><Icon name="close" /></button>
+          <h2 id={heading}>{t("Choose a day")}</h2>
+          <button type="button" className="icon-button" aria-label={t("Close calendar")} onClick={onClose}><Icon name="close" /></button>
         </div>
         <MonthCalendar day={day} today={today} onDay={(value) => { onDay(value); onClose(); }} />
       </div>

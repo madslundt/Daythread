@@ -1,5 +1,7 @@
 # Daythread web app
 
+The interface supports English and Danish. Choose **Settings → Daily preferences → Interface language** to follow the browser language or select one on this device. To contribute another language or add interface copy, follow the [localization guide](../../docs/localization.md); run `npm run i18n:check` with the web checks.
+
 The React app talks to the backend on the same origin. It has no sign-in, remote fonts, analytics, or cloud dependencies. The backend serves the built app at `/`.
 
 Daythread uses the user-selected artwork in `public/icons/daythread-master.png`, copied from the approved attachment without altering the design. PNG sizes 32/192/512, `favicon.ico` and `apple-touch-icon.png` cover browser tabs, desktop installation and phone home screens. The same artwork is packaged in the iPhone AppIcon and DaythreadMark asset catalogs and used by the home-core front page. `public/site.webmanifest` provides the installation name and icons. Icon URLs include an artwork version to refresh browser and dashboard caches when the design changes.

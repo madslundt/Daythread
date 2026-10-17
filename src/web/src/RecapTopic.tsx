@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useState } from "react";
 import { CopySummary } from "./CopySummary";
 import { Icon } from "./Icon";
@@ -22,8 +23,7 @@ export function RecapTopic({ title, parts, day, sources, timezone, onChat, onCor
   const actions = <div className="recap-topic-actions">
     <CopySummary text={`${heading}\n\n${plain}`} context={heading} />
     <button type="button" className="text-button" onClick={() => onChat({ kind: "day", day }, `Tell me more about this topic from my day recap: ${heading}\n${plain}`)}>
-      <Icon name="chat" size={16} />Chat about this
-    </button>
+      <Icon name="chat" size={16} />{t("Chat about this")}{" "}</button>
   </div>;
   const body = <>
     <div className="recap-topic-summary"><RichText text={text} /></div>
@@ -31,10 +31,10 @@ export function RecapTopic({ title, parts, day, sources, timezone, onChat, onCor
     <details className="recap-topic-evidence" onToggle={(event) => {
       if (event.target === event.currentTarget) setShowEvidence(event.currentTarget.open);
     }}>
-      <summary>Original passages</summary>
+      <summary>{t("Original passages")}</summary>
       {showEvidence ? related.sources.length ? related.sources.map((source) => (
         <RecapEvidence key={source.id} source={source} point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
-      )) : <p className="caption">No linked or matching recordings for this topic.</p> : null}
+      )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p> : null}
     </details>
   </>;
   const star = importanceTarget ? <ImportanceButton target={importanceTarget} label={heading} compact /> : null;

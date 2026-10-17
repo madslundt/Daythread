@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { navigatePath, subscribeNavigation } from "./routing";
 import { ImportanceButton, ImportantBadge } from "./Importance";
 import { LabelDecisionLink } from "./LabelDecisionLink";
@@ -60,29 +61,25 @@ export function Labels({ timezone }: { timezone: string }) {
   return (
     <section className="labels-page">
       <p>
-        Keep people and projects distinct with names, aliases and descriptions.
-        All associations and annotations are chosen by you.
-      </p>
+        {t("Keep people and projects distinct with names, aliases and descriptions. All associations and annotations are chosen by you.")}{" "}</p>
       <div className="label-fields">
         <label>
-          Search names and aliases
-          <input
+          {t("Search names and aliases")}{" "}<input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
         <label>
-          Kind
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">People and projects</option>
-            <option value="person">People</option>
-            <option value="project">Projects</option>
+          {t("Kind")}{" "}<select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="">{t("People and projects")}</option>
+            <option value="person">{t("People")}</option>
+            <option value="project">{t("Projects")}</option>
           </select>
         </label>
       </div>
       <button className="button" onClick={() => setCreating(!creating)}>
-        {creating ? "Close new label" : "New person or project"}
+        {creating ? t("Close new label") : t("New person or project")}
       </button>
       {creating ? (
         <form
@@ -103,8 +100,7 @@ export function Labels({ timezone }: { timezone: string }) {
             className="button dark"
             disabled={mutation.busy || !directory.data}
           >
-            Save label
-          </button>
+            {t("Save label")}{" "}</button>
           {mutation.error ? <ErrorState message={mutation.error} /> : null}
         </form>
       ) : null}
@@ -112,12 +108,10 @@ export function Labels({ timezone }: { timezone: string }) {
         <ErrorState message={directory.error} retry={directory.refresh} />
       ) : null}
       {directory.loading ? (
-        <p role="status">Loading labels…</p>
+        <p role="status">{t("Loading labels…")}</p>
       ) : !directory.data?.items.length ? (
         <p>
-          No matching labels. Create one, then link recordings from their source
-          details.
-        </p>
+          {t("No matching labels. Create one, then link recordings from their source details.")}{" "}</p>
       ) : null}
       <div className="label-directory">
         {directory.data?.items.map((entity) => (
@@ -127,7 +121,7 @@ export function Labels({ timezone }: { timezone: string }) {
             href={`/labels/${entity.id}`}
           >
             <span className="caption">
-              {entity.kind === "person" ? "Person" : "Project"}
+              {entity.kind === "person" ? t("Person") : t("Project")}
             </span>
             <h2>{entity.name} <ImportantBadge target={{ kind: "label", id: entity.id }} /></h2>
             <p>{entity.description}</p>
@@ -224,8 +218,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
   return (
     <section className="labels-page">
       <a className="text-link" href="/labels">
-        ← People & projects
-      </a>
+        {t("← People & projects")}{" "}</a>
       {timeline.error ? (
         <ErrorState message={timeline.error} retry={refresh} />
       ) : null}
@@ -240,8 +233,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
               <p>{data.entity.aliases.join(" · ")}</p>
             </div>
             <button className="button" onClick={() => setManage(!manage)}>
-              Manage label
-            </button>
+              {t("Manage label")}{" "}</button>
           </div>
           {manage ? (
             <EntityManagement
@@ -257,8 +249,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
           ) : null}
           <div className="label-filters">
             <label>
-              From
-              <input
+              {t("From")}{" "}<input
                 type="date"
                 value={start}
                 onChange={(e) => {
@@ -268,8 +259,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
               />
             </label>
             <label>
-              Through
-              <input
+              {t("Through")}{" "}<input
                 type="date"
                 value={end}
                 onChange={(e) => {
@@ -285,17 +275,12 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                 setEnd("");
               }}
             >
-              All dates
-            </button>
+              {t("All dates")}{" "}</button>
           </div>
           <p className="caption">
-            Dates in {timezone}. Recordings keep source-level precision. Groups
-            and notes are written by you; speaker attributions from imports
-            remain unverified.
-          </p>
+            {t("Dates in")}{" "}{timezone}{t(". Recordings keep source-level precision. Groups and notes are written by you; speaker attributions from imports remain unverified.")}{" "}</p>
           <button className="button" onClick={() => setEditor("new")}>
-            Group conversations / add decision or question
-          </button>
+            {t("Group conversations / add decision or question")}{" "}</button>
           <LabelDecisionLink
             entityId={data.entity.id}
             revision={data.revision}
@@ -326,25 +311,21 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
           ) : null}
           {!entries.length ? (
             <p>
-              No linked evidence in these dates. Add labels from source details
-              or select recordings in a new annotation.
-            </p>
+              {t("No linked evidence in these dates. Add labels from source details or select recordings in a new annotation.")}{" "}</p>
           ) : null}
           {entries.map((entry) => (
             <article className="label-panel" key={entry.id}>
               {entry.entry_type === "decision" ? (
                 <>
                   <p className="caption">
-                    Decision register · {entry.decision?.review_status} ·
-                    evidence {entry.decision?.evidence_condition}
+                    {t("Decision register ·")}{" "}{entry.decision?.review_status} {t("· evidence")}{" "}{entry.decision?.evidence_condition}
                   </p>
                   <h3>{entry.title}</h3>
                   <button
                     className="text-button"
                     onClick={() => setDecisionId(entry.decision_id || "")}
                   >
-                    Open register record and exact evidence
-                  </button>
+                    {t("Open register record and exact evidence")}{" "}</button>
                 </>
               ) : entry.entry_type === "note" ? (
                 <>
@@ -357,9 +338,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
               )}
               {entry.needs_review ? (
                 <p className="label-review" role="status">
-                  Needs review · transcript evidence changed. This association
-                  or annotation is not confirmed against the current source.
-                </p>
+                  {t("Needs review · transcript evidence changed. This association or annotation is not confirmed against the current source.")}{" "}</p>
               ) : null}
               <SourceList
                 sources={entry.sources}
@@ -374,8 +353,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                     className="text-button"
                     onClick={() => setEditor(entry)}
                   >
-                    Edit / review annotation
-                  </button>
+                    {t("Edit / review annotation")}{" "}</button>
                 ) : entry.needs_review ? (
                   <button
                     className="text-button"
@@ -401,8 +379,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                       })
                     }
                   >
-                    Confirm association after review
-                  </button>
+                    {t("Confirm association after review")}{" "}</button>
                 ) : null}
                 <button
                   className="text-button danger"
@@ -428,8 +405,8 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                   }}
                 >
                   {entry.entry_type === "note"
-                    ? "Delete annotation"
-                    : "Detach association"}
+                    ? t("Delete annotation")
+                    : t("Detach association")}
                 </button>
               </div>
             </article>
@@ -440,7 +417,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
               disabled={loadingMore}
               onClick={() => void loadMore()}
             >
-              Load more ({entries.length} of {data.total})
+              {t("Load more (")}{entries.length} {t("of")}{" "}{data.total})
             </button>
           ) : null}
           {pageError || mutation.error ? (
@@ -448,7 +425,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
           ) : null}
         </>
       ) : timeline.loading ? (
-        <p role="status">Loading timeline…</p>
+        <p role="status">{t("Loading timeline…")}</p>
       ) : null}
     </section>
   );

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
@@ -96,15 +97,15 @@ export function ModelPicker({ id, label, value, onChange, provider, draft, row, 
         setCustom(false);
         onChange(event.target.value === "inherit" ? "" : event.target.value.slice(6));
       }}>
-      {row ? <option value="inherit">Use default model{inherited ? ` (${inherited})` : ""}</option> : null}
-      {!row && !value ? <option value="empty" disabled>Choose a model</option> : null}
-      {value && !models.includes(value) ? <option value={`model:${value}`}>{value} (current)</option> : null}
+      {row ? <option value="inherit">{t("Use default model")}{inherited ? ` (${inherited})` : ""}</option> : null}
+      {!row && !value ? <option value="empty" disabled>{t("Choose a model")}</option> : null}
+      {value && !models.includes(value) ? <option value={`model:${value}`}>{value} {t("(current)")}</option> : null}
       {models.map((model) => <option key={model} value={`model:${model}`}>{model}</option>)}
-      <option value="custom">Custom…</option>
+      <option value="custom">{t("Custom…")}</option>
     </select>
     {custom ? <label className="model-custom" htmlFor={`${id}-custom`}>
-      <span>Custom model name</span>
-      <input id={`${id}-custom`} value={value} placeholder={row ? "Leave blank to use the default model" : "Enter the model name served by your endpoint"}
+      <span>{t("Custom model name")}</span>
+      <input id={`${id}-custom`} value={value} placeholder={row ? t("Leave blank to use the default model") : t("Enter the model name served by your endpoint")}
         autoCapitalize="none" autoComplete="off" spellCheck={false}
         onChange={(event) => onChange(event.target.value)} />
     </label> : null}
@@ -116,13 +117,12 @@ export function ModelPicker({ id, label, value, onChange, provider, draft, row, 
     </p>
     <div className="button-row model-connection-actions">
       <button type="button" className="button small" disabled={Boolean(testing) || !selectedModel || Boolean(previewError)} onClick={() => void testConnection()}>
-        <Icon name="check" size={16} />{testing ? "Testing…" : "Test connection"}
+        <Icon name="check" size={16} />{testing ? t("Testing…") : t("Test connection")}
       </button>
       <button type="button" className="text-button" disabled={loading || Boolean(previewError)} onClick={() => { setActive(true); setRefresh((count) => count + 1); }}>
-        <Icon name="refresh" size={14} />Refresh models
-      </button>
+        <Icon name="refresh" size={14} />{t("Refresh models")}{" "}</button>
     </div>
-    <small>Tests use your current entries without saving. {provider === "stt" ? "A short synthetic audio clip is sent; your recordings are not used." : "A short test message is sent to the selected model."}</small>
+    <small>{t("Tests use your current entries without saving.")}{" "}{provider === "stt" ? t("A short synthetic audio clip is sent; your recordings are not used.") : t("A short test message is sent to the selected model.")}</small>
     {currentResult ? <p className={`notice ${currentResult.ok ? "notice-success" : "notice-error"} model-test-result`} role={currentResult.ok ? "status" : "alert"}>
       {currentResult.message}{currentResult.latency_ms > 0 ? ` (${(currentResult.latency_ms / 1000).toFixed(1)}s)` : ""}
     </p> : null}

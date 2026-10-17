@@ -52,8 +52,15 @@ struct LabelManagementView: View {
             .task(id: target) {
                 preview = nil
                 guard !target.isEmpty else { return }
-                do { preview = try await model.client().labels("v1/labels/\(target)/timeline") }
-                catch { self.error = error.localizedDescription }
+                let requestedTarget = target, identity = model.archiveIdentity
+                do {
+                    let result: LabelTimelineResponse = try await model.client().labels("v1/labels/\(requestedTarget)/timeline")
+                    guard !Task.isCancelled, requestedTarget == target, identity == model.archiveIdentity else { return }
+                    preview = result
+                } catch {
+                    guard !Task.isCancelled, requestedTarget == target, identity == model.archiveIdentity else { return }
+                    self.error = error.localizedDescription
+                }
             }
             .confirmationDialog("Merge these labels and all their assignments?", isPresented: $confirmingMerge, titleVisibility: .visible) { Button("Merge labels") { Task { await merge() } } }
             .confirmationDialog("Delete label and attached annotations? Recordings are kept.", isPresented: $confirmingDelete, titleVisibility: .visible) { Button("Delete label", role: .destructive) { Task { await remove() } } }
@@ -66,6 +73,8 @@ struct LabelManagementView: View {
             var all = first.items
             while all.count < first.total {
                 let next: LabelTimelineResponse = try await client.labels("v1/labels/\(entityID)/timeline", query: ["limit": "200", "offset": String(all.count), "revision": first.revision])
+                guard !Task.isCancelled, address == model.archiveIdentity else { return }
+                guard !next.items.isEmpty else { throw BackendFailure(message: "The label changed while loading. Reload its assignments before editing.") }
                 all += next.items
             }
             let labels: LabelDirectory = try await client.labels()

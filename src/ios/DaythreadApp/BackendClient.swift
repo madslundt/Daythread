@@ -62,10 +62,32 @@ struct BackendClient {
         let endpoint = base.appendingPathComponent(path)
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) } }
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         return components.url!
     }
 
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: [String: Any]? = nil) async throws -> JSONValue {
+        if let route = GenerationRoute(path: path, method: method) {
+            var parameters = body ?? [:]
+            for (key, value) in query { parameters[key] = value }
+            for (key, value) in route.parameters { parameters[key] = value }
+            let jobID = UUID().uuidString.lowercased()
+            let jobClient = try BackendClient(router: BackendEndpointRouter(configuration: router.configuration), profileID: profileID)
+            var job = try await jobClient.request("v1/jobs", method: "POST", body: ["id": jobID, "kind": route.kind, "parameters": parameters])
+            while true {
+                try Task.checkCancellation()
+                switch job["state"].text {
+                case "completed": return job["result"]
+                case "failed": throw BackendFailure(message: job["error"].text.isEmpty ? "Generation failed. Open Notifications for details." : job["error"].text)
+                case "queued", "running": break
+                default: throw BackendFailure(message: "Home-core returned an invalid generation status.")
+                }
+                // Cancelling this view stops polling. The accepted backend job and
+                // its completion notification continue after the app is closed.
+                try await Task.sleep(for: .seconds(2))
+                job = try await jobClient.request("v1/jobs/" + jobID)
+            }
+        }
         let global = ["v1/settings", "v1/configuration", "v1/profiles"].contains { path == $0 || path.hasPrefix($0 + "/") }
         if !global { try requireProfile() }
         let bodyData = try body.map { try JSONSerialization.data(withJSONObject: $0) }
@@ -167,6 +189,7 @@ struct BackendClient {
                 var request = URLRequest(url: try Self.validatedURL(endpoint.address).appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
                 var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
                 components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) }
+                components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
                 request.url = components.url
                 request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
                 let (temporary, response) = try await URLSession.shared.download(for: request)
@@ -193,6 +216,7 @@ struct BackendClient {
                 var request = URLRequest(url: try Self.validatedURL(endpoint.address).appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
                 var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
                 if !query.isEmpty { components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) } }
+                components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
                 request.url = components.url
                 request.httpMethod = method
                 request.timeoutInterval = timeout

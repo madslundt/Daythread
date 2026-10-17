@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from .completion_events import publish_weekly
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference import InferenceError, for_task
 from .service import public_source
@@ -224,6 +225,13 @@ class WeeklyReviews:
                 }
             ).model_dump(mode="json")
             self.store.publish(job, version, lambda db: self.snapshot(day, db=db))
+            def notification_guard(db):
+                if (not db.execute("SELECT 1 FROM weekly_versions WHERE id=?",
+                                   (version["id"],)).fetchone()
+                        or self.snapshot(day, db=db)["fingerprint"] != version["fingerprint"]):
+                    raise EvidenceChanged("Recorded evidence changed")
+
+            publish_weekly(self.memory, version, guard=notification_guard)
         except EvidenceChanged:
             self.store.fail(job["id"], "Recorded evidence changed; generate again")
         except InferenceError:

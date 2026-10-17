@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { errorMessage } from "./api";
 import {
@@ -148,7 +149,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
   }
 
   return <div className="transcript-translation">
-    <div className="translation-tabs" role="tablist" aria-label="Transcript language"
+    <div className="translation-tabs" role="tablist" aria-label={t("Transcript language")}
       onKeyDown={(event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
@@ -163,21 +164,21 @@ export function TranscriptTranslationView({ original, data, translated = false, 
         aria-controls={`${id}-text`} aria-selected={active === code} tabIndex={active === code ? 0 : -1}
         disabled={generating && code !== "original" && code !== target}
         onClick={() => selectTab(code)}>
-        {code === "original" ? "Original" : translationLanguageLabel(code)}
+        {code === "original" ? t("Original") : translationLanguageLabel(code)}
       </button>)}
     </div>
-    {loading && !placeholder ? <p className="caption" role="status">Checking transcript language and saved translation…</p>
-      : data && !data.available_languages.length ? <p className="caption">Add translation languages in <a href="/settings/general">Settings</a> to translate this transcript.</p>
-      : translation ? <p className="caption">Generated translation · Corrections apply to the original transcript.</p> : null}
+    {loading && !placeholder ? <p className="caption" role="status">{t("Checking transcript language and saved translation…")}</p>
+      : data && !data.available_languages.length ? <p className="caption">{t("Add translation languages in")}{" "}<a href="/settings/general">{t("Settings")}</a> {t("to translate this transcript.")}</p>
+      : translation ? <p className="caption">{t("Generated translation · Corrections apply to the original transcript.")}</p> : null}
     <div id={`${id}-text`} role="tabpanel" aria-labelledby={`${id}-${active}`} tabIndex={0}>
       {placeholder ? <div className="translation-preview" aria-busy={loading || generating}>
         <p className="transcript-text translation-preview-text" aria-hidden="true">{original}</p>
         <div className="translation-preview-action">
-          {loading || generating ? <p className="caption" role="status">{generating ? "Translating…" : "Checking saved translation…"}</p>
+          {loading || generating ? <p className="caption" role="status">{generating ? t("Translating…") : t("Checking saved translation…")}</p>
             : <>
               {translationError ? <p className="caption translation-error" role="alert">{translationError}</p> : null}
               <button type="button" className="translation-trigger" onClick={() => onTranslate(active)}>
-                {translationError ? "Translate again" : `Translate to ${language}`}
+                {translationError ? t("Translate again") : `Translate to ${language}`}
               </button>
             </>}
         </div>

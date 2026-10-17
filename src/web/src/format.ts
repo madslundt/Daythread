@@ -1,3 +1,5 @@
+import { interfaceLanguage } from "./i18n";
+
 export function localDay(timeZone: string, value = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -51,7 +53,7 @@ export function dateRangeForShortcut(
 }
 
 export function dayLabel(day: string, short = false): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(interfaceLanguage() === "en" ? "en-US" : interfaceLanguage(), {
     month: short ? "short" : "long",
     day: "numeric",
     year: "numeric",
@@ -60,7 +62,7 @@ export function dayLabel(day: string, short = false): string {
 }
 
 export function timeLabel(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(interfaceLanguage() === "en" ? "en-GB" : interfaceLanguage(), {
     timeZone,
     hour: "2-digit",
     minute: "2-digit",
@@ -68,7 +70,7 @@ export function timeLabel(value: string, timeZone: string): string {
 }
 
 export function dateTimeLabel(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(interfaceLanguage() === "en" ? "en-US" : interfaceLanguage(), {
     year: "numeric",
     timeZone,
     month: "short",

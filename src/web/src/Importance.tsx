@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
@@ -50,7 +51,7 @@ export function ImportanceProvider({ children, enabled = true }: { children: Rea
 
 export function ImportantBadge({ target }: { target: ImportanceTarget }) {
   const { marks } = useContext(ImportanceContext);
-  return marks?.has(importanceKey(target)) ? <span className="important-badge" title="Marked important" aria-label="Important"><Icon name="star" size={15} /></span> : null;
+  return marks?.has(importanceKey(target)) ? <span className="important-badge" title={t("Marked important")} aria-label={t("Important")}><Icon name="star" size={15} /></span> : null;
 }
 
 export function ImportanceButton({ target, label, compact = false }: { target: ImportanceTarget; label: string; compact?: boolean }) {
@@ -70,7 +71,7 @@ export function ImportanceButton({ target, label, compact = false }: { target: I
         catch (reason) { setError(errorMessage(reason)); }
       }}>
       <Icon name="star" size={16} />
-      {compact ? <span className="sr-only">{busy ? "Saving…" : !marks && loadError ? "Retry importance" : important ? "Important" : "Mark important"}</span> : busy ? "Saving…" : !marks && loadError ? "Retry importance" : important ? "Important" : "Mark important"}
+      {compact ? <span className="sr-only">{busy ? t("Saving…") : !marks && loadError ? t("Retry importance") : important ? t("Important") : t("Mark important")}</span> : busy ? t("Saving…") : !marks && loadError ? t("Retry importance") : important ? t("Important") : t("Mark important")}
     </button>
     {error || (!marks && loadError) ? <span className="caption" role="alert">{error || loadError}</span> : null}
   </span>;

@@ -4,6 +4,7 @@ import OmiCore
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearancePreference") private var appearance = AppAppearance.system
+    @AppStorage("interfaceLanguagePreference") private var interfaceLanguagePreference = "system"
     @State private var error: String?
     @State private var status: String?
     @State private var loading = false
@@ -16,36 +17,52 @@ struct SettingsView: View {
     @State private var retentionLoaded = false
     private let retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825]
     var body: some View {
-        @Bindable var model = model
-        Form {
+        List {
             Section {
-                EditorialTitle(eyebrow: "Make it yours", title: "Your space.")
-                    .editorialRow()
+                EditorialTitle(eyebrow: "Make it yours", title: "Your space.").editorialRow()
             }
-            Section {
-                NavigationLink(value: SettingsDestination.profiles) {
-                    Label("Profiles", systemImage: "person.crop.circle")
-                }.accessibilityIdentifier("settings.profiles")
-            }
-            Section {
-                NavigationLink { BackendEndpointsView() } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Backend endpoints", systemImage: "network")
-                        Text(model.backendAddress.isEmpty ? "Not configured" : model.backendAddress)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }.accessibilityIdentifier("settings.backendEndpoints")
-                if let url = try? model.client().base { Link(destination: url) { Label("Open active web app", systemImage: "arrow.up.right.square") } }
-                if let status { Label(status, systemImage: "checkmark.circle").font(.callout).foregroundStyle(.secondary) }
-                ErrorNote(message: error)
-            } header: { Text("Home-core") } footer: { Text("Use an HTTPS LAN or private VPN address. You can keep an ordered fallback list for changing network contexts. HTTP is available only for trusted LAN/VPN use and is unencrypted.") }
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
-                    ForEach(AppAppearance.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
+                    ForEach(AppAppearance.allCases) { option in Text(option.title).tag(option) }
                 }.accessibilityIdentifier("settings.appearance")
+                Picker("Interface language", selection: $interfaceLanguagePreference) {
+                    Text("System language").tag("system")
+                    Text("English").tag("en")
+                    Text("Dansk").tag("da")
+                }.accessibilityIdentifier("settings.interfaceLanguage")
+                Text("Saved on this iPhone. This changes the interface, not transcription or summary languages.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+            CompletionNotificationSettings()
+            Section("Everyday preferences") {
+                NavigationLink { captureSettings } label: {
+                    DestinationLabel(title: "Capture & uploads", subtitle: "Wi-Fi, meeting gestures & your pendant", symbol: "waveform", color: Theme.sage)
+                }.accessibilityIdentifier("settings.capture")
+                NavigationLink { languageSettings } label: {
+                    DestinationLabel(title: "Languages & summaries", subtitle: "Recap language & transcript translations", symbol: "character.bubble", color: Theme.accent)
+                }.accessibilityIdentifier("settings.languages")
+                NavigationLink { storageSettings } label: {
+                    DestinationLabel(title: "Archive & phone storage", subtitle: "Retention periods & local capture budget", symbol: "archivebox", color: Theme.sage)
+                }.accessibilityIdentifier("settings.storage")
+            }
+            Section("Your setup") {
+                NavigationLink { ServerConfigurationView() } label: {
+                    DestinationLabel(title: "Models & server", subtitle: "Speech, language models, keys & advanced options", symbol: "slider.horizontal.3", color: Theme.accent)
+                }.accessibilityIdentifier("settings.server")
+                NavigationLink { connectionSettings } label: {
+                    DestinationLabel(title: "Connections & profiles", subtitle: "Home-core, your archives & Omi imports", symbol: "network", color: Theme.sage)
+                }.accessibilityIdentifier("settings.connections")
+            }
+            saveFeedback
+        }.listStyle(.insetGrouped).omiScreen()
+            .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+            .task { timeout = model.meetingMinutes; await loadSettings() }
+    }
+
+    private var captureSettings: some View {
+        @Bindable var model = model
+        return Form {
+            saveFeedback
             Section {
                 Toggle("Upload only on Wi-Fi", isOn: $model.uploadWiFiOnly)
                     .accessibilityIdentifier("settings.uploadWiFiOnly")
@@ -64,11 +81,20 @@ struct SettingsView: View {
                 Text("Meetings shorter than one minute are ignored. Flags have a one-minute cooldown. Hints include the surrounding speech and do not define exact boundaries.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Section("Transcription") {
-                Text("Transcription automatically keeps the languages spoken in each conversation.")
-                    .font(.callout).foregroundStyle(.secondary)
-                NavigationLink("Models, keys & all server settings") { ServerConfigurationView() }
+            Section("Pendant information") {
+                LabeledContent("Model", value: model.bluetooth.model)
+                LabeledContent("Firmware", value: model.bluetooth.firmware)
+                LabeledContent("Codec", value: model.bluetooth.codec.map(String.init) ?? "Unknown")
+                LabeledContent("Button notifications", value: model.bluetooth.buttonAvailable ? "Available" : "Not discovered")
+                if model.bluetooth.connected { Button("Disconnect and forget Omi", role: .destructive) { model.flush(); model.bluetooth.disconnect() } }
             }
+        }.omiScreen().navigationTitle("Capture & uploads").navigationBarTitleDisplayMode(.inline)
+            .task { if !retentionLoaded { await loadSettings() } }
+    }
+
+    private var languageSettings: some View {
+        Form {
+            saveFeedback
             Section {
                 Picker("Summary language", selection: $summaryLanguage) {
                     Text("Automatic / follow source language").tag("auto")
@@ -92,15 +118,21 @@ struct SettingsView: View {
             } header: { Text("Transcript translations") } footer: {
                 Text("Choose the languages offered by the Translate button. The first selected language is the default. Translations are available for every summary language, including Automatic. Save an empty list to disable translation.")
             }.disabled(loading || !translationLanguagesLoaded)
-            Section("Pendant information") {
-                LabeledContent("Model", value: model.bluetooth.model)
-                LabeledContent("Firmware", value: model.bluetooth.firmware)
-                LabeledContent("Codec", value: model.bluetooth.codec.map(String.init) ?? "Unknown")
-                LabeledContent("Button notifications", value: model.bluetooth.buttonAvailable ? "Available" : "Not discovered")
-                if model.bluetooth.connected { Button("Disconnect and forget Omi", role: .destructive) { model.flush(); model.bluetooth.disconnect() } }
+            Section("Transcription") {
+                Text("Transcription automatically keeps the languages spoken in each conversation.")
+                    .font(.callout).foregroundStyle(.secondary)
+                NavigationLink("Models, keys & all server settings") { ServerConfigurationView() }
             }
+        }.omiScreen().navigationTitle("Languages & summaries").navigationBarTitleDisplayMode(.inline)
+            .task { if !translationLanguagesLoaded { await loadSettings() } }
+    }
+
+    private var storageSettings: some View {
+        @Bindable var model = model
+        return Form {
+            saveFeedback
             archiveSection
-            Section("Local storage") {
+            Section("On this iPhone") {
                 Picker("Phone capture budget", selection: $model.storageBudgetMB) {
                     Text("1 GB").tag(1000)
                     Text("2 GB").tag(2000)
@@ -112,9 +144,46 @@ struct SettingsView: View {
                 Text("Capture can continue without home-core. Summaries and chat use your backend's local models. Pendant recordings and button events while Bluetooth is disconnected require separate, verified device storage support.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-        }.omiScreen().navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
-            .scrollDismissesKeyboard(.interactively)
-            .task { timeout = model.meetingMinutes; await loadSettings() }
+        }.omiScreen().navigationTitle("Archive & phone storage").navigationBarTitleDisplayMode(.inline)
+            .task { if !retentionLoaded { await loadSettings() } }
+    }
+
+    private var connectionSettings: some View {
+        Form {
+            Section {
+                NavigationLink { ProfilesSettingsView() } label: {
+                    DestinationLabel(title: "Profiles", subtitle: model.hasSelectedProfile ? model.selectedProfileName : "Choose an archive to get started", symbol: "person.crop.circle", color: Theme.accent)
+                }.accessibilityIdentifier("settings.profiles")
+            }
+            Section {
+                NavigationLink { BackendEndpointsView() } label: {
+                    DestinationLabel(title: "Backend endpoints", subtitle: model.backendAddress.isEmpty ? "Connect to home-core" : model.backendAddress, symbol: "network", color: Theme.sage)
+                }.accessibilityIdentifier("settings.backendEndpoints")
+                if let url = try? model.client().base {
+                    Link(destination: url) { Label("Open active web app", systemImage: "arrow.up.right.square") }
+                }
+            } header: { Text("Home-core") } footer: {
+                Text("Use an HTTPS LAN or private VPN address. You can keep an ordered fallback list for changing network contexts. HTTP is available only for trusted LAN/VPN use and is unencrypted.")
+            }
+            Section {
+                NavigationLink { OmiConnectionsView() } label: {
+                    DestinationLabel(title: "Omi import & audio forwarding", subtitle: "Optional cloud transcripts & audio receiver", symbol: "arrow.triangle.2.circlepath", color: Theme.accent)
+                }.accessibilityIdentifier("settings.omiConnections")
+            } header: { Text("Omi connections") }
+            saveFeedback
+        }.omiScreen().navigationTitle("Connections & profiles").navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private var saveFeedback: some View {
+        if status != nil || error != nil || loading {
+            Section {
+                if loading { ProgressView("Saving preferences…") }
+                if let status { Label(status, systemImage: "checkmark.circle").font(.callout).foregroundStyle(Theme.sage) }
+                ErrorNote(message: error)
+                if error != nil { Button("Reload preferences") { Task { await loadSettings() } }.disabled(loading) }
+            }
+        }
     }
     private var archiveSection: some View {
         Section {
@@ -145,9 +214,10 @@ struct SettingsView: View {
         days == 0 ? "Until I remove it" : "\(days) \(days == 1 ? "day" : "days")"
     }
     private func loadSettings() async {
-        retentionLoaded = false; translationLanguagesLoaded = false
+        error = nil; retentionLoaded = false; translationLanguagesLoaded = false
         do {
             let settings = try await model.client().request("v1/settings")
+            guard !Task.isCancelled else { return }
             if settings["meeting_max_minutes"].integer > 0 {
                 model.meetingMinutes = settings["meeting_max_minutes"].integer; timeout = model.meetingMinutes
             }
@@ -162,7 +232,7 @@ struct SettingsView: View {
                 transcriptRetentionDays = settings["transcript_retention_days"].integer
                 retentionLoaded = true
             }
-        } catch { self.error = error.localizedDescription }
+        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
     private func saveRetention() async {
         guard retentionLoaded else { return }
@@ -220,7 +290,7 @@ private func languageChoices(including additional: [String] = []) -> [String] {
     }
 }
 
-private struct TranslationLanguageSelectionView: View {
+struct TranslationLanguageSelectionView: View {
     @Binding var languages: [String]
     @State private var search = ""
     private var choices: [String] {
@@ -249,309 +319,6 @@ private struct TranslationLanguageSelectionView: View {
     }
 }
 
-private struct ServerSettingField: Decodable, Identifiable {
-    let key: String
-    let label: String
-    let group: String
-    let kind: String
-    let nullable: Bool
-    let restart_required: Bool
-    let description: String
-    var id: String { key }
-}
-
-private struct ServerConfiguration: Decodable {
-    let fields: [ServerSettingField]
-    let values: [String: JSONValue]
-    let secrets: [String: Bool]
-    let revision: String
-    let pending_restart: [String]
-}
-
-private struct ServerSecretEdit {
-    var mode = "keep"
-    var value = ""
-    func change() throws -> JSONValue? {
-        switch mode {
-        case "replace":
-            guard !value.isEmpty else { throw BackendFailure(message: "Enter the replacement key or choose another key action.") }
-            return .string(value)
-        case "clear": return .string("")
-        case "inherit": return .null
-        default: return nil
-        }
-    }
-}
-
-private struct ServerModelRoute: Identifiable {
-    let id = UUID()
-    var name = ""
-    var model = ""
-    var endpoint = ""
-    var revision = ""
-    var secret = ServerSecretEdit()
-}
-
-private struct ServerSecretControl: View {
-    let label: String
-    let configured: Bool
-    var route = false
-    var nullable = false
-    @Binding var edit: ServerSecretEdit
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("\(label) · \(configured ? "Configured" : "Not set")").font(.subheadline)
-            Picker(label, selection: $edit.mode) {
-                Text("Keep current key").tag("keep")
-                Text("Replace key").tag("replace")
-                if route || nullable { Text(route ? "Use provider key" : "Use shared key").tag("inherit") }
-                Text(route || nullable ? "No authentication" : "Clear key").tag("clear")
-            }.onChange(of: edit.mode) { _, _ in edit.value = "" }
-            if edit.mode == "replace" {
-                SecureField("New \(label)", text: $edit.value)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-            }
-        }
-    }
-}
-
-private struct ServerRouteControl: View {
-    @Binding var route: ServerModelRoute
-    let llm: Bool
-    let configured: Bool
-    let remove: () -> Void
-    private let tasks = ["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if llm {
-                Picker("Task", selection: $route.name) {
-                    ForEach(tasks, id: \.self) { Text($0).tag($0) }
-                }
-            } else {
-                TextField("Language code or name (da, en, danish, auto)", text: $route.name)
-                    .accessibilityLabel("Language code or detector name")
-            }
-            TextField("Model override (blank inherits default)", text: $route.model)
-                .accessibilityLabel("Model override")
-            TextField("Endpoint override (blank inherits default)", text: $route.endpoint)
-                .keyboardType(.URL).accessibilityLabel("Endpoint override")
-            if llm { TextField("Revision override (blank inherits default)", text: $route.revision) }
-            ServerSecretControl(label: "Route key", configured: configured, route: true, edit: $route.secret)
-            Button("Remove route \(route.name)", role: .destructive, action: remove)
-        }.textInputAutocapitalization(.never).autocorrectionDisabled().padding(.vertical, 8)
-    }
-}
-
-@MainActor
-private struct ServerConfigurationView: View {
-    @Environment(AppModel.self) private var model
-    @State private var snapshot: ServerConfiguration?
-    @State private var values: [String: JSONValue] = [:]
-    @State private var routes: [String: [ServerModelRoute]] = [:]
-    @State private var secrets: [String: ServerSecretEdit] = [:]
-    @State private var busy = false
-    @State private var error: String?
-    @State private var status: String?
-    @State private var search = ""
-    private let tasks = ["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
-    private let connectionProviders = ["stt", "llm"]
-
-    private func connectionKeys(_ provider: String) -> [String] {
-        ["\(provider)_base_url", "\(provider)_api_key", "\(provider)_model"]
-    }
-    private func isConnectionField(_ field: ServerSettingField) -> Bool {
-        connectionProviders.contains { connectionKeys($0).contains(field.key) }
-    }
-    private func connectionFields(_ provider: String, _ snapshot: ServerConfiguration) -> [ServerSettingField] {
-        connectionKeys(provider).compactMap { key in snapshot.fields.first { $0.key == key && matches($0) } }
-    }
-    private func optionsTitle(_ group: String) -> String {
-        switch group {
-        case "Transcription": "Transcription options & language routes"
-        case "Language models & chat": "Language model options & task routes"
-        default: group
-        }
-    }
-
-    var body: some View {
-        Form {
-            Section {
-                Text("STT and LLM connections are independent. Each can use a different endpoint, API key, and model.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Text("Shared with the web app. Keys are write-only and stay on home-core.")
-                    .font(.callout).foregroundStyle(.secondary)
-                if let snapshot, !snapshot.pending_restart.isEmpty {
-                    Text("Saved changes awaiting backend restart: \(snapshot.pending_restart.joined(separator: ", ")).")
-                        .font(.callout)
-                }
-                ErrorNote(message: error)
-                if let status { Text(status).foregroundStyle(.secondary) }
-                if busy { ProgressView("Updating settings…") }
-                Button("Reload server settings") { Task { await load() } }.disabled(busy)
-            }
-            if let snapshot {
-                ForEach(connectionProviders, id: \.self) { provider in
-                    let fields = connectionFields(provider, snapshot)
-                    if !fields.isEmpty {
-                        Section {
-                            ForEach(fields) { field in setting(field, snapshot: snapshot) }
-                        } header: {
-                            Text(provider == "stt" ? "Speech-to-text (STT)" : "Language model (LLM)")
-                        } footer: {
-                            Text(provider == "stt" ? "Transcribes your recordings into text. Enter a local or hosted endpoint and its credentials." : "Answers questions and generates summaries. Enter a local or hosted endpoint and its credentials.")
-                        }.disabled(busy)
-                    }
-                }
-                ForEach(groups(snapshot), id: \.self) { group in
-                    Section(optionsTitle(group)) {
-                        ForEach(snapshot.fields.filter { $0.group == group && !isConnectionField($0) && matches($0) }) { field in
-                            setting(field, snapshot: snapshot)
-                        }
-                    }.disabled(busy)
-                }
-                Section {
-                    Button("Save server settings") { Task { await save(snapshot) } }
-                        .disabled(busy).accessibilityIdentifier("settings.saveServer")
-                    Text("Settings marked restart required take effect the next time home-core starts.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }.navigationTitle("Server settings").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "Find a server setting")
-            .scrollDismissesKeyboard(.interactively).task { await load() }
-    }
-
-    private func groups(_ snapshot: ServerConfiguration) -> [String] {
-        snapshot.fields.filter { !isConnectionField($0) && matches($0) }.reduce(into: [String]()) { result, field in
-            if !result.contains(field.group) { result.append(field.group) }
-        }
-    }
-    private func matches(_ field: ServerSettingField) -> Bool {
-        search.isEmpty || "\(field.label) \(field.key) \(field.description)".localizedCaseInsensitiveContains(search)
-    }
-    private func valueBinding(_ key: String) -> Binding<String> {
-        Binding(get: {
-            switch values[key] {
-            case .string(let text): return text
-            case .number(let number): return String(format: "%g", number)
-            default: return ""
-            }
-        }, set: { values[key] = .string($0); status = nil })
-    }
-    @ViewBuilder
-    private func setting(_ field: ServerSettingField, snapshot: ServerConfiguration) -> some View {
-        let title = field.label + (field.restart_required ? " · restart required" : "")
-        if field.key == "translation_languages" {
-            NavigationLink {
-                TranslationLanguageSelectionView(languages: Binding(
-                    get: { values[field.key]?.array.map(\.text) ?? [] },
-                    set: { values[field.key] = .array($0.map(JSONValue.string)); status = nil }
-                ))
-            } label: {
-                LabeledContent(title, value: "\(values[field.key]?.array.count ?? 0) selected")
-            }
-        } else if field.kind == "routes" {
-            Text(field.label).font(.headline)
-            ForEach(routes[field.key] ?? []) { row in
-                ServerRouteControl(route: Binding(get: {
-                    routes[field.key]?.first(where: { $0.id == row.id }) ?? row
-                }, set: { updated in
-                    routes[field.key] = routes[field.key]?.map { $0.id == row.id ? updated : $0 }
-                    status = nil
-                }), llm: field.key == "llm_routes", configured: snapshot.secrets["\(field.key).\(row.name.lowercased()).token"] ?? false) {
-                    routes[field.key]?.removeAll { $0.id == row.id }; status = nil
-                }
-            }
-            Button(field.key == "stt_routes" ? "Add language route" : "Add task route") {
-                let name = field.key == "llm_routes" ? tasks.first(where: { task in
-                    !(routes[field.key] ?? []).contains(where: { $0.name == task })
-                }) ?? "chat" : ""
-                routes[field.key, default: []].append(ServerModelRoute(name: name)); status = nil
-            }.disabled(field.key == "llm_routes" && (routes[field.key]?.count ?? 0) >= tasks.count)
-        } else if field.kind == "secret" {
-            ServerSecretControl(label: field.label, configured: snapshot.secrets[field.key] ?? false,
-                nullable: field.nullable,
-                edit: Binding(get: { secrets[field.key] ?? ServerSecretEdit() }, set: { secrets[field.key] = $0; status = nil }))
-        } else if field.kind == "boolean" {
-            if field.nullable {
-                Picker(title, selection: Binding(get: {
-                    if case .bool(let value) = values[field.key] { return value ? "true" : "false" }
-                    return "default"
-                }, set: { values[field.key] = $0 == "default" ? .null : .bool($0 == "true"); status = nil })) {
-                    Text("Model default").tag("default"); Text("Enabled").tag("true"); Text("Disabled").tag("false")
-                }
-            } else {
-                Toggle(title, isOn: Binding(get: { values[field.key] == .bool(true) }, set: { values[field.key] = .bool($0); status = nil }))
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.subheadline)
-                TextField(field.nullable ? "Default" : field.label, text: valueBinding(field.key))
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .keyboardType(field.kind == "number" || field.kind == "integer" ? .numbersAndPunctuation : field.key.contains("base_url") ? .URL : .default)
-                    .accessibilityLabel(title)
-            }
-        }
-        if !field.description.isEmpty {
-            Text(field.description).font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func apply(_ result: ServerConfiguration) {
-        snapshot = result; values = result.values; secrets = [:]; routes = [:]
-        for field in result.fields where field.kind == "routes" {
-            if case .object(let map) = result.values[field.key] {
-                routes[field.key] = map.keys.sorted().map { name in
-                    let route = map[name] ?? .null
-                    return ServerModelRoute(name: name, model: route["model"].text, endpoint: route["base_url"].text, revision: route["revision"].text)
-                }
-            }
-        }
-    }
-    private func load() async {
-        busy = true; error = nil; status = nil; defer { busy = false }
-        do { apply(try await model.client().decoded("v1/configuration", as: ServerConfiguration.self)) }
-        catch is CancellationError { return }
-        catch { self.error = error.localizedDescription }
-    }
-    private func save(_ snapshot: ServerConfiguration) async {
-        busy = true; error = nil; status = nil; defer { busy = false }
-        do {
-            var changes: [String: JSONValue] = [:]
-            for field in snapshot.fields {
-                var value = values[field.key] ?? .null
-                if field.kind == "secret" {
-                    guard let edited = try (secrets[field.key] ?? ServerSecretEdit()).change() else { continue }
-                    changes[field.key] = edited
-                    continue
-                } else if field.kind == "routes" {
-                    var map: [String: JSONValue] = [:]
-                    for row in routes[field.key] ?? [] {
-                        let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        guard name.range(of: "^[a-z-]{2,32}$", options: .regularExpression) != nil,
-                              map[name] == nil else { throw BackendFailure(message: "Enter a unique language code or task for every route.") }
-                        var route: [String: JSONValue] = ["model": row.model.isEmpty ? .null : .string(row.model), "base_url": row.endpoint.isEmpty ? .null : .string(row.endpoint)]
-                        if field.key == "llm_routes" { route["revision"] = row.revision.isEmpty ? .null : .string(row.revision) }
-                        if let token = try row.secret.change() { route["token"] = token }
-                        map[name] = .object(route)
-                    }
-                    value = .object(map)
-                } else if field.kind == "integer" || field.kind == "number" {
-                    if case .string(let text) = value {
-                        guard let number = Double(text), number.isFinite else { throw BackendFailure(message: "Enter a number for \(field.label).") }
-                        value = .number(number)
-                    }
-                } else if field.nullable && value == .string("") { value = .null }
-                if value != snapshot.values[field.key] { changes[field.key] = value }
-            }
-            if changes.isEmpty { status = "Server settings are up to date"; return }
-            let payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(JSONValue.object(changes)))
-            let result = try await model.client().decoded("v1/configuration", method: "PATCH", body: ["revision": snapshot.revision, "changes": payload], as: ServerConfiguration.self)
-            apply(result); status = "Server settings saved on home-core"
-            await model.refreshStatus()
-        } catch { self.error = error.localizedDescription }
-    }
-}
 
 
 private struct ProfileEditor: Identifiable {

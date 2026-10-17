@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { Fragment } from "react";
 import { Icon, type IconName } from "./Icon";
 
@@ -19,7 +20,7 @@ export function Notice({
       {onDismiss ? (
         <button
           className="icon-button"
-          aria-label="Dismiss message"
+          aria-label={t("Dismiss message")}
           onClick={onDismiss}
         >
           <Icon name="close" size={16} />
@@ -41,8 +42,7 @@ export function ErrorState({
       {message}
       {retry ? (
         <button className="text-button" onClick={retry}>
-          Try again
-        </button>
+          {t("Try again")}{" "}</button>
       ) : null}
     </Notice>
   );

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 
@@ -76,24 +77,24 @@ export function Navigation({ page, navigate, hrefForPage, mobile = false }: {
       onClick={(event) => { event.preventDefault(); setMoreOpen(false); navigate(item.id); }}
       className={page === item.id ? "active" : ""}
       aria-current={page === item.id ? "page" : undefined}>
-      <Icon name={item.icon} size={21} /><span>{item.label}</span>
+      <Icon name={item.icon} size={21} /><span>{t(item.label)}</span>
     </a>
   );
   return <>
-    <nav className={mobile ? "mobile-nav" : "desktop-nav"} aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
+    <nav className={mobile ? "mobile-nav" : "desktop-nav"} aria-label={mobile ? t("Mobile navigation") : t("Main navigation")}>
       {(mobile ? primaryPages : pages).map(link)}
       {mobile ? <button ref={trigger} className={moreActive || moreOpen ? "active" : ""}
-        aria-label="More navigation" aria-haspopup="dialog" aria-expanded={moreOpen}
-        onClick={() => setMoreOpen(true)}><Icon name="more" size={21} /><span>More</span></button> : null}
+        aria-label={t("More navigation")} aria-haspopup="dialog" aria-expanded={moreOpen}
+        onClick={() => setMoreOpen(true)}><Icon name="more" size={21} /><span>{t("More")}</span></button> : null}
     </nav>
     {mobile && moreOpen ? <dialog ref={dialog} className="navigation-dialog" aria-labelledby="more-title"
       onCancel={(event) => { event.preventDefault(); setMoreOpen(false); }}
       onClick={(event) => { if (event.target === event.currentTarget) setMoreOpen(false); }}>
       <div className="navigation-dialog-content">
-        <div className="section-heading"><h2 id="more-title">Your space</h2>
-          <button className="icon-button" aria-label="Close navigation" onClick={() => setMoreOpen(false)}><Icon name="close" /></button>
+        <div className="section-heading"><h2 id="more-title">{t("Your space")}</h2>
+          <button className="icon-button" aria-label={t("Close navigation")} onClick={() => setMoreOpen(false)}><Icon name="close" /></button>
         </div>
-        <nav aria-label="More navigation">{morePages.map(link)}</nav>
+        <nav aria-label={t("More navigation")}>{morePages.map(link)}</nav>
       </div>
     </dialog> : null}
   </>;

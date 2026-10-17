@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { ProfileManagement } from "./ProfileManagement";
 import type { Profile } from "./profiles";
 import { navigatePath, subscribeNavigation } from "./routing";
@@ -12,6 +13,7 @@ import type { Settings as SettingsData } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading } from "./UI";
 import { parseThemePreference, setThemePreference, useThemePreference } from "./theme";
+import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLanguagePreference, type LanguagePreference } from "./i18n";
 
 type NumberKey = {
   [K in keyof SettingsData]-?: SettingsData[K] extends number ? K : never;
@@ -74,7 +76,6 @@ const editableSettings: (keyof SettingsData)[] = [
   "audio_retention_days", "transcript_retention_days",
 ];
 const serverHiddenFields = [...editableSettings, "language", "audio_forwarding_enabled"];
-const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 // ISO 639-1 choices for summaries and optional transcript translations.
 const languageCodes = (
   "aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
@@ -86,13 +87,11 @@ const languageCodes = (
 ).split(" ");
 function languageLabel(code: string) {
   try {
-    return languageNames.of(code) || code;
+    return new Intl.DisplayNames([interfaceLanguage()], { type: "language" }).of(code) || code;
   } catch {
     return code;
   }
 }
-const languages = languageCodes.map((value) => ({ value, label: languageLabel(value) }))
-  .sort((a, b) => a.label.localeCompare(b.label, "en"));
 const timezones = typeof Intl.supportedValuesOf === "function"
   ? Intl.supportedValuesOf("timeZone")
   : ["Europe/Copenhagen", "Europe/London", "Europe/Paris", "America/New_York",
@@ -130,7 +129,7 @@ function NumberSelect({ id, value, options, onChange, label, unavailable }: {
     >
       {values.map((option) => (
         <option key={option} value={option} disabled={unavailable?.(option)}>
-          {label(option)}{options.includes(option) ? "" : " (current value)"}
+          {label(option)}{options.includes(option) ? "" : t("(current value)")}
         </option>
       ))}
     </select>
@@ -148,6 +147,9 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   onUpdateProfile?: (profile: Profile) => void;
 }) {
   const theme = useThemePreference();
+  const interfaceLanguagePreference = useLanguagePreference();
+  const languages = languageCodes.map((value) => ({ value, label: languageLabel(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, interfaceLanguage()));
   const resource = useResource<SettingsData>("/v1/settings");
   const [draft, setDraft] = useState<SettingsData>();
   const [busy, setBusy] = useState(false);
@@ -230,23 +232,23 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
         preferencesDirty={dirty} serverDirty={serverDirty} />
       <div className="settings-panels">
       {dirty && !preferencesVisible ? <div className="notice">
-        <span>You have unsaved preferences in another category.</span>
-        <button type="button" className="text-button" onClick={() => selectSection("general")}>Review preferences</button>
+        <span>{t("You have unsaved preferences in another category.")}</span>
+        <button type="button" className="text-button" onClick={() => selectSection("general")}>{t("Review preferences")}</button>
       </div> : null}
-      {query ? <div className="settings-section-heading"><h2>Search results</h2>
-        <p>Settings matching “{query}” across all categories.</p></div> : null}
+      {query ? <div className="settings-section-heading"><h2>{t("Search results")}</h2>
+        <p>{t("Settings matching “")}{query}{t("” across all categories.")}</p></div> : null}
       {noMatches ? <div className="settings-empty" role="status"><Icon name="search" size={28} />
-        <h2>No settings found</h2><p>Try “language”, “audio”, “recap”, or “model”.</p>
-        <button type="button" className="button" onClick={() => setSearch("")}>Clear search</button></div> : null}
+        <h2>{t("No settings found")}</h2><p>{t("Try “language”, “audio”, “recap”, or “model”.")}</p>
+        <button type="button" className="button" onClick={() => setSearch("")}>{t("Clear search")}</button></div> : null}
       {show("profiles", "profiles") && onCreateProfile && onUpdateProfile && onSelectProfile ? <ProfileManagement
         profiles={profiles} selected={selectedProfile} onCreate={onCreateProfile}
         onUpdate={onUpdateProfile} onSelect={onSelectProfile} error={profileError} onRetry={onRetryProfiles} /> : null}
       <section hidden={!show("appearance", "general")}>
-      {!query ? <div className="settings-section-heading"><h2>Daily preferences</h2></div> : null}
+      {!query ? <div className="settings-section-heading"><h2>{t("Daily preferences")}</h2></div> : null}
       <fieldset>
-        <legend>Appearance <span className="settings-badge">Saves automatically</span></legend>
+        <legend>{t("Appearance")}{" "}<span className="settings-badge">{t("Saves automatically")}</span></legend>
         <label className="setting-field" htmlFor="appearance">
-          <span id="appearance-label">Theme</span>
+          <span id="appearance-label">{t("Theme")}</span>
           <select
             id="appearance"
             value={theme}
@@ -256,11 +258,23 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
               setThemePreference(parseThemePreference(event.target.value))
             }
           >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
+            <option value="system">{t("System")}</option>
+            <option value="light">{t("Light")}</option>
+            <option value="dark">{t("Dark")}</option>
           </select>
-          <small id="appearance-hint">Saved on this device. System follows your device’s appearance.</small>
+          <small id="appearance-hint">{t("Saved on this device. System follows your device’s appearance.")}</small>
+        </label>
+        <label className="setting-field" htmlFor="interface-language">
+          <span id="interface-language-label">{t("Interface language")}</span>
+          <select id="interface-language" value={interfaceLanguagePreference}
+            aria-labelledby="interface-language-label"
+            onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
+            <option value="system">{t("System language")}</option>
+            {interfaceLanguages.map((code) => <option key={code} value={code}>
+              {code === "en" ? "English" : "Dansk"}
+            </option>)}
+          </select>
+          <small>{t("Saved on this device. This changes the interface, not transcription or summary languages.")}</small>
         </label>
       </fieldset>
       </section>
@@ -269,15 +283,15 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       ) : null}
       {!draft ? (
         resource.loading ? (
-          <Loading>Loading settings…</Loading>
+          <Loading>{t("Loading settings…")}</Loading>
         ) : null
       ) : (
         <form id="preferences-form" className="settings-form" onSubmit={save} aria-busy={busy}>
           <fieldset disabled={busy} hidden={!show("daily", "general")}>
-            <legend>Recording & daily recap</legend>
+            <legend>{t("Recording & daily recap")}</legend>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="timezone">
-                <span id="timezone-label">Home timezone</span>
+                <span id="timezone-label">{t("Home timezone")}</span>
                 <select
                   id="timezone"
                   value={draft.timezone}
@@ -292,15 +306,14 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   ))}
                 </select>
                 <small id="timezone-hint">
-                  Dates, diary boundaries, and daily recaps use this timezone.
-                </small>
+                  {t("Dates, diary boundaries, and daily recaps use this timezone.")}{" "}</small>
               </label>
               <div className="setting-field">
-                <span>Transcription</span>
-                <small>Spoken languages are detected automatically. Original transcripts keep the languages used in the conversation.</small>
+                <span>{t("Transcription")}</span>
+                <small>{t("Spoken languages are detected automatically. Original transcripts keep the languages used in the conversation.")}</small>
               </div>
               <label className="setting-field" htmlFor="summary-language">
-                <span id="summary-language-label">Summary language</span>
+                <span id="summary-language-label">{t("Summary language")}</span>
                 <select
                   id="summary-language"
                   value={draft.summary_language}
@@ -308,45 +321,44 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   aria-describedby="summary-language-hint"
                   onChange={(event) => update("summary_language", event.target.value)}
                 >
-                  <option value="auto">Automatic / follow source language</option>
+                  <option value="auto">{t("Automatic / follow source language")}</option>
                   {!languageCodes.includes(draft.summary_language) && draft.summary_language !== "auto" ? (
-                    <option value={draft.summary_language}>{languageLabel(draft.summary_language)} (current value)</option>
+                    <option value={draft.summary_language}>{languageLabel(draft.summary_language)} {t("(current value)")}</option>
                   ) : null}
                   {languages.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
                 <small id="summary-language-hint">
-                  Choose the language for recaps and summaries. Automatic follows the source language.
-                </small>
+                  {t("Choose the language for recaps and summaries. Automatic follows the source language.")}{" "}</small>
               </label>
               <div className="setting-field translation-language-settings">
-                <span id="translation-languages-label">Translation languages</span>
-                <small id="translation-languages-hint">Choose the languages offered by the transcript Translate button. These are independent of the summary language. Translations are generated only when you click Translate.</small>
+                <span id="translation-languages-label">{t("Translation languages")}</span>
+                <small id="translation-languages-hint">{t("Choose the languages offered by the transcript Translate button. These are independent of the summary language. Translations are generated only when you click Translate.")}</small>
                 <ul className="translation-language-list" aria-labelledby="translation-languages-label">
                   {(draft.translation_languages ?? ["en"]).map((code) => <li key={code}>
                     <span>{languageLabel(code)}</span>
                     <button type="button" className="text-button" aria-label={`Remove ${languageLabel(code)} translation language`}
-                      onClick={() => update("translation_languages", (draft.translation_languages ?? ["en"]).filter((value) => value !== code))}>Remove</button>
+                      onClick={() => update("translation_languages", (draft.translation_languages ?? ["en"]).filter((value) => value !== code))}>{t("Remove")}</button>
                   </li>)}
                 </ul>
-                {draft.translation_languages?.length === 0 ? <small>No translation languages enabled. Add a language to use Translate.</small> : null}
-                <label htmlFor="translation-language-add" className="sr-only">Add translation language</label>
+                {draft.translation_languages?.length === 0 ? <small>{t("No translation languages enabled. Add a language to use Translate.")}</small> : null}
+                <label htmlFor="translation-language-add" className="sr-only">{t("Add translation language")}</label>
                 <select id="translation-language-add" value="" aria-describedby="translation-languages-hint"
                   onChange={(event) => { if (event.target.value) update("translation_languages", [...(draft.translation_languages ?? ["en"]), event.target.value]); }}>
-                  <option value="">Add translation language…</option>
+                  <option value="">{t("Add translation language…")}</option>
                   {languages.filter(({ value }) => !(draft.translation_languages ?? ["en"]).includes(value)).map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
               </div>
-              <p className="caption">Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.</p>
+              <p className="caption">{t("Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
               <label className="setting-field" htmlFor="recap-quiet">
-                <span id="recap-quiet-label">Wait after speech before including a conversation</span>
+                <span id="recap-quiet-label">{t("Wait after speech before including a conversation")}</span>
                 <NumberSelect id="recap-quiet" value={draft.recap_quiet_minutes ?? 5}
                   options={[1, 2, 5, 10, 15, 30]} onChange={(value) => update("recap_quiet_minutes", value)}
                   label={(minutes) => durationLabel(minutes * 60)} />
-                <small id="recap-quiet-hint">Keep the whole current conversation out until it finishes. A pause can end a conversation; missing uploads are not treated as observed silence. Original audio, including silence and noise, follows your retention settings.</small>
+                <small id="recap-quiet-hint">{t("Keep the whole current conversation out until it finishes. A pause can end a conversation; missing uploads are not treated as observed silence. Original audio, including silence and noise, follows your retention settings.")}</small>
               </label>
               <label className="capture-toggle">
                 <input
@@ -357,21 +369,16 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   }
                 />
                 <span>
-                  Pause capture
-                  <small>
-                    The iPhone checks this setting when connected. Save changes
-                    to apply it.
-                  </small>
+                  {t("Pause capture")}{" "}<small>
+                    {t("The iPhone checks this setting when connected. Save changes to apply it.")}{" "}</small>
                 </span>
               </label>
             </div>
           </fieldset>
           <fieldset disabled={busy} hidden={!show("gestures", "gestures")}>
-            <legend>Flags & meetings</legend>
+            <legend>{t("Flags & meetings")}</legend>
             <p className="muted settings-description">
-              Mark an important moment or a meeting to help Daythread understand nearby speech.
-              These gestures provide context; they do not trim your recordings.
-            </p>
+              {t("Mark an important moment or a meeting to help Daythread understand nearby speech. These gestures provide context; they do not trim your recordings.")}{" "}</p>
             {[{ title: "Important flags", fields: hintFields.slice(0, 3) },
               { title: "Meeting gestures", fields: hintFields.slice(3) }].map((group) => <div className="settings-subgroup" key={group.title}>
             <h3>{group.title}</h3>
@@ -382,7 +389,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   htmlFor={field.key}
                   key={field.key}
                 >
-                  <span id={`${field.key}-label`}>{field.label}</span>
+                  <span id={`${field.key}-label`}>{t(field.label)}</span>
                   <NumberSelect
                     id={field.key}
                     value={draft[field.key]}
@@ -390,7 +397,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                     onChange={(value) => update(field.key, value)}
                     label={(value) =>
                       value === 0 && field.zeroLabel
-                        ? field.zeroLabel
+                        ? t(field.zeroLabel)
                         : durationLabel(value * (field.unit === "minutes" ? 60 : 1))
                     }
                     unavailable={
@@ -401,17 +408,17 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                           : undefined
                     }
                   />
-                  <small id={`${field.key}-hint`}>{field.detail}</small>
+                  <small id={`${field.key}-hint`}>{t(field.detail)}</small>
                 </label>
               ))}
             </div></div>)}
           </fieldset>
           <fieldset disabled={busy} hidden={!show("storage", "storage")}>
-            <legend>Storage & privacy</legend>
-            <p className="settings-description muted">Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.</p>
+            <legend>{t("Storage & privacy")}</legend>
+            <p className="settings-description muted">{t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="audio-retention">
-                <span id="audio-retention-label">Keep original audio</span>
+                <span id="audio-retention-label">{t("Keep original audio")}</span>
                 <NumberSelect
                   id="audio-retention"
                   value={draft.audio_retention_days}
@@ -419,10 +426,10 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   label={retentionLabel}
                   onChange={(value) => update("audio_retention_days", value)}
                 />
-                <small id="audio-retention-hint">Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.</small>
+                <small id="audio-retention-hint">{t("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.")}</small>
               </label>
               <label className="setting-field" htmlFor="transcript-retention">
-                <span id="transcript-retention-label">Keep transcripts</span>
+                <span id="transcript-retention-label">{t("Keep transcripts")}</span>
                 <NumberSelect
                   id="transcript-retention"
                   value={draft.transcript_retention_days}
@@ -431,14 +438,11 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   onChange={(value) => update("transcript_retention_days", value)}
                 />
                 <small id="transcript-retention-hint">
-                  Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.
-                </small>
+                  {t("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.")}{" "}</small>
               </label>
             </div>
             <p className="caption access-note">
-              This app has no sign-in. Anyone who can reach your server
-              address can access this archive.
-            </p>
+              {t("This app has no sign-in. Anyone who can reach your server address can access this archive.")}{" "}</p>
           </fieldset>
         </form>
       )}
@@ -456,16 +460,16 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
           {error ? <ErrorState message={error} /> : null}
           <div hidden={!preferencesVisible || (!dirty && !busy && !saved)} className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
             <p className="caption settings-save-status" role="status">
-              {busy ? "Saving your preferences…" : saved ? "Preferences saved on your server." : dirty ? "Unsaved preferences." : "Your preferences are up to date."}
+              {busy ? t("Saving your preferences…") : saved ? t("Preferences saved on your server.") : dirty ? t("Unsaved preferences.") : t("Your preferences are up to date.")}
             </p>
             {dirty ? <button type="button" className="button" disabled={busy} onClick={() => {
               setDraft(resource.data);
               setError("");
               setSaved(false);
-            }}>Discard changes</button> : null}
+            }}>{t("Discard changes")}</button> : null}
             <button form="preferences-form" className="button dark" disabled={busy || !dirty}>
               <Icon name="check" size={18} />
-              {busy ? "Saving…" : "Save preferences"}
+              {busy ? t("Saving…") : t("Save preferences")}
             </button>
           </div>
       </div>

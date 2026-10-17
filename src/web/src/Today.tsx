@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { ImportanceButton } from "./Importance";
 import { useEffect, useState, type ReactNode } from "react";
@@ -46,19 +47,18 @@ export function RecapSection({
     <section className="recap-section">
       <div className="section-heading">
         <div>
-          <h2>Day recap</h2>
+          <h2>{t("Day recap")}</h2>
         </div>
       </div>
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
       {recap.data?.stale ? (
         <Notice>
-          New or changed evidence is available. This recap will update automatically.
-        </Notice>
+          {t("New or changed evidence is available. This recap will update automatically.")}{" "}</Notice>
       ) : null}
       {recap.data ? <RecapCoverage recap={recap.data} timezone={timezone} /> : null}
       {!compact ? <CompletenessDetails value={recap.data?.completeness} /> : null}
       {recap.loading && !recap.data ? (
-        <Loading>Loading recap…</Loading>
+        <Loading>{t("Loading recap…")}</Loading>
       ) : recap.data?.summary ? (
         <div className="recap-content">
           <RecapContent
@@ -74,18 +74,15 @@ export function RecapSection({
           />
           {recap.data.pending_chunks ? (
             <p className="caption">
-              {recap.data.pending_chunks} recording(s) were awaiting
-              transcription when generated. This recap updates automatically to include later
-              evidence.
-            </p>
+              {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>
           ) : null}
           <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
           <EvidenceFeedback outputId={recap.data.output_id} evidence={recap.data.evidence} outputText={recap.data.summary} />
           <div className="recap-footer">
-            <CopySummary text={recapReadingText(recap.data.summary)} label="Copy recap" />
+            <CopySummary text={recapReadingText(recap.data.summary)} label={t("Copy recap")} />
             {recap.data.generated_at ? (
               <span className="caption">
-                Generated at {timeLabel(recap.data.generated_at, timezone)}
+                {t("Generated at")}{" "}{timeLabel(recap.data.generated_at, timezone)}
               </span>
             ) : null}
             <a
@@ -94,13 +91,12 @@ export function RecapSection({
               download
             >
               <Icon name="download" size={14} />
-              Export Markdown
-            </a>
+              {t("Export Markdown")}{" "}</a>
             <button
               className="text-button"
               onClick={() => setShowVersions((value) => !value)}
             >
-              {showVersions ? "Hide saved versions" : "Saved versions"}
+              {showVersions ? t("Hide saved versions") : t("Saved versions")}
             </button>
           </div>
           {showVersions ? (
@@ -109,8 +105,7 @@ export function RecapSection({
           {recap.data.sources?.length ? (
             <details className="recap-sources">
               <summary>
-                View {recap.data.sources.length} source recording(s)
-              </summary>
+                {t("View")}{" "}{recap.data.sources.length} {t("source recording(s)")}{" "}</summary>
               <SourceList
                 sources={recap.data.sources}
                 timezone={timezone}
@@ -125,13 +120,13 @@ export function RecapSection({
         <div className="recap-empty">
           <span className="empty-symbol"><Icon name="diary" size={25} /></span>
           {compact ? <div>
-            <h3>Your recap comes together automatically.</h3>
+            <h3>{t("Your recap comes together automatically.")}</h3>
             <p>{emptyRecapMessage(recap.data)}</p>
-            {onUpload ? <button className="text-button recap-upload" onClick={onUpload}>Add a recording</button> : null}
+            {onUpload ? <button className="text-button recap-upload" onClick={onUpload}>{t("Add a recording")}</button> : null}
           </div> : <>
-            <h3>The story of your day starts here.</h3>
+            <h3>{t("The story of your day starts here.")}</h3>
             <p>{emptyRecapMessage(recap.data)}</p>
-            {onUpload ? <button className="button accent recap-upload" onClick={onUpload}><Icon name="upload" size={17} />Add a recording</button> : null}
+            {onUpload ? <button className="button accent recap-upload" onClick={onUpload}><Icon name="upload" size={17} />{t("Add a recording")}</button> : null}
           </>}
         </div>
       )}
@@ -154,18 +149,17 @@ export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: str
   const deferred = recap.deferred_conversations || 0;
   const deferredSources = recap.deferred_sources || 0;
   return <div className="recap-coverage caption" role="status">
-    {recap.included_through ? <p>Includes completed conversations through {dateTimeLabel(recap.included_through, timezone)}.</p>
-      : recap.included_through === null ? <p>No completed conversations included yet.</p> : null}
+    {recap.included_through ? <p>{t("Includes completed conversations through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
+      : recap.included_through === null ? <p>{t("No completed conversations included yet.")}</p> : null}
     {deferred || deferredSources ? <p>
-      {deferred ? `${deferred} ${deferred === 1 ? "conversation is" : "conversations are"}` : "Recent recordings are"} waiting to finish before being included. Active conversations stay out of the recap.
-    </p> : null}
+      {deferred ? `${deferred} ${deferred === 1 ? "conversation is" : "conversations are"}` : t("Recent recordings are")} {t("waiting to finish before being included. Active conversations stay out of the recap.")}{" "}</p> : null}
     {recap.boundary_note ? <p>{recap.boundary_note}</p> : null}
   </div>;
 }
 
 function RecapUtilities({ compact, generatedAt, timezone, children }: { compact: boolean; generatedAt?: string; timezone: string; children: ReactNode }) {
   return compact ? <details className="recap-utilities">
-    <summary><span>Sources, export & history</span>{generatedAt ? <span>Generated at {timeLabel(generatedAt, timezone)}</span> : null}</summary>
+    <summary><span>{t("Sources, export & history")}</span>{generatedAt ? <span>{t("Generated at")}{" "}{timeLabel(generatedAt, timezone)}</span> : null}</summary>
     {children}
   </details> : <>{children}</>;
 }
@@ -179,7 +173,7 @@ function RecapVersions({ day, timezone }: { day: string; timezone: string }) {
       {resource.error ? (
         <ErrorState message={resource.error} retry={resource.refresh} />
       ) : resource.loading ? (
-        <Loading>Loading saved versions…</Loading>
+        <Loading>{t("Loading saved versions…")}</Loading>
       ) : resource.data?.items.length ? (
         resource.data.items.map((version) => (
           <details key={version.id}>
@@ -190,7 +184,7 @@ function RecapVersions({ day, timezone }: { day: string; timezone: string }) {
           </details>
         ))
       ) : (
-        <p className="caption">No previous versions saved.</p>
+        <p className="caption">{t("No previous versions saved.")}</p>
       )}
     </div>
   );
@@ -231,22 +225,22 @@ export function Today({
         />
         <Decisions key={`decisions-${day}`} day={day} timezone={timezone} compact />
       </div>
-      <aside className="day-rail" aria-label="Day tools and capture">
+      <aside className="day-rail" aria-label={t("Day tools and capture")}>
         <QuickRewind onRewind={onRewind} />
         <section className="day-tools">
-          <h2>Day tools</h2>
+          <h2>{t("Day tools")}</h2>
           <button className="day-tool" onClick={() => onChat({ kind: "day", day })}>
             <Icon name="chat" size={19} />
-            <span>Chat with this day</span>
+            <span>{t("Chat with this day")}</span>
             <Icon name="chevron-right" size={15} />
           </button>
           <button className="day-tool" onClick={onPrepare}>
             <Icon name="people" size={19} />
-            <span>Prepare for a conversation</span>
+            <span>{t("Prepare for a conversation")}</span>
             <Icon name="chevron-right" size={15} />
           </button>
         </section>
-        <section className="follow-through"><h2>Follow-through</h2><InboxEntry /></section>
+        <section className="follow-through"><h2>{t("Follow-through")}</h2><InboxEntry /></section>
         <CaptureStatus status={status} error={statusError} compact />
         <div className="day-feedback"><FeedbackReview /></div>
       </aside>
@@ -258,25 +252,23 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
   const [minutes, setMinutes] = useState(10);
   return (
     <section className="quick-rewind">
-      <h2>Quick rewind</h2>
+      <h2>{t("Quick rewind")}</h2>
       <label className="select-with-icon">
         <Icon name="clock" size={19} />
         <select
           value={minutes}
           onChange={(event) => setMinutes(Number(event.target.value))}
-          aria-label="Rewind duration"
+          aria-label={t("Rewind duration")}
         >
           {[5, 10, 15, 30, 60].map((value) => (
             <option key={value} value={value}>
-              {value} minutes
-            </option>
+              {value} {t("minutes")}{" "}</option>
           ))}
         </select>
       </label>
       <button className="button dark" onClick={() => onRewind(minutes)}>
         <Icon name="skip-back" size={19} />
-        Rewind audio
-      </button>
+        {t("Rewind audio")}{" "}</button>
     </section>
   );
 }
@@ -320,14 +312,13 @@ function TranscriptTimeline({
     <section className="timeline-section">
       <div className="section-heading">
         <div className="timeline-title">
-          <h2>Timeline</h2>
-          {resource.data ? <span className="caption">{resource.data.total_recordings} {submitted ? "matching " : ""}{resource.data.total_recordings === 1 ? "recording" : "recordings"} · {resource.data.total} {resource.data.total === 1 ? "group" : "groups"}</span> : null}
+          <h2>{t("Timeline")}</h2>
+          {resource.data ? <span className="caption">{resource.data.total_recordings} {submitted ? t("matching") : ""}{resource.data.total_recordings === 1 ? t("recording") : t("recordings")} · {resource.data.total} {resource.data.total === 1 ? t("group") : t("groups")}</span> : null}
         </div>
         {resource.data?.total ? (
           <button className="text-button" onClick={onUpload}>
             <Icon name="upload" size={16} />
-            Upload
-          </button>
+            {t("Upload")}{" "}</button>
         ) : null}
       </div>
       {resource.error ? (
@@ -339,7 +330,7 @@ function TranscriptTimeline({
             <p key={mark.event_id}>
               <Icon name="star" size={15} />
               <span>
-                Important around {timeLabel(mark.occurred_at, timezone)}
+                {t("Important around")}{" "}{timeLabel(mark.occurred_at, timezone)}
               </span>
             </p>
           ))}
@@ -348,10 +339,10 @@ function TranscriptTimeline({
               <p>
               <Icon name="mic" size={15} />
               <span>
-                Meeting around {timeLabel(meeting.started_at, timezone)}
+                {t("Meeting around")}{" "}{timeLabel(meeting.started_at, timezone)}
                 {meeting.ended_at
                   ? `–${timeLabel(meeting.ended_at, timezone)}`
-                  : " · in progress"}
+                  : t("· in progress")}
               </span>
               <button
                 className="text-button"
@@ -360,17 +351,14 @@ function TranscriptTimeline({
                 }
                 aria-label={`Chat with meeting at ${timeLabel(meeting.started_at, timezone)}`}
               >
-                Chat with meeting
-              </button>
+                {t("Chat with meeting")}{" "}</button>
               <ImportanceButton target={{ kind: "meeting", id: meeting.id }} label={`meeting at ${timeLabel(meeting.started_at, timezone)}`} />
               </p>
               <MeetingSpeakers id={meeting.id} />
             </div>
           ))}
           <p className="caption">
-            Hints guide interpretation of nearby speech; these are approximate
-            times.
-          </p>
+            {t("Hints guide interpretation of nearby speech; these are approximate times.")}{" "}</p>
         </div>
       ) : null}
       {resource.data?.total || submitted ? (
@@ -386,12 +374,11 @@ function TranscriptTimeline({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search transcripts"
-            aria-label="Search this day's transcripts"
+            placeholder={t("Search transcripts")}
+            aria-label={t("Search this day's transcripts")}
           />
           <button className="text-button" type="submit">
-            Search
-          </button>
+            {t("Search")}{" "}</button>
           {submitted ? (
             <button
               className="text-button"
@@ -402,19 +389,18 @@ function TranscriptTimeline({
                 setPage(0);
               }}
             >
-              Clear
-            </button>
+              {t("Clear")}{" "}</button>
           ) : null}
         </form>
       ) : null}
       {resource.loading && !resource.data ? (
-        <Loading>Loading recordings…</Loading>
+        <Loading>{t("Loading recordings…")}</Loading>
       ) : groups.length ? (
         <>
           <RecordingGroups groups={groups} day={day} query={submitted} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} />
           {(resource.data?.total || 0) > 30 || page > 0 ? <div className="pagination">
             <span className="caption">
-              {page * 30 + 1}–{page * 30 + groups.length} of{" "}
+              {page * 30 + 1}–{page * 30 + groups.length} {t("of")}{" "}
               {resource.data?.total}
             </span>
             <div className="button-row">
@@ -423,31 +409,28 @@ function TranscriptTimeline({
                 disabled={page === 0}
                 onClick={() => setPage((value) => value - 1)}
               >
-                Previous
-              </button>
+                {t("Previous")}{" "}</button>
               <button
                 className="button small"
                 disabled={(page + 1) * 30 >= (resource.data?.total || 0)}
                 onClick={() => setPage((value) => value + 1)}
               >
-                Next
-              </button>
+                {t("Next")}{" "}</button>
             </div>
           </div> : null}
         </>
       ) : (
         <EmptyState
           icon={submitted ? "search" : "mic"}
-          title={submitted ? "No matching recordings" : "Make room for your first memory"}
+          title={submitted ? t("No matching recordings") : t("Make room for your first memory")}
         >
           {submitted
-            ? "Try another word or choose a different day."
-            : "Connect Omi on your iPhone, or upload a recording."}
+            ? t("Try another word or choose a different day.")
+            : t("Connect Omi on your iPhone, or upload a recording.")}
           <span className="empty-action">
             <button className="button accent" onClick={onUpload}>
               <Icon name="upload" size={18} />
-              Upload recording
-            </button>
+              {t("Upload recording")}{" "}</button>
           </span>
         </EmptyState>
       )}
@@ -460,7 +443,7 @@ function MeetingSpeakers({ id }: { id: string }) {
   return <details className="meeting-speakers" onToggle={(event) => {
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
-    <summary>Meeting speakers</summary>
+    <summary>{t("Meeting speakers")}</summary>
     {open ? <Speakers kind="meeting" id={id} /> : null}
   </details>;
 }

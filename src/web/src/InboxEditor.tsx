@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, audioUrl, errorMessage, newId, request } from "./api";
 import { dateTimeLabel } from "./format";
@@ -142,14 +143,12 @@ export function InboxEditor({
       }}
     >
       <div className="section-heading">
-        <h2>Review inbox item</h2>
+        <h2>{t("Review inbox item")}</h2>
         <button className="button" disabled={busy} onClick={onClose}>
-          Close
-        </button>
+          {t("Close")}{" "}</button>
       </div>
       <p className="caption">
-        Unsaved edits stay here after a failed request. Closing discards them.
-      </p>
+        {t("Unsaved edits stay here after a failed request. Closing discards them.")}{" "}</p>
       {error || resource.error ? (
         <ErrorState
           message={error || resource.error}
@@ -168,7 +167,7 @@ export function InboxEditor({
           <fieldset className="inbox-fields" disabled={busy}>
             {conflict ? (
               <Notice>
-                Latest saved: {resource.data!.title} ·{" "}
+                {t("Latest saved:")}{" "}{resource.data!.title} ·{" "}
                 {resource.data!.owner || "Owner unknown"} ·{" "}
                 {deadlineLabel(resource.data!.deadline)} ·{" "}
                 {resource.data!.status}.
@@ -177,24 +176,21 @@ export function InboxEditor({
                   className="text-button"
                   onClick={() => setBase(resource.data)}
                 >
-                  Use latest version as save base (keep draft)
-                </button>
+                  {t("Use latest version as save base (keep draft)")}{" "}</button>
               </Notice>
             ) : null}
             <label>
-              Kind
-              <select
+              {t("Kind")}{" "}<select
                 value={draft.kind}
                 onChange={(e) => change("kind", e.target.value as InboxKind)}
               >
-                <option value="commitment">Commitment</option>
-                <option value="deadline">Deadline</option>
-                <option value="question">Question</option>
+                <option value="commitment">{t("Commitment")}</option>
+                <option value="deadline">{t("Deadline")}</option>
+                <option value="question">{t("Question")}</option>
               </select>
             </label>
             <label>
-              Title
-              <textarea
+              {t("Title")}{" "}<textarea
                 required
                 maxLength={500}
                 value={draft.title}
@@ -202,17 +198,15 @@ export function InboxEditor({
               />
             </label>
             <label>
-              Owner
-              <input
+              {t("Owner")}{" "}<input
                 maxLength={150}
-                placeholder="Unknown"
+                placeholder={t("Unknown")}
                 value={draft.owner || ""}
                 onChange={(e) => change("owner", e.target.value || null)}
               />
             </label>
             <label>
-              Deadline precision
-              <select
+              {t("Deadline precision")}{" "}<select
                 value={draft.deadline?.precision || "unknown"}
                 onChange={(e) =>
                   updateDeadline({
@@ -222,15 +216,14 @@ export function InboxEditor({
                   })
                 }
               >
-                <option value="unknown">Unknown / unresolved</option>
-                <option value="date">Date only</option>
-                <option value="datetime">Exact instant</option>
+                <option value="unknown">{t("Unknown / unresolved")}</option>
+                <option value="date">{t("Date only")}</option>
+                <option value="datetime">{t("Exact instant")}</option>
               </select>
             </label>
             {draft.deadline?.precision === "date" ? (
               <label>
-                Due date
-                <input
+                {t("Due date")}{" "}<input
                   type="date"
                   required
                   value={draft.deadline.day || ""}
@@ -240,44 +233,40 @@ export function InboxEditor({
             ) : null}
             {draft.deadline?.precision === "datetime" ? (
               <label>
-                Due instant with UTC offset
-                <input
+                {t("Due instant with UTC offset")}{" "}<input
                   required
-                  placeholder="2026-10-20T14:00:00+02:00"
+                  placeholder={t("2026-10-20T14:00:00+02:00")}
                   value={draft.deadline.instant || ""}
                   onChange={(e) => updateDeadline({ instant: e.target.value })}
                 />
               </label>
             ) : null}
             <label>
-              Deadline timezone
-              <input
+              {t("Deadline timezone")}{" "}<input
                 required
                 value={draft.deadline?.timezone || timezone}
                 onChange={(e) => updateDeadline({ timezone: e.target.value })}
               />
             </label>
             <label>
-              Status
-              <select
+              {t("Status")}{" "}<select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as InboxStatus)}
               >
-                <option value="pending">Pending</option>
+                <option value="pending">{t("Pending")}</option>
                 <option value="completed">
-                  {draft.kind === "question" ? "Answered" : "Completed"}
+                  {draft.kind === "question" ? t("Answered") : t("Completed")}
                 </option>
-                <option value="dismissed">Dismissed</option>
+                <option value="dismissed">{t("Dismissed")}</option>
               </select>
             </label>
             {status === "dismissed" ? (
               <label>
-                Duplicate of (optional)
-                <select
+                {t("Duplicate of (optional)")}{" "}<select
                   value={duplicate}
                   onChange={(e) => setDuplicate(e.target.value)}
                 >
-                  <option value="">Ordinary dismissal</option>
+                  <option value="">{t("Ordinary dismissal")}</option>
                   {duplicates.data?.items
                     .filter((i) => i.id !== id && !i.duplicate_of)
                     .map((i) => (
@@ -289,7 +278,7 @@ export function InboxEditor({
               </label>
             ) : null}
             <details>
-              <summary>Extracted values and reset overrides</summary>
+              <summary>{t("Extracted values and reset overrides")}</summary>
               {(Object.keys(base.proposal) as (keyof InboxFields)[]).map(
                 (key) => (
                   <div key={key}>
@@ -310,7 +299,7 @@ export function InboxEditor({
                       }}
                     >
                       {reset.includes(key)
-                        ? "Reset on save"
+                        ? t("Reset on save")
                         : `Use extracted ${key}`}
                     </button>
                   </div>
@@ -321,26 +310,23 @@ export function InboxEditor({
               className="button primary"
               disabled={busy || Boolean(conflict) || Boolean(resource.error)}
             >
-              {busy ? "Saving…" : "Save review"}
+              {busy ? t("Saving…") : t("Save review")}
             </button>
             <p className="caption">
               {base.health === "current"
-                ? "Supporting transcript evidence"
-                : "Evidence changed or was withdrawn. Prior excerpts are historical; review before relying on this item."}
+                ? t("Supporting transcript evidence")
+                : t("Evidence changed or was withdrawn. Prior excerpts are historical; review before relying on this item.")}
             </p>
             {draft.kind === "question" ? (
               <p className="caption">
-                No answer found in the scanned context; other recordings may
-                contain one.
-              </p>
+                {t("No answer found in the scanned context; other recordings may contain one.")}{" "}</p>
             ) : null}
             {resource.data?.evidence?.map((span, index) => (
               <blockquote key={index}>
                 <p>{span.quote}</p>
                 <p className="caption">
                   {dateTimeLabel(span.started_at, timezone)} ·{" "}
-                  {span.current ? "Current transcript" : "Prior transcript"} ·
-                  chunk-level timing · {span.source_id}
+                  {span.current ? t("Current transcript") : t("Prior transcript")} {t("· chunk-level timing ·")}{" "}{span.source_id}
                 </p>
                 {span.audio_available ? (
                   <audio
@@ -349,12 +335,12 @@ export function InboxEditor({
                     src={audioUrl(span.source_id)}
                   />
                 ) : (
-                  <p className="caption">Original audio unavailable</p>
+                  <p className="caption">{t("Original audio unavailable")}</p>
                 )}
               </blockquote>
             ))}
             <details>
-              <summary>Change history</summary>
+              <summary>{t("Change history")}</summary>
               {resource.data?.history?.map((event) => (
                 <p className="caption" key={event.id}>
                   {dateTimeLabel(event.created_at, timezone)} · {event.kind}

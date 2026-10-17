@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "Daythread";
+"NSBluetoothAlwaysUsageDescription" = "Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.";
+"NSLocalNetworkUsageDescription" = "Daythread sends recordings to your own home-core on your local network.";
+"NSRemindersFullAccessUsageDescription" = "Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.";

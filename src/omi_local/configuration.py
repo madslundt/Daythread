@@ -33,6 +33,8 @@ def plain(value):
 
 
 def group(key: str) -> str:
+    if key.startswith("apns_"):
+        return "Push notifications"
     if key.startswith(("diarization_", "voice_recognition_")):
         return "Speaker detection"
     if key.startswith("stt_"):

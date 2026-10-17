@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { ApiError, errorMessage, newId, request } from "./api";
 import { dateTimeLabel } from "./format";
@@ -24,21 +25,19 @@ export function EntityFields({
   return (
     <div className="label-fields">
       <label>
-        Kind
-        <select
+        {t("Kind")}{" "}<select
           value={value.kind}
           disabled={fixedKind}
           onChange={(e) =>
             onChange({ ...value, kind: e.target.value as EntityDraft["kind"] })
           }
         >
-          <option value="person">Person</option>
-          <option value="project">Project</option>
+          <option value="person">{t("Person")}</option>
+          <option value="project">{t("Project")}</option>
         </select>
       </label>
       <label>
-        Name
-        <input
+        {t("Name")}{" "}<input
           required
           maxLength={120}
           value={value.name}
@@ -46,17 +45,15 @@ export function EntityFields({
         />
       </label>
       <label>
-        Distinguishing description
-        <textarea
+        {t("Distinguishing description")}{" "}<textarea
           maxLength={2000}
           value={value.description}
           onChange={(e) => onChange({ ...value, description: e.target.value })}
-          placeholder="For example: Alex from the cycling club"
+          placeholder={t("For example: Alex from the cycling club")}
         />
       </label>
       <label>
-        Aliases · one per line
-        <textarea
+        {t("Aliases · one per line")}{" "}<textarea
           maxLength={3600}
           value={value.aliases.join("\n")}
           onChange={(e) =>
@@ -65,10 +62,7 @@ export function EntityFields({
         />
       </label>
       <p className="caption">
-        Names and aliases can match other labels. A name mention never confirms
-        participation. On rename, add the previous name as an alias only if you
-        want to keep it.
-      </p>
+        {t("Names and aliases can match other labels. A name mention never confirms participation. On rename, add the previous name as an alias only if you want to keep it.")}{" "}</p>
     </div>
   );
 }
@@ -166,10 +160,9 @@ export function NoteEditor({
         });
       }}
     >
-      <h3>{entry ? "Edit and review annotation" : "Add a cited annotation"}</h3>
+      <h3>{entry ? t("Edit and review annotation") : t("Add a cited annotation")}</h3>
       <label>
-        Type
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        {t("Type")}{" "}<select value={kind} onChange={(e) => setKind(e.target.value)}>
           {Object.entries(kinds).map(([k, label]) => (
             <option key={k} value={k}>
               {label}
@@ -178,8 +171,7 @@ export function NoteEditor({
         </select>
       </label>
       <label>
-        Title
-        <input
+        {t("Title")}{" "}<input
           required
           maxLength={120}
           value={title}
@@ -187,20 +179,16 @@ export function NoteEditor({
         />
       </label>
       <label>
-        Your note
-        <textarea
+        {t("Your note")}{" "}<textarea
           maxLength={2000}
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
       </label>
       <p className="caption">
-        Select the recordings that support your note. A group has only the
-        boundaries you select. Open questions have no automatic resolution
-        status.
-      </p>
+        {t("Select the recordings that support your note. A group has only the boundaries you select. Open questions have no automatic resolution status.")}{" "}</p>
       <fieldset>
-        <legend>Selected evidence · {sources.length}</legend>
+        <legend>{t("Selected evidence ·")}{" "}{sources.length}</legend>
         {sources.map((source) => (
           <label className="label-choice" key={source.id}>
             <input type="checkbox" checked onChange={() => toggle(source)} />
@@ -212,8 +200,7 @@ export function NoteEditor({
         ))}
       </fieldset>
       <label>
-        Find recordings
-        <input
+        {t("Find recordings")}{" "}<input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -250,11 +237,9 @@ export function NoteEditor({
           disabled={page === 0 || available.loading}
           onClick={() => setPage((p) => p - 1)}
         >
-          Previous recordings
-        </button>
+          {t("Previous recordings")}{" "}</button>
         <span>
-          Page {page + 1} · {available.data?.total ?? 0} matches
-        </span>
+          {t("Page")}{" "}{page + 1} · {available.data?.total ?? 0} {t("matches")}{" "}</span>
         <button
           type="button"
           className="button small"
@@ -265,14 +250,11 @@ export function NoteEditor({
           }
           onClick={() => setPage((p) => p + 1)}
         >
-          Next recordings
-        </button>
+          {t("Next recordings")}{" "}</button>
       </div>
       {entry?.needs_review ? (
         <p role="status">
-          Evidence changed. Read the current sources before saving to confirm
-          this annotation again.
-        </p>
+          {t("Evidence changed. Read the current sources before saving to confirm this annotation again.")}{" "}</p>
       ) : null}
       {mutation.error || refreshError ? (
         <ErrorState message={refreshError || mutation.error} />
@@ -283,14 +265,13 @@ export function NoteEditor({
         disabled={mutation.busy}
         onClick={() => void refreshEvidence()}
       >
-        Refresh selected evidence and version for review · keep draft
-      </button>
+        {t("Refresh selected evidence and version for review · keep draft")}{" "}</button>
       <div className="button-row">
         <button
           className="button dark"
           disabled={mutation.busy || !sources.length}
         >
-          {mutation.busy ? "Saving…" : "Save reviewed annotation"}
+          {mutation.busy ? t("Saving…") : t("Save reviewed annotation")}
         </button>
         <button
           type="button"
@@ -298,8 +279,7 @@ export function NoteEditor({
           onClick={onCancel}
           disabled={mutation.busy}
         >
-          Cancel
-        </button>
+          {t("Cancel")}{" "}</button>
       </div>
     </form>
   );

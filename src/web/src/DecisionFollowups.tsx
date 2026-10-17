@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "./api";
 import { canSuggestFollowups, DecisionFollowupRequests, followupLinkLabel } from "./decisionFollowupModels";
@@ -30,10 +31,10 @@ export function DecisionFollowupAction({ suggestion, requests, timezone }: { sug
   return <span className="decision-inline-action">
     <button type="button" className="decision-action-link" disabled={busy || downloaded} aria-label={action}
       title={downloaded ? `File downloaded. Open it in your ${event ? "calendar" : "reminder"} app to add it.` : suggestion.reason ? `${action}. ${suggestion.reason}` : action} onClick={() => void open()}>
-      {busy ? "Opening…" : label}{downloaded ? " ✓" : ""}
+      {busy ? t("Opening…") : label}{downloaded ? " ✓" : ""}
     </button>
     {error ? <span className="decision-link-error" role="alert">{error}</span> : null}
-    {downloaded ? <span className="sr-only" role="status">File downloaded. Open the downloaded file in your {event ? "calendar" : "reminder"} app to add it.</span> : null}
+    {downloaded ? <span className="sr-only" role="status">{t("File downloaded. Open the downloaded file in your")}{" "}{event ? t("calendar") : t("reminder")} {t("app to add it.")}</span> : null}
   </span>;
 }
 
@@ -60,9 +61,9 @@ export function DecisionFollowups({ decision, timezone }: { decision: Decision; 
   const suggestions = result?.suggestions || [];
   const actions = suggestions.filter((item) => item.kind === "event" ? item.start_at : item.due_at);
   if (!busy && !error && !actions.length) return null;
-  return <span className="decision-action-links" role="group" aria-label="Add this decision to your apps">
+  return <span className="decision-action-links" role="group" aria-label={t("Add this decision to your apps")}>
     {actions.map((suggestion) => <DecisionFollowupAction key={JSON.stringify(suggestion)} suggestion={suggestion} requests={requests} timezone={result?.timezone || timezone} />)}
-    {busy ? <span className="caption" role="status">Finding dates…</span> : null}
-    {error ? <span className="decision-link-error" title={error}>Suggestions unavailable. <button type="button" className="decision-action-link" onClick={() => setRevision((value) => value + 1)}>Try again</button></span> : null}
+    {busy ? <span className="caption" role="status">{t("Finding dates…")}</span> : null}
+    {error ? <span className="decision-link-error" title={error}>{t("Suggestions unavailable.")}{" "}<button type="button" className="decision-action-link" onClick={() => setRevision((value) => value + 1)}>{t("Try again")}</button></span> : null}
   </span>;
 }

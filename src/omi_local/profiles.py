@@ -12,7 +12,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .embeddings import Embeddings, run_embedding_worker
+from .generation_jobs import GenerationJobs
 from .inference import Inference
+from .notifications import NotificationService
 from .omi_api import OmiAPI
 from .service import Memory
 from .settings import Settings
@@ -45,6 +47,9 @@ class ProfileRuntime:
     weekly_worker: asyncio.Task
     worker: asyncio.Task | None
     embedding_worker: asyncio.Task | None
+    jobs: GenerationJobs
+    generation_worker: asyncio.Task
+    notification_worker: asyncio.Task
 
 
 class Profiles:
@@ -108,6 +113,8 @@ class Profiles:
         if profile_id != DEFAULT_PROFILE:
             store.save_settings(self.runtimes[DEFAULT_PROFILE].memory.store.runtime_settings())
         memory = Memory(store, settings, Inference(settings, self.client))
+        memory.notifications = NotificationService(store, settings, profile_id)
+        jobs = GenerationJobs(memory)
         memory.retriever.embeddings = Embeddings(settings, self.client)
         weekly = WeeklyReviews(memory)
         worker = embedding_worker = None
@@ -127,6 +134,9 @@ class Profiles:
             asyncio.create_task(weekly.run()),
             worker,
             embedding_worker,
+            jobs,
+            asyncio.create_task(jobs.run()),
+            asyncio.create_task(memory.notifications.run()),
         )
         self.runtimes[profile_id] = runtime
         return runtime
@@ -153,7 +163,8 @@ class Profiles:
         tasks = [
             task
             for runtime in self.runtimes.values()
-            for task in (runtime.worker, runtime.embedding_worker, runtime.weekly_worker)
+            for task in (runtime.worker, runtime.embedding_worker, runtime.weekly_worker,
+                         runtime.generation_worker, runtime.notification_worker)
             if task is not None
         ]
         for task in tasks:
@@ -161,3 +172,5 @@ class Profiles:
         for task in tasks:
             with suppress(asyncio.CancelledError):
                 await task
+        for runtime in self.runtimes.values():
+            await runtime.memory.notifications.close()

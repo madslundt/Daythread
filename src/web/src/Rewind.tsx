@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, post, rewindAudioUrl } from "./api";
 import { dateTimeLabel, timeLabel } from "./format";
@@ -66,7 +67,7 @@ export function Rewind({
         }}
       >
         <label htmlFor="rewind-minutes">
-          Last{" "}
+          {t("Last")}{" "}
           <input
             id="rewind-minutes"
             type="number"
@@ -77,19 +78,17 @@ export function Rewind({
             onChange={(event) => setMinutes(Number(event.target.value))}
             required
           />{" "}
-          minutes
-        </label>
+          {t("minutes")}{" "}</label>
         <label className="checkbox-label">
           <input
             type="checkbox"
             checked={summarize}
             onChange={(event) => setSummarize(event.target.checked)}
           />
-          Include a quick recap
-        </label>
+          {t("Include a quick recap")}{" "}</label>
         <button className="button dark" disabled={busy}>
           <Icon name="rewind" />
-          {busy ? "Rewinding…" : "Rewind"}
+          {busy ? t("Rewinding…") : t("Rewind")}
         </button>
       </form>
       {error ? <ErrorState message={error} /> : null}
@@ -107,16 +106,12 @@ export function Rewind({
           {result.sources.length ? (
             <>
               {result.sources.some((source) => source.source_kind === "omi_audio_webhook") ? <Notice>
-                Official audio times estimate server receipt. Bursts or multiple senders can overlap in combined playback.
-                Play individual sources below to hear every accepted chunk; this timeline does not establish continuous capture.
-              </Notice> : null}
+                {t("Official audio times estimate server receipt. Bursts or multiple senders can overlap in combined playback. Play individual sources below to hear every accepted chunk; this timeline does not establish continuous capture.")}{" "}</Notice> : null}
               {hasAudio ? <div className="playback-panel">
                 <div>
-                  <h3>Listen back</h3>
+                  <h3>{t("Listen back")}</h3>
                   <p className="caption">
-                    Audio is clipped to the requested window. Gaps remain
-                    silent.
-                  </p>
+                    {t("Audio is clipped to the requested window. Gaps remain silent.")}{" "}</p>
                 </div>
                 <audio
                   key={result.end}
@@ -124,62 +119,53 @@ export function Rewind({
                   preload="none"
                   src={rewindAudioUrl(completedMinutes, result.end)}
                   onError={() => setAudioError(true)}
-                  aria-label="Play rewind audio"
+                  aria-label={t("Play rewind audio")}
                 />
                 {audioError ? (
                   <ErrorState message="Audio for this window is unavailable. You can still read the available transcripts below." />
                 ) : null}
               </div> : (
-                <Notice>Original audio is unavailable for these sources. You can read the transcripts below.</Notice>
+                <Notice>{t("Original audio is unavailable for these sources. You can read the transcripts below.")}</Notice>
               )}
               {result.summary ? (
                 <section className="rewind-summary">
-                  <h2>What you heard</h2>
+                  <h2>{t("What you heard")}</h2>
                   <RichText text={result.summary} />
                   <EvidenceFeedback outputId={result.output_id} evidence={result.evidence} outputText={result.summary} />
                 </section>
               ) : summarize ? (
                 <Notice>
-                  No transcribed speech is available to summarize yet.
-                  {hasAudio ? " You can listen to the recording above." : " Original audio is unavailable."}
+                  {t("No transcribed speech is available to summarize yet.")}{" "}{hasAudio ? t("You can listen to the recording above.") : t("Original audio is unavailable.")}
                 </Notice>
               ) : null}
               {result.pending_chunks ? (
                 <Notice>
-                  {result.pending_chunks} recording(s) were awaiting transcription at this snapshot. Run rewind again to update.
-                </Notice>
+                  {result.pending_chunks} {t("recording(s) were awaiting transcription at this snapshot. Run rewind again to update.")}{" "}</Notice>
               ) : null}
               <CompletenessDetails value={result.completeness} />
               {result.audio_gaps.length ? (
                 <p className="caption">
-                  There{" "}
+                  {t("There")}{" "}
                   {result.audio_gaps.length === 1
-                    ? "is 1 gap"
+                    ? t("is 1 gap")
                     : `are ${result.audio_gaps.length} gaps`}{" "}
-                  in recorded audio for this window.
-                </p>
+                  {t("in recorded audio for this window.")}{" "}</p>
               ) : null}
               <div className="section-heading">
-                <h2>Source recordings</h2>
+                <h2>{t("Source recordings")}</h2>
               </div>
               <p className="caption">
-                Transcripts include whole overlapping recording chunks. Markers
-                and meeting gestures are approximate context hints.
-              </p>
+                {t("Transcripts include whole overlapping recording chunks. Markers and meeting gestures are approximate context hints.")}{" "}</p>
               <SourceList sources={result.sources} timezone={timezone} />
             </>
           ) : (
-            <EmptyState icon="rewind" title="No audio in this window">
-              Try a longer window, or connect your iPhone to send its queued
-              recordings.
-            </EmptyState>
+            <EmptyState icon="rewind" title={t("No audio in this window")}>
+              {t("Try a longer window, or connect your iPhone to send its queued recordings.")}{" "}</EmptyState>
           )}
         </div>
       ) : !busy && !error ? (
-        <EmptyState icon="rewind" title="A moment worth coming back to">
-          Choose how far back to listen. Your recap and source recordings will
-          appear here.
-        </EmptyState>
+        <EmptyState icon="rewind" title={t("A moment worth coming back to")}>
+          {t("Choose how far back to listen. Your recap and source recordings will appear here.")}{" "}</EmptyState>
       ) : null}
     </div>
   );

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
 import { localDay, dateTimeLabel } from "./format";
@@ -10,10 +11,9 @@ export function InboxEntry() {
   const inbox = useResource<InboxPage>("/v1/inbox?limit=1", 15_000);
   return (
     <a className="button" href="/inbox">
-      Inbox
-      {inbox.data
+      {t("Inbox")}{" "}{inbox.data
         ? ` · ${inbox.data.pending} pending across days`
-        : " · across all days"}
+        : t("· across all days")}
     </a>
   );
 }
@@ -70,11 +70,9 @@ export function Inbox({ timezone }: { timezone: string }) {
   return (
     <div className="feature-content">
       <p className="caption">
-        Pending promises, deadlines and unanswered questions across all days.
-        Model proposals need your review.
-      </p>
+        {t("Pending promises, deadlines and unanswered questions across all days. Model proposals need your review.")}{" "}</p>
       <details className="inbox-scan">
-        <summary>Scan earlier recordings / retry failed work</summary>
+        <summary>{t("Scan earlier recordings / retry failed work")}</summary>
         <form
           className="inbox-controls"
           onSubmit={(e) => {
@@ -83,8 +81,7 @@ export function Inbox({ timezone }: { timezone: string }) {
           }}
         >
           <label>
-            From
-            <input
+            {t("From")}{" "}<input
               type="date"
               required
               value={start}
@@ -92,8 +89,7 @@ export function Inbox({ timezone }: { timezone: string }) {
             />
           </label>
           <label>
-            Through
-            <input
+            {t("Through")}{" "}<input
               type="date"
               required
               value={end}
@@ -101,13 +97,11 @@ export function Inbox({ timezone }: { timezone: string }) {
             />
           </label>
           <button className="button" disabled={busy}>
-            {busy ? "Queuing…" : "Scan / retry"}
+            {busy ? t("Queuing…") : t("Scan / retry")}
           </button>
         </form>
         <p className="caption">
-          Up to 31 days per scan. Dates use {timezone}. New transcripts are
-          scanned automatically. No external task synchronization.
-        </p>
+          {t("Up to 31 days per scan. Dates use")}{" "}{timezone}{t(". New transcripts are scanned automatically. No external task synchronization.")}{" "}</p>
       </details>
       {message ? <Notice>{message}</Notice> : null}
       {error || resource.error ? (
@@ -118,65 +112,61 @@ export function Inbox({ timezone }: { timezone: string }) {
       ) : null}
       {coverage ? (
         <div className="caption" role="status">
-          {coverage.jobs.done || 0} scanned windows ·{" "}
-          {coverage.jobs.queued || 0} waiting · {coverage.jobs.running || 0}{" "}
-          extracting · {coverage.jobs.failed || 0} failed ·{" "}
-          {coverage.unscanned_sources} unscanned sources
-          {resource.data?.recent_jobs
+          {coverage.jobs.done || 0} {t("scanned windows ·")}{" "}
+          {coverage.jobs.queued || 0} {t("waiting ·")}{" "}{coverage.jobs.running || 0}{" "}
+          {t("extracting ·")}{" "}{coverage.jobs.failed || 0} {t("failed ·")}{" "}
+          {coverage.unscanned_sources} {t("unscanned sources")}{" "}{resource.data?.recent_jobs
             .filter((j) => j.error)
             .map((j) => (
               <p key={j.id}>
                 {j.recording_start
                   ? `${dateTimeLabel(j.recording_start, timezone)} · `
                   : ""}
-                {j.state}: {j.error} (attempt {j.attempts})
+                {j.state}: {j.error} {t("(attempt")}{" "}{j.attempts})
               </p>
             ))}
         </div>
       ) : null}
       <div className="inbox-controls">
         <label>
-          Status
-          <select
+          {t("Status")}{" "}<select
             value={status}
             onChange={(e) => {
               setStatus(e.target.value as InboxStatus);
               setOffset(0);
             }}
           >
-            <option value="pending">Pending</option>
-            <option value="completed">Completed / answered</option>
-            <option value="dismissed">Dismissed</option>
+            <option value="pending">{t("Pending")}</option>
+            <option value="completed">{t("Completed / answered")}</option>
+            <option value="dismissed">{t("Dismissed")}</option>
           </select>
         </label>
         <label>
-          Kind
-          <select
+          {t("Kind")}{" "}<select
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
               setOffset(0);
             }}
           >
-            <option value="">All kinds</option>
-            <option value="commitment">Commitments</option>
-            <option value="deadline">Deadlines</option>
-            <option value="question">Questions</option>
+            <option value="">{t("All kinds")}</option>
+            <option value="commitment">{t("Commitments")}</option>
+            <option value="deadline">{t("Deadlines")}</option>
+            <option value="question">{t("Questions")}</option>
           </select>
         </label>
         <label>
-          Deadline
-          <select
+          {t("Deadline")}{" "}<select
             value={due}
             onChange={(e) => {
               setDue(e.target.value);
               setOffset(0);
             }}
           >
-            <option value="">All deadlines</option>
-            <option value="overdue">Overdue</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="unknown">Unknown / unresolved</option>
+            <option value="">{t("All deadlines")}</option>
+            <option value="overdue">{t("Overdue")}</option>
+            <option value="upcoming">{t("Upcoming")}</option>
+            <option value="unknown">{t("Unknown / unresolved")}</option>
           </select>
         </label>
       </div>
@@ -185,34 +175,34 @@ export function Inbox({ timezone }: { timezone: string }) {
         <article className="inbox-card" key={item.id}>
           <button className="inbox-open" onClick={() => setSelected(item.id)}>
             <span className="eyebrow">
-              {item.kind} · {item.reviewed_at ? "Reviewed" : "Unreviewed"}
+              {item.kind} · {item.reviewed_at ? t("Reviewed") : t("Unreviewed")}
             </span>
             <h2>{item.title}</h2>
             <p>
               {item.owner || "Owner unknown"} · {deadlineLabel(item.deadline)}
-              {item.overdue ? " · Overdue" : ""}
+              {item.overdue ? t("· Overdue") : ""}
             </p>
             {item.health !== "current" ? (
               <strong>
-                Evidence{" "}
+                {t("Evidence")}{" "}
                 {item.health === "withdrawn"
-                  ? "withdrawn"
-                  : "changed — review required"}
+                  ? t("withdrawn")
+                  : t("changed — review required")}
               </strong>
             ) : null}
-            {item.duplicate_of ? <p>Dismissed as duplicate</p> : null}
+            {item.duplicate_of ? <p>{t("Dismissed as duplicate")}</p> : null}
           </button>
         </article>
       ))}
       {resource.data && !resource.data.items.length ? (
-        <EmptyState title="No items in this view">
+        <EmptyState title={t("No items in this view")}>
           {coverage?.jobs.queued || coverage?.jobs.running
-            ? "Extraction is still waiting or running."
+            ? t("Extraction is still waiting or running.")
             : coverage?.jobs.failed
-              ? "Some extractions failed. Retry the relevant dates above."
+              ? t("Some extractions failed. Retry the relevant dates above.")
               : !coverage?.jobs.done
-                ? "No extraction has completed yet. Scan a date range or capture new speech."
-                : "No candidates match these filters. This does not establish that all obligations were recorded or found."}
+                ? t("No extraction has completed yet. Scan a date range or capture new speech.")
+                : t("No candidates match these filters. This does not establish that all obligations were recorded or found.")}
         </EmptyState>
       ) : null}
       {resource.data && resource.data.total > 25 ? (
@@ -222,10 +212,9 @@ export function Inbox({ timezone }: { timezone: string }) {
             disabled={!offset}
             onClick={() => setOffset((v) => v - 25)}
           >
-            Previous
-          </button>
+            {t("Previous")}{" "}</button>
           <span>
-            {offset + 1}–{Math.min(offset + 25, resource.data.total)} of{" "}
+            {offset + 1}–{Math.min(offset + 25, resource.data.total)} {t("of")}{" "}
             {resource.data.total}
           </span>
           <button
@@ -233,8 +222,7 @@ export function Inbox({ timezone }: { timezone: string }) {
             disabled={offset + 25 >= resource.data.total}
             onClick={() => setOffset((v) => v + 25)}
           >
-            Next
-          </button>
+            {t("Next")}{" "}</button>
         </div>
       ) : null}
       {selected ? (

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { Icon, type IconName } from "./Icon";
 
 const categories: { id: SettingsSection; label: string; detail: string; icon: IconName }[] = [
@@ -39,33 +40,33 @@ export function SettingsNavigation({ section, search, onSearch, onSelect, prefer
 }) {
   return <aside className="settings-navigation">
     <label className="settings-search" htmlFor="settings-search">
-      <span className="sr-only">Search settings</span>
+      <span className="sr-only">{t("Search settings")}</span>
       <Icon name="search" size={18} />
-      <input id="settings-search" type="search" placeholder="Search settings…" value={search}
+      <input id="settings-search" type="search" placeholder={t("Search settings…")} value={search}
         onChange={(event) => onSearch(event.target.value)} />
     </label>
-    {search ? <button className="text-button settings-clear-search" type="button" onClick={() => onSearch("")}>Clear search</button> : null}
+    {search ? <button className="text-button settings-clear-search" type="button" onClick={() => onSearch("")}>{t("Clear search")}</button> : null}
     <label className="settings-category-picker" htmlFor="settings-category">
-      <span id="settings-category-label">Browse settings</span>
+      <span id="settings-category-label">{t("Browse settings")}</span>
       <select id="settings-category" aria-labelledby="settings-category-label" value={search.trim() ? "" : section} onChange={(event) => {
         const category = categories.find((item) => item.id === event.target.value);
         if (category) onSelect(category.id);
       }}>
-        {search.trim() ? <option value="" disabled>Search results</option> : null}
-        {categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+        {search.trim() ? <option value="" disabled>{t("Search results")}</option> : null}
+        {categories.map((category) => <option key={category.id} value={category.id}>{t(category.label)}</option>)}
       </select>
     </label>
-    <nav aria-label="Settings categories">
+    <nav aria-label={t("Settings categories")}>
       {categories.map((category) => <a key={category.id} href={`/settings/${category.id}`}
         aria-current={!search.trim() && section === category.id ? "page" : undefined}
         onClick={(event) => { event.preventDefault(); onSelect(category.id); }}>
         <Icon name={category.icon} size={19} />
-        <span><strong>{category.label}</strong><small>{category.detail}</small></span>
-        {category.id === "server" && serverDirty ? <span className="settings-dirty-dot" aria-label="Unsaved server changes" /> : null}
+        <span><strong>{t(category.label)}</strong><small>{t(category.detail)}</small></span>
+        {category.id === "server" && serverDirty ? <span className="settings-dirty-dot" aria-label={t("Unsaved server changes")} /> : null}
       </a>)}
     </nav>
-    <p className="settings-navigation-note">Preferences are shared with your iPhone. Appearance stays on this device.</p>
-    {preferencesDirty || serverDirty ? <p className="settings-draft-note" role="status">Your unsaved changes stay here as you switch categories.</p> : null}
-    {serverDirty && section !== "server" ? <button type="button" className="text-button settings-review-server" onClick={() => onSelect("server")}>Review server changes</button> : null}
+    <p className="settings-navigation-note">{t("Preferences are shared with your iPhone. Appearance stays on this device.")}</p>
+    {preferencesDirty || serverDirty ? <p className="settings-draft-note" role="status">{t("Your unsaved changes stay here as you switch categories.")}</p> : null}
+    {serverDirty && section !== "server" ? <button type="button" className="text-button settings-review-server" onClick={() => onSelect("server")}>{t("Review server changes")}</button> : null}
   </aside>;
 }

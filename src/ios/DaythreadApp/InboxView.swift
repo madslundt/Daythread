@@ -41,25 +41,26 @@ struct InboxView: View {
             Section {
                 EditorialTitle(eyebrow: "Follow through", title: "Keep things moving.").editorialRow()
             }
-            Section("Show in your inbox") {
-                Picker("Status", selection: $status) {
+            Section {
+                Picker("Show", selection: $status) {
                     Text("Pending").tag("pending"); Text("Completed / answered").tag("completed"); Text("Dismissed").tag("dismissed")
                 }
-                Picker("Kind", selection: $kind) {
-                    Text("All kinds").tag(""); Text("Commitments").tag("commitment"); Text("Deadlines").tag("deadline"); Text("Questions").tag("question")
-                }
-                Picker("Deadline", selection: $due) {
-                    Text("All deadlines").tag(""); Text("Overdue").tag("overdue"); Text("Upcoming").tag("upcoming"); Text("Unknown / unresolved").tag("unknown")
+                DisclosureGroup {
+                    Picker("Kind", selection: $kind) {
+                        Text("All kinds").tag(""); Text("Commitments").tag("commitment"); Text("Deadlines").tag("deadline"); Text("Questions").tag("question")
+                    }
+                    Picker("Deadline", selection: $due) {
+                        Text("All deadlines").tag(""); Text("Overdue").tag("overdue"); Text("Upcoming").tag("upcoming"); Text("Unknown / unresolved").tag("unknown")
+                    }
+                } label: {
+                    Label(filterSummary, systemImage: "line.3.horizontal.decrease")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 if busy { ProgressView() }
                 ErrorNote(message: error)
                 if let message { Text(message).font(.caption) }
             }
             if let page {
-                Section("Extraction coverage") {
-                    Text("\(page.coverage.jobs["done", default: 0]) scanned · \(page.coverage.jobs["queued", default: 0]) waiting · \(page.coverage.jobs["running", default: 0]) extracting · \(page.coverage.jobs["failed", default: 0]) failed · \(page.coverage.unscanned_sources) unscanned sources").font(.caption)
-                    ForEach(page.recent_jobs.filter { $0.error != nil }) { job in Text("\(job.recording_start.map { $0 + " · " } ?? "")\(job.state): \(job.error ?? "") (attempt \(job.attempts))").font(.caption) }
-                }
                 Section("\(status.capitalized) · all days") {
                     ForEach(page.items) { item in
                         NavigationLink { InboxDetail(id: item.id) } label: {
@@ -81,12 +82,29 @@ struct InboxView: View {
                     }
                 }
             }
-            Section("Scan earlier recordings / retry") {
-                DatePicker("From", selection: $start, displayedComponents: .date)
-                DatePicker("Through", selection: $end, displayedComponents: .date)
-                Text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running.").font(.caption).foregroundStyle(.secondary)
-                Button("Scan / retry failed work") { Task { await scan() } }.disabled(busy)
-            }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
+            if page == nil && error == nil { ProgressView("Opening your inbox…") }
+            Section {
+                if let page {
+                    DisclosureGroup {
+                        Text("\(page.coverage.jobs["done", default: 0]) scanned · \(page.coverage.jobs["queued", default: 0]) waiting · \(page.coverage.jobs["running", default: 0]) extracting · \(page.coverage.jobs["failed", default: 0]) failed · \(page.coverage.unscanned_sources) unscanned sources")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(page.recent_jobs.filter { $0.error != nil }) { job in
+                            Text("\(job.recording_start.map { $0 + " · " } ?? "")\(job.state): \(job.error ?? "") (attempt \(job.attempts))").font(.caption)
+                        }
+                    } label: {
+                        Label(page.coverage.jobs["failed", default: 0] > 0 ? "Scan coverage · \(page.coverage.jobs["failed", default: 0]) failed" : "Scan status & coverage", systemImage: "checkmark.shield")
+                    }
+                }
+                DisclosureGroup("Scan earlier recordings / retry") {
+                    DatePicker("From", selection: $start, displayedComponents: .date)
+                    DatePicker("Through", selection: $end, displayedComponents: .date)
+                    Text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Scan / retry failed work") { Task { await scan() } }.disabled(busy)
+                }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
+            } header: { Text("Recording coverage") } footer: {
+                Text("Proposals come from your recorded conversations and need your review.")
+            }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle("Inbox").navigationBarTitleDisplayMode(.inline)
             .task(id: queryKey) { await load() }
             .task { while !Task.isCancelled { try? await Task.sleep(for: .seconds(10)); if !Task.isCancelled { await load() } } }
@@ -95,6 +113,11 @@ struct InboxView: View {
             .onChange(of: kind) { _, _ in offset = 0 }
             .onChange(of: due) { _, _ in offset = 0 }
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
+    }
+    private var filterSummary: String {
+        let kindLabel = kind.isEmpty ? "All kinds" : kind.capitalized + "s"
+        let dueLabel = due.isEmpty ? "any deadline" : due == "unknown" ? "unresolved deadlines" : due + " deadlines"
+        return "\(kindLabel) · \(dueLabel)"
     }
     private func load() async {
         let key = queryKey

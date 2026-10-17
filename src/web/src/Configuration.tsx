@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, errorMessage, newId, request } from "./api";
 import { ErrorState, Loading } from "./UI";
@@ -15,13 +16,13 @@ function SecretControl({ id, label, configured, edit, onChange, route = false, n
   onChange: (edit: SecretEdit) => void; route?: boolean; nullable?: boolean; description?: string;
 }) {
   return <div className="setting-field">
-    <label htmlFor={id}>{label} · {configured ? "Configured" : "Not set"}</label>
+    <label htmlFor={id}>{label} · {configured ? t("Configured") : t("Not set")}</label>
     <select id={id} value={edit.mode} aria-describedby={description ? `${id}-hint` : undefined} onChange={(event) =>
       onChange({ mode: event.target.value as SecretEdit["mode"], value: "" })}>
-      <option value="keep">{configured ? "Keep current key" : route || nullable ? "Keep current setting" : "Leave key unset"}</option>
-      <option value="replace">{configured ? "Replace key" : "Add key"}</option>
-      {route || nullable ? <option value="inherit">{route ? "Use provider key" : "Use shared key"}</option> : null}
-      <option value="clear">{route || nullable ? "No authentication" : "Clear key"}</option>
+      <option value="keep">{configured ? t("Keep current key") : route || nullable ? t("Keep current setting") : t("Leave key unset")}</option>
+      <option value="replace">{configured ? t("Replace key") : t("Add key")}</option>
+      {route || nullable ? <option value="inherit">{route ? t("Use provider key") : t("Use shared key")}</option> : null}
+      <option value="clear">{route || nullable ? t("No authentication") : t("Clear key")}</option>
     </select>
     {edit.mode === "replace" ? <input
       type="password" aria-label={`New ${label}`} value={edit.value}
@@ -44,24 +45,24 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
   return <div className="model-routes">
     <p className="caption">{field.description}</p>
     {rows.map((row, index) => <fieldset className="model-route" key={row.id}>
-      <legend>{llm ? "Task" : "Language"} route {index + 1}</legend>
+      <legend>{llm ? t("Task") : t("Language")} {t("route")}{" "}{index + 1}</legend>
       <div className="settings-grid">
         <label className="setting-field">
-          <span>{llm ? "Task" : "Language code or detector name"}</span>
+          <span>{llm ? t("Task") : t("Language code or detector name")}</span>
           {llm ? <select value={row.name} onChange={(event) => update(row.id, { name: event.target.value })}>
             {tasks.map((task) => <option key={task} value={task}>{task}</option>)}
-          </select> : <input value={row.name} placeholder="da, en, danish, auto…" autoCapitalize="none"
+          </select> : <input value={row.name} placeholder={t("da, en, danish, auto…")} autoCapitalize="none"
             spellCheck={false} onChange={(event) => update(row.id, { name: event.target.value })} />}
         </label>
-        <label className="setting-field"><span>Endpoint override</span>
-          <input type="url" value={row.base_url || ""} placeholder="Use default endpoint"
+        <label className="setting-field"><span>{t("Endpoint override")}</span>
+          <input type="url" value={row.base_url || ""} placeholder={t("Use default endpoint")}
             onChange={(event) => update(row.id, { base_url: event.target.value })} />
         </label>
-        {llm ? <label className="setting-field"><span>Revision override</span>
-          <input value={row.revision || ""} placeholder="Use default revision"
+        {llm ? <label className="setting-field"><span>{t("Revision override")}</span>
+          <input value={row.revision || ""} placeholder={t("Use default revision")}
             onChange={(event) => update(row.id, { revision: event.target.value })} />
         </label> : null}
-        <SecretControl id={`route-key-${row.id}`} label="Route key" route
+        <SecretControl id={`route-key-${row.id}`} label={t("Route key")} route
           configured={Boolean(secrets[`${field.key}.${row.name.toLowerCase()}.token`])}
           edit={row.secret} onChange={(secret) => update(row.id, { secret })} />
         <ModelPicker id={`route-model-${row.id}`} label={`Model for ${row.name || `route ${index + 1}`}`}
@@ -69,14 +70,14 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
           revision={revision} onChange={(model) => update(row.id, { model })} />
       </div>
       <button className="text-button" type="button" onClick={() => onChange(rows.filter((value) => value.id !== row.id))}>
-        Remove route {row.name || index + 1}
+        {t("Remove route")}{" "}{row.name || index + 1}
       </button>
     </fieldset>)}
     <button type="button" className="button" disabled={llm && rows.length >= tasks.length}
       onClick={() => onChange([...rows, {
         id: newId(), name: llm ? tasks.find((task) => !rows.some((row) => row.name === task)) || "chat" : "",
         model: "", base_url: "", revision: "", secret: keepSecret(),
-      }])}>Add {llm ? "task" : "language"} route</button>
+      }])}>{t("Add")}{" "}{llm ? t("task") : t("language")} {t("route")}</button>
   </div>;
 }
 
@@ -209,16 +210,16 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         setSaved(false); setError("");
       }} />;
     return <label className="setting-field" htmlFor={id}>
-      <span id={`${id}-label`}>{field.label}{field.restart_required ? " · restart required" : ""}</span>
+      <span id={`${id}-label`}>{field.label}{field.restart_required ? t("· restart required") : ""}</span>
       {field.kind === "boolean" ? field.nullable ? <select id={id}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         value={draft!.values[field.key] == null ? "default" : String(draft!.values[field.key])}
         onChange={(event) => update(field.key, event.target.value === "default" ? null : event.target.value === "true")}>
-        <option value="default">Model default</option><option value="true">Enabled</option><option value="false">Disabled</option>
+        <option value="default">{t("Model default")}</option><option value="true">{t("Enabled")}</option><option value="false">{t("Disabled")}</option>
       </select> : <select id={id} value={String(draft!.values[field.key] ?? false)}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         onChange={(event) => update(field.key, event.target.value === "true")}>
-        <option value="true">Enabled</option><option value="false">Disabled</option>
+        <option value="true">{t("Enabled")}</option><option value="false">{t("Disabled")}</option>
       </select> : <input id={id} type={field.kind === "integer" || field.kind === "number" ? "number" : field.key.endsWith("_base_url") ? "url" : "text"}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         step={field.kind === "integer" ? 1 : "any"} min={field.minimum} max={field.maximum}
@@ -237,23 +238,21 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
   useEffect(() => {
     onSearchResults?.(baseline && !resource.error ? fields.length : -1);
   }, [Boolean(baseline), resource.error, search, fields.length, onSearchResults]);
-  return <section aria-label="Server configuration" className="server-configuration">
-    <h2>Models &amp; server</h2>
-    <p className="muted">Choose the services that transcribe, summarize, and search your recordings.
-      STT and LLM connections are independent: each can use a different endpoint, API key, and model.
-      Changes are shared by the iPhone app and web. Keys stay on your server and are never shown after saving.</p>
-    {resource.loading && !baseline ? <Loading>Loading server settings…</Loading> : null}
+  return <section aria-label={t("Server configuration")} className="server-configuration">
+    <h2>{t("Models & server")}</h2>
+    <p className="muted">{t("Choose the services that transcribe, summarize, and search your recordings. STT and LLM connections are independent: each can use a different endpoint, API key, and model. Changes are shared by the iPhone app and web. Keys stay on your server and are never shown after saving.")}</p>
+    {resource.loading && !baseline ? <Loading>{t("Loading server settings…")}</Loading> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {baseline && draft ? <form onSubmit={save} aria-busy={busy}>
-      {baseline.pending_restart.length ? <p role="status" className="notice">Restart your server to apply: {baseline.pending_restart.map((key) =>
+      {baseline.pending_restart.length ? <p role="status" className="notice">{t("Restart your server to apply:")}{" "}{baseline.pending_restart.map((key) =>
         baseline.fields.find((field) => field.key === key)?.label || key.replaceAll("_", " ")).join(", ")}.</p> : null}
-      {controlledSearch === undefined ? <label className="setting-field"><span>Find a server setting</span>
-        <input type="search" value={localSearch} placeholder="Search models, keys, storage…"
+      {controlledSearch === undefined ? <label className="setting-field"><span>{t("Find a server setting")}</span>
+        <input type="search" value={localSearch} placeholder={t("Search models, keys, storage…")}
           onChange={(event) => setLocalSearch(event.target.value)} />
       </label> : null}
       {search.trim() ? <p className="caption" role="status">{fields.length ?
         `${fields.length} matching server ${fields.length === 1 ? "setting" : "settings"}.` :
-        "No server settings match your search. Try a model name, connection, or storage setting."}</p> : null}
+        t("No server settings match your search. Try a model name, connection, or storage setting.")}</p> : null}
       <div className="model-connections">
         {modelConnections.map(({ provider, title, description }) => {
           const connectionFields = [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]
@@ -261,7 +260,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
           if (!connectionFields.length) return null;
           return <fieldset key={provider} disabled={busy} className="model-connection">
             <legend>{title}</legend>
-            <p className="caption">{description} Enter a local or hosted endpoint and its credentials.</p>
+            <p className="caption">{description} {t("Enter a local or hosted endpoint and its credentials.")}</p>
             {connectionFields.map((field) => <div key={field.key}>{control(field)}</div>)}
           </fieldset>;
         })}
@@ -270,7 +269,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         const groupFields = otherFields.filter((field) => field.group === group);
         return <details key={group} open={search.trim() ? true : undefined}>
           <summary>
-            <span className="configuration-group-heading">{optionsTitle(group)} <span className="caption">{groupFields.length} {groupFields.length === 1 ? "setting" : "settings"}</span></span>
+            <span className="configuration-group-heading">{optionsTitle(group)} <span className="caption">{groupFields.length} {groupFields.length === 1 ? t("setting") : t("settings")}</span></span>
             <small className="configuration-group-description">{groupDescriptions[group] || "Additional server preferences."}</small>
           </summary>
           <fieldset disabled={busy} className="configuration-fields">
@@ -280,16 +279,16 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
           </fieldset>
         </details>;
       })}
-      <p className="caption">Settings marked “restart required” apply the next time your server starts. Other changes apply when saved.</p>
+      <p className="caption">{t("Settings marked “restart required” apply the next time your server starts. Other changes apply when saved.")}</p>
       {error ? <ErrorState message={error} /> : null}
       {conflict ? <ErrorState message={conflict} /> : null}
       <div className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
-        <p className="caption settings-save-status" role="status">{busy ? "Saving server settings…" : resource.loading ?
-          "Checking current server settings…" : saved ? "Server settings saved." : dirty ?
-          "You have unsaved server changes." : "Server settings are up to date."}
-          {dirty && search.trim() ? " Saving includes changes outside your search." : ""}</p>
-        {dirty || conflict ? <button type="button" className="button" disabled={busy || resource.loading} onClick={discard}>Discard changes</button> : null}
-        <button className="button dark" disabled={busy || resource.loading || !dirty || Boolean(conflict)}>{busy ? "Saving…" : "Save server settings"}</button>
+        <p className="caption settings-save-status" role="status">{busy ? t("Saving server settings…") : resource.loading ?
+          t("Checking current server settings…") : saved ? t("Server settings saved.") : dirty ?
+          t("You have unsaved server changes.") : t("Server settings are up to date.")}
+          {dirty && search.trim() ? t("Saving includes changes outside your search.") : ""}</p>
+        {dirty || conflict ? <button type="button" className="button" disabled={busy || resource.loading} onClick={discard}>{t("Discard changes")}</button> : null}
+        <button className="button dark" disabled={busy || resource.loading || !dirty || Boolean(conflict)}>{busy ? t("Saving…") : t("Save server settings")}</button>
       </div>
     </form> : null}
   </section>;

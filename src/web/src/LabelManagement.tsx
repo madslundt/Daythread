@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { navigatePath } from "./routing";
 import { useState } from "react";
 import { useResource } from "./useResource";
@@ -66,22 +67,18 @@ export function EntityManagement({
           });
         }}
       >
-        <h3>Edit name, description and aliases</h3>
+        <h3>{t("Edit name, description and aliases")}</h3>
         <EntityFields value={draft} onChange={setDraft} fixedKind />
         <button className="button" disabled={mutation.busy}>
-          Save changes
-        </button>
+          {t("Save changes")}{" "}</button>
       </form>
       <details>
-        <summary>Merge into another {entity.kind}</summary>
+        <summary>{t("Merge into another")}{" "}{entity.kind}</summary>
         <p>
-          Moves all associations and note assignments. The old name becomes an
-          alias. Different association meanings stay distinct.
-        </p>
+          {t("Moves all associations and note assignments. The old name becomes an alias. Different association meanings stay distinct.")}{" "}</p>
         <label>
-          Destination
-          <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">Choose a label</option>
+          {t("Destination")}{" "}<select value={target} onChange={(e) => setTarget(e.target.value)}>
+            <option value="">{t("Choose a label")}</option>
             {directory.data?.items
               .filter((e) => e.id !== entity.id && e.kind === entity.kind)
               .map((e) => (
@@ -94,12 +91,12 @@ export function EntityManagement({
         {preview.data ? (
           <>
             <p>
-              Keep {preview.data.entity.name} ·{" "}
-              {preview.data.entity.description}. Combine {preview.data.total}{" "}
-              destination entries with all entries from {entity.name}.
+              {t("Keep")}{" "}{preview.data.entity.name} ·{" "}
+              {preview.data.entity.description}{t(". Combine")}{" "}{preview.data.total}{" "}
+              {t("destination entries with all entries from")}{" "}{entity.name}.
             </p>
             <p>
-              Destination aliases:{" "}
+              {t("Destination aliases:")}{" "}
               {preview.data.entity.aliases.join(", ") || "None"}
             </p>
             <button
@@ -119,17 +116,14 @@ export function EntityManagement({
                   });
               }}
             >
-              Confirm merge
-            </button>
+              {t("Confirm merge")}{" "}</button>
           </>
         ) : null}
       </details>
       <details>
-        <summary>Split selected assignments into a new label</summary>
+        <summary>{t("Split selected assignments into a new label")}</summary>
         <p>
-          Only checked associations and note assignments move. Set aliases for
-          the new label explicitly; existing aliases stay here.
-        </p>
+          {t("Only checked associations and note assignments move. Set aliases for the new label explicitly; existing aliases stay here.")}{" "}</p>
         <EntityFields value={splitDraft} onChange={setSplitDraft} fixedKind />
         {entries.map((entry) => (
           <label className="label-choice" key={entry.id}>
@@ -152,9 +146,7 @@ export function EntityManagement({
         ))}
         {!complete ? (
           <p>
-            Clear date filters and load all entries to review the full label
-            before splitting.
-          </p>
+            {t("Clear date filters and load all entries to review the full label before splitting.")}{" "}</p>
         ) : null}
         <button
           className="button"
@@ -186,8 +178,7 @@ export function EntityManagement({
             })
           }
         >
-          Move selected assignments
-        </button>
+          {t("Move selected assignments")}{" "}</button>
       </details>
       <button
         className="text-button danger"
@@ -205,14 +196,12 @@ export function EntityManagement({
             });
         }}
       >
-        Delete label
-      </button>
+        {t("Delete label")}{" "}</button>
       {refreshError || mutation.error ? (
         <ErrorState message={refreshError || mutation.error} />
       ) : null}
       <button className="text-button" onClick={() => void refreshVersion()}>
-        Reload current metadata version for review (keep draft)
-      </button>
+        {t("Reload current metadata version for review (keep draft)")}{" "}</button>
     </div>
   );
 }

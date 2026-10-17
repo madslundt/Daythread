@@ -5,10 +5,11 @@ struct LabelsView: View {
     @Environment(AppModel.self) private var model
     @State private var directory: LabelDirectory?
     @State private var query = ""
+    @State private var kind = ""
     @State private var error: String?
     @State private var creating = false
     private var filteredLabels: [MemoryLabel] {
-        (directory?.items ?? []).filter { query.isEmpty || ([$0.name] + $0.aliases).contains(where: { $0.localizedCaseInsensitiveContains(query) }) }
+        (directory?.items ?? []).filter { (kind.isEmpty || $0.kind == kind) && (query.isEmpty || ([$0.name] + $0.aliases).contains(where: { $0.localizedCaseInsensitiveContains(query) })) }
     }
     var body: some View {
         List {
@@ -19,6 +20,11 @@ struct LabelsView: View {
                 Button { creating = true } label: { Label("New person or project", systemImage: "plus") }.buttonStyle(PrimaryActionStyle())
             } footer: { Text("Names and aliases can match more than one person. All source associations are chosen by you.") }
             Section("Your labels") {
+                Picker("Show", selection: $kind) {
+                    Text("People & projects").tag("")
+                    Text("People").tag("person")
+                    Text("Projects").tag("project")
+                }.accessibilityIdentifier("labels.kind")
                 ForEach(filteredLabels) { entity in
                     NavigationLink { LabelTimelineView(entityID: entity.id) } label: {
                         VStack(alignment: .leading) {

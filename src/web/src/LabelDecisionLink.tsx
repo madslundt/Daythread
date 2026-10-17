@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { newId } from "./api";
 import { DecisionDetail } from "./Decisions";
@@ -49,15 +50,11 @@ export function LabelDecisionLink({
   });
   return (
     <details className="label-panel label-decision-link">
-      <summary>Link an existing decision register record</summary>
+      <summary>{t("Link an existing decision register record")}</summary>
       <p className="caption">
-        This explicit organizational association uses the current register
-        record. It does not confirm a decision or change its status. Personal
-        decision notes remain separate annotations.
-      </p>
+        {t("This explicit organizational association uses the current register record. It does not confirm a decision or change its status. Personal decision notes remain separate annotations.")}{" "}</p>
       <label>
-        Find a decision
-        <input
+        {t("Find a decision")}{" "}<input
           type="search"
           value={query}
           onChange={(e) => {
@@ -68,12 +65,11 @@ export function LabelDecisionLink({
         />
       </label>
       <label>
-        Decision
-        <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-          <option value="">Select a register record</option>
+        {t("Decision")}{" "}<select value={selected} onChange={(e) => setSelected(e.target.value)}>
+          <option value="">{t("Select a register record")}</option>
           {resource.data?.items.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.content?.choice.text} · {d.review_status} · evidence{" "}
+              {d.content?.choice.text} · {d.review_status} {t("· evidence")}{" "}
               {d.evidence_condition}
             </option>
           ))}
@@ -88,8 +84,7 @@ export function LabelDecisionLink({
             setSelected("");
           }}
         >
-          Previous decisions
-        </button>
+          {t("Previous decisions")}{" "}</button>
         <button
           className="button small"
           disabled={!resource.data || (page + 1) * 30 >= resource.data.total}
@@ -98,14 +93,12 @@ export function LabelDecisionLink({
             setSelected("");
           }}
         >
-          Next decisions
-        </button>
+          {t("Next decisions")}{" "}</button>
       </div>
       {choice ? (
         <div className="button-row">
           <button className="text-button" onClick={() => setInspect(choice.id)}>
-            Inspect register evidence and status
-          </button>
+            {t("Inspect register evidence and status")}{" "}</button>
           <button
             className="button"
             disabled={mutation.busy || resource.loading}
@@ -120,8 +113,7 @@ export function LabelDecisionLink({
               })
             }
           >
-            Associate this register record
-          </button>
+            {t("Associate this register record")}{" "}</button>
         </div>
       ) : null}
       <button
@@ -131,8 +123,7 @@ export function LabelDecisionLink({
           resource.refresh();
         }}
       >
-        Refresh register records
-      </button>
+        {t("Refresh register records")}{" "}</button>
       {resource.error || mutation.error ? (
         <ErrorState message={resource.error || mutation.error} />
       ) : null}

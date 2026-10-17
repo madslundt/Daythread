@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useState } from "react";
 import { TranscriptPassage } from "./TranscriptTranslation";
 import { Icon } from "./Icon";
@@ -6,7 +7,7 @@ import type { Source } from "./types";
 export function RecordingSections({ source, compact = false }: { source: Source; compact?: boolean }) {
   if (!source.sections?.length || !source.text) return null;
   return <div className="recording-sections">
-    <h3>{compact ? "Topics" : source.sections.length === 1 ? "Topic" : `${source.sections.length} topic sections`}</h3>
+    <h3>{compact ? t("Topics") : source.sections.length === 1 ? t("Topic") : `${source.sections.length} topic sections`}</h3>
     {source.sections.map((section, index) => <RecordingSection key={section.start_offset}
       source={source} section={section} index={index} compact={compact} />)}
   </div>;

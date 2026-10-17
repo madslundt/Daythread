@@ -140,12 +140,12 @@ def language_profiles() -> DetectorFactory:
 
 
 def transcript_in_language(text: str, language: str) -> bool:
-    """Suppress translation when at least 95% of the letters match the target language.
+    """Measure language coverage locally, with context for ambiguous speech fragments.
 
-    Classify bounded passages locally rather than mistaking document-level confidence
-    for language coverage. Ambiguous passages count against the target; repeated text
-    reuses its classification but still contributes its full length. No text is cached
-    between requests.
+    Short windows can confuse related languages or misread conversational endings.
+    A confidently classified paragraph supplies context, while corroborated foreign
+    windows still count against its language. Coverage is letter-weighted, not the
+    detector's document confidence. Classification and text remain request-local.
     """
     target = language.lower().split("-")[0]
     if target == "auto" or not text.strip():
@@ -153,54 +153,92 @@ def transcript_in_language(text: str, language: str) -> bool:
     factory = language_profiles()
     if target not in {code.split("-")[0] for code in factory.get_lang_list()}:
         return False
-    checked: dict[str, bool] = {}
+    checked: dict[str, dict[str, float]] = {}
+
+    def classify(passage: str, cjk: bool = False) -> dict[str, float] | None:
+        if passage in checked:
+            return checked[passage]
+        # Bound all work, including paragraph and corroboration checks.
+        if len(checked) >= 256:
+            return None
+        detector = factory.create()
+        if cjk:
+            detector.set_prior_map({"ja": 1, "zh-cn": 1, "zh-tw": 1})
+        detector.append(passage)
+        probabilities: dict[str, float] = {}
+        try:
+            for item in detector.get_probabilities():
+                code = item.lang.split("-")[0]
+                probabilities[code] = probabilities.get(code, 0) + item.prob
+        except LangDetectException:
+            pass
+        checked[passage] = probabilities
+        return probabilities
+
     matched, total = 0, 0
-    for utterance in re.split(r"[.!?;\n。！？]+", text):
+    for paragraph in text.splitlines():
         # Speaker labels are presentation metadata, not spoken text.
-        utterance = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", utterance, flags=re.I)
-        # Script changes are boundaries too, so a brief foreign phrase does not
-        # invalidate a long same-language utterance without punctuation.
-        script_runs = f"({CJK_LETTERS.pattern}(?:[\\W\\d_]+{CJK_LETTERS.pattern})*)"
-        for run in re.split(script_runs, utterance):
-            letters = "".join(character for character in run if character.isalpha())
-            total += len(letters)
-            if len(letters) < 12:
-                continue
-            cjk = bool(CJK_LETTERS.fullmatch(letters))
-            if cjk:
-                if target not in {"zh", "ja"}:
+        paragraph = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", paragraph, flags=re.I)
+        paragraph_words = re.findall(r"[^\W\d_]+", paragraph, flags=re.UNICODE)
+        normalized = " ".join(paragraph_words)
+        contextual = False
+        if len(paragraph_words) >= 24 and not CJK_LETTERS.search(paragraph):
+            context = classify(normalized)
+            if context is None:
+                return False
+            contextual = context.get(target, 0) >= 0.8
+        for utterance in re.split(r"[.!?;。！？]+", paragraph):
+            utterance = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", utterance, flags=re.I)
+            # Script changes also separate languages without sentence punctuation.
+            script_runs = f"({CJK_LETTERS.pattern}(?:[\\W\\d_]+{CJK_LETTERS.pattern})*)"
+            for run in re.split(script_runs, utterance):
+                letters = "".join(character for character in run if character.isalpha())
+                total += len(letters)
+                if len(letters) < 12:
+                    if contextual:
+                        matched += len(letters)
                     continue
-                units, width, separator = letters, 48, ""
-            else:
-                if target in {"zh", "ja"}:
-                    continue
-                units = re.findall(r"[^\W\d_]+", run, flags=re.UNICODE)
-                if len(units) < 3 or all(word.istitle() or word.isupper() for word in units):
-                    continue
-                width, separator = 8, " "
-            for start in range(0, len(units), width):
-                # Give a short final chunk enough context, but count each letter only once.
-                context_start = min(start, max(0, len(units) - width))
-                passage = separator.join(units[context_start:context_start + width])
-                if passage not in checked:
-                    # Unexamined text must not be assumed to share the dominant language.
-                    if len(checked) >= 256:
+                cjk = bool(CJK_LETTERS.fullmatch(letters))
+                if cjk:
+                    if target not in {"zh", "ja"}:
+                        continue
+                    units, width, separator = letters, 48, ""
+                else:
+                    if target in {"zh", "ja"}:
+                        continue
+                    units = re.findall(r"[^\W\d_]+", run, flags=re.UNICODE)
+                    if len(units) < 3 or all(word.istitle() or word.isupper() for word in units):
+                        continue
+                    width, separator = 8, " "
+                for start in range(0, len(units), width):
+                    # Give the tail context, but count each letter only once.
+                    context_start = min(start, max(0, len(units) - width))
+                    passage = separator.join(units[context_start:context_start + width])
+                    probabilities = classify(passage, cjk)
+                    if probabilities is None:
                         return False
-                    detector = factory.create()
-                    if cjk:
-                        detector.set_prior_map({"ja": 1, "zh-cn": 1, "zh-tw": 1})
-                    detector.append(passage)
-                    try:
-                        matches = detector.get_probabilities()
-                    except LangDetectException:
-                        checked[passage] = False
-                    else:
-                        confidence = sum(
-                            item.prob for item in matches if item.lang.split("-")[0] == target
-                        )
-                        checked[passage] = confidence >= 0.9
-                if checked[passage]:
-                    matched += sum(len(unit) for unit in units[start:start + width])
+                    same_language = probabilities.get(target, 0) >= 0.9
+                    if not same_language and contextual:
+                        foreign = max(probabilities, key=probabilities.get, default="")
+                        corroborated = False
+                        if foreign != target and probabilities.get(foreign, 0) >= 0.9:
+                            # A clear foreign sentence must remain translatable, even
+                            # when the paragraph's dominant language hides it.
+                            sentence = classify(separator.join(units)) if len(letters) >= 32 else {}
+                            if sentence is None:
+                                return False
+                            corroborated = sentence.get(foreign, 0) >= 0.9
+                            if not corroborated:
+                                index = normalized.find(passage)
+                                word_index = normalized[:index].count(" ")
+                                left = max(0, min(word_index - 4, len(paragraph_words) - 16))
+                                context = classify(" ".join(paragraph_words[left:left + 16]))
+                                if context is None:
+                                    return False
+                                corroborated = context.get(foreign, 0) >= 0.9
+                        same_language = not corroborated
+                    if same_language:
+                        matched += sum(len(unit) for unit in units[start:start + width])
     return total > 0 and matched * 100 >= total * 95
 
 

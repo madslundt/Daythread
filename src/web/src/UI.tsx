@@ -39,7 +39,7 @@ export function ErrorState({
 }) {
   return (
     <Notice tone="error">
-      {message}
+      {t(message)}
       {retry ? (
         <button className="text-button" onClick={retry}>
           {t("Try again")}{" "}</button>
@@ -62,7 +62,7 @@ export function EmptyState({
   return (
     <div className="empty-state">
       <Icon name={icon} size={27} />
-      <h3>{title}</h3>
+      <h3>{t(title)}</h3>
       <p>{children}</p>
       {action}
     </div>
@@ -116,7 +116,7 @@ export function RichText({ text }: { text: string }) {
 }
 
 export function Loading({
-  children = "Loading…",
+  children = t("Loading…"),
 }: {
   children?: React.ReactNode;
 }) {

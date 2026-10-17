@@ -22,7 +22,7 @@ struct SourceTranscriptView: View {
     @State private var loadedScope = ""
 
     private var sourceID: String { source["id"].text }
-    private var languageName: String { Locale.current.localizedString(forLanguageCode: language) ?? language }
+    private var languageName: String { L10n.locale.localizedString(forLanguageCode: language) ?? language }
     private var hasTranslation: Bool {
         source["state"].text == "done" && !source["text"].text.isEmpty &&
             !alreadyInTargetLanguage && !translation["text"].text.isEmpty && translation["language"].text == language &&
@@ -43,45 +43,47 @@ struct SourceTranscriptView: View {
         return query
     }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             if hasTranslation {
-                Picker("Transcript language", selection: $showingTranslation) {
-                    Text("Original").tag(false)
-                    Text("\(languageName) translation").tag(true)
+                Picker(L10n.text("Transcript language"), selection: $showingTranslation) {
+                    Text(L10n.text("Original")).tag(false)
+                    Text(L10n.text("\(languageName) translation")).tag(true)
                 }.pickerStyle(.segmented).accessibilityIdentifier("source.transcriptLanguage")
-                Text(showingTranslation ? "Showing the \(languageName) translation. The original transcription is preserved." : "Showing the original transcription. A \(languageName) translation is available.")
+                Text(showingTranslation ? L10n.text("Showing the \(languageName) translation. The original transcription is preserved.") : L10n.text("Showing the original transcription. A \(languageName) translation is available."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Text(showingTranslation && hasTranslation ? translation["text"].text : originalText)
                 .textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
             if !source["text"].text.isEmpty && !originalText.isEmpty {
                 if !availableLanguages.isEmpty {
-                    Picker("Translate to", selection: Binding(get: { language }, set: selectLanguage)) {
+                    Picker(L10n.text("Translate to"), selection: Binding(get: { language }, set: selectLanguage)) {
                         ForEach(availableLanguages, id: \.self) { code in
-                            Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                            Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
                         }
                     }.disabled(editing).accessibilityIdentifier("source.translationTarget")
                 }
-                Button(language.isEmpty ? "Translate" : "Translate to \(languageName)", systemImage: "translate") { generate() }
+                Button(language.isEmpty ? L10n.text("Translate") : L10n.text("Translate to \(languageName)"), systemImage: "translate") { generate() }
                     .disabled(busy || editing || !loaded || language.isEmpty || alreadyInTargetLanguage || hasTranslation)
                     .accessibilityIdentifier("source.translate")
                 if busy {
-                    ProgressView(generation == nil ? "Checking translation…" : "Translating…")
+                    ProgressView(generation == nil ? L10n.text("Checking translation…") : L10n.text("Translating…"))
                 } else if loaded && availableLanguages.isEmpty {
-                    Text("Choose translation languages in Settings to translate this transcript.")
+                    Text(L10n.text("Choose translation languages in Settings to translate this transcript."))
                         .font(.caption).foregroundStyle(.secondary)
-                    NavigationLink("Translation settings") { SettingsView() }
+                    NavigationLink(L10n.text("Translation settings")) { SettingsView() }
                 } else if loaded && alreadyInTargetLanguage {
-                    Text("Transcript is already in \(languageName). Choose another translation language above.")
+                    Text(L10n.text("Transcript is already in \(languageName). Choose another translation language above."))
                         .font(.caption).foregroundStyle(.secondary)
                 } else if loaded && !hasTranslation {
-                    Text("Translation is generated when requested and preserves the original transcription.")
+                    Text(L10n.text("Translation is generated when requested and preserves the original transcription."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if error != nil {
                     ErrorNote(message: error)
-                    if !loaded { Button("Retry translation lookup") { refresh = UUID() }.disabled(busy || editing) }
+                    if !loaded { Button(L10n.text("Retry translation lookup")) { refresh = UUID() }.disabled(busy || editing) }
                 }
             }
         }
@@ -95,15 +97,15 @@ struct SourceTranscriptView: View {
     }
 
     private var originalText: String {
-        if source == .null { return "Source removed" }
-        if source["state"].text == "expired" { return "Transcript expired under your retention policy." }
+        if source == .null { return L10n.text("Source removed") }
+        if source["state"].text == "expired" { return L10n.text("Transcript expired under your retention policy.") }
         if let startOffset, let endOffset {
             let scalars = source["text"].text.unicodeScalars
             guard startOffset >= 0, endOffset > startOffset, endOffset <= scalars.count else { return "" }
             return String(String.UnicodeScalarView(scalars.dropFirst(startOffset).prefix(endOffset - startOffset)))
         }
         if !source["text"].text.isEmpty { return source["text"].text }
-        return "No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)"
+        return L10n.text("No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)")
     }
 
     private func invalidate() {
@@ -138,7 +140,7 @@ struct SourceTranscriptView: View {
             apply(result); loaded = true
         } catch {
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity, scopeKey == scope else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 
@@ -173,7 +175,7 @@ struct SourceTranscriptView: View {
                 showingTranslation = hasTranslation
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity, scopeKey == scope else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }
@@ -194,7 +196,9 @@ struct SourceTranscriptTopicsView: View {
         }
     }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         if sections.isEmpty {
             SourceTranscriptView(source: source, editing: editing)
         } else {
@@ -212,10 +216,10 @@ struct SourceTranscriptTopicsView: View {
                                              startOffset: start, endOffset: section["end_offset"].integer)
                     }
                 } label: {
-                    Text(section["title"].text.isEmpty ? "Topic" : section["title"].text)
+                    Text(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text)
                 }
             }
-            DisclosureGroup("Full transcript", isExpanded: $fullTranscriptExpanded) {
+            DisclosureGroup(L10n.text("Full transcript"), isExpanded: $fullTranscriptExpanded) {
                 if fullTranscriptExpanded { SourceTranscriptView(source: source, editing: editing) }
             }
         }

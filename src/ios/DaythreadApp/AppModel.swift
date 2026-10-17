@@ -5,31 +5,64 @@ import AVFoundation
 
 @MainActor @Observable
 final class AppModel {
+    let microphone = PhoneRecorder()
+    let managedAccount = ManagedAccountSession()
+    private(set) var usesManagedHosting = false
+    @ObservationIgnored private var appliedManagedSessionID: UUID?
+    @ObservationIgnored private var managedRouter: BackendEndpointRouter?
+    @ObservationIgnored private var managedExpiryObserver: NSObjectProtocol?
+    var destinationIdentity: String {
+        usesManagedHosting ? (managedAccount.origin?.destination(accountID: managedAccount.accountID ?? "signed-out") ?? "managed:unconfigured")
+            : ManagedServiceOrigin.ownDestination(archiveIdentity: backendConfiguration.archiveIdentity)
+    }
+    private var profilePreferenceKey: String { usesManagedHosting ? destinationIdentity + ".selectedProfile" : "selectedProfileID" }
     let bluetooth = OmiBluetooth()
+    let locations = PhoneLocation()
+    var recordingLocationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(recordingLocationsEnabled, forKey: "recordingLocationsEnabled")
+            if recordingLocationsEnabled { locations.requestPermission() }
+            updateLocationCapture()
+        }
+    }
+    private func updateLocationCapture() {
+        locations.setCaptureActive(recordingLocationsEnabled && hasSelectedProfile && !paused && bluetooth.connected && store != nil)
+    }
     private(set) var backendConfiguration: BackendEndpointConfiguration
-    var backendAddress: String { backendConfiguration.activeEndpoint?.address ?? "" }
+    var backendAddress: String { usesManagedHosting ? managedAccount.origin?.url.absoluteString ?? "" : backendConfiguration.activeEndpoint?.address ?? "" }
     var backendEndpoints: [BackendEndpoint] { backendConfiguration.endpoints }
     struct Profile: Codable, Identifiable, Hashable {
         let id: String
         let name: String
     }
     struct ProfileDirectory: Decodable { let profiles: [Profile] }
-    private(set) var profiles: [Profile] = [.init(id: "default", name: "Default")]
+    private(set) var profiles: [Profile] = [.init(id: "default", name: L10n.source("Default"))]
     private(set) var selectedProfileID: String
-    var hasSelectedProfile: Bool { !selectedProfileID.isEmpty }
+    private var managedConnectionMatches: Bool {
+        usesManagedHosting && managedAccount.signedIn && appliedManagedSessionID == managedAccount.sessionID
+            && store?.destinationID == destinationIdentity
+    }
+    var hasSelectedProfile: Bool {
+        !selectedProfileID.isEmpty && ((!usesManagedHosting && !managedAccount.signedIn)
+            || (managedConnectionMatches && managedAccount.account?.hosting_active != false))
+    }
     var selectedProfileName: String { profiles.first { $0.id == selectedProfileID }?.name ?? selectedProfileID }
     // Preserve legacy default caches while isolating every additional profile.
-    var archiveIdentity: String { selectedProfileID == "default" ? backendConfiguration.archiveIdentity : backendConfiguration.archiveIdentity + ".profile." + selectedProfileID }
+    var archiveIdentity: String {
+        let root = usesManagedHosting ? destinationIdentity : backendConfiguration.archiveIdentity
+        return selectedProfileID == "default" ? root : root + ".profile." + selectedProfileID
+    }
 
     private func resetArchive() {
+        microphone.selectArchive(archiveIdentity)
         backendGeneration = UUID()
         player?.stop(); player = nil; playbackStatus = ""
-        serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: backendAddress + ".timezone")
+        serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: (usesManagedHosting ? archiveIdentity : backendAddress) + ".timezone")
         serverTimeline = LocalCache.load(archiveIdentity + ".timeline") ?? .null
         importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
         importanceRevision = UUID()
         labelRevision = ""; archiveRevision = ""
-        serverStatus = "Not connected"; completenessStatus = .null
+        serverStatus = L10n.source("Not connected"); completenessStatus = .null
         error = nil; lastStatusCheck = .distantPast
         refreshLocal()
     }
@@ -40,14 +73,15 @@ final class AppModel {
         flush()
         guard store?.isRecording != true else { return }
         selectedProfileID = id
-        UserDefaults.standard.set(id, forKey: "selectedProfileID")
+        locations.setCaptureActive(false)
+        UserDefaults.standard.set(id, forKey: profilePreferenceKey)
         store?.profileID = id
         bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
         nextAudioDate = nil; disconnectedAt = nil
         lastDecodedAt = nil; lastPersistedAt = nil
         resetArchive()
         recordCaptureState(paused ? "paused" : "unknown", cause: paused ? "user_pause" : "unknown")
-        notice = profile.map { "Profile: " + $0.name } ?? "Choose a profile in Settings"
+        notice = profile.map { L10n.source("Profile: \($0.name)") } ?? L10n.source("Choose a profile in Settings")
         reconnectBackend()
         Task { await refreshStatus() }
     }
@@ -86,7 +120,7 @@ final class AppModel {
     var paused: Bool {
         didSet {
             UserDefaults.standard.set(paused, forKey: "capturePaused")
-            if paused != oldValue { pauseRevision = UUID() }
+            if paused != oldValue { pauseRevision = UUID(); updateLocationCapture() }
         }
     }
     var uploadWiFiOnly: Bool {
@@ -102,7 +136,7 @@ final class AppModel {
         }
     }
     var error: String?
-    var notice = "Pair your Omi to begin"
+    var notice = L10n.source("Pair your Omi to begin")
     var queueCount = 0
     var uploadFeedback: UploadFeedback?
     var unsyncedMinutes = 0.0
@@ -115,7 +149,7 @@ final class AppModel {
     var markerCooldownSeconds: Int { didSet { UserDefaults.standard.set(markerCooldownSeconds, forKey: "markerCooldownSeconds") } }
     var meetingMinSeconds: Int { didSet { UserDefaults.standard.set(meetingMinSeconds, forKey: "meetingMinSeconds") } }
     var nextMarkAt: Date?
-    var serverStatus = "Not connected"
+    var serverStatus = L10n.source("Not connected")
     var serverTimeline: JSONValue = .null
     var completenessStatus: JSONValue = .null
     var lastDecodedAt: Date?
@@ -169,6 +203,7 @@ final class AppModel {
         meetingMinutes = timeout == 0 ? 120 : timeout
         markerCooldownSeconds = defaults.object(forKey: "markerCooldownSeconds") as? Int ?? 60
         meetingMinSeconds = defaults.object(forKey: "meetingMinSeconds") as? Int ?? 60
+        recordingLocationsEnabled = defaults.bool(forKey: "recordingLocationsEnabled")
         paused = defaults.bool(forKey: "capturePaused")
         uploadWiFiOnly = defaults.bool(forKey: "uploadWiFiOnly")
         storageBudgetMB = defaults.object(forKey: "storageBudgetMB") as? Int ?? 2000
@@ -178,13 +213,15 @@ final class AppModel {
             var root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             var backupPolicy = URLResourceValues(); backupPolicy.isExcludedFromBackup = true
             try root.setResourceValues(backupPolicy)
-            let capture = root.appendingPathComponent("Capture", isDirectory: true)
+            let capture = root.appendingPathComponent(L10n.source("Capture"), isDirectory: true)
             store = try DurableStore(directory: capture)
+            try store?.bindLegacyDestination(destinationIdentity)
+            store?.destinationID = destinationIdentity
             store?.profileID = selectedProfileID
             store?.maximumBytes = Int64(storageBudgetMB) * 1_000_000
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: capture.path)
             if let store { uploader = BackgroundUploader(store: store, uploadWiFiOnly: uploadWiFiOnly) }
-            disconnectedAt = store?.items.filter { $0.resolvedProfileID == selectedProfileID && $0.kind == .audio }.compactMap(\.endedAt).max()
+            disconnectedAt = store?.items.filter { $0.destinationID == destinationIdentity && $0.resolvedProfileID == selectedProfileID && $0.kind == .audio }.compactMap(\.endedAt).max()
             uploader?.onChange = { [weak self] in
                 self?.refreshLocal()
                 Task { @MainActor [weak self] in
@@ -195,7 +232,7 @@ final class AppModel {
             uploader?.onError = { [weak self] in self?.serverStatus = $0 }
             uploader?.onProgress = { [weak self] in self?.refreshLocal() }
             refreshLocal()
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = L10n.error(error) }
         bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
         bluetooth.onCodec = { [weak self] codec in
             do { self?.decoder = try FrameDecoder(codec: codec) }
@@ -214,17 +251,87 @@ final class AppModel {
             }
         }
         persistBackendConfiguration()
+        managedAccount.onChange = { [weak self] in self?.managedAccountChanged() }
+        managedExpiryObserver = NotificationCenter.default.addObserver(forName: .managedSessionExpired, object: nil, queue: .main) { [weak self] notification in
+            let expected = notification.userInfo?["sessionID"] as? UUID
+            Task { @MainActor in self?.managedAccount.expire(expected: expected) }
+        }
+        if defaults.bool(forKey: "managedArchiveSelected") || managedAccount.signedIn {
+            do { try setManagedMode(true) } catch { self.error = L10n.error(error) }
+        }
         reconnectBackend()
+        if managedAccount.signedIn { Task { await managedAccount.refresh() } }
     }
-    func client() throws -> BackendClient { try BackendClient(router: endpointRouter, profileID: selectedProfileID) }
+    func client() throws -> BackendClient {
+        if usesManagedHosting || managedAccount.signedIn {
+            guard managedConnectionMatches, let managedRouter, let authorization = managedAccount.authorization else {
+                throw BackendFailure(message: L10n.source("Sign in to your Daythread account to continue."), status: 401)
+            }
+            guard managedAccount.hostingVerified else {
+                throw BackendFailure(message: L10n.source("Refresh your account to connect to managed hosting."))
+            }
+            guard managedAccount.account?.hosting_active == true else {
+                throw BackendFailure(message: L10n.source("Managed hosting is not active for this account."), status: 402)
+            }
+            return try BackendClient(router: managedRouter, profileID: selectedProfileID, authorization: authorization)
+        }
+        return try BackendClient(router: endpointRouter, profileID: selectedProfileID)
+    }
+    private func managedAccountChanged() {
+        if managedAccount.signedIn {
+            if !usesManagedHosting || appliedManagedSessionID != managedAccount.sessionID {
+                do { try setManagedMode(true) } catch { self.error = L10n.error(error); bluetooth.captureEnabled = false; locations.setCaptureActive(false); uploader?.client = nil; profiles = []; resetArchive(); return }
+            }
+            bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+            if !hasSelectedProfile { flush() }
+            updateLocationCapture(); reconnectBackend()
+        } else if usesManagedHosting {
+            flush(); bluetooth.captureEnabled = false; locations.setCaptureActive(false)
+            uploader?.client = nil; selectedProfileID = ""; profiles = []; resetArchive()
+        }
+    }
+    func setManagedMode(_ managed: Bool) throws {
+        guard managed || !managedAccount.signedIn else { throw BackendFailure(message: L10n.source("The managed service address is fixed by this app.")) }
+        guard !managed || managedAccount.origin != nil else {
+            throw BackendFailure(message: L10n.source("Managed sign-in is not configured in this app build."))
+        }
+        flush()
+        guard store?.isRecording != true else {
+            throw BackendFailure(message: L10n.source("Finish saving the current recording before changing connections."))
+        }
+        bluetooth.captureEnabled = false; locations.setCaptureActive(false); uploader?.client = nil
+        let previousKey = usesManagedHosting ? (store?.destinationID ?? destinationIdentity) + ".selectedProfile" : "selectedProfileID"
+        if !selectedProfileID.isEmpty { UserDefaults.standard.set(selectedProfileID, forKey: previousKey) }
+        usesManagedHosting = managed
+        appliedManagedSessionID = managed ? managedAccount.sessionID : nil
+        UserDefaults.standard.set(managed, forKey: "managedArchiveSelected")
+        if managed, let origin = managedAccount.origin {
+            let endpoint = BackendEndpoint(address: origin.url.absoluteString)
+            managedRouter = BackendEndpointRouter(configuration: .init(endpoints: [endpoint], activeID: endpoint.id, archiveIdentity: destinationIdentity))
+        } else { managedRouter = nil }
+        selectedProfileID = UserDefaults.standard.string(forKey: profilePreferenceKey) ?? (managed && managedAccount.signedIn ? "default" : "")
+        store?.destinationID = destinationIdentity; store?.profileID = selectedProfileID
+        profiles = []; nextAudioDate = nil; disconnectedAt = nil; lastDecodedAt = nil; lastPersistedAt = nil
+        resetArchive(); bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+        updateLocationCapture(); reconnectBackend()
+    }
+    func useOwnBackend() async throws {
+        flush()
+        guard store?.isRecording != true else { throw BackendFailure(message: L10n.source("Finish saving the current recording before changing connections.")) }
+        try await managedAccount.revokeAndSignOut()
+        try setManagedMode(false)
+    }
     func reconnectBackend() {
-        guard hasSelectedProfile else { uploader?.client = nil; return }
+        guard hasSelectedProfile, !usesManagedHosting || managedAccount.hostingVerified else { uploader?.client = nil; return }
         do { uploader?.client = try client(); uploader?.retry() }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
 
     func saveEndpoint(address: String, replacing id: UUID? = nil) throws {
+        guard !usesManagedHosting && !managedAccount.signedIn else { throw BackendFailure(message: L10n.source("The managed service address is fixed by this app.")) }
         let normalized = try BackendClient.validatedURL(address).absoluteString
+        flush()
+        guard store?.isRecording != true else { throw BackendFailure(message: L10n.source("Finish saving the current recording before changing connections.")) }
         var configuration = backendConfiguration
         if let id, let index = configuration.endpoints.firstIndex(where: { $0.id == id }) {
             configuration.endpoints[index].address = normalized
@@ -237,8 +344,9 @@ final class AppModel {
     }
 
     func removeEndpoint(_ id: UUID) throws {
+        guard !usesManagedHosting && !managedAccount.signedIn else { throw BackendFailure(message: L10n.source("The managed service address is fixed by this app.")) }
         guard backendConfiguration.endpoints.count > 1 else {
-            throw BackendFailure(message: "Keep at least one backend endpoint configured.")
+            throw BackendFailure(message: L10n.source("Keep at least one backend endpoint configured."))
         }
         var configuration = backendConfiguration
         configuration.remove(id: id)
@@ -246,12 +354,15 @@ final class AppModel {
     }
 
     func moveEndpoints(from offsets: IndexSet, to destination: Int) {
+        guard !usesManagedHosting && !managedAccount.signedIn else { return }
         var configuration = backendConfiguration
         configuration.move(fromOffsets: offsets, toOffset: destination)
         applyEndpointConfiguration(configuration)
     }
 
     func activateEndpoint(_ id: UUID) {
+        guard !usesManagedHosting && !managedAccount.signedIn else { return }
+        flush(); guard store?.isRecording != true else { return }
         let oldAddress = backendAddress
         endpointRouter.setActive(id)
         backendConfiguration = endpointRouter.configuration
@@ -280,6 +391,7 @@ final class AppModel {
     private func backendAddressChanged() {
         UserDefaults.standard.set(backendAddress, forKey: "backendURL")
         selectProfile(nil)
+        store?.destinationID = destinationIdentity
         resetArchive()
         profiles = []
         reconnectBackend()
@@ -291,7 +403,7 @@ final class AppModel {
         UserDefaults.standard.set(backendAddress, forKey: "backendURL")
     }
     func tick() async {
-        now = Date(); refreshLocal(); uploader?.pump()
+        now = Date(); updateLocationCapture(); refreshLocal(); uploader?.pump()
         let processing = completenessStatus["processing"]
         let busy = queueCount > 0 || processing["queued"].integer > 0 || processing["transcribing"].integer > 0
         if now.timeIntervalSince(lastStatusCheck) >= (busy ? 2 : 15) { await refreshStatus() }
@@ -307,6 +419,7 @@ final class AppModel {
             }
         }
         lastStatusCheck = Date()
+        if managedAccount.signedIn && !managedAccount.hostingVerified { await managedAccount.refresh() }
         let generation = backendGeneration
         let address = backendAddress
         let identity = archiveIdentity
@@ -314,7 +427,7 @@ final class AppModel {
             let backend = try client()
             try await loadProfiles()
             guard backendGeneration == generation else { return }
-            guard hasSelectedProfile else { serverStatus = "Choose a profile in Settings"; return }
+            guard hasSelectedProfile else { serverStatus = L10n.source("Choose a profile in Settings"); return }
             let status = try await backend.request("v1/status")
             guard backendGeneration == generation else { return }
             LocalCache.reconcile(address: identity, revision: status["archive_revision"].text)
@@ -322,10 +435,10 @@ final class AppModel {
             labelRevision = status["label_revision"].text
             if TimeZone(identifier: status["timezone"].text) != nil {
                 serverTimeZoneIdentifier = status["timezone"].text
-                UserDefaults.standard.set(serverTimeZoneIdentifier, forKey: address + ".timezone")
+                UserDefaults.standard.set(serverTimeZoneIdentifier, forKey: (usesManagedHosting ? identity : address) + ".timezone")
             }
             completenessStatus = status
-            serverStatus = status["worker_running"] == .bool(true) ? "Home-core connected · worker running" : "Home-core connected"
+            serverStatus = status["worker_running"] == .bool(true) ? L10n.source("Home-core connected · worker running") : L10n.source("Home-core connected")
             if UserDefaults.standard.bool(forKey: "pauseSettingDirty") {
                 let revision = pauseRevision
                 _ = try await backend.request("v1/settings", method: "PATCH", body: ["capture_paused": paused && captureFailure == nil])
@@ -351,7 +464,7 @@ final class AppModel {
             try await publishObservation(using: backend)
             await loadImportance()
         } catch {
-            if backendGeneration == generation { serverStatus = error.localizedDescription }
+            if backendGeneration == generation { serverStatus = L10n.error(error) }
         }
     }
     func loadImportance() async {
@@ -365,7 +478,7 @@ final class AppModel {
             importanceMarks = Set(result.items); importanceLoaded = true; importanceError = nil
         } catch {
             guard !Task.isCancelled, backendGeneration == generation else { return }
-            importanceError = error.localizedDescription
+            importanceError = L10n.error(error)
         }
     }
     func setImportant(_ target: ImportanceTarget, to value: Bool) async throws {
@@ -389,7 +502,7 @@ final class AppModel {
         captureFailure = nil; UserDefaults.standard.removeObject(forKey: "captureFailure")
         recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
         paused = value; bluetooth.captureEnabled = hasSelectedProfile && !value && store != nil
-        notice = value ? "Capture paused" : "Capture resumed"
+        notice = value ? L10n.source("Capture paused") : L10n.source("Capture resumed")
         if value {
             disconnectedAt = nil
             nextAudioDate = nil
@@ -405,7 +518,7 @@ final class AppModel {
         guard hasSelectedProfile, !paused, decoder != nil, store != nil else { return }
         let date = clock.date(at: uptime)
         if let lastNotification, date.timeIntervalSince(lastNotification) > 1 {
-            flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: "BLE audio delivery interrupted", cause: "delivery_interrupted")
+            flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: L10n.source("BLE audio delivery interrupted"), cause: "delivery_interrupted")
             nextAudioDate = nil
             do { decoder = try FrameDecoder(codec: bluetooth.codec ?? -1) } catch { failCapture(error); return }
         }
@@ -413,14 +526,14 @@ final class AppModel {
         let result = reassembler.consume(data)
         if result.lost {
             do { try store?.finish() } catch { failCapture(error); return }
-            addGap(start: nextAudioDate ?? date.addingTimeInterval(-0.02), end: date, reason: "BLE sequence or fragment loss", cause: "packet_loss")
+            addGap(start: nextAudioDate ?? date.addingTimeInterval(-0.02), end: date, reason: L10n.source("BLE sequence or fragment loss"), cause: "packet_loss")
             pendingClock = nil; nextAudioDate = nil
             do { decoder = try FrameDecoder(codec: bluetooth.codec ?? -1) } catch { failCapture(error); return }
         }
         if let frame = result.frame, let clock = pendingClock { record(frame, clock: clock) }
         if result.startedFrame {
             if let disconnectedAt {
-                addGap(start: disconnectedAt, end: date, reason: disconnectedCause == "connection" ? "Capture disconnected" : "Capture disconnected or paused", cause: disconnectedCause)
+                addGap(start: disconnectedAt, end: date, reason: disconnectedCause == "connection" ? L10n.source("Capture disconnected") : L10n.source("Capture disconnected or paused"), cause: disconnectedCause)
                 self.disconnectedAt = nil
             }
             pendingClock = CaptureClock(wall: nextAudioDate ?? date, uptime: uptime)
@@ -437,7 +550,11 @@ final class AppModel {
     }
     private func append(_ frame: Data, pcm: Data, clock: CaptureClock, store: DurableStore, codec: Int) {
         do {
-            if !store.isRecording { try store.begin(deviceID: bluetooth.identifier, codec: codec, clock: clock) }
+            updateLocationCapture()
+            if !store.isRecording {
+                try store.begin(deviceID: bluetooth.identifier, codec: codec, clock: clock,
+                                location: recordingLocationsEnabled ? locations.latest : nil)
+            }
             try store.append(frame: frame, decoded: pcm)
             lastPersistedAt = Date()
             nextAudioDate = (nextAudioDate ?? clock.wall).addingTimeInterval(Double(pcm.count) / 32000)
@@ -451,7 +568,7 @@ final class AppModel {
             } else {
                 addGap(start: nextAudioDate ?? clock.wall,
                        end: self.clock.date(at: ProcessInfo.processInfo.systemUptime),
-                       reason: "Incomplete final BLE frame discarded", cause: "incomplete_frame")
+                       reason: L10n.source("Incomplete final BLE frame discarded"), cause: "incomplete_frame")
             }
         } else { reassembler.reset() }
         pendingClock = nil; lastNotification = nil
@@ -462,6 +579,7 @@ final class AppModel {
         do { try store?.finish(); refreshLocal(); uploader?.pump() } catch { failCapture(error) }
     }
     private func disconnectCapture() {
+        locations.setCaptureActive(false)
         flush()
         if !paused { recordCaptureState("disconnected", cause: "connection"); disconnectedCause = "connection"; disconnectedAt = nextAudioDate ?? Date() }
         nextAudioDate = nil; decoder = nil
@@ -477,10 +595,10 @@ final class AppModel {
         UserDefaults.standard.set(captureFailure, forKey: "captureFailure")
         disconnectedCause = captureFailure ?? "unknown"
         recordCaptureState("blocked", cause: captureFailure ?? "unknown")
-        self.error = error.localizedDescription; paused = true; bluetooth.captureEnabled = false
+        self.error = L10n.error(error); paused = true; bluetooth.captureEnabled = false
         disconnectedAt = nextAudioDate ?? clock.date(at: ProcessInfo.processInfo.systemUptime); nextAudioDate = nil
         reassembler.reset(); pendingClock = nil
-        do { try store?.finish() } catch { self.error = "\(self.error ?? "") · Could not close segment: \(error.localizedDescription)" }
+        do { try store?.finish() } catch { self.error = L10n.source("\(self.error ?? "") · Could not close segment: \(L10n.error(error))") }
         refreshLocal()
     }
     private func button(_ data: Data) {
@@ -488,29 +606,29 @@ final class AppModel {
         if let action = policy.resolve(data, at: Date()) { event(action) }
     }
     func event(_ action: SemanticAction) {
-        guard hasSelectedProfile else { error = "Choose a profile in Settings first."; return }
+        guard hasSelectedProfile else { error = L10n.source("Choose a profile in Settings first."); return }
         let date = clock.date(at: ProcessInfo.processInfo.systemUptime)
         if action == .mark, let nextMarkAt, date < nextMarkAt {
-            notice = "Already marked nearby. Another flag is available in \(Int(ceil(nextMarkAt.timeIntervalSince(date)))) seconds."
+            notice = L10n.source("Already marked nearby. Another flag is available in \(Int(ceil(nextMarkAt.timeIntervalSince(date)))) seconds.")
             return
         }
-        guard let store else { error = "Capture storage unavailable"; return }
+        guard let store else { error = L10n.source("Capture storage unavailable"); return }
         do {
             let oldStart = meetingStart
             let oldQualification = meetingQualifiesAt
             try store.event(deviceID: bluetooth.identifier, at: date, action: action, meetingMaxMinutes: meetingMinutes, meetingMinSeconds: meetingMinSeconds, markerCooldownSeconds: markerCooldownSeconds)
-            if action == .mark { notice = "Marked nearby speech as important" }
+            if action == .mark { notice = L10n.source("Marked nearby speech as important") }
             else if let oldStart {
                 let qualifies = oldQualification ?? oldStart.addingTimeInterval(Double(meetingMinSeconds))
-                notice = date < qualifies ? "Short meeting ignored. Audio is kept." : "Meeting hint ended"
+                notice = date < qualifies ? L10n.source("Short meeting ignored. Audio is kept.") : L10n.source("Meeting hint ended")
             }
-            else { notice = "Meeting hint started · provisional for \(meetingMinSeconds) seconds" }
+            else { notice = L10n.source("Meeting hint started · provisional for \(meetingMinSeconds) seconds") }
             refreshLocal(); uploader?.pump()
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = L10n.error(error) }
     }
     private func refreshLocal() {
         guard let store else { return }
-        let items = store.items.filter { $0.resolvedProfileID == selectedProfileID }
+        let items = store.items.filter { $0.destinationID == destinationIdentity && $0.resolvedProfileID == selectedProfileID }
         let pending = items.filter { !$0.acknowledged && $0.ready }
         queueCount = pending.count
         uploadFeedback = uploader?.feedback(profileID: selectedProfileID)
@@ -546,13 +664,13 @@ final class AppModel {
         guard hasSelectedProfile else { return }
         observedCaptureState = state
         do { try store?.captureState(phoneID: phoneID, at: Date(), state: state, cause: cause) }
-        catch { self.error = "Could not persist capture observation: \(error.localizedDescription)" }
+        catch { self.error = L10n.source("Could not persist capture observation: \(L10n.error(error))") }
     }
     private func publishObservation(using backend: BackendClient) async throws {
         guard hasSelectedProfile, let store else { return }
         let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
         UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
-        let pending = store.items.filter { $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }
+        let pending = store.items.filter { $0.destinationID == backend.destinationIdentity && $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }
         let state = captureFailure != nil ? "blocked" : paused ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
         var body: [String: Any] = [
             "sequence": sequence, "observed_at": DurableStore.stamp(Date()),
@@ -573,15 +691,18 @@ final class AppModel {
     }
     func retryUploads() { uploader?.retry() }
     func play(_ url: URL) {
+        guard microphone.active == nil else {
+            error = L10n.source("Stop recording before playing audio."); return
+        }
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
             player?.stop(); player = try AVAudioPlayer(contentsOf: url)
-            player?.prepareToPlay(); player?.play(); playbackStatus = "Playing recorded audio"
-        } catch { self.error = error.localizedDescription }
+            player?.prepareToPlay(); player?.play(); playbackStatus = L10n.source("Playing recorded audio")
+        } catch { self.error = L10n.error(error) }
     }
     func localRewind(minutes: Int, end: Date) throws -> Int {
-        checkpoint(); guard let store else { throw BackendFailure(message: "Capture storage unavailable") }
+        checkpoint(); guard let store else { throw BackendFailure(message: L10n.source("Capture storage unavailable")) }
         let result = try store.rewind(minutes: minutes, end: end); play(result.url); return result.gaps
     }
     nonisolated static func date(_ string: String) -> Date? {

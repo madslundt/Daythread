@@ -1,3 +1,4 @@
+import { interfaceLanguage } from "./i18n";
 import { request } from "./api";
 import type { Decision } from "./decisionModels";
 import { profileScope } from "./profiles";
@@ -7,6 +8,7 @@ export type DecisionFollowup = {
   title: string; notes: string; reason: string;
   start_at: string | null; end_at: string | null; due_at: string | null;
   all_day: boolean; location: string;
+  location_trigger?: "arrive" | "leave" | null;
 };
 export type DecisionSuggestions = {
   decision_id: string; decision_version: number; timezone: string;
@@ -24,7 +26,7 @@ export function followupLinkLabel(suggestion: DecisionFollowup, timezone: string
   let date = "";
   if (value) {
     const instant = new Date(suggestion.all_day ? `${value.slice(0, 10)}T12:00:00Z` : value);
-    date = new Intl.DateTimeFormat("en-GB", {
+    date = new Intl.DateTimeFormat(interfaceLanguage() === "en" ? "en-GB" : interfaceLanguage(), {
       day: "numeric", month: "short", year: "numeric",
       ...(suggestion.all_day ? {} : { hour: "2-digit", minute: "2-digit" }),
       timeZone: suggestion.all_day ? "UTC" : timezone,

@@ -1,3 +1,4 @@
+import { source } from "./i18n";
 import type { Source } from "./types";
 export type PrepSearch = {
   kind: "person" | "project" | "topic";
@@ -57,10 +58,10 @@ export type PrepResult = PrepSearchResult & {
   suggested_questions: PrepItem[];
 };
 export const prepSections = [
-  ["latest_discussion", "Latest confirmed recording"],
-  ["promises_to_check", "Promises to check · completion and owner unknown"],
-  ["recorded_questions", "Recorded questions"],
-  ["suggested_questions", "Suggested questions · proposals based on evidence"],
+  ["latest_discussion", source("Latest confirmed recording")],
+  ["promises_to_check", source("Promises to check · completion and owner unknown")],
+  ["recorded_questions", source("Recorded questions")],
+  ["suggested_questions", source("Suggested questions · proposals based on evidence")],
 ] as const;
 export function prepIsOld(at: string, now = Date.now()): boolean {
   return now - Date.parse(at) > 30 * 86400000;

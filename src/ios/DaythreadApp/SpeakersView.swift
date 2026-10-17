@@ -68,7 +68,7 @@ struct SpeakersView: View {
     @State private var voiceError: String?
     @State private var error: String?
     @State private var busy = false
-    @State private var activity = "Loading speakers…"
+    @State private var activity = L10n.text("Loading speakers…")
     @State private var operation: Task<Void, Never>?
     @State private var requestID = UUID()
     @State private var renameID: String?
@@ -87,49 +87,51 @@ struct SpeakersView: View {
     private var editable: Bool { result?.state == "ready" && !busy }
     private var loadKey: String { model.archiveIdentity + model.archiveRevision + path + String(describing: scenePhase) }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             Section {
-                Text("Listen to each speaker, then add a name. Names apply only to this \(result?.scope.kind == "meeting" ? "meeting" : "conversation").")
+                Text(L10n.text("Listen to each speaker, then add a name. Names apply only to this \(result?.scope.kind == "meeting" ? L10n.text("meeting") : L10n.text("conversation"))."))
                 if let result, result.source_count > 1 {
-                    Text("Includes \(result.source_count) recordings with shared speaker names.").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("Includes \(result.source_count) recordings with shared speaker names.")).font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Playback skips other speakers’ turns. Overlapping voices can still be audible.")
+                Text(L10n.text("Playback skips other speakers’ turns. Overlapping voices can still be audible."))
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Saved voice profiles stay in the selected archive. Suggestions never change a name until you confirm them.")
+                Text(L10n.text("Saved voice profiles stay in the selected archive. Suggestions never change a name until you confirm them."))
                     .font(.caption).foregroundStyle(.secondary)
                 if let readiness = result?.recognition ?? voices?.recognition {
-                    Text(readiness.message).font(.callout).foregroundStyle(.secondary)
+                    Text(L10n.key(readiness.message)).font(.callout).foregroundStyle(.secondary)
                 }
                 if busy { ProgressView(activity) }
                 ErrorNote(message: error)
                 ErrorNote(message: voiceError)
-                if !busy && (result == nil || error != nil || voiceError != nil) { Button("Refresh speakers and saved voices") { Task { await load() } } }
+                if !busy && (result == nil || error != nil || voiceError != nil) { Button(L10n.text("Refresh speakers and saved voices")) { Task { await load() } } }
             }
             savedVoicesSection
             if let result {
                 detectionSection(result)
                 if !result.speakers.isEmpty {
-                    Section("\(result.speakers.count) speakers detected") {
+                    Section(L10n.text("\(result.speakers.count) speakers detected")) {
                         if result.speakers.contains(where: { $0.remembered_example_id != nil }) {
-                            Text("Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers.")
+                            Text(L10n.text("Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers."))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         ForEach(result.speakers) { speaker in speakerRow(speaker, result: result) }
                     }
-                    Section("Speaking turns") {
+                    Section(L10n.text("Speaking turns")) {
                         let sources = result.turns.reduce(into: [String]()) { if !$0.contains($1.source_id) { $0.append($1.source_id) } }
                         ForEach(result.turns) { turn in
                             turnRow(turn, result: result, recordingNumber: (sources.firstIndex(of: turn.source_id) ?? 0) + 1)
                         }
                     }
                 } else if result.state == "ready" {
-                    Text("No speakers detected. Try detecting again with the expected number of speakers.")
+                    Text(L10n.text("No speakers detected. Try detecting again with the expected number of speakers."))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .navigationTitle("Speakers").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(L10n.text("Speakers")).navigationBarTitleDisplayMode(.inline)
         .task(id: loadKey) {
             invalidate()
             guard scenePhase == .active else { return }
@@ -142,83 +144,83 @@ struct SpeakersView: View {
                 mutate(path + "/" + speaker.id + "/remember", method: "POST", body: choice)
             }
         }
-        .alert("Name speaker", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
-            TextField("Name", text: $name).textInputAutocapitalization(.words)
-            Button("Cancel", role: .cancel) { renameID = nil }
-            Button("Save") {
+        .alert(L10n.text("Name speaker"), isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
+            TextField(L10n.text("Name"), text: $name).textInputAutocapitalization(.words)
+            Button(L10n.text("Cancel"), role: .cancel) { renameID = nil }
+            Button(L10n.text("Save")) {
                 guard let id = renameID else { return }
                 let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
                 renameID = nil
                 mutate(path + "/" + id, method: "PATCH", body: ["name": trimmed.isEmpty ? NSNull() : trimmed as Any])
             }
-        } message: { Text("Leave blank to restore the letter label.") }
-        .confirmationDialog("Detect speakers again?", isPresented: $confirmingDetection, titleVisibility: .visible) {
-            Button("Detect again") { detect() }
-        } message: { Text("This replaces speaker assignments. You may need to name speakers again.") }
-        .confirmationDialog("Merge speakers?", isPresented: Binding(get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil; mergeSource = nil } }), titleVisibility: .visible) {
-            Button("Merge") {
+        } message: { Text(L10n.text("Leave blank to restore the letter label.")) }
+        .confirmationDialog(L10n.text("Detect speakers again?"), isPresented: $confirmingDetection, titleVisibility: .visible) {
+            Button(L10n.text("Detect again")) { detect() }
+        } message: { Text(L10n.text("This replaces speaker assignments. You may need to name speakers again.")) }
+        .confirmationDialog(L10n.text("Merge speakers?"), isPresented: Binding(get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil; mergeSource = nil } }), titleVisibility: .visible) {
+            Button(L10n.text("Merge")) {
                 guard let source = mergeSource, let target = mergeTarget else { return }
                 mergeSource = nil; mergeTarget = nil
                 mutate(path + "/merge", method: "POST", body: ["source_id": source.id, "target_id": target.id])
             }
-        } message: { Text("All turns from \(mergeSource?.displayName ?? "this speaker") will use \(mergeTarget?.displayName ?? "the selected speaker").") }
-        .confirmationDialog(forgettingExample == nil ? "Forget \(forgettingVoice?.name ?? "saved voice")?" : "Remove saved example for \(forgettingVoice?.name ?? "this voice")?", isPresented: Binding(get: { forgettingVoice != nil }, set: { if !$0 { forgettingVoice = nil; forgettingExample = nil } }), titleVisibility: .visible) {
-            Button(forgettingExample == nil ? "Forget voice" : "Remove example", role: .destructive) {
+        } message: { Text(L10n.text("All turns from \(mergeSource?.displayName ?? L10n.text("this speaker")) will use \(mergeTarget?.displayName ?? L10n.text("the selected speaker")).")) }
+        .confirmationDialog(forgettingExample == nil ? L10n.text("Forget \(forgettingVoice?.name ?? L10n.text("saved voice"))?") : L10n.text("Remove saved example for \(forgettingVoice?.name ?? L10n.text("this voice"))?"), isPresented: Binding(get: { forgettingVoice != nil }, set: { if !$0 { forgettingVoice = nil; forgettingExample = nil } }), titleVisibility: .visible) {
+            Button(forgettingExample == nil ? L10n.text("Forget voice") : L10n.text("Remove example"), role: .destructive) {
                 guard let profile = forgettingVoice else { return }
                 let example = forgettingExample
                 forgettingVoice = nil; forgettingExample = nil
                 forget(profile, example: example)
             }
-        } message: { Text("This removes \(forgettingExample == nil ? "all saved examples for this voice" : "this example") from future recognition. Confirmed names in conversations stay unchanged.") }
+        } message: { Text(L10n.text("This removes \(forgettingExample == nil ? L10n.text("all saved examples for this voice") : L10n.text("this example")) from future recognition. Confirmed names in conversations stay unchanged.")) }
     }
 
     private var savedVoicesSection: some View {
         Section {
-            DisclosureGroup("Saved voices\(voices.map { " (\($0.profiles.count))" } ?? "")") {
-                Text("Only examples you explicitly confirm are saved. Removing examples stops using them for recognition. Conversation names stay unchanged.")
+            DisclosureGroup(L10n.text("Saved voices\(voices.map { " (\($0.profiles.count))" } ?? "")")) {
+                Text(L10n.text("Only examples you explicitly confirm are saved. Removing examples stops using them for recognition. Conversation names stay unchanged."))
                     .font(.caption).foregroundStyle(.secondary)
                 if let voices {
-                    if voices.profiles.isEmpty { Text("No saved voices in this archive.").foregroundStyle(.secondary) }
+                    if voices.profiles.isEmpty { Text(L10n.text("No saved voices in this archive.")).foregroundStyle(.secondary) }
                     ForEach(voices.profiles) { profile in
                         DisclosureGroup {
-                            Text("\(profile.example_count) examples · \(profile.conversation_count) conversations")
+                            Text(L10n.text("\(profile.example_count) examples · \(profile.conversation_count) conversations"))
                                 .font(.caption).foregroundStyle(.secondary)
                             ForEach(profile.examples) { example in
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("\(Int(example.seconds.rounded()))s · \(example.scope.kind == "meeting" ? "Meeting" : "Conversation") \(String(example.scope.id.prefix(8)))")
+                                    Text(L10n.text("\(Int(example.seconds.rounded()))s · \(example.scope.kind == "meeting" ? L10n.text("Meeting") : L10n.text("Conversation")) \(String(example.scope.id.prefix(8)))"))
                                         .font(.caption)
                                     Text(String(example.created_at.prefix(10))).font(.caption).foregroundStyle(.secondary)
-                                    Button("Remove example", role: .destructive) { forgettingVoice = profile; forgettingExample = example }
+                                    Button(L10n.text("Remove example"), role: .destructive) { forgettingVoice = profile; forgettingExample = example }
                                         .buttonStyle(.borderless).disabled(busy)
                                 }
                             }
-                            Button("Forget voice", role: .destructive) { forgettingVoice = profile; forgettingExample = nil }
+                            Button(L10n.text("Forget voice"), role: .destructive) { forgettingVoice = profile; forgettingExample = nil }
                                 .buttonStyle(.borderless).disabled(busy)
                         } label: { Text(profile.name) }
                     }
-                } else { Text(voiceError == nil ? "Loading saved voices…" : "Saved voices could not be loaded.").foregroundStyle(.secondary) }
+                } else { Text(voiceError == nil ? L10n.text("Loading saved voices…") : L10n.text("Saved voices could not be loaded.")).foregroundStyle(.secondary) }
             }
         }
     }
 
     private func detectionSection(_ result: ConversationSpeakers) -> some View {
-        Section("Speaker detection") {
+        Section(L10n.text("Speaker detection")) {
             if result.state == "stale" {
-                Text("Recordings or transcripts changed. Detect speakers again to update their turns.").foregroundStyle(.orange)
+                Text(L10n.text("Recordings or transcripts changed. Detect speakers again to update their turns.")).foregroundStyle(.orange)
             }
             if !result.configured {
-                Text("Enable speaker detection and set its service address in Settings → Models, keys & all server settings.")
+                Text(L10n.text("Enable speaker detection and set its service address in Settings → Models, keys & all server settings."))
                     .font(.callout).foregroundStyle(.secondary)
             }
             if !result.audio_available {
-                Text("Original audio is unavailable. Speaker detection and playback need retained audio.")
+                Text(L10n.text("Original audio is unavailable. Speaker detection and playback need retained audio."))
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Picker("Expected speakers", selection: $knownCount) {
-                Text("Detect automatically").tag(0)
+            Picker(L10n.text("Expected speakers"), selection: $knownCount) {
+                Text(L10n.text("Detect automatically")).tag(0)
                 ForEach(1...20, id: \.self) { Text("\($0)").tag($0) }
             }.disabled(busy)
-            Button(result.state == "idle" ? "Detect speakers" : "Detect speakers again", systemImage: "waveform.badge.magnifyingglass") {
+            Button(result.state == "idle" ? L10n.text("Detect speakers") : L10n.text("Detect speakers again"), systemImage: "waveform.badge.magnifyingglass") {
                 if result.speakers.isEmpty { detect() } else { confirmingDetection = true }
             }.disabled(busy || !result.configured || !result.audio_available)
                 .accessibilityIdentifier("speakers.detect")
@@ -230,39 +232,39 @@ struct SpeakersView: View {
             HStack {
                 Text(speaker.displayName).font(.headline)
                 Spacer()
-                Text("\(Int(speaker.seconds.rounded()))s").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("\(Int(speaker.seconds.rounded()))s")).font(.caption).foregroundStyle(.secondary)
             }
             HStack {
-                Button("Listen to \(speaker.displayName)", systemImage: "play.circle") { listen(speaker) }
+                Button(L10n.text("Listen to \(speaker.displayName)"), systemImage: "play.circle") { listen(speaker) }
                     .disabled(!editable || !result.audio_available)
                 Spacer()
-                Button("Name", systemImage: "pencil") { name = speaker.name ?? ""; renameID = speaker.id }
-                    .disabled(!editable).accessibilityLabel("Name speaker \(speaker.displayName)")
+                Button(L10n.text("Name"), systemImage: "pencil") { name = speaker.name ?? ""; renameID = speaker.id }
+                    .disabled(!editable).accessibilityLabel(L10n.text("Name speaker \(speaker.displayName)"))
             }.buttonStyle(.borderless)
             if playingSpeakerID == speaker.id {
-                Button("Stop playback", systemImage: "stop.circle") { stopPlayback() }.buttonStyle(.borderless)
+                Button(L10n.text("Stop playback"), systemImage: "stop.circle") { stopPlayback() }.buttonStyle(.borderless)
             }
             if let suggestion = speaker.suggestion, !dismissedSuggestions.contains(speaker.id) {
-                Text("Suggested: \(suggestion.name). Listen first, then confirm the person.")
+                Text(L10n.text("Suggested: \(suggestion.name). Listen first, then confirm the person."))
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
-                    Button("Confirm \(suggestion.name)") {
+                    Button(L10n.text("Confirm \(suggestion.name)")) {
                         mutate(path + "/" + speaker.id + "/confirm", method: "POST", body: ["profile_id": suggestion.profile_id])
                     }.disabled(!editable || !result.audio_available || (result.recognition?.state ?? voices?.recognition.state) != "ready")
-                    Button("Leave unchanged") { dismissedSuggestions.insert(speaker.id) }
+                    Button(L10n.text("Leave unchanged")) { dismissedSuggestions.insert(speaker.id) }
                 }.buttonStyle(.borderless)
             }
             if speaker.remembered_example_id != nil {
-                Text("Saved as a voice example for future conversations.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("Saved as a voice example for future conversations.")).font(.caption).foregroundStyle(.secondary)
             }
-            Button("Remember speaker for future conversations", systemImage: "person.crop.circle.badge.checkmark") {
+            Button(L10n.text("Remember speaker for future conversations"), systemImage: "person.crop.circle.badge.checkmark") {
                 rememberSpeaker = speaker
             }.buttonStyle(.borderless)
                 .disabled(!editable || !result.audio_available || voices == nil || (result.recognition?.state ?? voices?.recognition.state ?? "disabled") == "disabled")
             if result.speakers.count > 1 {
-                Menu("Merge with another speaker") {
+                Menu(L10n.text("Merge with another speaker")) {
                     ForEach(result.speakers.filter { $0.id != speaker.id }) { target in
-                        Button("Merge into \(target.displayName)") { mergeSource = speaker; mergeTarget = target }
+                        Button(L10n.text("Merge into \(target.displayName)")) { mergeSource = speaker; mergeTarget = target }
                     }
                 }.disabled(!editable).font(.caption)
             }
@@ -272,15 +274,15 @@ struct SpeakersView: View {
     private func turnRow(_ turn: ConversationSpeakers.Turn, result: ConversationSpeakers, recordingNumber: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(result.speakers.first { $0.id == turn.speaker_id }?.displayName ?? "Speaker").font(.subheadline.bold())
+                Text(result.speakers.first { $0.id == turn.speaker_id }?.displayName ?? L10n.text("Speaker")).font(.subheadline.bold())
                 Spacer()
                 Text("\(timestamp(turn.start))–\(timestamp(turn.end))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             if result.source_count > 1 {
-                Text("Recording \(recordingNumber)").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("Recording \(recordingNumber)")).font(.caption).foregroundStyle(.secondary)
             }
             if let text = turn.text, !text.isEmpty { Text(text).textSelection(.enabled) }
-            Menu("Change speaker") {
+            Menu(L10n.text("Change speaker")) {
                 ForEach(result.speakers) { speaker in
                     Button {
                         mutate(path + "/turns/" + turn.id, method: "PATCH", body: ["speaker_id": speaker.id])
@@ -312,7 +314,7 @@ struct SpeakersView: View {
     private func load() async {
         guard !busy else { return }
         let identity = model.archiveIdentity, request = UUID()
-        requestID = request; busy = true; activity = "Loading speakers…"; error = nil
+        requestID = request; busy = true; activity = L10n.text("Loading speakers…"); error = nil
         defer { if requestID == request { busy = false } }
         do {
             let client = try model.client()
@@ -327,11 +329,11 @@ struct SpeakersView: View {
                 voices = directory; voiceError = nil
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                voiceError = error.localizedDescription
+                voiceError = L10n.error(error)
             }
         } catch {
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 
@@ -346,10 +348,10 @@ struct SpeakersView: View {
         let identity = model.archiveIdentity, request = UUID()
         let client: BackendClient
         do { client = try model.client() }
-        catch { self.error = error.localizedDescription; return }
+        catch { self.error = L10n.error(error); return }
         var payload = body
         if versioned { payload["version"] = result.version! }
-        requestID = request; busy = true; activity = versioned ? "Updating speakers…" : "Detecting speakers…"; error = nil; stopPlayback()
+        requestID = request; busy = true; activity = versioned ? L10n.text("Updating speakers…") : L10n.text("Detecting speakers…"); error = nil; stopPlayback()
         operation = Task {
             defer { if requestID == request { busy = false; operation = nil } }
             do {
@@ -363,11 +365,11 @@ struct SpeakersView: View {
                     voices = directory; voiceError = nil
                 } catch {
                     guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                    voiceError = error.localizedDescription
+                    voiceError = L10n.error(error)
                 }
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
                 if (error as? BackendFailure)?.status == 409 {
                     let refreshed = try? await client.decoded(path, as: ConversationSpeakers.self)
                     let directory = try? await client.decoded("v1/voice-profiles", as: SavedVoiceDirectory.self)
@@ -383,9 +385,9 @@ struct SpeakersView: View {
         let identity = model.archiveIdentity, request = UUID()
         let client: BackendClient
         do { client = try model.client() }
-        catch { voiceError = error.localizedDescription; return }
+        catch { voiceError = L10n.error(error); return }
         let endpoint = "v1/voice-profiles/" + profile.id + (example.map { "/examples/" + $0.id } ?? "")
-        requestID = request; busy = true; activity = "Removing saved voice…"; voiceError = nil; stopPlayback()
+        requestID = request; busy = true; activity = L10n.text("Removing saved voice…"); voiceError = nil; stopPlayback()
         operation = Task {
             defer { if requestID == request { busy = false; operation = nil } }
             do {
@@ -398,7 +400,7 @@ struct SpeakersView: View {
                 result = scope
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                voiceError = error.localizedDescription
+                voiceError = L10n.error(error)
                 if (error as? BackendFailure)?.status == 409 {
                     let directory = try? await client.decoded("v1/voice-profiles", as: SavedVoiceDirectory.self)
                     guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
@@ -413,8 +415,8 @@ struct SpeakersView: View {
         let identity = model.archiveIdentity, request = UUID()
         let client: BackendClient
         do { client = try model.client() }
-        catch { self.error = error.localizedDescription; return }
-        requestID = request; busy = true; activity = "Loading speaker audio…"; error = nil; stopPlayback()
+        catch { self.error = L10n.error(error); return }
+        requestID = request; busy = true; activity = L10n.text("Loading speaker audio…"); error = nil; stopPlayback()
         operation = Task {
             defer { if requestID == request { busy = false; operation = nil } }
             do {
@@ -424,7 +426,7 @@ struct SpeakersView: View {
                 model.play(audio); playingSpeakerID = speaker.id
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }
@@ -446,35 +448,37 @@ private struct RememberVoiceSheet: View {
 
     private var trimmedName: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             Form {
                 Section {
-                    Text("After listening, explicitly choose whose voice \(speaker.displayName) is. This saves a voice example and names the speaker in this conversation.")
-                    Text("Future conversations may suggest this voice; you confirm every suggestion. A new profile remains separate even when its name matches another profile.")
+                    Text(L10n.text("After listening, explicitly choose whose voice \(speaker.displayName) is. This saves a voice example and names the speaker in this conversation."))
+                    Text(L10n.text("Future conversations may suggest this voice; you confirm every suggestion. A new profile remains separate even when its name matches another profile."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Save voice to") {
-                    Picker("Voice profile", selection: $selectedProfile) {
-                        Text("Create a new voice profile").tag("")
+                Section(L10n.text("Save voice to")) {
+                    Picker(L10n.text("Voice profile"), selection: $selectedProfile) {
+                        Text(L10n.text("Create a new voice profile")).tag("")
                         ForEach(profiles) { profile in
-                            Text("\(profile.name) · \(profile.example_count) examples").tag(profile.id)
+                            Text(L10n.text("\(profile.name) · \(profile.example_count) examples")).tag(profile.id)
                         }
                     }
                     if selectedProfile.isEmpty {
-                        TextField("New voice profile name", text: $newName).textInputAutocapitalization(.words)
-                        if trimmedName.count > 120 { Text("Use a name up to 120 characters.").foregroundStyle(.red) }
+                        TextField(L10n.text("New voice profile name"), text: $newName).textInputAutocapitalization(.words)
+                        if trimmedName.count > 120 { Text(L10n.text("Use a name up to 120 characters.")).foregroundStyle(.red) }
                     }
                 }
                 Section {
-                    Button("Confirm and remember voice") {
+                    Button(L10n.text("Confirm and remember voice")) {
                         onConfirm(selectedProfile.isEmpty ? ["name": trimmedName] : ["profile_id": selectedProfile])
                         dismiss()
                     }.disabled(selectedProfile.isEmpty && (trimmedName.isEmpty || trimmedName.count > 120))
                 }
             }
-            .navigationTitle("Remember voice").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .navigationTitle(L10n.text("Remember voice")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() } } }
         }
     }
 }

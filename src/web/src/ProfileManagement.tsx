@@ -8,7 +8,7 @@ import { ErrorState } from "./UI";
 
 type ProfileAction = { kind: "create" } | { kind: "edit"; profile: Profile };
 
-export function ProfileManagement({ profiles, selected, onSelect, onCreate, onUpdate, error, onRetry }: {
+export function ProfileManagement({ profiles, selected, onSelect, onCreate, onUpdate, error, onRetry, managed = false }: {
   profiles: Profile[];
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -16,6 +16,7 @@ export function ProfileManagement({ profiles, selected, onSelect, onCreate, onUp
   onUpdate: (profile: Profile) => void;
   error?: string;
   onRetry?: () => void;
+  managed?: boolean;
 }) {
   const [action, setAction] = useState<ProfileAction>();
   const [notice, setNotice] = useState("");
@@ -36,14 +37,14 @@ export function ProfileManagement({ profiles, selected, onSelect, onCreate, onUp
           <small>{profile.id === selected ? t("Current profile") : profile.id === "default" ? t("Default archive") : t("Separate archive")}</small>
         </div>
         <div className="button-row">
-          <button type="button" className="button" aria-label={`Edit ${profile.name}`} onClick={() => setAction({ kind: "edit", profile })}>{t("Edit")}</button>
+          <button type="button" className="button" aria-label={t("Edit {value0}", { value0: profile.name })} onClick={() => setAction({ kind: "edit", profile })}>{t("Edit")}</button>
         </div>
       </li>)}
     </ul>
-    <p className="caption">{t("Anyone using this server can select any profile.")}</p>
+    <p className="caption">{managed ? t("Only your signed-in account can access these profiles.") : t("Anyone using this server can select any profile.")}</p>
     {action ? <ProfileDialog action={action} onClose={() => setAction(undefined)} onSaved={(profile) => {
       setAction(undefined);
-      setNotice(action.kind === "create" ? "Profile created." : "Profile updated.");
+      setNotice(action.kind === "create" ? t("Profile created.") : t("Profile updated."));
       if (action.kind === "create") onCreate(profile); else onUpdate(profile);
     }} /> : null}
   </section>;
@@ -60,7 +61,7 @@ function ProfileDialog({ action, onClose, onSaved }: {
   const [name, setName] = useState(action.kind === "create" ? "" : action.profile.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const title = action.kind === "edit" ? "Edit profile" : "Create a profile";
+  const title = action.kind === "edit" ? t("Edit profile") : t("Create a profile");
   useEffect(() => {
     const element = dialog.current;
     const previous = document.activeElement;

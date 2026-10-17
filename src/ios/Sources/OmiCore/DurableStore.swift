@@ -7,8 +7,10 @@ public struct OutboxItem: Codable, Identifiable {
     public let deviceID: String
     public let capturedAt: Date
     public var profileID: String?
+    public var destinationID: String?
     public var resolvedProfileID: String { profileID ?? "default" }
     public var endedAt: Date?
+    public var location: CaptureLocation?
     public var codec: Int?
     public var clock: CaptureClock?
     public var action: SemanticAction?
@@ -30,6 +32,7 @@ public final class DurableStore {
     public let directory: URL
     public private(set) var items: [OutboxItem]
     public var profileID = "default"
+    public var destinationID: String?
     public var maximumBytes: Int64 = 1_000_000_000
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -63,6 +66,16 @@ public final class DurableStore {
     }
     deinit { try? source?.close() }
     public var pending: [OutboxItem] { items.filter { !$0.acknowledged && $0.ready }.sorted { $0.capturedAt < $1.capturedAt } }
+    public func pending(destinationID: String) -> [OutboxItem] { pending.filter { $0.destinationID == destinationID } }
+    /// Upgrade only unscoped legacy records, before accepting another account or backend.
+    public func bindLegacyDestination(_ identity: String) throws {
+        guard items.contains(where: { $0.destinationID == nil }) else { return }
+        try commit(items.map { original in
+            var item = original
+            if item.destinationID == nil { item.destinationID = identity }
+            return item
+        })
+    }
     public var unsyncedSeconds: TimeInterval {
         items.filter { $0.kind == .audio && !$0.acknowledged }.reduce(0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) }
     }
@@ -96,7 +109,7 @@ public final class DurableStore {
     }
     private func save() throws { try commit(items) }
 
-    public func begin(deviceID: String, codec: Int, clock: CaptureClock) throws {
+    public func begin(deviceID: String, codec: Int, clock: CaptureClock, location: CaptureLocation? = nil) throws {
         guard currentID == nil else { return }
         try pruneAcknowledged(before: Date().addingTimeInterval(-3600))
         // Reserve a full segment's decoded WAV before accepting more source audio.
@@ -104,6 +117,8 @@ public final class DurableStore {
         let id = UUID()
         var item = OutboxItem(id: id, kind: .audio, deviceID: deviceID, capturedAt: clock.wall)
         item.profileID = profileID
+        item.destinationID = destinationID
+        item.location = location.flatMap { $0.isUsable(at: clock.wall) ? $0 : nil }
         item.codec = codec; item.clock = clock
         try commit(items + [item])
         let url = file(id, extension: "frames")
@@ -113,7 +128,7 @@ public final class DurableStore {
 
     public func append(frame: Data, decoded: Data) throws {
         guard currentID != nil else { return }
-        guard let source else { throw CaptureError.invalidAudio("The previous segment must finish saving before capture resumes") }
+        guard let source else { throw CaptureError.invalidAudio(AppLocalization.source("The previous segment must finish saving before capture resumes")) }
         guard usedBytes + Int64(frame.count + 4 + pcm.count + decoded.count + 44) < maximumBytes else { throw CaptureError.storageFull }
         var size = UInt32(frame.count).littleEndian
         let header = withUnsafeBytes(of: &size) { Data($0) }
@@ -181,6 +196,7 @@ public final class DurableStore {
     private func appendMetadata(_ original: OutboxItem) throws -> UUID {
         var item = original
         item.profileID = profileID
+        item.destinationID = destinationID
         let body = try metadata(item)
         let updated = items + [item]
         let indexBytes = try encoder.encode(updated).count
@@ -248,21 +264,21 @@ public final class DurableStore {
                     catch { break } // Preserve the valid prefix while retaining all original bytes.
                     offset += 4 + size
                 }
-                guard !decoded.isEmpty else { items[index].error = "No complete frames survived capture interruption"; continue }
+                guard !decoded.isEmpty else { items[index].error = AppLocalization.source("No complete frames survived capture interruption"); continue }
                 let wav = WAV.encode(decoded)
                 try write(wav, to: file(item.id, extension: "wav"))
                 items[index].endedAt = item.capturedAt.addingTimeInterval(Double(decoded.count) / 32000)
                 items[index].ready = true
-                items[index].error = offset < original.count ? "Recovered; trailing incomplete frame retained in source" : nil
-            } catch { items[index].error = "Recovery requires attention: \(error.localizedDescription)" }
+                items[index].error = offset < original.count ? AppLocalization.source("Recovered; trailing incomplete frame retained in source") : nil
+            } catch { items[index].error = AppLocalization.source("Recovery requires attention: \(error.localizedDescription)") }
         }
         try save()
     }
     public func rewind(minutes: Int, end: Date) throws -> (url: URL, gaps: Int) {
         let duration = max(1, min(60, minutes)) * 60
         let start = end.addingTimeInterval(-Double(duration))
-        let audio = items.filter { $0.resolvedProfileID == profileID && $0.kind == .audio && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start }
-        guard !audio.isEmpty else { throw CaptureError.invalidAudio("No local audio in this window") }
+        let audio = items.filter { $0.destinationID == destinationID && $0.resolvedProfileID == profileID && $0.kind == .audio && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start }
+        guard !audio.isEmpty else { throw CaptureError.invalidAudio(AppLocalization.source("No local audio in this window")) }
         var output = Data(count: duration * 32000); var spans: [(Date, Date)] = []
         for item in audio {
             let pcm = try Data(contentsOf: file(item.id, extension: "wav")).dropFirst(44)

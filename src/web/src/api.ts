@@ -1,4 +1,6 @@
+import { t } from "./i18n";
 import { profileRequestOptions, profileResourceUrl, profileScope, type ProfileScope } from "./profiles";
+import { isManagedOrigin, managedMutationHeaders } from "./managedService";
 
 export class ApiError extends Error {
   constructor(
@@ -16,7 +18,7 @@ export async function request<T>(
   scope: ProfileScope = profileScope(),
 ): Promise<T> {
   const prepared = profileRequestOptions(path, options, scope);
-  const headers = new Headers(prepared.headers);
+  const headers = managedMutationHeaders(path, options.method, prepared.headers);
   if (options.body && !(options.body instanceof Blob) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   prepared.headers = headers;
   prepared.signal?.throwIfAborted();
@@ -28,11 +30,14 @@ export async function request<T>(
     if (error instanceof DOMException && error.name === "AbortError")
       throw error;
     throw new ApiError(
-      "The local backend could not be reached. Check your connection and try again.",
+      isManagedOrigin() ? t("The Daythread service could not be reached. Check your connection and try again.")
+        : t("The local backend could not be reached. Check your connection and try again."),
       0,
     );
   }
   if (!response.ok) {
+    if (response.status === 401 && isManagedOrigin())
+      window.dispatchEvent(new Event("daythread:session-expired"));
     let detail: unknown;
     try {
       detail = (await response.json()).detail;
@@ -43,8 +48,9 @@ export async function request<T>(
       typeof detail === "string"
         ? detail
         : response.status === 502
-          ? "Your local model is unavailable. Check the STT / LLM service, then try again."
-          : `The request could not be completed (${response.status}). Please try again.`;
+          ? isManagedOrigin() ? t("Your model is unavailable. Check your account’s inference settings, then try again.")
+            : t("Your local model is unavailable. Check the STT / LLM service, then try again.")
+          : t("The request could not be completed ({value0}). Please try again.", { value0: response.status });
     throw new ApiError(message, response.status);
   }
   const result = response.status === 204 ? undefined : await response.json();
@@ -73,12 +79,13 @@ export function uploadRecording<T>(
     const cleanup = () => activeSignal.removeEventListener("abort", abort);
     const abort = () => { xhr.abort(); cleanup(); reject(activeSignal.reason); };
     xhr.open("PUT", path);
-    new Headers(prepared.headers).forEach((value, name) => xhr.setRequestHeader(name, value));
+    managedMutationHeaders(path, "PUT", prepared.headers).forEach((value, name) => xhr.setRequestHeader(name, value));
     xhr.setRequestHeader("Content-Type", "audio/wav");
     xhr.upload.onprogress = (event) => onProgress(Math.min(body.size, event.loaded));
     xhr.onerror = () => {
       cleanup();
-      reject(new ApiError("The local backend could not be reached. Check your connection and try again.", 0));
+      reject(new ApiError(isManagedOrigin() ? t("The Daythread service could not be reached. Check your connection and try again.")
+        : t("The local backend could not be reached. Check your connection and try again."), 0));
     };
     xhr.onload = () => {
       cleanup();
@@ -86,11 +93,12 @@ export function uploadRecording<T>(
       let result: unknown;
       try { result = JSON.parse(xhr.responseText); } catch { /* Invalid receipt is rejected below. */ }
       if (xhr.status < 200 || xhr.status >= 300) {
+        if (xhr.status === 401 && isManagedOrigin()) window.dispatchEvent(new Event("daythread:session-expired"));
         const detail = (result as { detail?: unknown } | undefined)?.detail;
         reject(new ApiError(typeof detail === "string" ? detail
-          : `The request could not be completed (${xhr.status}). Please try again.`, xhr.status));
+          : t("The request could not be completed ({value0}). Please try again.", { value0: xhr.status }), xhr.status));
       } else if (result === undefined) {
-        reject(new ApiError("The server returned an invalid upload receipt. Retry to confirm this part.", xhr.status));
+        reject(new ApiError(t("The server returned an invalid upload receipt. Retry to confirm this part."), xhr.status));
       } else resolve(result as T);
     };
     activeSignal.addEventListener("abort", abort, { once: true });
@@ -108,8 +116,8 @@ export function rewindAudioUrl(minutes: number, end: string): string {
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error
-    ? error.message
-    : "Something went wrong. Please try again.";
+    ? t(error.message)
+    : t("Something went wrong. Please try again.");
 }
 
 // getRandomValues is available on LAN HTTP origins as well as HTTPS.

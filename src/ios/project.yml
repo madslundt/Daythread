@@ -34,19 +34,22 @@ targets:
       path: DaythreadApp/Info.plist
       properties:
         CFBundleDisplayName: Daythread
+        DaythreadManagedServiceURL: https://daythread.elcc.dk
         APNSEnvironment: $(APS_ENVIRONMENT)
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSBluetoothAlwaysUsageDescription: Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.
+        NSLocationWhenInUseUsageDescription: Daythread uses your location to tag conversations when enabled and to choose a place for nearby reminders.
         NSLocalNetworkUsageDescription: Daythread sends recordings to your own home-core on your local network.
+        NSMicrophoneUsageDescription: Daythread uses your microphone to record audio when you tap Start recording. You choose when to upload or remove each recording.
         NSRemindersFullAccessUsageDescription: Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSExceptionDomains:
             daythread.home.arpa:
               NSExceptionAllowsInsecureHTTPLoads: true
-        UIBackgroundModes: [bluetooth-central, audio, processing, fetch]
+        UIBackgroundModes: [bluetooth-central, audio, processing, fetch, location]
         BGTaskSchedulerPermittedIdentifiers: [com.daythread.sync]
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

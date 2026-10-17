@@ -20,60 +20,62 @@ struct DecisionEditor: View {
         _content = State(initialValue: record?.content ?? DecisionContent(choice: DecisionClaim(text: "", evidence: [])))
         _state = State(initialValue: record?.state ?? "tentative")
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Form {
             if invalidated {
-                Text("This record or its evidence changed. Close this editor and refresh the source or decision before editing again.")
+                Text(L10n.text("This record or its evidence changed. Close this editor and refresh the source or decision before editing again."))
             } else {
             Section {
-                Text("Describe an explicitly selected choice, not a suggestion or disagreement. Cite each recorded claim. Owner notes remain separate from speech. Each claim supports up to 4,000 characters and needs an exact source passage.").font(.caption).foregroundStyle(.secondary)
-                Picker("Recorded state", selection: $state) { Text("Tentative").tag("tentative"); Text("Final").tag("final") }
+                Text(L10n.text("Describe an explicitly selected choice, not a suggestion or disagreement. Cite each recorded claim. Owner notes remain separate from speech. Each claim supports up to 4,000 characters and needs an exact source passage.")).font(.caption).foregroundStyle(.secondary)
+                Picker(L10n.text("Recorded state"), selection: $state) { Text(L10n.text("Tentative")).tag("tentative"); Text(L10n.text("Final")).tag("final") }
             }
-            DecisionClaimEditor(title: "Choice", claim: $content.choice, initialSource: source)
+            DecisionClaimEditor(title: L10n.text("Choice"), claim: $content.choice, initialSource: source)
             if content.context != nil {
-                DecisionClaimEditor(title: "Recorded context", claim: Binding(get: { content.context ?? DecisionClaim(text: "", evidence: []) }, set: { content.context = $0 }), initialSource: source)
-                Button("Remove recorded context", role: .destructive) { content.context = nil }
-            } else { Button("Add recorded context") { content.context = DecisionClaim(text: "", evidence: []) } }
+                DecisionClaimEditor(title: L10n.text("Recorded context"), claim: Binding(get: { content.context ?? DecisionClaim(text: "", evidence: []) }, set: { content.context = $0 }), initialSource: source)
+                Button(L10n.text("Remove recorded context"), role: .destructive) { content.context = nil }
+            } else { Button(L10n.text("Add recorded context")) { content.context = DecisionClaim(text: "", evidence: []) } }
             if content.rationale != nil {
-                DecisionClaimEditor(title: "Recorded rationale", claim: Binding(get: { content.rationale ?? DecisionClaim(text: "", evidence: []) }, set: { content.rationale = $0 }), initialSource: source)
-                Button("Remove recorded rationale", role: .destructive) { content.rationale = nil }
+                DecisionClaimEditor(title: L10n.text("Recorded rationale"), claim: Binding(get: { content.rationale ?? DecisionClaim(text: "", evidence: []) }, set: { content.rationale = $0 }), initialSource: source)
+                Button(L10n.text("Remove recorded rationale"), role: .destructive) { content.rationale = nil }
             } else {
-                Section { Text("Rationale: not stated").foregroundStyle(.secondary); Button("Add explicitly stated rationale") { content.rationale = DecisionClaim(text: "", evidence: []) } }
+                Section { Text(L10n.text("Rationale: not stated")).foregroundStyle(.secondary); Button(L10n.text("Add explicitly stated rationale")) { content.rationale = DecisionClaim(text: "", evidence: []) } }
             }
             ForEach(content.alternatives.indices, id: \.self) { index in
-                DecisionClaimEditor(title: "Discussed alternative \(index + 1)", claim: $content.alternatives[index], initialSource: source)
-                Button("Remove alternative \(index + 1)", role: .destructive) { content.alternatives.remove(at: index) }
+                DecisionClaimEditor(title: L10n.text("Discussed alternative \(index + 1)"), claim: $content.alternatives[index], initialSource: source)
+                Button(L10n.text("Remove alternative \(index + 1)"), role: .destructive) { content.alternatives.remove(at: index) }
             }
-            Button("Add explicitly discussed alternative") { content.alternatives.append(DecisionClaim(text: "", evidence: [])) }
+            Button(L10n.text("Add explicitly discussed alternative")) { content.alternatives.append(DecisionClaim(text: "", evidence: [])) }
             ForEach(content.contradictions.indices, id: \.self) { index in
-                Picker("Contradicted field", selection: $content.contradictions[index].field) {
-                    ForEach(["choice", "context", "rationale", "alternatives"], id: \.self) { field in Text(field.capitalized).tag(field) }
+                Picker(L10n.text("Contradicted field"), selection: $content.contradictions[index].field) {
+                    ForEach(["choice", "context", "rationale", "alternatives"], id: \.self) { field in Text(L10n.status(field)).tag(field) }
                 }
-                DecisionClaimEditor(title: "Opposing statement \(index + 1)", claim: $content.contradictions[index].claim, initialSource: source)
-                Button("Remove opposing statement \(index + 1)", role: .destructive) { content.contradictions.remove(at: index) }
+                DecisionClaimEditor(title: L10n.text("Opposing statement \(index + 1)"), claim: $content.contradictions[index].claim, initialSource: source)
+                Button(L10n.text("Remove opposing statement \(index + 1)"), role: .destructive) { content.contradictions.remove(at: index) }
             }
-            Button("Add contradictory evidence") { content.contradictions.append(DecisionContradiction()) }
+            Button(L10n.text("Add contradictory evidence")) { content.contradictions.append(DecisionContradiction()) }
             if !content.contradictions.isEmpty {
-                Text("Save the opposing passages, explain the resolution in owner notes, then explicitly resolve the conflict after review. The passages remain in the record.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("Save the opposing passages, explain the resolution in owner notes, then explicitly resolve the conflict after review. The passages remain in the record.")).font(.caption).foregroundStyle(.secondary)
             }
-            Section("Owner note · not recorded speech") { TextField("Your explanation", text: $content.owner_notes, axis: .vertical).lineLimit(3...10) }
-            Section("Optional related labels") {
+            Section(L10n.text("Owner note · not recorded speech")) { TextField(L10n.text("Your explanation"), text: $content.owner_notes, axis: .vertical).lineLimit(3...10) }
+            Section(L10n.text("Optional related labels")) {
                 ForEach(content.relationships.indices, id: \.self) { index in
-                    Picker("Kind", selection: $content.relationships[index].kind) {
-                        ForEach(["project", "person", "commitment", "meeting"], id: \.self) { kind in Text(kind.capitalized).tag(kind) }
+                    Picker(L10n.text("Kind"), selection: $content.relationships[index].kind) {
+                        ForEach(["project", "person", "commitment", "meeting"], id: \.self) { kind in Text(L10n.status(kind)).tag(kind) }
                     }
-                    TextField("Label", text: $content.relationships[index].label)
-                    Button("Remove label", role: .destructive) { content.relationships.remove(at: index) }
+                    TextField(L10n.text("Label"), text: $content.relationships[index].label)
+                    Button(L10n.text("Remove label"), role: .destructive) { content.relationships.remove(at: index) }
                 }
-                Button("Add related label") { content.relationships.append(DecisionRelationship(kind: "project", label: "")) }
+                Button(L10n.text("Add related label")) { content.relationships.append(DecisionRelationship(kind: "project", label: "")) }
             }
             }
             ErrorNote(message: error)
-            if busy { ProgressView("Saving…") }
-        }.navigationTitle(record == nil ? "Create decision" : "Edit decision")
+            if busy { ProgressView(L10n.text("Saving…")) }
+        }.navigationTitle(record == nil ? L10n.text("Create decision") : L10n.text("Edit decision"))
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(busy || invalidated || !valid) }
+                ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() }.disabled(busy) }
+                ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Save")) { Task { await save() } }.disabled(busy || invalidated || !valid) }
             }
             .interactiveDismissDisabled(busy)
             .onChange(of: phase) { _, value in if value != .active { dismiss() } }
@@ -105,7 +107,7 @@ struct DecisionEditor: View {
             if (error as? BackendFailure)?.requiresDecisionReload == true {
                 content = DecisionContent(choice: DecisionClaim(text: "", evidence: [])); invalidated = true
             }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }
@@ -121,26 +123,28 @@ private struct DecisionClaimEditor: View {
     @State private var occurrence = 0
     @State private var error: String?
     @State private var busy = false
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Section(title) {
-            TextField("Recorded claim", text: $claim.text, axis: .vertical).lineLimit(2...8)
+            TextField(L10n.text("Recorded claim"), text: $claim.text, axis: .vertical).lineLimit(2...8)
             ForEach(Array(claim.evidence.enumerated()), id: \.offset) { index, anchor in
                 VStack(alignment: .leading) {
                     Text("“\(anchor.quote)”").font(.callout).textSelection(.enabled)
-                    Text("\(anchor.source_id) · characters \(anchor.start)–\(anchor.end)").font(.caption).foregroundStyle(.secondary)
-                    Button("Remove passage", role: .destructive) { claim.evidence.remove(at: index) }
+                    Text(L10n.text("\(anchor.source_id) · characters \(anchor.start)–\(anchor.end)")).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("Remove passage"), role: .destructive) { claim.evidence.remove(at: index) }
                 }
             }
-            DisclosureGroup("Attach original passage") {
-                TextField("Source UUID", text: $sourceID).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("Load current source") { Task { await loadSource() } }.disabled(busy || UUID(uuidString: sourceID) == nil)
+            DisclosureGroup(L10n.text("Attach original passage")) {
+                TextField(L10n.text("Source UUID"), text: $sourceID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button(L10n.text("Load current source")) { Task { await loadSource() } }.disabled(busy || UUID(uuidString: sourceID) == nil)
                 if let source {
                     Text(source.text).font(.callout).textSelection(.enabled)
-                    TextField("Exact quotation", text: $quote, axis: .vertical).lineLimit(2...8)
-                    Text("Paste an exact passage of up to 20,000 characters. Long sources start with an empty quotation.").font(.caption).foregroundStyle(.secondary)
-                    Stepper("Occurrence: \(occurrence + 1)", value: $occurrence, in: 0...100)
-                    Text("If the quotation repeats, choose its occurrence in this source.").font(.caption).foregroundStyle(.secondary)
-                    Button("Attach passage") {
+                    TextField(L10n.text("Exact quotation"), text: $quote, axis: .vertical).lineLimit(2...8)
+                    Text(L10n.text("Paste an exact passage of up to 20,000 characters. Long sources start with an empty quotation.")).font(.caption).foregroundStyle(.secondary)
+                    Stepper(L10n.text("Occurrence: \(occurrence + 1)"), value: $occurrence, in: 0...100)
+                    Text(L10n.text("If the quotation repeats, choose its occurrence in this source.")).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("Attach passage")) {
                         if let anchor = source.anchor(quote: quote, occurrence: occurrence), !claim.evidence.contains(anchor) {
                             claim.evidence.append(anchor); error = nil
                         }
@@ -159,7 +163,7 @@ private struct DecisionClaimEditor: View {
         do {
             let result: DecisionSource = try await model.client().decisionRequest("v1/transcripts/\(sourceID)")
             guard !Task.isCancelled else { return }; source = result; quote = result.initialQuotation; occurrence = 0
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled { self.error = L10n.error(error) } }
     }
 }
 
@@ -168,15 +172,17 @@ struct SourceDecisionCreation: View {
     @Environment(AppModel.self) private var model
     @State private var source: DecisionSource?
     @State private var error: String?
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Group {
             if let source { DecisionEditor(record: nil, source: source) }
-            else { List { if error == nil { ProgressView("Loading current evidence…") }; ErrorNote(message: error) } }
+            else { List { if error == nil { ProgressView(L10n.text("Loading current evidence…")) }; ErrorNote(message: error) } }
         }.task {
             do {
                 let result: DecisionSource = try await model.client().decisionRequest("v1/transcripts/\(sourceID)")
                 guard !Task.isCancelled else { return }; source = result
-            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+            } catch { if !Task.isCancelled { self.error = L10n.error(error) } }
         }.onDisappear { source = nil }
     }
 }

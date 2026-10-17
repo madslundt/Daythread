@@ -28,7 +28,7 @@ export function DecisionEvidence({ anchor, historical, opposing = false }: { anc
     {source ? <>
       {!passage ? <Notice tone="error">{t("The transcript version or passage has changed. This quotation cannot be located in the current evidence. Edit the record and explicitly attach current evidence before confirming.")}</Notice> : null}
       <p className="caption">{t("Current source transcript ·")}{" "}{source.started_at} · {source.device_id}</p>
-      <p className="transcript-text decision-original">{passage ? <>{passage.before}<mark>{passage.quote}</mark>{passage.after}</> : source.text || "No transcript remains."}</p>
+      <p className="transcript-text decision-original">{passage ? <>{passage.before}<mark>{passage.quote}</mark>{passage.after}</> : source.text || t("No transcript remains.")}</p>
       {source.audio_available === true ? <>
         <audio controls preload="none" src={audioUrl(source.id)} onError={() => setAudioError(true)} aria-label={t("Play supporting source")} />
         {audioError ? <p className="caption">{t("This source audio is currently unavailable.")}</p> : null}

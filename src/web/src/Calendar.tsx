@@ -77,7 +77,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
       </div>
       <p id={keyboardHint} className="sr-only">{t("Use arrow keys to move between days. Home and End move to the start and end of a week. Press Enter to choose a day.")}</p>
       <table ref={grid} className="calendar-grid" aria-label={monthLabel(month)} aria-describedby={keyboardHint}>
-        <thead><tr>{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+        <thead><tr>{[t("Mon"), t("Tue"), t("Wed"), t("Thu"), t("Fri"), t("Sat"), t("Sun")].map((weekday) => (
           <th key={weekday} scope="col">{t(weekday)}</th>
         ))}</tr></thead>
         <tbody>{Array.from({ length: days.length / 7 }, (_, week) => (
@@ -87,7 +87,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
                 data-day={value} disabled={value > today} aria-pressed={value === day}
                 tabIndex={value === tabDay ? 0 : -1}
                 aria-current={value === today ? "date" : undefined}
-                aria-label={`${dayLabel(value, true)}${summaries.has(value) ? ", summary available" : ""}`}
+                aria-label={`${dayLabel(value, true)}${summaries.has(value) ? t(", summary available") : ""}`}
                 onFocus={() => setActiveDay(value)}
                 onClick={() => onDay(value)}
                 onKeyDown={(event) => {
@@ -133,7 +133,7 @@ export function DateNavigator({ day, today, onDay }: CalendarProps) {
         disabled={day <= "0001-01-01"} aria-label={t("Previous day")}>
         <Icon name="chevron-left" size={19} />
       </button>
-      <button type="button" className="date-picker calendar-trigger" aria-label={`Choose day, ${dayLabel(day)}`}
+      <button type="button" className="date-picker calendar-trigger" aria-label={t("Choose day, {value0}", { value0: dayLabel(day) })}
         aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
         <span>{dayLabel(day)}</span>
       </button>

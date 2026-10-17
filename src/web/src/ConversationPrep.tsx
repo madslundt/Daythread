@@ -100,7 +100,7 @@ export function ConversationPrep({
           setLatest("");
           setResult(undefined);
           setError(
-            "Evidence changed. Find discussions again; your draft is retained.",
+            t("Evidence changed. Find discussions again; your draft is retained."),
           );
         }
       } catch (failure) {
@@ -110,7 +110,7 @@ export function ConversationPrep({
         setSelected([]);
         setLatest("");
         setError(
-          "Could not verify current evidence. Find discussions again. " +
+          t("Could not verify current evidence. Find discussions again. ") +
             errorMessage(failure),
         );
       } finally {
@@ -208,7 +208,7 @@ export function ConversationPrep({
           onClick={() => {
             if (
               !draft ||
-              window.confirm("Discard this preparation and unsaved context?")
+              window.confirm(t("Discard this preparation and unsaved context?"))
             )
               onClose();
           }}
@@ -285,7 +285,7 @@ export function ConversationPrep({
           </label>
         </div>
         <p className="caption">
-          {start || end ? `Inclusive dates in ${zone}` : t("All retained dates")}{t(". Literal matches can miss unnamed discussions. Add an alternate phrase or browse Rewind if no match appears.")}{" "}</p>
+          {start || end ? t("Inclusive dates in {value0}", { value0: zone }) : t("All retained dates")}{t(". Literal matches can miss unnamed discussions. Add an alternate phrase or browse Rewind if no match appears.")}{" "}</p>
         <label>
           {t("My context and goals · user-authored, not recorded evidence")}{" "}<textarea
             rows={3}

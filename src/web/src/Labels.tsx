@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { navigatePath, subscribeNavigation } from "./routing";
 import { ImportanceButton, ImportantBadge } from "./Importance";
@@ -226,7 +227,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
         <>
           <div className="section-heading">
             <div>
-              <p className="caption">{data.entity.kind}</p>
+              <p className="caption">{statusLabel(data.entity.kind)}</p>
               <h2>{data.entity.name}</h2>
               <ImportanceButton target={{ kind: "label", id: data.entity.id }} label={data.entity.name} />
               <p>{data.entity.description}</p>
@@ -318,7 +319,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
               {entry.entry_type === "decision" ? (
                 <>
                   <p className="caption">
-                    {t("Decision register ·")}{" "}{entry.decision?.review_status} {t("· evidence")}{" "}{entry.decision?.evidence_condition}
+                    {t("Decision register ·")}{" "}{statusLabel(entry.decision?.review_status)} {t("· evidence")}{" "}{statusLabel(entry.decision?.evidence_condition)}
                   </p>
                   <h3>{entry.title}</h3>
                   <button
@@ -329,12 +330,12 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                 </>
               ) : entry.entry_type === "note" ? (
                 <>
-                  <p className="caption">{kinds[entry.kind || ""]}</p>
+                  <p className="caption">{t(kinds[entry.kind || ""] || "")}</p>
                   <h3>{entry.title}</h3>
                   <p className="transcript-text">{entry.body}</p>
                 </>
               ) : (
-                <p>{meanings[entry.relation || ""]}</p>
+                <p>{t(meanings[entry.relation || ""] || "")}</p>
               )}
               {entry.needs_review ? (
                 <p className="label-review" role="status">
@@ -388,8 +389,8 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
                     if (
                       window.confirm(
                         entry.entry_type === "note"
-                          ? "Delete this annotation? Recordings are kept."
-                          : "Detach this association? Recordings are kept.",
+                          ? t("Delete this annotation? Recordings are kept.")
+                          : t("Detach this association? Recordings are kept."),
                       )
                     )
                       void mutation.mutate({

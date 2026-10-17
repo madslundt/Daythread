@@ -64,6 +64,34 @@ The phone preserves compressed source frames and uploads decoded 30-second WAV c
 
 Use capture time, not upload time, throughout. The BLE sequence counter detects loss and wraps; it is not a wall clock. Anchor frames to a monotonic phone clock, persist the wall-clock mapping, and do not stitch across missing frames as though speech were continuous. After reconnect, handle hardware storage import only if the actual model supports a confirmed protocol. Disconnected physical button-event preservation is unconfirmed; a phone queue only protects events already received.
 
+## Location context
+
+Opt-in phone observations attach to audio chunks before upload through the durable outbox. Latitude,
+longitude, horizontal accuracy and observation time are capture metadata, separate from transcript
+claims and spoken destinations. Stale/unusable fixes are omitted, retries preserve the original
+observation, and recording deletion/transcript expiry removes location from the active archive.
+Native capture sessions request bounded-accuracy background updates only while enabled and connected.
+
+Decision follow-ups can propose undated arrival/departure reminders with exact cited place phrases.
+The owner resolves the actual place on iPhone; EventKit saves the confirmed geofence in Apple
+Reminders. The backend neither resolves ambiguous places nor monitors the phone's movements.
+Calendar events keep their location in the native editor; portable exports reject proximity alerts.
+See [location behavior, API and physical acceptance](location-support.md).
+
+Zone definitions are per-profile archive records with stable UUIDs and versioned edits. Each zone
+contains multiple labeled circles with independent radii. Query-time spatial matching uses original
+recording GPS observations; zone edits reclassify existing recordings without changing evidence or
+retry receipts. Filters run before counting, grouping and paging and retain their scope through
+expanded recording groups. Full-day summaries remain unfiltered and are explicitly distinguished
+from the selected recording filter. Zone definitions are included in archive backups.
+
+Conversation tags are separate user-owned categories attached to stable source UUIDs. A group edit
+resolves its complete unfiltered day membership under one transaction and checks a membership
+fingerprint plus a tag revision. Later uploads do not inherit tags implicitly. Queries combine tag
+and zone filters before paging, while raw capture coordinates, source versions and transcripts
+remain unchanged. Deletion/expiry removes assignments, and archive backups preserve the vocabulary
+and remaining links. See [conversation tag scope and API](conversation-tags.md).
+
 ## Optional official audio receiver
 
 `POST /v1/integrations/omi/audio` accepts token-protected official PCM webhooks into the existing durable worker/archive. It validates bounded aligned 8/16 kHz input, converts to archive WAV, and commits audio plus a transactional retry receipt before HTTP 200. Each request remains its own source, with `source_kind=omi_audio_webhook`, supplied account UID and sample metadata. Bounds estimate a chunk ending at server receipt; no capture clock/device/session sequence is supplied. Coverage keeps these estimates separate and does not remove unknown capture intervals. Matching `(uid, Idempotency-Key)` retries reuse acceptance, including after retention/deletion; unkeyed requests remain separate. Inference stays outside the request path.
@@ -71,6 +99,47 @@ Use capture time, not upload time, throughout. The BLE sequence counter detects 
 Current upstream sends from Omi’s backend and blocks private destinations. Hosted delivery requires separately provisioned HTTPS access to only this endpoint; phone LAN/VPN reachability alone is insufficient. The archive API/UI stays private and unauthenticated. This task provisions no ingress. See [the verified contract, setup, timing/duplicate/concurrency policies and physical checks](official-audio-forwarding.md). Forwarding does not establish cloud-free operation or continuous capture.
 
 ## Bounded contexts and records
+
+### Recording vendors and import adapters
+
+Brand identity is independent of transport. `vendor_catalog.py` declares each brand's stable ID,
+display name, setup instructions, and capabilities (`file_upload`, `transcript_import`,
+`transcript_export`, `local_capture`, `audio_webhook`). Web and native audio import pickers read
+`GET /v1/vendors`; adding an audio-export brand requires a catalog entry and translations.
+Catalog entries advertise implemented paths, never inferred Bluetooth compatibility.
+
+Cloud transcript adapters inherit `TranscriptAdapter` in `vendor_imports.py` and implement
+`fetch_page(VendorImportRequest) -> VendorPage`. They return `VendorRecording` values containing
+the upstream ID, original timezone-aware capture bounds, original speech, and optional relative
+transcript segments. Missing/unfinished transcripts return `None`. Adapters own vendor wire
+formats, authentication and pagination; the shared importer validates the complete page, commits
+atomically, indexes speech, and preserves local edits and retention on retries. Stable UUIDs use
+the adapter's identity namespace plus upstream ID. Deletion tombstones include source kind and
+upstream ID, so deleting one brand's recording never suppresses another brand's same upstream ID.
+Imported transcripts are completed conversations with no playable audio; vendor summaries do
+not enter source evidence. New cloud adapters add a backend-only `SecretStr` setting and register
+in `ProfileRuntime.vendors`; credentials use the existing private configuration editor and are
+excluded from archive exports. Pagination must advance and remote reads must remain bounded,
+use fixed official HTTPS endpoints, and reject redirects without exposing upstream diagnostics.
+
+`POST /v1/vendors/{id}/import` imports one bounded cloud page into the selected profile.
+Omi retains its existing routes and deterministic recording IDs. Pocket uses its official public
+list/detail endpoints and `recording_at` plus duration, with exact local date filtering over the
+API's UTC-day filters. This imports hosted transcripts; it does not pair with Pocket hardware.
+
+Plaud uses `POST /v1/vendors/plaud/import-export` with SRT/TXT transcript content, explicit original
+`started_at`/`ended_at`, and an optional upstream `source_id`. With no ID, retry identity hashes
+the unchanged export and capture bounds; changed exports require the original ID to deduplicate.
+Plaud's documented consumer access does not provide a general API-key REST contract, so no
+invented Plaud credential or private endpoint is used. See the official [export formats](https://support.plaud.ai/hc/en-us/articles/51023259082393-Export-recordings-transcripts-and-summaries)
+and [API availability](https://support.plaud.ai/hc/en-us/articles/60726890231449-How-can-I-get-API-access-to-my-Plaud-data).
+
+Exported audio retains `source_kind=manual_upload`, its filename, and the selected
+`source_metadata.vendor_id`. The upload plan captures that brand before transfer and validates
+it for every chunk. Retrying an interrupted upload keeps its original brand, IDs and times even
+if another client selects a different brand. Existing plans and clients default to manual upload.
+Apple Voice Memos, Sony and Zoom recorders are supported through audio export; direct hardware
+capture for those brands is not implemented. Supported codecs and audio limits are unchanged.
 
 The optional Omi adapter fetches `/v1/dev/user/conversations` with transcripts enabled. It validates a bounded page before an atomic write, assigns deterministic local UUIDs from upstream IDs, and records `source_kind=omi_api` plus the original `source_id`. Imported records are already transcribed, have `audio_available=false`, and never enter the STT queue. Their segment timestamps remain relative to the conversation's UTC `started_at`, matching the archive segment format. Repeated imports skip existing IDs to preserve local corrections and retention. Summaries are not imported as evidence. Existing search, diary, chat, retention and backup behavior applies to both input paths. This adapter does not download device storage, provide hosted audio playback, or export local capture to Omi.
 

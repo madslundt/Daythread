@@ -12,6 +12,7 @@ import { Rewind, type RewindIntent } from "./Rewind";
 import { Settings } from "./Settings";
 import { Today } from "./Today";
 import { UploadDialog } from "./UploadDialog";
+import { BrowserRecorder } from "./BrowserRecorder";
 import { errorMessage, newId, post } from "./api";
 import { localDay, remainingCooldown, timeLabel } from "./format";
 import { Icon } from "./Icon";
@@ -21,8 +22,15 @@ import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { Loading, Notice } from "./UI";
 import { useInterfaceLanguage } from "./i18n";
+import { ManagedAccountBadge, ManagedAccountProvider, ManagedArchiveGate, useManagedAccount } from "./ManagedAccount";
+import { managedServiceUrl } from "./managedService";
 
 export default function App() {
+  useInterfaceLanguage();
+  return <ManagedAccountProvider><ManagedArchiveGate><ArchiveApp /></ManagedArchiveGate></ManagedAccountProvider>;
+}
+
+function ArchiveApp() {
   useInterfaceLanguage();
   const directory = useResource<ProfileDirectory>("/v1/profiles");
   const [selected, setSelected] = useState<string | null>();
@@ -61,6 +69,9 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
   profileError: string;
   onRetryProfiles: () => void;
 }) {
+  const language = useInterfaceLanguage();
+  const { managed, account } = useManagedAccount();
+  const recordingOwner = JSON.stringify([account?.id ?? "local", selected]);
   const [statusInterval, setStatusInterval] = useState(30_000);
   const status = useResource<Status>(selected ? "/v1/status" : null, selected ? statusInterval : 0);
   const processingBusy = !!status.data?.processing &&
@@ -109,7 +120,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
     return () => window.removeEventListener("omi:archive-changed", update);
   }, [status.refresh, timeline.refresh]);
   function navigate(next: Page, path = hrefForPage(next)) {
-    if (prepOpen && prepDirty && !window.confirm("Discard this preparation and unsaved context?")) return;
+    if (prepOpen && prepDirty && !window.confirm(t("Discard this preparation and unsaved context?"))) return;
     setPrepOpen(false);
     setChatIntent(undefined);
     if (next === "today") setSelectedDay(undefined);
@@ -129,7 +140,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
     timeline.refresh();
     setVersion((value) => value + 1);
     setNotice(
-      "Audio uploaded. Follow transcription progress under Capture & sync.",
+      t("Audio uploaded. Follow transcription progress under Capture & sync."),
     );
   }
   function rewind(minutes: number) {
@@ -143,7 +154,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
   const current = pages.find((item) => item.id === page)!;
   const showDate = page === "today" || page === "diary";
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
-  useEffect(() => { document.title = `${prepOpen ? t("Prepare") : t(current.label)} · Daythread`; }, [current.label, prepOpen]);
+  useEffect(() => { document.title = t("{value0} · Daythread", { value0: prepOpen ? t("Prepare") : t(current.label) }); }, [current.label, prepOpen, language]);
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>{t("Skip to content")}</a>
@@ -159,6 +170,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
         </a>
         <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} />
         <div className="sidebar-footer">
+          <ManagedAccountBadge placement="sidebar" />
           <div className="backend-indicator">
             <span
               className={`status-dot ${status.data && !status.error ? "online" : ""}`}
@@ -167,7 +179,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
               ? t("Backend offline")
               : !selected
                 ? t("Choose a profile in settings")
-                : status.data ? t("Local backend") : t("Connecting…")}
+                : status.data ? managed ? t("Managed hosting") : t("Local backend") : t("Connecting…")}
           </div>
         </div>
       </aside>
@@ -193,6 +205,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
               <img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="28" height="28" />
               <span>{t("Daythread")}</span>
             </a>
+            <ManagedAccountBadge placement="header" />
             {showDate ? (
               <DateNavigator
                 day={day}
@@ -238,6 +251,12 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
         {notice ? (
           <Notice onDismiss={() => setNotice("")}>{notice}</Notice>
         ) : null}
+        {managed && account && !account.hosting_active ? <Notice>
+          {t("Hosting is inactive. Your saved archive is still available.")}{" "}
+          <a className="text-link" href={managedServiceUrl("/account")}>{t("Manage account")}</a>
+        </Notice> : null}
+        {selected ? <BrowserRecorder key={recordingOwner} owner={recordingOwner} timezone={timezone}
+          visible={page === "today" && !prepOpen} onUploaded={uploaded} /> : null}
         {timeline.data?.active_meeting ? (
           <ActiveMeeting timeline={timeline.data} timezone={timezone} />
         ) : null}
@@ -344,13 +363,13 @@ function HintActions({
       onMessage(
         action === "mark"
           ? markAccepted
-            ? "Important moment marked. Nearby speech will be treated as context."
-            : "A nearby moment was already marked. This click was ignored during the flag cooldown."
+            ? t("Important moment marked. Nearby speech will be treated as context.")
+            : t("A nearby moment was already marked. This click was ignored during the flag cooldown.")
           : active
             ? Date.now() < Date.parse(active.qualifies_at)
-              ? `Meeting hint ignored because it lasted less than ${minimum} seconds. Your recording is kept.`
-              : "Meeting hint ended. Its timing guides interpretation of nearby speech."
-            : `Meeting hint started. Hints shorter than ${minimum} seconds are ignored.`,
+              ? t("Meeting hint ignored because it lasted less than {value0} seconds. Your recording is kept.", { value0: minimum })
+              : t("Meeting hint ended. Its timing guides interpretation of nearby speech.")
+            : t("Meeting hint started. Hints shorter than {value0} seconds are ignored.", { value0: minimum }),
       );
     } catch (error) {
       onMessage(errorMessage(error));
@@ -366,12 +385,12 @@ function HintActions({
         disabled={busy || !timeline || remaining > 0}
         title={
           remaining
-            ? `Another flag can be added in ${remaining} seconds`
+            ? t("Another flag can be added in {value0} seconds", { value0: remaining })
             : t("Mark the surrounding conversation as important")
         }
       >
         <Icon name="star" />
-        {remaining ? `Marked · wait ${remaining}s` : t("Mark important")}
+        {remaining ? t("Marked · wait {value0}s", { value0: remaining }) : t("Mark important")}
       </button>
       <button
         className={`button ${active ? "dark" : "accent"}`}

@@ -80,6 +80,14 @@ xcodebuild -project Daythread.xcodeproj -scheme Daythread \
 
 The project file is included; regenerate it when changing `project.yml`. Physical signing/install, actual pendant pairing, button timing, and screen-locked/background endurance still need the purchased hardware. See [device evidence and acceptance checks](device-research.md).
 
+## Conversation tags
+
+See [manual conversation tags](conversation-tags.md) for adding/removing tags on web and iPhone, combined tag/location filtering, source provenance, and API behavior.
+
+## GPS and nearby reminders
+
+See [conversation locations and nearby reminders](location-support.md) for the opt-in iPhone capture setting, place confirmation, permissions, API fields, retention, and physical-device checks.
+
 ## Completion notifications on iPhone
 
 Rewinds, daily and meeting recaps, and transcript translations requested from the iPhone use durable home-core jobs. Once accepted, work continues when the app is closed, with saved results available from the completion notification. Weekly reviews and automatically generated daily recaps also publish completion notices. While Daythread is active, a foreground feed shows internal banners and the Notifications list; the notification delegate suppresses system banners and sounds even when a push races with reopening the app.

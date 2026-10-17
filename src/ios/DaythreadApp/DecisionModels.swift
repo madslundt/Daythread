@@ -62,7 +62,7 @@ struct DecisionRecord: Codable, Identifiable {
     let predecessor_id: String?
     let successor_id: String?
     let history: [DecisionHistory]?
-    var title: String { content?.choice.text ?? "Removed decision" }
+    var title: String { content?.choice.text ?? L10n.text("Removed decision") }
 }
 struct DecisionHistory: Codable {
     let version: Int

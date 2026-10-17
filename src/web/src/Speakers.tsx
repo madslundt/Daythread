@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage } from "./api";
@@ -116,7 +117,7 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
 
   async function forgetVoice(profile: VoiceProfile, exampleId?: string) {
     if (loading || busy || activeMutation.current || !voices) return;
-    if (!window.confirm(exampleId ? `Remove this saved voice example for ${profile.name}? Confirmed conversation names stay unchanged.` : `Forget the saved voice ${profile.name} and all its examples? Future conversations will no longer suggest this voice. Confirmed conversation names stay unchanged.`)) return;
+    if (!window.confirm(exampleId ? t("Remove this saved voice example for {value0}? Confirmed conversation names stay unchanged.", { value0: profile.name }) : t("Forget the saved voice {value0} and all its examples? Future conversations will no longer suggest this voice. Confirmed conversation names stay unchanged.", { value0: profile.name }))) return;
     const epoch = ++operationEpoch.current;
     activeMutation.current = true; setBusy(true); setVoiceError("");
     try {
@@ -137,7 +138,7 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     onConfirm={(speaker, profile) => void mutate("POST", `/${encodeURIComponent(speaker)}/confirm`, { profile_id: profile, version: data?.version })}
     onRetry={() => setRevision((value) => value + 1)} onDetect={() => {
       const reset = data?.state !== "idle";
-      if (reset && !window.confirm("Detect speakers again? This replaces the existing speaker labels, names and turn assignments for this conversation or meeting.")) return;
+      if (reset && !window.confirm(t("Detect speakers again? This replaces the existing speaker labels, names and turn assignments for this conversation or meeting."))) return;
       void mutate("POST", "", reset ? { reset: true } : undefined);
     }}
     onRename={(speaker, name) => void mutate("PATCH", `/${encodeURIComponent(speaker)}`, { name, version: data?.version })}
@@ -147,7 +148,7 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     {selected && data?.version ? <div className="speaker-playback">
       <p className="caption">{t("Listening to")}{" "}{speakerName(selected)} {t("· speaking turns joined in order.")}</p>
       <audio key={`${selected.id}:${data.version}`} ref={bindAudio} controls autoPlay preload="none"
-        aria-label={`Listen to ${speakerName(selected)} only`} src={requests.audioUrl(selected.id, data.version)}
+        aria-label={t("Listen to {value0} only", { value0: speakerName(selected) })} src={requests.audioUrl(selected.id, data.version)}
         onError={() => setAudioError(true)} />
       {audioError ? <p className="caption" role="alert">{t("Speaker audio is unavailable. The original audio may have expired. Refresh speakers to check again.")}</p> : null}
     </div> : null}
@@ -178,7 +179,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
   const speakers = new Map(data?.speakers.map((speaker) => [speaker.id, speaker]));
   return <section className="speakers-panel" aria-label={t("Speakers")}>
     <div className="speaker-heading">
-      <h3>{data?.speakers.length ? `${data.speakers.length} ${data.speakers.length === 1 ? "speaker" : "speakers"} detected` : t("Speakers")}</h3>
+      <h3>{data?.speakers.length ? t("{value0} {value1} detected", { value0: data.speakers.length, value1: data.speakers.length === 1 ? t("speaker") : t("speakers") }) : t("Speakers")}</h3>
       <button type="button" className="button small" onClick={onDetect}
         disabled={loading || busy || !data?.configured || !data?.audio_available}>
         {detecting ? t("Detecting speakers…") : busy ? t("Saving…") : data?.state !== "idle" && data ? t("Detect speakers again") : t("Detect speakers")}
@@ -187,7 +188,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
     {loading ? <p className="caption" role="status">{t("Loading speakers…")}</p> : null}
     {detecting ? <p className="caption" role="status">{t("Analyzing retained audio with your local speaker service. This may take a few minutes.")}</p> : null}
     {error ? <ErrorState message={error} retry={onRetry} /> : null}
-    {data?.recognition || voices?.recognition ? <p className="caption" role="status">{(data?.recognition || voices?.recognition)?.message}</p> : null}
+    {data?.recognition || voices?.recognition ? <p className="caption" role="status">{t((data?.recognition || voices?.recognition)?.message || "")}</p> : null}
     <p className="caption">{t("Voice profiles stay in the selected archive. A suggestion never changes a name until you confirm it.")}</p>
     {voiceError ? <ErrorState message={voiceError} retry={onRetry} /> : null}
     {onForget ? <VoiceProfilesManager voices={voices} busy={busy || loading} onForget={onForget} /> : null}
@@ -197,7 +198,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
     {stale ? <p className="caption" role="status">{t("The recordings or transcript changed. Detect speakers again before editing labels or listening to their turns.")}</p> : null}
     {data?.state === "ready" && !data.speakers.length ? <p className="caption">{t("No speakers detected in this audio.")}</p> : null}
     {data?.speakers.length ? <>
-      <p className="caption">{t("Names apply only to this")}{" "}{data.scope?.kind === "meeting" ? t("meeting") : t("conversation")}{data.source_count && data.source_count > 1 ? ` across ${data.source_count} recordings` : ""}{t(". Detection can make mistakes; review speaking turns below. Overlapping voices may remain audible.")}</p>
+      <p className="caption">{t("Names apply only to this")}{" "}{data.scope?.kind === "meeting" ? t("meeting") : t("conversation")}{data.source_count && data.source_count > 1 ? t(" across {value0} recordings", { value0: data.source_count }) : ""}{t(". Detection can make mistakes; review speaking turns below. Overlapping voices may remain audible.")}</p>
       {data.speakers.some((speaker) => speaker.remembered_example_id) ? <p className="caption">{t("Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers.")}</p> : null}
       <div className="speaker-list">
         {data.speakers.map((speaker) => <SpeakerEditor key={`${speaker.id}:${speaker.name || ""}:${speaker.voice_profile_id || ""}:${speaker.remembered_example_id || ""}`} speaker={speaker}
@@ -213,7 +214,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
           <div className="speaker-turn-heading">
             <strong>{speakers.has(turn.speaker_id) ? speakerName(speakers.get(turn.speaker_id)!) : t("Unknown speaker")}</strong>
             <span className="caption">{speakerTime(turn.start)}–{speakerTime(turn.end)} {t("in recording")}{" "}{turn.source_id.slice(0, 8)}</span>
-            <label>{t("Speaker")}{" "}<select aria-label={`Speaker for turn at ${speakerTime(turn.start)} in recording ${turn.source_id}`}
+            <label>{t("Speaker")}{" "}<select aria-label={t("Speaker for turn at {value0} in recording {value1}", { value0: speakerTime(turn.start), value1: turn.source_id })}
               value={turn.speaker_id} disabled={!editable} onChange={(event) => onReassign(turn.id, event.target.value)}>
               {data.speakers.map((speaker) => <option key={speaker.id} value={speaker.id}>{speakerName(speaker)}</option>)}
             </select></label>

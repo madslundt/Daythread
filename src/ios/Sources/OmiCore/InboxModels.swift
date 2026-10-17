@@ -8,9 +8,9 @@ public struct InboxDeadline: Codable, Equatable, Sendable {
     public let phrase: String?
     public let basis: String?
     public var label: String {
-        if precision == "date" { return day ?? "Date unknown" }
+        if precision == "date" { return day ?? AppLocalization.text("Date unknown") }
         if precision == "datetime" { return "\(instant ?? "") (\(timezone ?? ""))" }
-        return phrase.map { "Unresolved: \($0)" } ?? "Deadline unknown"
+        return phrase.map { AppLocalization.text("Unresolved: \($0)") } ?? AppLocalization.text("Deadline unknown")
     }
 }
 

@@ -106,3 +106,13 @@ describe("follow-up scheduling and availability", () => {
     expect(followupLinkLabel({ ...event, all_day: false, start_at: "2026-10-25T02:30:00+01:00" }, "Europe/Copenhagen")).toContain("02:30");
   });
 });
+
+it("shows undated proximity suggestions with an iPhone handoff instead of a misleading ICS export", () => {
+  const suggestion = { kind: "reminder" as const, title: "Pick up bike", notes: "", reason: "Errand",
+    start_at: null, end_at: null, due_at: null, all_day: false,
+    location: "Nørrebro Cykler", location_trigger: "arrive" as const };
+  const html = renderToStaticMarkup(<DecisionFollowupAction suggestion={suggestion} requests={new DecisionFollowupRequests(decision)} timezone="Europe/Copenhagen" />);
+  expect(html).toContain("Open on iPhone to set a nearby reminder");
+  expect(html).toContain("Nørrebro Cykler");
+  expect(html).not.toContain("<button");
+});

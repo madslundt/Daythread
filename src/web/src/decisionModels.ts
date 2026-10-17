@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Source } from "./types";
 
 export type DecisionAnchor = {
@@ -36,12 +37,12 @@ export type DecisionExtraction = {
 // Backend offsets count Unicode code points, not JavaScript UTF-16 units.
 export function decisionAnchor(source: Source, quote: string): DecisionAnchor {
   if (!source.source_version || !source.text || !quote.trim())
-    throw new Error("Choose a current transcript and a supporting quotation.");
-  if (Array.from(quote).length > 20000) throw new Error("Choose an excerpt of at most 20,000 characters.");
+    throw new Error(t("Choose a current transcript and a supporting quotation."));
+  if (Array.from(quote).length > 20000) throw new Error(t("Choose an excerpt of at most 20,000 characters."));
   const start = source.text.indexOf(quote);
-  if (start < 0) throw new Error("The quotation must match the transcript exactly.");
+  if (start < 0) throw new Error(t("The quotation must match the transcript exactly."));
   if (source.text.indexOf(quote, start + 1) >= 0)
-    throw new Error("This quotation occurs more than once. Include more context to identify it.");
+    throw new Error(t("This quotation occurs more than once. Include more context to identify it."));
   const offset = Array.from(source.text.slice(0, start)).length;
   return { source_id: source.id, source_version: source.source_version, quote, start: offset, end: offset + Array.from(quote).length };
 }

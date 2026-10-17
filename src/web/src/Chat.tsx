@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { profileStorageKey } from "./profiles";
 import { useEffect, useRef, useState } from "react";
@@ -76,8 +77,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     : scope.kind === "range"
       ? `${dayLabel(scope.start_day, true)} – ${dayLabel(scope.end_day, true)}`
     : scope.kind === "meeting"
-      ? selectedMeeting ? `Meeting · ${dateTimeLabel(selectedMeeting.started_at, timezone)}` : "Selected meeting"
-      : "All diaries (all days)";
+      ? selectedMeeting ? t("Meeting · {value0}", { value0: dateTimeLabel(selectedMeeting.started_at, timezone) }) : t("Selected meeting")
+      : t("All diaries (all days)");
   useEffect(() => {
     try {
       if (sessionId) localStorage.setItem(storageKey, sessionId);
@@ -160,7 +161,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       <aside className="chat-index">
         <div className="chat-index-heading">
           <h2>{t("Conversations")}</h2>
-          {sessions.data?.items.length ? <span aria-label={`${sessions.data.items.length} saved conversations`}>{sessions.data.items.length}</span> : null}
+          {sessions.data?.items.length ? <span aria-label={t("{value0} saved conversations", { value0: sessions.data.items.length })}>{sessions.data.items.length}</span> : null}
         </div>
         <button
           type="button"
@@ -290,7 +291,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                 {message.stale ? <p className="caption" role="status">{t("Historical answer: its transcript evidence has changed. Ask again for a current answer.")}</p> : null}
                 <RichText text={message.content} />
                 {message.role === "assistant" ? <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} /> : null}
-                {message.retrieval_details?.notice ? <p className="caption">{message.retrieval_details.notice}</p> : null}
+                {message.retrieval_details?.notice ? <p className="caption">{t(message.retrieval_details.notice)}</p> : null}
                 {message.sources.length ? (
                   <details className="chat-sources">
                     <summary>
@@ -314,8 +315,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             ))
           ) : !sending && !conversation.error ? (
             <EmptyState icon="chat" title={scope.kind === "day" ? t("Ask about this day") : scope.kind === "range" ? t("Ask about this date range") : scope.kind === "meeting" ? t("Ask about this meeting") : t("A little help remembering")}
-              action={<div className="chat-starters" aria-label={"Suggested questions"}>
-                {["What were the key decisions?", "What should I follow up on?", "Summarize the main themes."].map((prompt) => (
+              action={<div className="chat-starters" aria-label={t("Suggested questions")}>
+                {[t("What were the key decisions?"), t("What should I follow up on?"), t("Summarize the main themes.")].map((prompt) => (
                   <button type="button" className="chat-starter" key={prompt} onClick={() => {
                     setQuestion(prompt);
                     composer.current?.focus();

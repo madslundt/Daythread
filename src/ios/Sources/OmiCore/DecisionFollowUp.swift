@@ -11,6 +11,12 @@ public struct DecisionFollowUp: Codable, Equatable {
     public let due_at: String?
     public let all_day: Bool
     public let location: String
+    public enum LocationTrigger: String, Codable { case arrive, leave }
+    public var location_trigger: LocationTrigger? = nil
+
+    public var hasLocationTrigger: Bool {
+        kind == .reminder && location_trigger != nil && !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     public func actionDate(timeZone: TimeZone) -> Date? {
         Self.date(kind == .event ? start_at : due_at, allDay: all_day, timeZone: timeZone)

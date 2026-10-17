@@ -20,17 +20,22 @@ export function DecisionFollowupAction({ suggestion, requests, timezone }: { sug
   const [downloaded, setDownloaded] = useState(false);
   const event = suggestion.kind === "event";
   const label = followupLinkLabel(suggestion, timezone);
-  const action = `${event ? "Add to calendar" : "Add reminder"}: ${suggestion.title}`;
+  const action = `${event ? t("Add to calendar") : t("Add reminder")}: ${suggestion.title}`;
   async function open() {
     setBusy(true); setError("");
     try { setDownloaded(await openFollowup(requests, suggestion)); }
     catch (error) { setError(errorMessage(error)); }
     finally { setBusy(false); }
   }
+  if (suggestion.location_trigger && suggestion.kind === "reminder" && suggestion.location.trim()) {
+    return <span className="caption" title={suggestion.title}>
+      {t("Open on iPhone to set a nearby reminder")}{" · "}{suggestion.location}
+    </span>;
+  }
   if (!label) return null;
   return <span className="decision-inline-action">
     <button type="button" className="decision-action-link" disabled={busy || downloaded} aria-label={action}
-      title={downloaded ? `File downloaded. Open it in your ${event ? "calendar" : "reminder"} app to add it.` : suggestion.reason ? `${action}. ${suggestion.reason}` : action} onClick={() => void open()}>
+      title={downloaded ? t("File downloaded. Open it in your {value0} app to add it.", { value0: event ? t("calendar") : t("reminder") }) : suggestion.reason ? `${action}. ${suggestion.reason}` : action} onClick={() => void open()}>
       {busy ? t("Opening…") : label}{downloaded ? " ✓" : ""}
     </button>
     {error ? <span className="decision-link-error" role="alert">{error}</span> : null}
@@ -59,7 +64,7 @@ export function DecisionFollowups({ decision, timezone }: { decision: Decision; 
   }, [decision.id, decision.version, eligible, requests]);
   if (!eligible) return null;
   const suggestions = result?.suggestions || [];
-  const actions = suggestions.filter((item) => item.kind === "event" ? item.start_at : item.due_at);
+  const actions = suggestions.filter((item) => item.kind === "event" ? item.start_at : item.due_at || (item.location_trigger && item.location.trim()));
   if (!busy && !error && !actions.length) return null;
   return <span className="decision-action-links" role="group" aria-label={t("Add this decision to your apps")}>
     {actions.map((suggestion) => <DecisionFollowupAction key={JSON.stringify(suggestion)} suggestion={suggestion} requests={requests} timezone={result?.timezone || timezone} />)}

@@ -1,4 +1,5 @@
 export type Source = {
+  tags?: { id: string; name: string }[];
   alternate_sources?: Source[];
   id: string;
   device_id: string;
@@ -12,8 +13,12 @@ export type Source = {
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;
+  vendor_id?: string;
+  vendor_label?: string;
   timestamp_basis?: string;
   source_metadata?: {
+    vendor_id?: string;
+    location?: { latitude: number; longitude: number; horizontal_accuracy: number; captured_at: string };
     input_sample_rate?: number; archive_sample_rate?: number;
     recording_id?: string; part_index?: number; part_count?: number;
     conversation_source_id?: string;

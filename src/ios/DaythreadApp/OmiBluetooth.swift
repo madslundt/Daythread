@@ -9,14 +9,14 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     static let codecID = CBUUID(string: "19b10002-e8f2-537e-4f6c-d104768a1214")
     static let buttonService = CBUUID(string: "23ba7924-0000-1000-7450-346eac492e92")
     static let buttonID = CBUUID(string: "23ba7925-0000-1000-7450-346eac492e92")
-    var status = "Bluetooth starting"
+    var status = L10n.source("Bluetooth starting")
     var devices: [CBPeripheral] = []
     var connected = false
     var scanning = false
     var battery: Int?
     var codec: Int?
-    var model = "Unknown"
-    var firmware = "Unknown"
+    var model = L10n.source("Unknown")
+    var firmware = L10n.source("Unknown")
     var name = "Omi"
     var buttonAvailable = false
     var identifier: String { peripheral?.identifier.uuidString ?? "iphone" }
@@ -41,8 +41,8 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         ])
     }
     func scan() {
-        guard manager.state == .poweredOn else { status = "Enable Bluetooth in Settings"; return }
-        wanted = true; scanning = true; devices = []; status = "Looking for Omi"
+        guard manager.state == .poweredOn else { status = L10n.source("Enable Bluetooth in Settings"); return }
+        wanted = true; scanning = true; devices = []; status = L10n.source("Looking for Omi")
         // Foreground pairing also finds firmware that advertises a name without the audio service.
         // Reconnection uses the saved peripheral identifier, including in the background.
         manager.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
@@ -53,7 +53,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
             manager.cancelPeripheralConnection(previous)
             lostConnection()
         }
-        peripheral = device; device.delegate = self; status = "Connecting to \(device.name ?? "Omi")"
+        peripheral = device; device.delegate = self; status = L10n.source("Connecting to \(device.name ?? "Omi")")
         UserDefaults.standard.set(device.identifier.uuidString, forKey: "pairedDevice")
         manager.connect(device, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
     }
@@ -69,13 +69,13 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
                 if peripheral.state == .connected { configure(peripheral); return }
                 if peripheral.state == .connecting { return }
             }
-            status = "Ready to pair"
+            status = L10n.source("Ready to pair")
             if let text = UserDefaults.standard.string(forKey: "pairedDevice"), let id = UUID(uuidString: text),
                let known = central.retrievePeripherals(withIdentifiers: [id]).first { connect(known) }
-        case .unauthorized: lostConnection(); status = "Bluetooth permission denied. Enable access in iPhone Settings."
-        case .poweredOff: lostConnection(); status = "Bluetooth is off"
-        case .unsupported: lostConnection(); status = "Bluetooth is unavailable"
-        default: lostConnection(); status = "Bluetooth resetting"
+        case .unauthorized: lostConnection(); status = L10n.source("Bluetooth permission denied. Enable access in iPhone Settings.")
+        case .poweredOff: lostConnection(); status = L10n.source("Bluetooth is off")
+        case .unsupported: lostConnection(); status = L10n.source("Bluetooth is unavailable")
+        default: lostConnection(); status = L10n.source("Bluetooth resetting")
         }
     }
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
@@ -102,19 +102,19 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         guard !connected || peripheral?.identifier != device.identifier else { return }
         clearCapabilities(); capabilityFailure = false
         peripheral = device; device.delegate = self; connected = true
-        name = device.name ?? "Omi"; status = "Reading device capabilities"
+        name = device.name ?? "Omi"; status = L10n.source("Reading device capabilities")
         device.discoverServices([Self.audioService, Self.buttonService, CBUUID(string: "180F"), CBUUID(string: "180A")])
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier else { return }
-        status = error?.localizedDescription ?? "Could not connect"; onError?(status)
+        status = error?.localizedDescription ?? L10n.source("Could not connect"); onError?(status)
         if wanted { central.connect(peripheral) }
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier else { return }
         lostConnection()
         if capabilityFailure { return }
-        status = wanted ? "Disconnected; waiting for Omi" : "Disconnected"
+        status = wanted ? L10n.source("Disconnected; waiting for Omi") : L10n.source("Disconnected")
         if wanted, central.state == .poweredOn { central.connect(peripheral) }
     }
     private func lostConnection() {
@@ -123,7 +123,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     }
     private func clearCapabilities() {
         audio = nil; codec = nil; buttonAvailable = false; battery = nil
-        model = "Unknown"; firmware = "Unknown"; pendingSubscriptions.removeAll()
+        model = L10n.source("Unknown"); firmware = L10n.source("Unknown"); pendingSubscriptions.removeAll()
     }
     private func failCapabilities(_ message: String) {
         capabilityFailure = true; status = message; onError?(message)
@@ -131,24 +131,24 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
-        if let error { failCapabilities("Cannot read Omi services: \(error.localizedDescription)"); return }
+        if let error { failCapabilities(L10n.source("Cannot read Omi services: \(L10n.error(error))")); return }
         guard peripheral.services?.contains(where: { $0.uuid == Self.audioService }) == true else {
-            failCapabilities("This device does not expose the Omi audio service. Choose another device."); return
+            failCapabilities(L10n.source("This device does not expose the Omi audio service. Choose another device.")); return
         }
         for service in peripheral.services ?? [] { peripheral.discoverCharacteristics(nil, for: service) }
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
         if let error {
-            if service.uuid == Self.audioService { failCapabilities("Cannot read Omi audio capabilities: \(error.localizedDescription)") }
-            else { onError?(error.localizedDescription) }
+            if service.uuid == Self.audioService { failCapabilities(L10n.source("Cannot read Omi audio capabilities: \(L10n.error(error))")) }
+            else { onError?(L10n.error(error)) }
             return
         }
         if service.uuid == Self.audioService {
             let characteristics = service.characteristics ?? []
             guard characteristics.contains(where: { $0.uuid == Self.audioID && canNotify($0) }),
                   characteristics.contains(where: { $0.uuid == Self.codecID && $0.properties.contains(.read) }) else {
-                failCapabilities("Omi requires an audio notification characteristic and a readable codec."); return
+                failCapabilities(L10n.source("Omi requires an audio notification characteristic and a readable codec.")); return
             }
         }
         for characteristic in service.characteristics ?? [] {
@@ -172,7 +172,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     private func updateAudioSubscription() {
         guard let audio, codec != nil, !capabilityFailure else { return }
         subscribe(captureEnabled, to: audio)
-        if audio.isNotifying == captureEnabled { status = captureEnabled ? "Receiving audio" : "Capture paused" }
+        if audio.isNotifying == captureEnabled { status = captureEnabled ? L10n.source("Receiving audio") : L10n.source("Capture paused") }
     }
     private func canNotify(_ characteristic: CBCharacteristic) -> Bool {
         characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate)
@@ -188,33 +188,33 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         pendingSubscriptions.remove(characteristic.uuid)
         if characteristic.uuid == Self.buttonID { buttonAvailable = error == nil && characteristic.isNotifying }
         if let error {
-            if characteristic.uuid == Self.audioID { failCapabilities("Omi audio subscription failed: \(error.localizedDescription)") }
-            else { onError?("BLE subscription: \(error.localizedDescription)") }
+            if characteristic.uuid == Self.audioID { failCapabilities(L10n.source("Omi audio subscription failed: \(L10n.error(error))")) }
+            else { onError?(L10n.source("BLE subscription: \(L10n.error(error))")) }
         } else if characteristic.uuid == Self.audioID {
-            status = characteristic.isNotifying ? "Receiving audio" : "Capture paused"
+            status = characteristic.isNotifying ? L10n.source("Receiving audio") : L10n.source("Capture paused")
             updateAudioSubscription()
         }
     }
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
         if let error {
-            if characteristic.uuid == Self.codecID || characteristic.uuid == Self.audioID { failCapabilities("Omi audio read failed: \(error.localizedDescription)") }
-            else { onError?(error.localizedDescription) }
+            if characteristic.uuid == Self.codecID || characteristic.uuid == Self.audioID { failCapabilities(L10n.source("Omi audio read failed: \(L10n.error(error))")) }
+            else { onError?(L10n.error(error)) }
             return
         }
         guard let data = characteristic.value else {
-            if characteristic.uuid == Self.codecID { failCapabilities("Omi returned no codec") }
+            if characteristic.uuid == Self.codecID { failCapabilities(L10n.source("Omi returned no codec")) }
             return
         }
         switch characteristic.uuid {
         case Self.audioID: if captureEnabled { onAudio?(data, Date(), ProcessInfo.processInfo.systemUptime) }
         case Self.buttonID: onButton?(data)
         case Self.codecID:
-            guard let id = data.first else { failCapabilities("Omi returned no codec"); return }
+            guard let id = data.first else { failCapabilities(L10n.source("Omi returned no codec")); return }
             codec = Int(id); onCodec?(Int(id)); updateAudioSubscription()
         case CBUUID(string: "2A19"): battery = data.first.map(Int.init)
-        case CBUUID(string: "2A24"): model = String(data: data, encoding: .utf8) ?? "Unknown"
-        case CBUUID(string: "2A26"): firmware = String(data: data, encoding: .utf8) ?? "Unknown"
+        case CBUUID(string: "2A24"): model = String(data: data, encoding: .utf8) ?? L10n.source("Unknown")
+        case CBUUID(string: "2A26"): firmware = String(data: data, encoding: .utf8) ?? L10n.source("Unknown")
         default: break
         }
     }

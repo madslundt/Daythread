@@ -12,6 +12,8 @@ from uuid import UUID, uuid4
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .completeness import SCHEMA as COMPLETENESS_SCHEMA
 from .completeness import CompletenessStore
+from .conversation_tags import SCHEMA as CONVERSATION_TAGS_SCHEMA
+from .conversation_tags import ConversationTagStore, decorate_tags
 from .decision_export import diary_markdown
 from .decision_store import DECISION_SCHEMA, DecisionStore
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
@@ -22,6 +24,9 @@ from .importance import ImportanceStore
 from .inbox_schema import SCHEMA as INBOX_SCHEMA
 from .label_schema import SCHEMA as LABEL_SCHEMA
 from .label_store import LabelStore
+from .location_zones import SCHEMA as LOCATION_ZONES_SCHEMA
+from .location_zones import LocationZoneStore, contains
+from .locations import CaptureLocation
 from .notification_store import SCHEMA as NOTIFICATION_SCHEMA
 from .notification_store import NotificationStore
 from .processing_progress import SCHEMA as PROCESSING_PROGRESS_SCHEMA
@@ -38,6 +43,7 @@ from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
+from .vendor_imports import SCHEMA as VENDOR_IMPORT_SCHEMA
 from .voice_schema import SCHEMA as VOICE_SCHEMA
 from .weekly_store import SCHEMA as WEEKLY_SCHEMA
 
@@ -63,6 +69,8 @@ CREATE TABLE IF NOT EXISTS diary (
 
 
 class Store(
+    ConversationTagStore,
+    LocationZoneStore,
     NotificationStore,
     ArchiveStore,
     CompletenessStore,
@@ -86,6 +94,8 @@ class Store(
         self.diary_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as db:
             db.executescript(SCHEMA)
+            db.executescript(CONVERSATION_TAGS_SCHEMA)
+            db.executescript(LOCATION_ZONES_SCHEMA)
             db.executescript(FORWARDING_SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
@@ -162,6 +172,7 @@ class Store(
             db.executescript(RECORDING_TOPICS_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
             db.executescript(RECORDING_UPLOADS_SCHEMA)
+            db.executescript(VENDOR_IMPORT_SCHEMA)
             db.executescript(SOURCE_EVIDENCE_SCHEMA)
             db.execute(
                 "INSERT OR IGNORE INTO upload_parts "
@@ -203,6 +214,7 @@ class Store(
     def connect(self):
         db = sqlite3.connect(self.root / "omi.sqlite3", timeout=30)
         db.row_factory = sqlite3.Row
+        db.create_function("location_zone_contains", 3, contains, deterministic=True)
         try:
             with db:
                 yield db
@@ -221,6 +233,12 @@ class Store(
         metadata = UploadGrouping.model_validate(source_metadata or {}).model_dump(
             exclude_none=True, mode="json"
         )
+        if metadata.get("location"):
+            if source_kind or device in {"web", "manual-web"}:
+                raise ValueError("GPS observations apply only to phone capture")
+            CaptureLocation.model_validate(metadata["location"]).validate_capture_time(start)
+        if metadata.get("vendor_id") and source_kind != "manual_upload":
+            raise ValueError("Vendor provenance applies to imported audio files")
         encoded_metadata = json.dumps(metadata, sort_keys=True)
         if metadata.get("recording_started_at") and not (
             datetime.fromisoformat(metadata["recording_started_at"])
@@ -268,6 +286,7 @@ class Store(
                 ):
                     value = json.loads(other["source_metadata"])
                     if (other["device_id"] != device or other["source_id"] != source_id
+                            or value.get("vendor_id") != metadata.get("vendor_id")
                             or value["part_count"] != metadata["part_count"]
                             or value.get("conversation_source_id") != target
                             or value.get("recording_started_at") !=
@@ -375,8 +394,9 @@ class Store(
 
     def get_audio(self, audio_id: str) -> dict | None:
         with self.connect() as db:
+            db.execute("BEGIN")
             row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
-            return dict(row) if row else None
+            return decorate_tags(db, [dict(row)])[0] if row else None
 
     def get_audio_many(self, audio_ids: list[str]) -> dict[str, dict]:
         if not audio_ids:

@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { ApiError, errorMessage, newId, request } from "./api";
@@ -194,7 +195,7 @@ export function NoteEditor({
             <input type="checkbox" checked onChange={() => toggle(source)} />
             <span>
               {dateTimeLabel(source.started_at, timezone)} ·{" "}
-              {source.text || "No speech"}
+              {source.text || t("No speech")}
             </span>
           </label>
         ))}
@@ -225,7 +226,7 @@ export function NoteEditor({
               />
               <span>
                 {dateTimeLabel(source.started_at, timezone)} ·{" "}
-                {source.text || "No speech"}
+                {source.text || t("No speech")}
               </span>
             </label>
           ))}

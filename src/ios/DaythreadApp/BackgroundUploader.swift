@@ -75,22 +75,24 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         }
     }
     private func enforceDestination() {
-        guard let client else { return }
         for task in active.values where task.state != .completed {
-            guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)),
-                  let item = store.items.first(where: { $0.id == id }) else { continue }
-            let expected = uploadURL(for: item, client: client)
-            let originalProfile = task.originalRequest?.value(forHTTPHeaderField: "X-Omi-Profile") ?? "default"
-            if task.originalRequest?.url != expected || originalProfile != item.resolvedProfileID {
-                policyCancellations.insert(task.taskIdentifier)
-                task.cancel()
+            guard let client, let id = task.taskDescription.flatMap(UUID.init(uuidString:)),
+                  let item = store.items.first(where: { $0.id == id }),
+                  item.destinationID == client.destinationIdentity,
+                  task.originalRequest?.value(forHTTPHeaderField: "X-Daythread-Destination") == client.destinationIdentity,
+                  task.originalRequest?.value(forHTTPHeaderField: "X-Daythread-Session") == client.authorization?.sessionID.uuidString,
+                  task.originalRequest?.url == uploadURL(for: item, client: client),
+                  task.originalRequest?.value(forHTTPHeaderField: "X-Omi-Profile") == item.resolvedProfileID else {
+                policyCancellations.insert(task.taskIdentifier); task.cancel(); continue
             }
         }
     }
     private func uploadURL(for item: OutboxItem, client: BackendClient) -> URL {
         switch item.kind {
         case .audio:
-            return client.url("v1/audio/\(item.id.uuidString)", query: ["device_id": item.deviceID, "started_at": DurableStore.stamp(item.capturedAt)])
+            var query = ["device_id": item.deviceID, "started_at": DurableStore.stamp(item.capturedAt)]
+            if let location = item.location { query.merge(location.uploadQuery) { _, new in new } }
+            return client.url("v1/audio/\(item.id.uuidString)", query: query)
         case .event: return client.url("v1/events", query: ["receipt_only": "true"])
         case .gap: return client.url("v1/gaps")
         case .captureState: return client.url("v1/capture-state/\(item.id.uuidString)")
@@ -102,7 +104,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         return store.pending.isEmpty ? "idle" : "waiting"
     }
     func feedback(profileID: String) -> UploadFeedback? {
-        let pending = store.pending.filter { $0.resolvedProfileID == profileID }
+        let pending = store.pending.filter { $0.destinationID == client?.destinationIdentity && $0.resolvedProfileID == profileID }
         guard !pending.isEmpty else { return nil }
         var remaining: Int64 = 0
         for item in pending {
@@ -118,7 +120,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         guard let task = active.values.first(where: { $0.taskDescription.flatMap(UUID.init(uuidString:)).map(ids.contains) == true }),
               let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else {
             let retry = pending.map(\.retryAt).filter { $0 > Date() }.min()
-            let title = retry.map { "Retry scheduled at \($0.formatted(date: .omitted, time: .shortened))" } ?? "Waiting to upload"
+            let title = retry.map { L10n.source("Retry scheduled at \($0.formatted(.dateTime.locale(L10n.locale).hour().minute()))") } ?? L10n.source("Waiting to upload")
             return UploadFeedback(sentBytes: 0, totalBytes: 0, remainingBytes: remaining, title: title, estimatedSeconds: nil)
         }
         let total = max(task.countOfBytesExpectedToSend, fileSizes[id] ?? 0)
@@ -126,25 +128,27 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         remaining = max(0, remaining - sent)
         let confirming = total > 0 && sent >= total
         let waiting = waitingForConnectivity.contains(task.taskIdentifier)
-        let title = waiting ? (uploadWiFiOnly ? "Waiting for Wi-Fi" : "Waiting for connection") : confirming ? "Waiting for server confirmation" : "Uploading"
+        let title = waiting ? (uploadWiFiOnly ? L10n.source("Waiting for Wi-Fi") : L10n.source("Waiting for connection")) : confirming ? L10n.source("Waiting for server confirmation") : L10n.source("Uploading")
         let estimate = waiting || confirming ? nil : rates[task.taskIdentifier]?.remainingSeconds(for: remaining, at: ProcessInfo.processInfo.systemUptime)
         return UploadFeedback(sentBytes: sent, totalBytes: total, remainingBytes: remaining, title: title, estimatedSeconds: estimate)
     }
     func pump() {
         guard !restoring, active.isEmpty, let client,
-              let item = store.pending.first(where: { $0.retryAt <= Date() }) else { return }
+              let item = store.pending(destinationID: client.destinationIdentity).first(where: { $0.retryAt <= Date() }) else { return }
         let file: URL
         do { file = try store.uploadFile(for: item) }
         catch {
-            do { try store.failed(item.id, message: error.localizedDescription) }
-            catch { onError?("Could not persist upload retry: \(error.localizedDescription)") }
-            onError?(error.localizedDescription); Self.scheduleRetry(); return
+            do { try store.failed(item.id, message: L10n.error(error)) }
+            catch { onError?(L10n.source("Could not persist upload retry: \(L10n.error(error))")) }
+            onError?(L10n.error(error)); Self.scheduleRetry(); return
         }
         var request = URLRequest(url: uploadURL(for: item, client: client))
         request.setValue(item.resolvedProfileID, forHTTPHeaderField: "X-Omi-Profile")
         request.allowsCellularAccess = !uploadWiFiOnly
         request.httpMethod = item.kind == .audio || item.kind == .captureState ? "PUT" : "POST"
         request.setValue(item.kind == .audio ? "audio/wav" : "application/json", forHTTPHeaderField: "Content-Type")
+        do { try client.authorize(&request) }
+        catch { onError?(L10n.error(error)); return }
         let task = session.uploadTask(with: request, fromFile: file)
         var rate = TransferRate(); rate.observe(sentBytes: 0, at: ProcessInfo.processInfo.systemUptime)
         rates[task.taskIdentifier] = rate
@@ -157,8 +161,10 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         onProgress?()
     }
     func retry() {
-        do { try store.retryNow(); pump() } catch { onError?(error.localizedDescription) }
+        do { try store.retryNow(); pump() } catch { onError?(L10n.error(error)) }
     }
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         // Audio acknowledgements are small; never accumulate an unbounded error response.
         let remaining = 1_000_000 - (responses[dataTask.taskIdentifier]?.count ?? 0)
@@ -189,7 +195,8 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         if policyCancellations.remove(task.taskIdentifier) != nil { return }
         do {
             if let error { throw error }
-            guard let response = task.response else { throw BackendFailure(message: "Upload ended without an acknowledgement") }
+            guard let response = task.response else { throw BackendFailure(message: L10n.source("Upload ended without an acknowledgement")) }
+            client?.authorization?.expireIfNeeded(response)
             try BackendClient.validate(response, data: data)
             guard let item = store.items.first(where: { $0.id == id }) else { throw CaptureError.invalidReceipt }
             try UploadReceipt.validate(data, for: item)
@@ -206,12 +213,12 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
                 client.router.setActive(next.id)
                 attemptedEndpoints[id, default: []].insert(next.id)
                 do { try store.retryNow(id) }
-                catch { onError?("Could not persist fallback upload retry: \(error.localizedDescription)") }
+                catch { onError?(L10n.source("Could not persist fallback upload retry: \(L10n.error(error))")) }
             } else {
                 attemptedEndpoints.removeValue(forKey: id)
-                do { try store.failed(id, message: error.localizedDescription) }
-                catch { onError?("Could not persist upload retry: \(error.localizedDescription)") }
-                onError?(error.localizedDescription)
+                do { try store.failed(id, message: L10n.error(error)) }
+                catch { onError?(L10n.source("Could not persist upload retry: \(L10n.error(error))")) }
+                onError?(L10n.error(error))
             }
         }
     }

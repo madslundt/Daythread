@@ -32,17 +32,17 @@ public enum RecordingAudioConverter {
         try Task.checkCancellation()
         let file: AVAudioFile
         do { file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false) }
-        catch { throw RecordingImportError("This recording cannot be decoded on this iPhone. Try a WAV, M4A, or MP3 file.") }
+        catch { throw RecordingImportError(AppLocalization.source("This recording cannot be decoded on this iPhone. Try a WAV, M4A, or MP3 file.")) }
         let duration = Double(file.length) / file.processingFormat.sampleRate
-        guard duration.isFinite, duration > 0 else { throw RecordingImportError("The recording contains no audio.") }
-        guard duration <= 7200 else { throw RecordingImportError("Split recordings longer than two hours before uploading.") }
+        guard duration.isFinite, duration > 0 else { throw RecordingImportError(AppLocalization.source("The recording contains no audio.")) }
+        guard duration <= 7200 else { throw RecordingImportError(AppLocalization.source("Split recordings longer than two hours before uploading.")) }
         let expectedSamples = Int(ceil(duration * Double(RecordingImport.sampleRate)))
         try RecordingImport.validateSampleCount(expectedSamples)
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(RecordingImport.sampleRate), channels: 1, interleaved: false),
               let converter = AVAudioConverter(from: file.processingFormat, to: format),
               let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4096),
               let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096) else {
-            throw RecordingImportError("This audio format cannot be converted on this iPhone.")
+            throw RecordingImportError(AppLocalization.source("This audio format cannot be converted on this iPhone."))
         }
         // A single converter with fixed input/output buffers avoids timeline mix
         // rendering, whose internal boundary choices can vary between readings.
@@ -83,22 +83,22 @@ public enum RecordingAudioConverter {
                 }
                 if let readError { throw readError }
                 if let conversionError { throw conversionError }
-                guard status != .error else { throw RecordingImportError("The audio conversion could not be completed.") }
+                guard status != .error else { throw RecordingImportError(AppLocalization.source("The audio conversion could not be completed.")) }
                 finished = status == .endOfStream
-                guard output.frameLength > 0 || finished else { throw RecordingImportError("The audio decoder stopped before the recording ended.") }
+                guard output.frameLength > 0 || finished else { throw RecordingImportError(AppLocalization.source("The audio decoder stopped before the recording ended.")) }
                 decodedSamples += Int(output.frameLength)
                 guard decodedSamples <= expectedSamples + 1024 else {
-                    throw RecordingImportError("The decoded audio does not match the recording duration.")
+                    throw RecordingImportError(AppLocalization.source("The decoded audio does not match the recording duration."))
                 }
                 let count = min(Int(output.frameLength), expectedSamples - totalSamples)
                 totalSamples += count
                 var offset = 0
                 while offset < count {
                     let length = min(count - offset, RecordingImport.samplesPerPart - pending.count / 2, 4096)
-                    guard let samples = output.floatChannelData?[0] else { throw RecordingImportError("The audio samples could not be read.") }
+                    guard let samples = output.floatChannelData?[0] else { throw RecordingImportError(AppLocalization.source("The audio samples could not be read.")) }
                     var pcm = [Int16](repeating: 0, count: length)
                     for index in pcm.indices {
-                        guard samples[offset + index].isFinite else { throw RecordingImportError("The decoder returned an invalid audio sample.") }
+                        guard samples[offset + index].isFinite else { throw RecordingImportError(AppLocalization.source("The decoder returned an invalid audio sample.")) }
                         let value = Double(max(-1, min(1, samples[offset + index])))
                         pcm[index] = Int16(floor(value * (value < 0 ? 32768 : 32767) + 0.5)).littleEndian
                     }
@@ -116,7 +116,7 @@ public enum RecordingAudioConverter {
             // retain the audio track's duration, with at most one codec block of
             // trailing silence. Larger discrepancies indicate a damaged file.
             guard decodedSamples > 0, abs(decodedSamples - expectedSamples) <= 1024 else {
-                throw RecordingImportError("The decoded audio does not match the recording duration.")
+                throw RecordingImportError(AppLocalization.source("The decoded audio does not match the recording duration."))
             }
             if totalSamples < expectedSamples {
                 var remaining = (expectedSamples - totalSamples) * 2

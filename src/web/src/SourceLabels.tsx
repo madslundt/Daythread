@@ -1,3 +1,5 @@
+import { isVendorTranscript, sourceVendorLabel } from "./vendors";
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { newId } from "./api";
@@ -57,16 +59,16 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
         <section aria-label={t("Current evidence for association review")}>
           <h4>{t("Current transcript · review this version")}</h4>
           <p className="transcript-text">
-            {data.source.text ?? "Transcript expired"}
+            {data.source.text ?? t("Transcript expired")}
           </p>
           <p className="caption">{t("Source version")}{" "}{data.source.source_version}</p>
         </section>
       ) : null}
       <p className="caption">
-        {t("Imported speaker names and numbers are unverified Omi attributions. Numbers apply only to that source.")}{" "}</p>
-      {data?.source.source_kind === "omi_api" ? (
+        {t("Imported speaker names and numbers are unverified vendor attributions. Numbers apply only to that source.")}{" "}</p>
+      {data && isVendorTranscript(data.source) ? (
         <p className="caption">
-          {t("Imported Omi conversation ·")}{" "}{data.source.source_id}
+          {t("Imported transcript from {vendor}", { vendor: sourceVendorLabel(data.source) })}{" · "}{" "}{data.source.source_id}
         </p>
       ) : null}
       {data?.links.map((link) => {
@@ -75,9 +77,9 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
         );
         return (
           <div className="label-link" key={link.id}>
-            <a href={`/labels/${link.entity_id}`}>{entity?.name || "Label"}</a>
+            <a href={`/labels/${link.entity_id}`}>{entity?.name || t("Label")}</a>
             <span>
-              {meanings[link.relation]}
+              {t(meanings[link.relation] || "")}
               {link.needs_review ? t("· Needs review") : ""}
             </span>
             {link.needs_review ? (
@@ -136,7 +138,7 @@ function SourceLabelEditor({ sourceId }: { sourceId: string }) {
             )
             .map((e) => (
               <option key={e.id} value={e.id}>
-                {e.name} · {e.kind}
+                {e.name} · {statusLabel(e.kind)}
                 {e.description ? ` · ${e.description}` : ""}
               </option>
             ))}

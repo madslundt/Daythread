@@ -36,8 +36,7 @@ struct DaythreadApp: App {
         WindowGroup {
             RootView().environment(model).environment(CompletionNotifications.shared).tint(Theme.accent)
                 .preferredColorScheme(appearance.colorScheme)
-                .environment(\.locale, interfaceLanguagePreference == "system"
-                    ? Locale.autoupdatingCurrent : Locale(identifier: interfaceLanguagePreference))
+                .environment(\.locale, Locale(identifier: L10n.languages.contains(interfaceLanguagePreference) ? interfaceLanguagePreference : L10n.language))
         }
     }
 }
@@ -45,7 +44,7 @@ struct DaythreadApp: App {
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: Self { self }
-    var title: LocalizedStringKey { LocalizedStringKey(rawValue.capitalized) }
+    var title: String { L10n.key(rawValue.capitalized) }
     var colorScheme: ColorScheme? {
         switch self {
         case .system: nil
@@ -79,7 +78,7 @@ enum Theme {
     })
 }
 
-enum SettingsDestination: Hashable { case settings, profiles }
+enum SettingsDestination: Hashable { case settings, profiles, account }
 private enum RootTab: Hashable { case today, diary, capture, chat, more }
 
 struct RootView: View {
@@ -89,26 +88,29 @@ struct RootView: View {
     @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .today : .more
     @State private var settingsPath: [SettingsDestination] = []
     @State private var todayNavigationID = UUID()
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
             TabView(selection: Binding(get: { model.hasSelectedProfile ? selectedTab : .more }, set: { tab in
                 if !model.hasSelectedProfile && tab != .more { settingsPath = [.profiles] }
                 if tab == .today && model.hasSelectedProfile { todayNavigationID = UUID() }
                 selectedTab = model.hasSelectedProfile ? tab : .more
             })) {
-                NavigationStack { if model.hasSelectedProfile { DayView() } }.id(todayNavigationID).tabItem { Label("Today", systemImage: "sun.max") }.tag(RootTab.today)
-                NavigationStack { if model.hasSelectedProfile { DiaryView() } }.tabItem { Label("Diary", systemImage: "book.closed") }.tag(RootTab.diary)
-                NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label("Capture", systemImage: "waveform") }.tag(RootTab.capture)
-                NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
+                NavigationStack { if model.hasSelectedProfile { DayView() } }.id(todayNavigationID).tabItem { Label(L10n.text("Today"), systemImage: "sun.max") }.tag(RootTab.today)
+                NavigationStack { if model.hasSelectedProfile { DiaryView() } }.tabItem { Label(L10n.text("Diary"), systemImage: "book.closed") }.tag(RootTab.diary)
+                NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label(L10n.text("Capture"), systemImage: "waveform") }.tag(RootTab.capture)
+                NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label(L10n.text("Chat"), systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
                 NavigationStack(path: $settingsPath) {
                     MoreView().navigationDestination(for: SettingsDestination.self) { destination in
                         switch destination {
                         case .settings: SettingsView()
+                        case .account: ManagedAccountView()
                         case .profiles: ProfilesSettingsView()
                         }
                     }
-                }.tabItem { Label("More", systemImage: "square.grid.2x2") }.tag(RootTab.more)
+                }.tabItem { Label(L10n.text("More"), systemImage: "square.grid.2x2") }.tag(RootTab.more)
             }
-            .id(model.archiveIdentity)
+            .id(model.archiveIdentity + (model.usesManagedHosting && !model.managedAccount.hostingVerified ? ".offline" : ""))
             .environment(\.goToToday, {
                 todayNavigationID = UUID()
                 selectedTab = .today
@@ -116,7 +118,7 @@ struct RootView: View {
         .task {
             notifications.configure(model: model)
             notifications.setActive(scenePhase == .active)
-            if !model.hasSelectedProfile { settingsPath = [.profiles] }
+            if !model.hasSelectedProfile { settingsPath = [model.usesManagedHosting ? .account : .profiles] }
             await model.refreshStatus()
             while !Task.isCancelled {
                 await model.tick()
@@ -124,9 +126,15 @@ struct RootView: View {
             }
         }
         .onChange(of: model.selectedProfileID) { _, _ in
-            settingsPath = model.hasSelectedProfile ? [] : [.profiles]
+            settingsPath = model.hasSelectedProfile ? [] : [model.usesManagedHosting ? .account : .profiles]
             selectedTab = model.hasSelectedProfile ? .today : .more
         }
+        .onChange(of: model.hasSelectedProfile) { _, ready in
+            notifications.configure(model: model)
+            if !ready { settingsPath = [model.usesManagedHosting ? .account : .profiles]; selectedTab = .more }
+        }
+        .onChange(of: model.managedAccount.hostingVerified) { _, _ in notifications.configure(model: model) }
+        .onChange(of: model.managedAccount.sessionID) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.archiveIdentity) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.backendConfiguration) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.archiveRevision) { old, _ in if !old.isEmpty { notifications.clearPreviews() } }
@@ -137,8 +145,8 @@ struct RootView: View {
         }
         .background(CompletionSceneOverlay(model: model, notifications: notifications))
         .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
+            Button(L10n.text("OK")) { model.error = nil }
+        } message: { Text(L10n.key(model.error ?? "")) }
     }
 
 }
@@ -154,21 +162,23 @@ struct ProfileEditorView: View {
         self.profile = profile
         _name = State(initialValue: profile?.name ?? "")
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             Form {
                 Section {
-                    TextField("Profile name", text: $name)
+                    TextField(L10n.text("Profile name"), text: $name)
                         .textContentType(.nickname).accessibilityIdentifier("profiles.name")
                 } footer: {
-                    Text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this app can select a profile.")
+                    Text(L10n.text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this app can select a profile."))
                 }
                 ErrorNote(message: error)
-            }.navigationTitle(profile == nil ? "Create profile" : "Edit profile").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle(profile == nil ? L10n.text("Create profile") : L10n.text("Edit profile")).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                    ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() }.disabled(saving) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(saving ? "Saving…" : profile == nil ? "Create" : "Save") {
+                        Button(saving ? L10n.text("Saving…") : profile == nil ? L10n.text("Create") : L10n.text("Save")) {
                             saving = true
                             Task {
                                 defer { saving = false }
@@ -177,7 +187,7 @@ struct ProfileEditorView: View {
                                     else { try await model.createProfile(name: name) }
                                     dismiss()
                                 }
-                                catch { self.error = error.localizedDescription }
+                                catch { self.error = L10n.error(error) }
                             }
                         }.disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
                     }
@@ -189,10 +199,12 @@ struct ProfileEditorView: View {
 struct EditorialTitle: View {
     let eyebrow: String
     let title: String
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
-            Text(LocalizedStringKey(eyebrow)).textCase(.uppercase).font(.caption.weight(.semibold)).tracking(1.6).foregroundStyle(Theme.accent)
-            Text(LocalizedStringKey(title)).font(.system(.largeTitle, design: .serif)).foregroundStyle(.primary)
+            Text(eyebrow).textCase(.uppercase).font(.caption.weight(.semibold)).tracking(1.6).foregroundStyle(Theme.accent)
+            Text(title).font(.system(.largeTitle, design: .serif)).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
             .accessibilityElement(children: .combine)
@@ -236,8 +248,10 @@ struct PrimaryActionStyle: ButtonStyle {
 
 struct ErrorNote: View {
     let message: String?
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
-        if let message { Label(message, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+        let _ = interfaceLocale
+        if let message { Label(L10n.key(message), systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.red).textSelection(.enabled) }
     }
 }
 
@@ -266,7 +280,9 @@ struct SourceList: View {
     var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @State private var selected: SourceSelection?
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         ForEach(Array(sources.enumerated()), id: \.element["id"].text) { _, source in
             Button { selected = SourceSelection(source: source) } label: {
                 HStack(alignment: .top, spacing: 12) {
@@ -276,12 +292,15 @@ struct SourceList: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(title(source)).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(3)
                         Text(metadata(source)).font(.caption).foregroundStyle(.secondary)
+                        if !source["tags"].array.isEmpty {
+                            Text(source["tags"].array.map { $0["name"].text }.joined(separator: ", ")).font(.caption).foregroundStyle(Theme.accent)
+                        }
                         if let match = source["matches"].array.first, !source["title"].text.isEmpty {
                             Text(match["text"].text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     if model.importanceMarks.contains(.init(kind: "source", id: source["id"].text)) || source["important"] == .bool(true) {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Theme.accent).accessibilityLabel("Important")
+                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Theme.accent).accessibilityLabel(L10n.text("Important"))
                     }
                     Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 7).accessibilityHidden(true)
                 }.multilineTextAlignment(.leading).padding(.vertical, 8).contentShape(Rectangle())
@@ -294,7 +313,7 @@ struct SourceList: View {
         if !source["title"].text.isEmpty { return source["title"].text }
         if let match = source["matches"].array.first, !match["text"].text.isEmpty { return match["text"].text }
         if !source["text"].text.isEmpty { return source["text"].text }
-        return source["state"].text == "done" ? "No transcript text" : "Recording · " + source["state"].text
+        return source["state"].text == "done" ? L10n.text("No transcript text") : L10n.text("Recording · ") + source["state"].text
     }
 
     private func metadata(_ source: JSONValue) -> String {
@@ -304,12 +323,12 @@ struct SourceList: View {
             parts.append(diary.label(start, template: "d MMM HHmm"))
             if let end = AppModel.date(source["ended_at"].text), end > start {
                 let seconds = Int(end.timeIntervalSince(start).rounded())
-                parts.append(seconds < 60 ? "\(seconds) sec" : "\(max(1, seconds / 60)) min")
+                parts.append(seconds < 60 ? L10n.text("\(seconds) sec") : L10n.text("\(max(1, seconds / 60)) min"))
             }
         }
-        if !source["meeting_hint_ids"].array.isEmpty { parts.append("Meeting hint") }
-        if !source["sections"].array.isEmpty { parts.append("\(source["sections"].array.count) topics") }
-        if !source["alternate_sources"].array.isEmpty { parts.append("\(source["alternate_sources"].array.count + 1) uploads") }
+        if !source["meeting_hint_ids"].array.isEmpty { parts.append(L10n.text("Meeting hint")) }
+        if !source["sections"].array.isEmpty { parts.append(L10n.text("\(source["sections"].array.count) topics")) }
+        if !source["alternate_sources"].array.isEmpty { parts.append(L10n.text("\(source["alternate_sources"].array.count + 1) uploads")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -323,42 +342,48 @@ struct SourceDetail: View {
     @State private var fresh: JSONValue?
     private var evidence: JSONValue { fresh ?? source }
     private var transcriptDescription: String {
-        if evidence == .null { return "Source removed" }
-        if evidence["state"].text == "expired" { return "Transcript expired under your retention policy." }
+        if evidence == .null { return L10n.text("Source removed") }
+        if evidence["state"].text == "expired" { return L10n.text("Transcript expired under your retention policy.") }
         if !evidence["text"].text.isEmpty { return evidence["text"].text }
-        return evidence["state"].text == "done" ? "No transcript text" : "Transcription pending"
+        return evidence["state"].text == "done" ? L10n.text("No transcript text") : L10n.text("Transcription pending")
     }
     @State private var error: String?
     @State private var loading = false
     @State private var editing = false
     @State private var draft = ""
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             List {
-                Section("Recorded evidence") {
-                    NavigationLink("Report incorrect or missing information") { FeedbackEditor(sourceID: evidence["id"].text) }
+                Section(L10n.text("Recorded evidence")) {
+                    NavigationLink(L10n.text("Report incorrect or missing information")) { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
-                    ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: "recording").disabled(evidence == .null)
+                    ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: L10n.key("recording")).disabled(evidence == .null)
                     SourceTranscriptTopicsView(source: evidence, editing: editing)
                     Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                NavigationLink(L10n.text("Conversation tags")) {
+                    ConversationTagsView(sourceID: evidence["id"].text, onChanged: onCorrect)
+                }.disabled(evidence == .null || evidence["state"].text == "expired")
+                ConversationLocationView(location: evidence["source_metadata"]["location"])
                 if !source["alternate_sources"].array.isEmpty && evidence != .null {
-                    Section("Other uploads of this recording") {
+                    Section(L10n.text("Other uploads of this recording")) {
                         SourceList(sources: source["alternate_sources"].array)
                     }
                 }
-                NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label("People & projects", systemImage: "person.2") }.disabled(evidence == .null)
+                NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }.disabled(evidence == .null)
                 NavigationLink {
                     SpeakersView(kind: "source", conversationID: evidence["id"].text)
-                } label: { Label("Speakers · listen & name", systemImage: "person.wave.2") }
+                } label: { Label(L10n.text("Speakers · listen & name"), systemImage: "person.wave.2") }
                     .disabled(evidence == .null).accessibilityIdentifier("source.speakers")
-                NavigationLink("Create decision from this source") {
+                NavigationLink(L10n.text("Create decision from this source")) {
                     SourceDecisionCreation(sourceID: evidence["id"].text)
                 }.disabled(evidence["text"].text.isEmpty)
-                Section("Transcript correction") {
+                Section(L10n.text("Transcript correction")) {
                     if editing {
-                        TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel("Correct transcript")
-                        Button("Save correction") {
+                        TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel(L10n.text("Correct transcript"))
+                        Button(L10n.text("Save correction")) {
                             let address = model.archiveIdentity
                             loading = true
                             Task {
@@ -369,11 +394,11 @@ struct SourceDetail: View {
                                     guard !Task.isCancelled, model.archiveIdentity == address else { return }
                                     fresh = corrected
                                     onCorrect?(); dismiss()
-                                } catch { self.error = error.localizedDescription }
+                                } catch { self.error = L10n.error(error) }
                             }
                         }.disabled(loading || draft.unicodeScalars.count > 200000)
-                        Button("Cancel edit") { editing = false }
-                    } else { Button("Correct transcript") { draft = evidence["text"].text; editing = true } }
+                        Button(L10n.text("Cancel edit")) { editing = false }
+                    } else { Button(L10n.text("Correct transcript")) { draft = evidence["text"].text; editing = true } }
                 }
                 if evidence != .null {
                     TranscriptionCleanupReviewView(source: evidence) { draft = evidence["text"].text; editing = true }
@@ -382,14 +407,16 @@ struct SourceDetail: View {
                 if evidence["state"].text == "blocked" || !evidence["error_code"].text.isEmpty ||
                     (evidence["state"].text == "done" && evidence["text"].text.isEmpty && evidence["audio_available"] != .bool(false) &&
                      ["silence_gate", "empty_stt"].contains(evidence["transcription_outcome"].text)) {
-                    Button("Retry transcription after resolving the problem") { Task {
+                    Button(L10n.text("Retry transcription after resolving the problem")) { Task {
                         do { _ = try await model.client().request("v1/audio/\(evidence["id"].text)/retry", method: "POST"); error = nil }
-                        catch { self.error = error.localizedDescription }
+                        catch { self.error = L10n.error(error) }
                     } }
                 }
-                if evidence["audio_availability"].text == "missing" { Text("The archive expects audio, but the file is missing.").font(.caption) }
+                if evidence["audio_availability"].text == "missing" { Text(L10n.text("The archive expects audio, but the file is missing.")).font(.caption) }
                 if evidence["audio_available"] == .bool(false) {
-                    Text(evidence["source_kind"].text == "omi_api" ? "Imported from Omi · transcript only; original audio unavailable." : "Audio expired under retention; transcript remains available.").font(.caption)
+                    Text(SourceProvenanceView.isTranscriptImport(evidence)
+                         ? L10n.text("Imported from \(SourceProvenanceView.vendorLabel(for: evidence)) · transcript only; original audio unavailable.")
+                         : L10n.text("Audio expired under retention; transcript remains available.")).font(.caption)
                 } else {
                 Button {
                     loading = true
@@ -401,9 +428,9 @@ struct SourceDetail: View {
                             guard model.archiveIdentity == identity, !Task.isCancelled else { return }
                             model.play(audio)
                         }
-                        catch { self.error = error.localizedDescription }
+                        catch { self.error = L10n.error(error) }
                     }
-                } label: { Label(loading ? "Loading audio…" : "Play original audio", systemImage: "play.circle") }.disabled(loading || evidence["audio_availability"].text == "missing")
+                } label: { Label(loading ? L10n.text("Loading audio…") : L10n.text("Play original audio"), systemImage: "play.circle") }.disabled(loading || evidence["audio_availability"].text == "missing")
                 }
                 ErrorNote(message: error)
             }.task(id: model.archiveRevision + model.archiveIdentity + String(describing: scenePhase)) {
@@ -415,16 +442,16 @@ struct SourceDetail: View {
                     fresh = result; error = nil
                 } catch {
                     guard !Task.isCancelled, model.archiveIdentity == identity else { return }
-                    self.error = error.localizedDescription
+                    self.error = L10n.error(error)
                     if (error as? BackendFailure)?.status == 404 { fresh = .null }
                 }
-            }.omiScreen().navigationTitle("Recording").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            }.omiScreen().navigationTitle(L10n.text("Recording")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Done")) { dismiss() } } }
         }
     }
     private var sourceDate: String {
         guard let date = AppModel.date(evidence["started_at"].text) else { return evidence["started_at"].text }
-        let formatter = DateFormatter()
+        let formatter = DateFormatter(); formatter.locale = L10n.locale
         formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
         formatter.dateStyle = .medium; formatter.timeStyle = .short
         return formatter.string(from: date) + " · " + formatter.timeZone.identifier
@@ -445,21 +472,23 @@ struct ImportanceButton: View {
     @State private var error: String?
     private var important: Bool { model.importanceMarks.contains(target) }
     private var busy: Bool { model.importanceSaving.contains(target) }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 4) {
             Button {
                 Task {
                     error = nil
                     if !model.importanceLoaded { await model.loadImportance(); return }
                     do { try await model.setImportant(target, to: !important) }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = L10n.error(error) }
                 }
             } label: {
-                Label(busy ? "Saving…" : !model.importanceLoaded && model.importanceError != nil ? "Retry importance" : important ? "Important" : "Mark important", systemImage: important ? "star.fill" : "star")
+                Label(busy ? L10n.text("Saving…") : !model.importanceLoaded && model.importanceError != nil ? L10n.text("Retry importance") : important ? L10n.text("Important") : L10n.text("Mark important"), systemImage: important ? "star.fill" : "star")
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel((important ? "Remove importance from " : "Mark as important: ") + label)
-            .accessibilityValue(important ? "Important" : "Not marked important")
+            .accessibilityLabel((important ? L10n.text("Remove importance from ") : L10n.text("Mark as important: ")) + label)
+            .accessibilityValue(important ? L10n.text("Important") : L10n.text("Not marked important"))
             .disabled(busy || (!model.importanceLoaded && model.importanceError == nil))
             ErrorNote(message: error ?? (!model.importanceLoaded ? model.importanceError : nil))
         }.task(id: model.archiveIdentity) { await model.loadImportance() }
@@ -468,17 +497,19 @@ struct ImportanceButton: View {
 
 struct RecapImportanceView: View {
     let recap: JSONValue
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         if UUID(uuidString: recap["output_id"].text) != nil {
-            ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text), label: "day recap")
-            DisclosureGroup("Important recap sections") {
+            ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text), label: L10n.text("day recap"))
+            DisclosureGroup(L10n.text("Important recap sections")) {
                 ForEach(Array(RecapSections.texts(recap["summary"].text).enumerated()), id: \.offset) { _, text in
                     VStack(alignment: .leading) {
                         Text(.init(text)).font(.callout)
-                        ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text, section: text), label: "recap section")
+                        ImportanceButton(target: ImportanceTarget(kind: "recap", id: recap["output_id"].text, section: text), label: L10n.text("recap section"))
                     }
                 }
-                Text("Marks belong to this saved recap version.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("Marks belong to this saved recap version.")).font(.caption).foregroundStyle(.secondary)
             }
         }
     }

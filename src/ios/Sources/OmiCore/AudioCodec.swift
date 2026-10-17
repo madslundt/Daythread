@@ -5,11 +5,11 @@ public enum CaptureError: LocalizedError {
     case unsupportedCodec(Int), invalidAudio(String), invalidReceipt, storageFull, corruptedStore
     public var errorDescription: String? {
         switch self {
-        case .unsupportedCodec(let id): "Unsupported Omi codec \(id). Capture stopped; select supported firmware."
-        case .invalidAudio(let detail): "Audio decoding failed: \(detail)"
-        case .invalidReceipt: "Home-core acknowledgement did not match the queued recording or event. Original data was retained."
-        case .storageFull: "Phone capture storage is full. Unsent recordings were preserved. Sync to home-core before resuming."
-        case .corruptedStore: "The capture index cannot be read. Recordings were preserved. Restore the index before continuing."
+        case .unsupportedCodec(let id): AppLocalization.text("Unsupported Omi codec \(id). Capture stopped; select supported firmware.")
+        case .invalidAudio(let detail): AppLocalization.text("Audio decoding failed: \(detail)")
+        case .invalidReceipt: AppLocalization.text("Home-core acknowledgement did not match the queued recording or event. Original data was retained.")
+        case .storageFull: AppLocalization.text("Phone capture storage is full. Unsent recordings were preserved. Sync to home-core before resuming.")
+        case .corruptedStore: AppLocalization.text("The capture index cannot be read. Recordings were preserved. Restore the index before continuing.")
         }
     }
 }
@@ -24,25 +24,25 @@ public final class FrameDecoder {
         if codec >= 20 {
             var error: Int32 = 0
             opus = opus_decoder_create(16000, 1, &error)
-            guard error == 0, opus != nil else { throw CaptureError.invalidAudio("Opus initialization \(error)") }
+            guard error == 0, opus != nil else { throw CaptureError.invalidAudio(AppLocalization.text("Opus initialization \(error)")) }
         }
     }
     deinit { if let opus { opus_decoder_destroy(opus) } }
     public func decode(_ frame: Data) throws -> Data {
-        guard !frame.isEmpty else { throw CaptureError.invalidAudio("Empty frame") }
+        guard !frame.isEmpty else { throw CaptureError.invalidAudio(AppLocalization.text("Empty frame")) }
         if codec == 0 {
-            guard frame.count.isMultiple(of: 2) else { throw CaptureError.invalidAudio("Incomplete PCM16 sample") }
+            guard frame.count.isMultiple(of: 2) else { throw CaptureError.invalidAudio(AppLocalization.text("Incomplete PCM16 sample")) }
             return frame
         }
-        guard let opus else { throw CaptureError.invalidAudio("Opus decoder unavailable") }
+        guard let opus else { throw CaptureError.invalidAudio(AppLocalization.text("Opus decoder unavailable")) }
         var samples = [Int16](repeating: 0, count: 1920)
         let count = frame.withUnsafeBytes { input in
             opus_decode(opus, input.bindMemory(to: UInt8.self).baseAddress, Int32(frame.count), &samples, 1920, 0)
         }
-        guard count > 0 else { throw CaptureError.invalidAudio("Opus error \(count)") }
+        guard count > 0 else { throw CaptureError.invalidAudio(AppLocalization.text("Opus error \(count)")) }
         // A different duration indicates a firmware/protocol mismatch; never silently mis-time it.
         let expected = codec == 20 ? 160 : 320
-        guard count == expected else { throw CaptureError.invalidAudio("Codec \(codec) returned \(count) samples; expected \(expected)") }
+        guard count == expected else { throw CaptureError.invalidAudio(AppLocalization.text("Codec \(codec) returned \(count) samples; expected \(expected)")) }
         return samples.prefix(Int(count)).reduce(into: Data()) { data, value in
             var little = value.littleEndian
             withUnsafeBytes(of: &little) { data.append(contentsOf: $0) }

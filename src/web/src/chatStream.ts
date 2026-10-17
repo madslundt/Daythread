@@ -1,5 +1,7 @@
+import { t } from "./i18n";
 import { profileRequestOptions } from "./profiles";
 import { ApiError } from "./api";
+import { isManagedOrigin, managedMutationHeaders } from "./managedService";
 import type { ChatMessage, Evidence, Source } from "./types";
 
 export type ChatResult = {
@@ -33,6 +35,7 @@ export async function streamChat(
     headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
     body: JSON.stringify(body),
   });
+  options.headers = managedMutationHeaders("/v1/chat/stream", "POST", options.headers);
   options.signal?.throwIfAborted();
   let response: Response;
   try {
@@ -40,17 +43,19 @@ export async function streamChat(
     options.signal?.throwIfAborted();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiError("The local backend could not be reached. Check your connection and try again.", 0);
+    throw new ApiError(isManagedOrigin() ? t("The Daythread service could not be reached. Check your connection and try again.")
+      : t("The local backend could not be reached. Check your connection and try again."), 0);
   }
   if (!response.ok) {
+    if (response.status === 401 && isManagedOrigin()) window.dispatchEvent(new Event("daythread:session-expired"));
     let detail: unknown;
     try { detail = (await response.json()).detail; } catch { /* Non-JSON server error. */ }
-    throw new ApiError(typeof detail === "string" ? detail : "The answer could not be started. Please try again.", response.status);
+    throw new ApiError(typeof detail === "string" ? detail : t("The answer could not be started. Please try again."), response.status);
   }
   if (!response.headers.get("content-type")?.includes("application/x-ndjson")) {
-    throw new ApiError("The answer response was invalid. Please try again.", 502);
+    throw new ApiError(t("The answer response was invalid. Please try again."), 502);
   }
-  if (!response.body) throw new ApiError("Streaming is unavailable in this browser.", 0);
+  if (!response.body) throw new ApiError(t("Streaming is unavailable in this browser."), 0);
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let pending = "", bytes = 0, textLength = 0;
@@ -58,32 +63,32 @@ export async function streamChat(
     if (!line.trim()) return;
     let value;
     try { value = JSON.parse(line); } catch {
-      throw new ApiError("The answer response was invalid. Please try again.", 502);
+      throw new ApiError(t("The answer response was invalid. Please try again."), 502);
     }
-    if (!value || typeof value !== "object") throw new ApiError("The answer response was invalid. Please try again.", 502);
+    if (!value || typeof value !== "object") throw new ApiError(t("The answer response was invalid. Please try again."), 502);
     if (value.type === "done") {
       if (!value.result || typeof value.result.answer !== "string" || typeof value.result.session_id !== "string"
         || typeof value.result.message_id !== "string" || typeof value.result.user_message_id !== "string"
         || typeof value.result.evidence?.generated_at !== "string" || !Array.isArray(value.result.sources)) {
-        throw new ApiError("The answer response was invalid. Please try again.", 502);
+        throw new ApiError(t("The answer response was invalid. Please try again."), 502);
       }
       return value.result as ChatResult;
     }
-    if (value.type === "error") throw new ApiError(value.message || "The answer could not be completed.", value.status || 502);
+    if (value.type === "error") throw new ApiError(value.message || t("The answer could not be completed."), value.status || 502);
     if (value.type === "delta" && typeof value.text === "string") {
       textLength += value.text.length;
-      if (textLength > 60000) throw new ApiError("The answer exceeded its text limit.", 502);
+      if (textLength > 60000) throw new ApiError(t("The answer exceeded its text limit."), 502);
       onProgress(value);
     }
     else if (value.type === "status" && ["searching", "expanding", "generating"].includes(value.stage)) onProgress(value);
-    else if (value.type !== "heartbeat") throw new ApiError("The answer response was invalid. Please try again.", 502);
+    else if (value.type !== "heartbeat") throw new ApiError(t("The answer response was invalid. Please try again."), 502);
   }
   try {
     while (true) {
       const next = await reader.read();
       options.signal?.throwIfAborted();
       bytes += next.value?.byteLength ?? 0;
-      if (bytes > 16_000_000) throw new ApiError("The answer response exceeded its limit.", 502);
+      if (bytes > 16_000_000) throw new ApiError(t("The answer response exceeded its limit."), 502);
       pending += decoder.decode(next.value, { stream: !next.done });
       let newline: number;
       while ((newline = pending.indexOf("\n")) >= 0) {
@@ -93,12 +98,12 @@ export async function streamChat(
       }
       if (next.done) {
         if (pending.trim()) { const result = event(pending); if (result) return result; }
-        throw new ApiError("The answer was interrupted. Please try again.", 502);
+        throw new ApiError(t("The answer was interrupted. Please try again."), 502);
       }
     }
   } catch (error) {
     if (error instanceof ApiError || (error instanceof DOMException && error.name === "AbortError")) throw error;
-    throw new ApiError("The answer was interrupted. Please try again.", 502);
+    throw new ApiError(t("The answer was interrupted. Please try again."), 502);
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

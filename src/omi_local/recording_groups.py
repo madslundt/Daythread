@@ -4,7 +4,9 @@ import json
 import re
 from datetime import datetime
 
+from .conversation_tags import decorate_tags, tag_filter
 from .domain import stamp
+from .location_zones import zone_filter
 from .service import public_source
 from .source_matching import MANUAL_UPLOAD_SQL
 
@@ -41,7 +43,9 @@ def group_recordings(rows: list[dict]) -> list[dict]:
     return sorted(groups, key=lambda group: (group["started_at"], group["id"]), reverse=True)
 
 
-def recording_groups(store, start, end, query, limit, offset, group_id=None) -> dict:
+def recording_groups(
+    store, start, end, query, limit, offset, group_id=None, zone_id=None, tag_id=None,
+) -> dict:
     filters, args = ["started_at<?", "ended_at> ?"], [stamp(end), stamp(start)]
     if query:
         filters.append("text LIKE ? ESCAPE '\\'")
@@ -49,6 +53,12 @@ def recording_groups(store, start, end, query, limit, offset, group_id=None) -> 
         args.append(f"%{escaped}%")
     with store.connect() as db:
         db.execute("BEGIN")
+        zone_sql, zone_args = zone_filter(db, zone_id)
+        filters.append(zone_sql)
+        args.extend(zone_args)
+        tag_sql, tag_args = tag_filter(db, tag_id)
+        filters.append(tag_sql)
+        args.extend(tag_args)
         # Read lightweight metadata for grouping; load bodies only for the selected member page.
         rows = [dict(row) for row in db.execute(
             "SELECT id,device_id,started_at,ended_at,state,source_kind,source_metadata,"
@@ -59,8 +69,12 @@ def recording_groups(store, start, end, query, limit, offset, group_id=None) -> 
             "ELSE 'source:' || id END AS upload_key FROM audio WHERE "
             + " AND ".join(filters) + " ORDER BY started_at,id", args,
         )]
-        canonical, alternatives = {}, {}
+        decorate_tags(db, rows)
+        canonical, alternatives, upload_tags = {}, {}, {}
         for row in rows:
+            upload_tags.setdefault(row["upload_key"], {}).update({
+                tag["id"]: tag for tag in row["tags"]
+            })
             if row["upload_key"] in canonical:
                 alternatives.setdefault(row["upload_key"], []).append(row["id"])
             else:
@@ -74,6 +88,7 @@ def recording_groups(store, start, end, query, limit, offset, group_id=None) -> 
                 "SELECT * FROM audio WHERE id IN (SELECT value FROM json_each(?))",
                 (json.dumps(ids),),
             )}
+            decorate_tags(db, list(loaded.values()))
             result = []
             for row in members:
                 source = loaded[row["id"]]
@@ -104,6 +119,10 @@ def recording_groups(store, start, end, query, limit, offset, group_id=None) -> 
                 title += " …"
             items.append({key: group[key] for key in ("id", "started_at", "ended_at")} | {
                 "title": title, "recording_count": len(members),
+                "tags": list({
+                    tag["id"]: tag for row in members
+                    for tag in upload_tags[row["upload_key"]].values()
+                }.values()),
                 "estimated_times": any(r["source_kind"] == "omi_audio_webhook" for r in members),
                 "sources": sources(members) if len(members) == 1 else [],
             })

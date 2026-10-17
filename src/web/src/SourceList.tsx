@@ -1,3 +1,6 @@
+import { isVendorTranscript, sourceVendor, sourceVendorLabel } from "./vendors";
+import { ConversationTags } from "./ConversationTags";
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { ImportanceButton } from "./Importance";
 import { SourceLabels } from "./SourceLabels";
@@ -120,7 +123,7 @@ function SourceRow({
   async function remove() {
     if (
       !window.confirm(
-        "Delete this recording and transcript? Derived diary entries, weekly reviews and chat history will also be cleared. Related decisions and inbox items, including manual edits and review history, will be removed because they used this recording. This cannot be undone.",
+        t("Delete this recording and transcript? Derived diary entries, weekly reviews and chat history will also be cleared. Related decisions and inbox items, including manual edits and review history, will be removed because they used this recording. This cannot be undone."),
       )
     )
       return;
@@ -146,10 +149,23 @@ function SourceRow({
         {t("Source")}{" "}{index} · {timeLabel(source.started_at, timezone)}–
         {timeLabel(source.ended_at, timezone)} · {source.device_id}
       </span>
-      <span>{source.state === "done" ? t("Transcribed") : source.state}</span>
+      <span>{source.state === "done" ? t("Transcribed") : statusLabel(source.state)}</span>
     </div>
+    {currentSource.source_metadata?.location ? <p className="caption">
+      {t("Conversation location")}: {currentSource.source_metadata.location.latitude.toFixed(5)}, {currentSource.source_metadata.location.longitude.toFixed(5)}
+      {" · ±"}{Math.round(currentSource.source_metadata.location.horizontal_accuracy)} {t("m")}
+      {" · "}{timeLabel(currentSource.source_metadata.location.captured_at, timezone)}{" · "}
+      <a href={`https://maps.apple.com/?ll=${currentSource.source_metadata.location.latitude},${currentSource.source_metadata.location.longitude}`} target="_blank" rel="noreferrer">{t("Open in Maps")}</a>
+      <br /><a href={`/settings/locations?latitude=${currentSource.source_metadata.location.latitude}&longitude=${currentSource.source_metadata.location.longitude}`}>{t("Save as zone location")}</a>
+      <br />{t("Phone location near the start of this recording. It does not identify places mentioned in the conversation.")}
+    </p> : null}
     {source.source_kind === "manual_upload" ? <p className="caption">
-      {t("Manually uploaded recording")}{source.source_id ? ` · ${source.source_id}` : ""}{t(". Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.")}{" "}</p> : null}
+      {sourceVendor(source) && sourceVendor(source) !== "manual"
+        ? t("Uploaded recording from {vendor}", { vendor: sourceVendorLabel(source) })
+        : t("Manually uploaded recording")}{source.source_id ? ` · ${source.source_id}` : ""}{t(". Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.")}{" "}</p> : null}
+    {isVendorTranscript(source) ? <p className="caption">
+      {t("Imported transcript from {vendor}", { vendor: sourceVendorLabel(source) })}{source.source_id ? ` · ${source.source_id}` : ""}
+    </p> : null}
     {source.source_kind === "omi_audio_webhook" ? <p className="caption">
       {t("Forwarded from the official Omi integration · account identity supplied by the sender, pendant identity unknown. Times estimate a chunk ending at server receipt, not actual capture time. Each POST is separate; overlap, gaps and delivery order are uncertain. Input")}{" "}{source.source_metadata?.input_sample_rate || "unknown"} {t("Hz, archived as mono PCM16 at 16000 Hz.")}{" "}</p> : null}
   </>;
@@ -158,8 +174,8 @@ function SourceRow({
           <p className="caption">
             {source.audio_availability === "missing"
               ? t("The archive expects audio, but the file is missing.")
-              : source.source_kind === "omi_api"
-                ? t("Imported from Omi. This import includes the transcript only; original audio is unavailable.")
+              : isVendorTranscript(source)
+                ? t("Imported from {vendor}. This import includes the transcript only; original audio is unavailable.", { vendor: sourceVendorLabel(source) })
                 : t("Audio was removed by your retention policy. The transcript remains available.")}
           </p>
         ) : (
@@ -169,7 +185,7 @@ function SourceRow({
               preload="none"
               src={audioUrl(source.id)}
               onError={() => setAudioError(true)}
-              aria-label={`Play recording from ${timeLabel(source.started_at, timezone)}`}
+              aria-label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
             />
             {audioError ? (
               <p className="caption">
@@ -208,14 +224,14 @@ function SourceRow({
           <span className="source-preview">
             {currentSource.title || (saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
               (source.state === "done"
-                ? "No transcript text"
-                : `Recording · ${source.state}`)}
+                ? t("No transcript text")
+                : t("Recording · {value0}", { value0: statusLabel(source.state) }))}
           </span>
           {compact ? <span className="source-glance">
             {recordingDuration(source)}
-            {source.alternate_sources?.length ? ` · ${source.alternate_sources.length + 1} uploads` : ""}
-            {hasTopics ? ` · ${currentSource.sections!.length} ${currentSource.sections!.length === 1 ? "topic" : "topics"}` : ""}
-            {source.state !== "done" ? ` · ${source.state}` : ""}
+            {source.alternate_sources?.length ? t(" · {value0} uploads", { value0: source.alternate_sources.length + 1 }) : ""}
+            {hasTopics ? ` · ${currentSource.sections!.length} ${currentSource.sections!.length === 1 ? t("topic") : t("topics")}` : ""}
+            {source.state !== "done" ? ` · ${statusLabel(source.state)}` : ""}
           </span> : null}
           {compact && source.matches?.length && currentSource.title ? <span className="source-match">{source.matches[0].text}</span> : null}
         </span>
@@ -233,7 +249,7 @@ function SourceRow({
       source.transcription_outcome === "silence_gate" ||
       source.transcription_outcome === "empty_stt" ? (
         <p className="caption">
-          {t("Processing:")}{" "}{source.error_code || source.transcription_outcome}
+          {t("Processing:")}{" "}{statusLabel(source.error_code) || statusLabel(source.transcription_outcome)}
         </p>
       ) : null}
       {!compact && source.audio_availability === "missing" ? (
@@ -262,6 +278,7 @@ function SourceRow({
         </button>
       ) : null}
       <div className="source-detail">
+        <ConversationTags sourceID={source.id} tags={currentSource.tags} onChanged={onCorrect} />
         {source.alternate_sources?.length ? <details className="recording-alternatives">
           <summary>{t("Other uploads of this recording (")}{source.alternate_sources.length})</summary>
           <p className="caption">{t("Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript.")}</p>
@@ -310,12 +327,12 @@ function SourceRow({
             /> : <p className="transcript-text">
               {text ||
                 (source.state === "done"
-                  ? "Processing completed without transcript text; this does not prove no speech occurred."
+                  ? t("Processing completed without transcript text; this does not prove no speech occurred.")
                   : source.state === "expired"
-                    ? "Transcript unavailable after retention."
+                    ? t("Transcript unavailable after retention.")
                     : source.state === "blocked"
-                      ? "Transcription blocked. Resolve the problem and retry."
-                      : "This recording is waiting for transcription.")}
+                      ? t("Transcription blocked. Resolve the problem and retry.")
+                      : t("This recording is waiting for transcription."))}
             </p>}
             <button
               className="text-button"
@@ -378,10 +395,10 @@ function SourceRow({
 
 function recordingDuration(source: Source): string {
   const seconds = Math.round((Date.parse(source.ended_at) - Date.parse(source.started_at)) / 1000);
-  if (!Number.isFinite(seconds) || seconds < 0) return "Duration unavailable";
-  if (seconds < 60) return `${seconds} sec`;
+  if (!Number.isFinite(seconds) || seconds < 0) return t("Duration unavailable");
+  if (seconds < 60) return t("{value0} sec", { value0: seconds });
   const minutes = Math.round(seconds / 60);
-  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+  return minutes < 60 ? t("{value0} min", { value0: minutes }) : t("{value0} hr{value1}", { value0: Math.floor(minutes / 60), value1: minutes % 60 ? t(" {value0} min", { value0: minutes % 60 }) : "" });
 }
 
 function RecordingDisclosure({ enabled, label, className, open, onToggle, children }: {
@@ -418,11 +435,11 @@ function CorrectionHistory({ id, timezone }: { id: string; timezone: string }) {
             <summary>{dateTimeLabel(revision.created_at, timezone)}</summary>
             <p className="caption">{t("Previous transcript")}</p>
             <p className="transcript-text">
-              {revision.previous_text || "No transcript"}
+              {revision.previous_text || t("No transcript")}
             </p>
             <p className="caption">{t("Corrected transcript")}</p>
             <p className="transcript-text">
-              {revision.text || "No transcript text"}
+              {revision.text || t("No transcript text")}
             </p>
           </details>
         ))

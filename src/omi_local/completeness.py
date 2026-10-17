@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .domain import EvidenceChanged, stamp, utc_now
 from .processing_progress import processing_observation
+from .vendor_imports import TRANSCRIPT_IMPORT_SQL, transcript_import
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS phone_observations (
@@ -45,7 +46,7 @@ def union_seconds(intervals: list[tuple[datetime, datetime]], start: datetime, e
 
 
 def audio_availability(row: dict) -> str:
-    if row.get("source_kind") == "omi_api":
+    if transcript_import(row.get("source_kind", "")):
         return "transcript_only"
     if not row.get("audio_available", True):
         return "expired"
@@ -61,7 +62,7 @@ class CompletenessStore:
         now = now or utc_now()
         with self.connect() as db:
             db.execute("BEGIN")
-            local = "source_kind!='omi_api'"
+            local = f"NOT {TRANSCRIPT_IMPORT_SQL}"
             times = dict(
                 db.execute(
                     "SELECT max(received_at) AS last_received_at,"
@@ -284,9 +285,9 @@ class CompletenessStore:
             "pending": sum(r["state"] in ("queued", "transcribing") for r in rows),
             "blocked": sum(r["state"] == "blocked" for r in rows),
             "expired_transcripts": sum(r["state"] == "expired" for r in rows),
-            "transcript_only_imports": sum(r["source_kind"] == "omi_api" for r in rows),
+            "transcript_only_imports": sum(transcript_import(r["source_kind"]) for r in rows),
             "expired_audio": sum(
-                not r["audio_available"] and r["source_kind"] != "omi_api" for r in rows
+                not r["audio_available"] and not transcript_import(r["source_kind"]) for r in rows
             ),
             "missing_audio": sum(
                 r["audio_available"] and not Path(r["path"]).is_file() for r in rows

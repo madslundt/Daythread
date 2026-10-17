@@ -8,10 +8,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
-from pydantic import AwareDatetime, BaseModel, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from .domain import stamp, utc_now
 from .source_matching import MANUAL_UPLOAD_SQL, UploadGrouping
+from .vendor_catalog import file_vendor
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS recording_uploads (fingerprint TEXT PRIMARY KEY, plan TEXT NOT NULL);
@@ -37,6 +38,7 @@ class FileCheck(BaseModel):
 
 
 class PrepareUpload(BaseModel):
+    vendor_id: str = Field(default="manual", max_length=80)
     file_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     digests: list[str] = Field(min_length=1, max_length=60)
     sample_count: int = Field(ge=1, le=16000 * 7200)
@@ -44,6 +46,11 @@ class PrepareUpload(BaseModel):
     started_at: AwareDatetime
     ended_at: AwareDatetime
     conversation_source_id: UUID | None = None
+
+    @field_validator("vendor_id")
+    @classmethod
+    def valid_vendor(cls, value: str) -> str:
+        return file_vendor(value)
 
     @model_validator(mode="after")
     def valid_audio(self):
@@ -143,6 +150,7 @@ class RecordingUploadStore:
                 ).fetchone():
                     raise ValueError("The selected conversation source is no longer available")
                 plan = {"recording_id": str(uuid4()), "source_id": body.source_id,
+                        "vendor_id": body.vendor_id,
                         "started_at": stamp(body.started_at), "ended_at": stamp(body.ended_at),
                         "sample_count": body.sample_count,
                         "conversation_source_id": target,
@@ -181,6 +189,8 @@ class RecordingUploadStore:
                     "recording_ended_at": plan["ended_at"]}
         if plan["conversation_source_id"]:
             expected["conversation_source_id"] = plan["conversation_source_id"]
+        if plan.get("vendor_id", "manual") != "manual":
+            expected["vendor_id"] = plan["vendor_id"]
         expected = UploadGrouping.model_validate(expected).model_dump(
             exclude_none=True, mode="json",
         )

@@ -11,34 +11,36 @@ struct LabelsView: View {
     private var filteredLabels: [MemoryLabel] {
         (directory?.items ?? []).filter { (kind.isEmpty || $0.kind == kind) && (query.isEmpty || ([$0.name] + $0.aliases).contains(where: { $0.localizedCaseInsensitiveContains(query) })) }
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: "Your library", title: "People & projects.").editorialRow()
+                EditorialTitle(eyebrow: L10n.text("Your library"), title: L10n.text("People & projects.")).editorialRow()
             }
             Section {
-                Button { creating = true } label: { Label("New person or project", systemImage: "plus") }.buttonStyle(PrimaryActionStyle())
-            } footer: { Text("Names and aliases can match more than one person. All source associations are chosen by you.") }
-            Section("Your labels") {
-                Picker("Show", selection: $kind) {
-                    Text("People & projects").tag("")
-                    Text("People").tag("person")
-                    Text("Projects").tag("project")
+                Button { creating = true } label: { Label(L10n.text("New person or project"), systemImage: "plus") }.buttonStyle(PrimaryActionStyle())
+            } footer: { Text(L10n.text("Names and aliases can match more than one person. All source associations are chosen by you.")) }
+            Section(L10n.text("Your labels")) {
+                Picker(L10n.text("Show"), selection: $kind) {
+                    Text(L10n.text("People & projects")).tag("")
+                    Text(L10n.text("People")).tag("person")
+                    Text(L10n.text("Projects")).tag("project")
                 }.accessibilityIdentifier("labels.kind")
                 ForEach(filteredLabels) { entity in
                     NavigationLink { LabelTimelineView(entityID: entity.id) } label: {
                         VStack(alignment: .leading) {
                             Text(entity.name).font(.headline)
-                            Text(entity.kind.capitalized + (entity.description.isEmpty ? "" : " · " + entity.description)).font(.caption).foregroundStyle(.secondary)
+                            Text(L10n.status(entity.kind) + (entity.description.isEmpty ? "" : " · " + entity.description)).font(.caption).foregroundStyle(.secondary)
                             if !entity.aliases.isEmpty { Text(entity.aliases.joined(separator: " · ")).font(.caption) }
                         }
                     }
                 }
-                if directory?.items.isEmpty == true { Text("Create a label, then associate recordings from their source details.").foregroundStyle(.secondary) }
+                if directory?.items.isEmpty == true { Text(L10n.text("Create a label, then associate recordings from their source details.")).foregroundStyle(.secondary) }
                 else if directory != nil && filteredLabels.isEmpty { ContentUnavailableView.search(text: query) }
             }
             ErrorNote(message: error)
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle("People & projects").navigationBarTitleDisplayMode(.inline).searchable(text: $query, prompt: "Find a person or project")
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("People & projects")).navigationBarTitleDisplayMode(.inline).searchable(text: $query, prompt: L10n.text("Find a person or project"))
             .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(isPresented: $creating) {
                 NavigationStack { LabelEditView(entity: nil, revision: directory?.revision ?? "", onSaved: { Task { await load() } }) }
@@ -50,7 +52,7 @@ struct LabelsView: View {
             let result: LabelDirectory = try await model.client().labels()
             guard address == model.archiveIdentity, !Task.isCancelled else { return }
             directory = result; error = nil
-        } catch { if address == model.archiveIdentity { self.error = error.localizedDescription } }
+        } catch { if address == model.archiveIdentity { self.error = L10n.error(error) } }
     }
 }
 
@@ -67,7 +69,9 @@ struct LabelTimelineView: View {
     @State private var editing: LabelEditSelection?
     @State private var annotation: AnnotationSelection?
     @State private var writer = LabelWriter()
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             if let data = response {
                 Section {
@@ -75,39 +79,39 @@ struct LabelTimelineView: View {
                     Text(data.entity.description)
                     Text(data.entity.aliases.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                     ImportanceButton(target: ImportanceTarget(kind: "label", id: data.entity.id), label: data.entity.name)
-                    Button("Edit label") { editing = LabelEditSelection(entity: data.entity, revision: data.revision) }
-                    NavigationLink("Associate existing decision register record") { LabelDecisionLinkView(entityID: data.entity.id, revision: data.revision) }
-                    NavigationLink("Merge / split / delete") { LabelManagementView(entityID: data.entity.id) }
-                    Button("Group conversation / add decision or question") { annotation = AnnotationSelection(entry: nil, entityID: data.entity.id, revision: data.revision) }
+                    Button(L10n.text("Edit label")) { editing = LabelEditSelection(entity: data.entity, revision: data.revision) }
+                    NavigationLink(L10n.text("Associate existing decision register record")) { LabelDecisionLinkView(entityID: data.entity.id, revision: data.revision) }
+                    NavigationLink(L10n.text("Merge / split / delete")) { LabelManagementView(entityID: data.entity.id) }
+                    Button(L10n.text("Group conversation / add decision or question")) { annotation = AnnotationSelection(entry: nil, entityID: data.entity.id, revision: data.revision) }
                 }
             }
-            Section("Dates in " + (model.serverTimeZoneIdentifier ?? "server calendar")) {
-                TextField("From · YYYY-MM-DD", text: $start).keyboardType(.numbersAndPunctuation)
-                TextField("Through · YYYY-MM-DD", text: $end).keyboardType(.numbersAndPunctuation)
-                Button("Apply dates") { Task { await load() } }.disabled(loading)
-                Button("All dates") { start = ""; end = ""; Task { await load() } }
+            Section(L10n.text("Dates in ") + (model.serverTimeZoneIdentifier ?? L10n.text("server calendar"))) {
+                TextField(L10n.text("From · YYYY-MM-DD"), text: $start).keyboardType(.numbersAndPunctuation)
+                TextField(L10n.text("Through · YYYY-MM-DD"), text: $end).keyboardType(.numbersAndPunctuation)
+                Button(L10n.text("Apply dates")) { Task { await load() } }.disabled(loading)
+                Button(L10n.text("All dates")) { start = ""; end = ""; Task { await load() } }
             }
             ForEach(entries) { entry in
-                Section(entry.entry_type == "decision" ? "Decision register" : entry.entry_type == "note" ? annotationMeaning(entry.kind ?? "") : associationMeaning(entry.relation ?? "")) {
+                Section(entry.entry_type == "decision" ? L10n.text("Decision register") : entry.entry_type == "note" ? annotationMeaning(entry.kind ?? "") : associationMeaning(entry.relation ?? "")) {
                     if let title = entry.title { Text(title).font(.headline) }
                     if let decision = entry.decision {
-                        Text("\(decision.review_status) · evidence \(decision.evidence_condition)").font(.caption)
-                        NavigationLink("Open register record and exact evidence") { DecisionDetail(id: decision.id) }
+                        Text(L10n.text("\(L10n.status(decision.review_status)) · evidence \(L10n.status(decision.evidence_condition))")).font(.caption)
+                        NavigationLink(L10n.text("Open register record and exact evidence")) { DecisionDetail(id: decision.id) }
                     }
                     if let body = entry.body, !body.isEmpty { Text(body).textSelection(.enabled) }
-                    if entry.needs_review { Label("Needs review · transcript changed", systemImage: "exclamationmark.circle").foregroundStyle(.orange) }
+                    if entry.needs_review { Label(L10n.text("Needs review · transcript changed"), systemImage: "exclamationmark.circle").foregroundStyle(.orange) }
                     SourceList(sources: entry.sources.map(\.json))
-                    if entry.entry_type == "note" { Button("Edit / review annotation") { annotation = AnnotationSelection(entry: entry, entityID: response!.entity.id, revision: response!.revision) } }
-                    else if entry.needs_review { Button("Confirm association after reviewing sources") { Task { await confirm(entry) } }.disabled(writer.busy) }
-                    Button(entry.entry_type == "note" ? "Delete annotation" : "Detach association", role: .destructive) { Task { await remove(entry) } }.disabled(writer.busy)
+                    if entry.entry_type == "note" { Button(L10n.text("Edit / review annotation")) { annotation = AnnotationSelection(entry: entry, entityID: response!.entity.id, revision: response!.revision) } }
+                    else if entry.needs_review { Button(L10n.text("Confirm association after reviewing sources")) { Task { await confirm(entry) } }.disabled(writer.busy) }
+                    Button(entry.entry_type == "note" ? L10n.text("Delete annotation") : L10n.text("Detach association"), role: .destructive) { Task { await remove(entry) } }.disabled(writer.busy)
                 }
             }
-            if entries.isEmpty && !loading { Text("No linked evidence in these dates. Add associations from source details or select evidence in a new annotation.").foregroundStyle(.secondary) }
-            if let response, entries.count < response.total { Button("Load more · \(entries.count) of \(response.total)") { Task { await load(more: true) } }.disabled(loading) }
-            if loading { ProgressView("Reading timeline…") }
+            if entries.isEmpty && !loading { Text(L10n.text("No linked evidence in these dates. Add associations from source details or select evidence in a new annotation.")).foregroundStyle(.secondary) }
+            if let response, entries.count < response.total { Button(L10n.text("Load more · \(entries.count) of \(response.total)")) { Task { await load(more: true) } }.disabled(loading) }
+            if loading { ProgressView(L10n.text("Reading timeline…")) }
             ErrorNote(message: error ?? writer.error)
-            Text("Recordings retain source-level precision. Imported Omi speaker names and numbers are unverified and do not establish identity across sources.").font(.caption).foregroundStyle(.secondary)
-        }.omiScreen().navigationTitle("Timeline").navigationBarTitleDisplayMode(.inline)
+            Text(L10n.text("Recordings retain source-level precision. Imported Omi speaker names and numbers are unverified and do not establish identity across sources.")).font(.caption).foregroundStyle(.secondary)
+        }.omiScreen().navigationTitle(L10n.text("Timeline")).navigationBarTitleDisplayMode(.inline)
             .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(item: $editing, onDismiss: { Task { await load() } }) { selection in
                 NavigationStack { LabelEditView(entity: selection.entity, revision: selection.revision, onSaved: {}) }
@@ -130,7 +134,7 @@ struct LabelTimelineView: View {
             let result: LabelTimelineResponse = try await model.client().labels("v1/labels/\(entityID)/timeline", query: query)
             guard address == model.archiveIdentity, !Task.isCancelled, epoch.accepts(token) else { return }
             response = result; entries = more ? entries + result.items : result.items
-        } catch { if address == model.archiveIdentity, epoch.accepts(token), !Task.isCancelled { self.error = error.localizedDescription; if !more { response = nil; entries = [] } } }
+        } catch { if address == model.archiveIdentity, epoch.accepts(token), !Task.isCancelled { self.error = L10n.error(error); if !more { response = nil; entries = [] } } }
     }
     private func confirm(_ entry: LabelTimelineEntry) async {
         guard let response, let source = entry.sources.first else { return }
@@ -140,13 +144,13 @@ struct LabelTimelineView: View {
             command.action = "decision_link.save"; command.decision_id = decision.id; command.decision_version = decision.version
         } else { command.source = source.ref; command.relation = entry.relation }
         do { if await writer.save(command, client: try model.client()) { await load(); await model.refreshStatus() } }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
     private func remove(_ entry: LabelTimelineEntry) async {
         guard let response else { return }
         let command = LabelCommand(action: entry.entry_type == "decision" ? "decision_link.delete" : entry.entry_type == "note" ? "note.delete" : "link.delete", id: entry.id, expected_revision: response.revision)
         do { if await writer.save(command, client: try model.client()) { await load(); await model.refreshStatus() } }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
 }
 struct LabelEditSelection: Identifiable { let id = UUID(); let entity: MemoryLabel; let revision: String }
@@ -155,12 +159,14 @@ struct AnnotationSelection: Identifiable { let id = UUID(); let entry: LabelTime
 struct LabelDraftFields: View {
     @Binding var draft: LabelDraft
     let fixedKind: Bool
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
-        Picker("Kind", selection: $draft.kind) { Text("Person").tag("person"); Text("Project").tag("project") }.disabled(fixedKind)
-        TextField("Name", text: $draft.name)
-        TextField("Distinguishing description", text: $draft.description, axis: .vertical)
-        TextField("Aliases · one per line", text: Binding(get: { draft.aliases.joined(separator: "\n") }, set: { draft.aliases = $0.components(separatedBy: "\n") }), axis: .vertical)
-        Text("On rename, add the former name as an alias only if you want to keep it. Identical names and aliases are allowed.").font(.caption).foregroundStyle(.secondary)
+        let _ = interfaceLocale
+        Picker(L10n.text("Kind"), selection: $draft.kind) { Text(L10n.text("Person")).tag("person"); Text(L10n.text("Project")).tag("project") }.disabled(fixedKind)
+        TextField(L10n.text("Name"), text: $draft.name)
+        TextField(L10n.text("Distinguishing description"), text: $draft.description, axis: .vertical)
+        TextField(L10n.text("Aliases · one per line"), text: Binding(get: { draft.aliases.joined(separator: "\n") }, set: { draft.aliases = $0.components(separatedBy: "\n") }), axis: .vertical)
+        Text(L10n.text("On rename, add the former name as an alias only if you want to keep it. Identical names and aliases are allowed.")).font(.caption).foregroundStyle(.secondary)
     }
 }
 struct LabelEditView: View {
@@ -174,27 +180,29 @@ struct LabelEditView: View {
     @State private var writer = LabelWriter()
     @State private var currentRevision = ""
     @State private var error: String?
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Form {
             LabelDraftFields(draft: $draft, fixedKind: entity != nil)
-            Text("Metadata edits require a connection. Failed saves keep your draft on this screen.").font(.caption)
+            Text(L10n.text("Metadata edits require a connection. Failed saves keep your draft on this screen.")).font(.caption)
             ErrorNote(message: error ?? writer.error)
-            Button("Reload metadata version before reviewing draft") { Task { await refreshRevision() } }
-        }.omiScreen().navigationTitle(entity == nil ? "New label" : "Edit label")
+            Button(L10n.text("Reload metadata version before reviewing draft")) { Task { await refreshRevision() } }
+        }.omiScreen().navigationTitle(entity == nil ? L10n.text("New label") : L10n.text("Edit label"))
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(writer.busy) }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(writer.busy || draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentRevision.isEmpty) }
+                ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() }.disabled(writer.busy) }
+                ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Save")) { Task { await save() } }.disabled(writer.busy || draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentRevision.isEmpty) }
             }
             .onAppear { draft = entity?.draft ?? LabelDraft(); id = entity?.id ?? id; currentRevision = revision }
     }
     private func refreshRevision() async {
         do { let directory: LabelDirectory = try await model.client().labels(); currentRevision = directory.revision; error = nil }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
     private func save() async {
         var clean = draft; clean.aliases = draft.aliases.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var command = LabelCommand(action: "entity.save", id: id, expected_revision: currentRevision); command.create = entity == nil; command.value = clean
         do { if await writer.save(command, client: try model.client()) { onSaved(); dismiss(); await model.refreshStatus() } }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
 }

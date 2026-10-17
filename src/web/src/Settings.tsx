@@ -1,4 +1,5 @@
-import { t } from "./i18n";
+import { LocationZones } from "./LocationZones";
+import { displayLocale, t, source } from "./i18n";
 import { ProfileManagement } from "./ProfileManagement";
 import type { Profile } from "./profiles";
 import { navigatePath, subscribeNavigation } from "./routing";
@@ -14,6 +15,7 @@ import { useResource } from "./useResource";
 import { ErrorState, Loading } from "./UI";
 import { parseThemePreference, setThemePreference, useThemePreference } from "./theme";
 import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLanguagePreference, type LanguagePreference } from "./i18n";
+import { ManagedAccountPanel, ManagedConnections, useManagedAccount } from "./ManagedAccount";
 
 type NumberKey = {
   [K in keyof SettingsData]-?: SettingsData[K] extends number ? K : never;
@@ -28,44 +30,44 @@ const hintFields: {
 }[] = [
   {
     key: "marker_cooldown_seconds",
-    label: "Time between important flags",
+    label: source("Time between important flags"),
     options: [0, 15, 30, 60, 120, 300, 600, 1800, 3600],
-    zeroLabel: "No cooldown",
-    detail: "Wait before accepting another flag. Extra clicks do not extend the wait.",
+    zeroLabel: source("No cooldown"),
+    detail: source("Wait before accepting another flag. Extra clicks do not extend the wait."),
   },
   {
     key: "marker_context_seconds",
-    label: "Context before a flag",
+    label: source("Context before a flag"),
     options: [0, 15, 30, 60, 120, 180, 300],
-    zeroLabel: "No extra context",
-    detail: "Surrounding speech to consider before an important flag.",
+    zeroLabel: source("No extra context"),
+    detail: source("Surrounding speech to consider before an important flag."),
   },
   {
     key: "marker_after_seconds",
-    label: "Context after a flag",
+    label: source("Context after a flag"),
     options: [0, 15, 30, 60, 120, 300, 600],
-    zeroLabel: "No extra context",
-    detail: "Surrounding speech to consider after an important flag.",
+    zeroLabel: source("No extra context"),
+    detail: source("Surrounding speech to consider after an important flag."),
   },
   {
     key: "meeting_min_seconds",
-    label: "Minimum meeting length",
+    label: source("Minimum meeting length"),
     options: [60, 120, 300, 600, 900, 1800, 3600],
-    detail: "Shorter meeting gestures are ignored; recordings are kept. Cannot exceed the auto-stop duration.",
+    detail: source("Shorter meeting gestures are ignored; recordings are kept. Cannot exceed the auto-stop duration."),
   },
   {
     key: "meeting_context_seconds",
-    label: "Context around meetings",
+    label: source("Context around meetings"),
     options: [0, 15, 30, 60, 120, 300, 600],
-    zeroLabel: "No extra context",
-    detail: "Speech to include before and after the meeting gesture times.",
+    zeroLabel: source("No extra context"),
+    detail: source("Speech to include before and after the meeting gesture times."),
   },
   {
     key: "meeting_max_minutes",
-    label: "Automatically end a meeting after",
+    label: source("Automatically end a meeting after"),
     options: [1, 5, 15, 30, 60, 90, 120, 180, 240, 360, 480],
     unit: "minutes",
-    detail: "End a meeting gesture if you forget to stop it. Cannot be shorter than the minimum meeting length.",
+    detail: source("End a meeting gesture if you forget to stop it. Cannot be shorter than the minimum meeting length."),
   },
 ];
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
@@ -98,14 +100,14 @@ const timezones = typeof Intl.supportedValuesOf === "function"
     "America/Chicago", "America/Denver", "America/Los_Angeles", "Asia/Tokyo",
     "Asia/Kolkata", "Asia/Shanghai", "Australia/Sydney", "Pacific/Auckland"];
 function durationLabel(seconds: number): string {
-  if (seconds >= 3600 && seconds % 3600 === 0)
-    return `${seconds / 3600} ${seconds === 3600 ? "hour" : "hours"}`;
-  if (seconds >= 60 && seconds % 60 === 0)
-    return `${seconds / 60} ${seconds === 60 ? "minute" : "minutes"}`;
-  return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  const unit = seconds >= 3600 && seconds % 3600 === 0 ? "hour"
+    : seconds >= 60 && seconds % 60 === 0 ? "minute" : "second";
+  const amount = seconds / (unit === "hour" ? 3600 : unit === "minute" ? 60 : 1);
+  return new Intl.NumberFormat(displayLocale(), { style: "unit", unit, unitDisplay: "long" }).format(amount);
 }
 function retentionLabel(days: number): string {
-  return days === 0 ? "Until I remove it" : `${days} ${days === 1 ? "day" : "days"}`;
+  return days === 0 ? t("Until I remove it")
+    : new Intl.NumberFormat(displayLocale(), { style: "unit", unit: "day", unitDisplay: "long" }).format(days);
 }
 function NumberSelect({ id, value, options, onChange, label, unavailable }: {
   id: string;
@@ -146,6 +148,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   onCreateProfile?: (profile: Profile) => void;
   onUpdateProfile?: (profile: Profile) => void;
 }) {
+  const { managed } = useManagedAccount();
   const theme = useThemePreference();
   const interfaceLanguagePreference = useLanguagePreference();
   const languages = languageCodes.map((value) => ({ value, label: languageLabel(value) }))
@@ -158,7 +161,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   const [connectionRevision, setConnectionRevision] = useState(0);
   const [configurationRevision, setConfigurationRevision] = useState(0);
   const [serverDirty, setServerDirty] = useState(false);
-  const [section, setSection] = useState<SettingsSection>(sectionFromPath);
+  const [section, setSection] = useState<SettingsSection>(() => sectionFromPath(managed));
   const [search, setSearch] = useState("");
   const [serverMatches, setServerMatches] = useState<{ query: string; count: number }>();
   const query = search.trim();
@@ -170,16 +173,16 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
     navigatePath(`/settings/${next}`);
   }
   useEffect(() => {
-    const sync = () => { setSection(sectionFromPath()); setSearch(""); };
+    const sync = () => { setSection(sectionFromPath(managed)); setSearch(""); };
     return subscribeNavigation(sync);
-  }, []);
+  }, [managed]);
   const show = (group: string, category: SettingsSection) => query
     ? matchesSettings(group, query) : section === category;
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
     || show("gestures", "gestures") || show("storage", "storage");
-  const noMatches = query && !["profiles", "appearance", "daily", "gestures", "storage", "connections"].some((group) => matchesSettings(group, query))
-    && serverMatches?.query === search && serverMatches.count === 0;
+  const noMatches = query && !["account", "profiles", "appearance", "daily", "gestures", "storage", "connections", "locations"].some((group) => matchesSettings(group, query))
+    && (managed || serverMatches?.query === search && serverMatches.count === 0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
     if (resource.data) setDraft(resource.data);
@@ -229,8 +232,10 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   return (
     <div className="settings-content settings-layout">
       <SettingsNavigation section={section} search={search} onSearch={setSearch} onSelect={selectSection}
-        preferencesDirty={dirty} serverDirty={serverDirty} />
+        preferencesDirty={dirty} serverDirty={serverDirty} managed={managed} />
       <div className="settings-panels">
+      {show("account", "account") ? <ManagedAccountPanel /> : null}
+      {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {dirty && !preferencesVisible ? <div className="notice">
         <span>{t("You have unsaved preferences in another category.")}</span>
         <button type="button" className="text-button" onClick={() => selectSection("general")}>{t("Review preferences")}</button>
@@ -241,7 +246,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
         <h2>{t("No settings found")}</h2><p>{t("Try “language”, “audio”, “recap”, or “model”.")}</p>
         <button type="button" className="button" onClick={() => setSearch("")}>{t("Clear search")}</button></div> : null}
       {show("profiles", "profiles") && onCreateProfile && onUpdateProfile && onSelectProfile ? <ProfileManagement
-        profiles={profiles} selected={selectedProfile} onCreate={onCreateProfile}
+        profiles={profiles} selected={selectedProfile} onCreate={onCreateProfile} managed={managed}
         onUpdate={onUpdateProfile} onSelect={onSelectProfile} error={profileError} onRetry={onRetryProfiles} /> : null}
       <section hidden={!show("appearance", "general")}>
       {!query ? <div className="settings-section-heading"><h2>{t("Daily preferences")}</h2></div> : null}
@@ -271,7 +276,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
             onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
             <option value="system">{t("System language")}</option>
             {interfaceLanguages.map((code) => <option key={code} value={code}>
-              {code === "en" ? "English" : "Dansk"}
+              {new Intl.DisplayNames([code], { type: "language" }).of(code)}
             </option>)}
           </select>
           <small>{t("Saved on this device. This changes the interface, not transcription or summary languages.")}</small>
@@ -338,7 +343,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                 <ul className="translation-language-list" aria-labelledby="translation-languages-label">
                   {(draft.translation_languages ?? ["en"]).map((code) => <li key={code}>
                     <span>{languageLabel(code)}</span>
-                    <button type="button" className="text-button" aria-label={`Remove ${languageLabel(code)} translation language`}
+                    <button type="button" className="text-button" aria-label={t("Remove {value0} translation language", { value0: languageLabel(code) })}
                       onClick={() => update("translation_languages", (draft.translation_languages ?? ["en"]).filter((value) => value !== code))}>{t("Remove")}</button>
                   </li>)}
                 </ul>
@@ -379,8 +384,8 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
             <legend>{t("Flags & meetings")}</legend>
             <p className="muted settings-description">
               {t("Mark an important moment or a meeting to help Daythread understand nearby speech. These gestures provide context; they do not trim your recordings.")}{" "}</p>
-            {[{ title: "Important flags", fields: hintFields.slice(0, 3) },
-              { title: "Meeting gestures", fields: hintFields.slice(3) }].map((group) => <div className="settings-subgroup" key={group.title}>
+            {[{ title: t("Important flags"), fields: hintFields.slice(0, 3) },
+              { title: t("Meeting gestures"), fields: hintFields.slice(3) }].map((group) => <div className="settings-subgroup" key={group.title}>
             <h3>{group.title}</h3>
             <div className="settings-grid">
               {group.fields.map((field) => (
@@ -442,25 +447,25 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
               </label>
             </div>
             <p className="caption access-note">
-              {t("This app has no sign-in. Anyone who can reach your server address can access this archive.")}{" "}</p>
+              {managed ? t("Your hosted archive is protected by your Daythread account. Sign out on shared devices.") : t("This app has no sign-in. Anyone who can reach your server address can access this archive.")}{" "}</p>
           </fieldset>
         </form>
       )}
-      <div hidden={!showServer}>
+      {!managed ? <div hidden={!showServer}>
         <Configuration search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
           onSearchResults={onSearchResults}
           onSaved={() => { setConnectionRevision((value) => value + 1); onSaved(); }}
           hiddenFields={serverHiddenFields} />
-      </div>
+      </div> : null}
       <div hidden={!show("connections", "connections")}>
-        <OmiIntegration profileSelected={Boolean(selectedProfile)} refreshRevision={connectionRevision} search={search}
-          onConfigure={() => { setSection("server"); setSearch("Omi connections"); }}
-          onSaved={() => { setConfigurationRevision((value) => value + 1); onSaved(); }} />
+        {managed ? <ManagedConnections /> : <OmiIntegration profileSelected={Boolean(selectedProfile)} refreshRevision={connectionRevision} search={search}
+          onConfigure={(label) => { setSection("server"); setSearch(label ?? t("Omi connections")); }}
+          onSaved={() => { setConfigurationRevision((value) => value + 1); onSaved(); }} />}
       </div>
           {error ? <ErrorState message={error} /> : null}
           <div hidden={!preferencesVisible || (!dirty && !busy && !saved)} className={`settings-actions${dirty || busy ? " has-changes" : ""}`}>
             <p className="caption settings-save-status" role="status">
-              {busy ? t("Saving your preferences…") : saved ? t("Preferences saved on your server.") : dirty ? t("Unsaved preferences.") : t("Your preferences are up to date.")}
+              {busy ? t("Saving your preferences…") : saved ? managed ? t("Preferences saved.") : t("Preferences saved on your server.") : dirty ? t("Unsaved preferences.") : t("Your preferences are up to date.")}
             </p>
             {dirty ? <button type="button" className="button" disabled={busy} onClick={() => {
               setDraft(resource.data);

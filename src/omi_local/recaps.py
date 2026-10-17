@@ -14,6 +14,7 @@ from .completion_events import publish_recap
 from .conversation_state import Conversation, activity, conversations, manual_upload
 from .domain import EvidenceChanged, stamp
 from .inference import InferenceError, validate_citations
+from .vendor_imports import transcript_import
 from .voice_activity import analyze_voice
 
 if TYPE_CHECKING:
@@ -118,7 +119,7 @@ class Recaps:
         """Backfill older recordings; new recordings are observed by the STT worker."""
         store = self.memory.store
         for row in store.recap_snapshot()["rows"]:
-            if (manual_upload(row) or row["source_kind"] == "omi_api"
+            if (manual_upload(row) or transcript_import(row["source_kind"])
                     or row["state"] != "done" or activity(row)):
                 continue
             if row["audio_available"] and Path(row["path"]).is_file():

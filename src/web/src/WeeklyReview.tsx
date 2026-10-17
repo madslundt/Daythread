@@ -1,4 +1,4 @@
-import { t } from "./i18n";
+import { t, source } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { useEffect, useState } from "react";
 import { errorMessage, newId, post } from "./api";
@@ -35,8 +35,8 @@ type Review = {
   stale: boolean; sources: Source[]; job: Job | null;
 };
 const groups: [Item["category"], string][] = [
-  ["decision", "Supported decisions"], ["commitment", "Commitments needing attention"],
-  ["discussion", "Recurring discussions"], ["change", "Changes since last week"],
+  ["decision", source("Supported decisions")], ["commitment", source("Commitments needing attention")],
+  ["discussion", source("Recurring discussions")], ["change", source("Changes since last week")],
 ];
 
 export function WeeklyReview({ timezone, onChat }: {
@@ -148,8 +148,8 @@ export function WeeklyReview({ timezone, onChat }: {
           <button className="button" onClick={() => onChat({ kind: "range", start_day: week, end_day: shiftDay(week, 6) })}>{t("Chat about this week")}</button>
           <button className="text-button" onClick={() => setShowHistory((value) => !value)}>{t("Review history")}</button>
         </div>
-        {running ? <p role="status">{job.state === "queued" ? t("Queued for local generation") : `Generating locally · ${job.completed_calls} model calls completed`}{t(". You can leave this view; the backend keeps working.")}</p> : null}
-        {job?.state === "failed" ? <ErrorState message={job.error || "Generation failed. Try again."} /> : null}
+        {running ? <p role="status">{job.state === "queued" ? t("Queued for local generation") : t("Generating locally · {value0} model calls completed", { value0: job.completed_calls })}{t(". You can leave this view; the backend keeps working.")}</p> : null}
+        {job?.state === "failed" ? <ErrorState message={job.error || t("Generation failed. Try again.")} /> : null}
         {data.state === "empty" ? <p role="status">{t("No transcribed speech received for this week. Pending audio may appear later.")}</p> : null}
         {data.stale ? <Notice>{t("Recorded evidence or configuration changed. This saved interpretation is stale; refresh it before relying on it. Source inspection shows current transcripts.")}</Notice> : null}
         {selectedVersion ? <Notice>{t("Historical version. Its claims and quotes reflect the generation cutoff. Source inspection shows current transcripts.")}{" "}<button className="text-button" onClick={() => setSelectedVersion("")}>{t("Return to latest")}</button></Notice> : null}

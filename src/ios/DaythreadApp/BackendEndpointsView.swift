@@ -11,8 +11,14 @@ struct BackendEndpointsView: View {
     @State private var draft: BackendEndpointDraft?
     @State private var error: String?
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
+            if model.usesManagedHosting {
+                NavigationLink(L10n.text("Account & connection")) { ManagedAccountView() }
+                Text(L10n.text("The managed service address is fixed by this app."))
+            } else {
             Section {
                 ForEach(model.backendEndpoints) { endpoint in
                     Button {
@@ -24,19 +30,19 @@ struct BackendEndpointsView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Edit URL and connection options")
+                    .accessibilityHint(L10n.text("Edit URL and connection options"))
                     .accessibilityIdentifier("endpoints.row.\(endpoint.id)")
                     .deleteDisabled(model.backendEndpoints.count <= 1)
                     .contextMenu {
                         Button {
                             draft = BackendEndpointDraft(endpoint: endpoint)
                         } label: {
-                            Label("Edit endpoint", systemImage: "pencil")
+                            Label(L10n.text("Edit endpoint"), systemImage: "pencil")
                         }
                         Button {
                             model.activateEndpoint(endpoint.id)
                         } label: {
-                            Label("Use this endpoint", systemImage: "checkmark.circle")
+                            Label(L10n.text("Use this endpoint"), systemImage: "checkmark.circle")
                         }
                         .disabled(model.backendConfiguration.activeEndpoint?.id == endpoint.id)
                     }
@@ -44,25 +50,26 @@ struct BackendEndpointsView: View {
                 .onDelete(perform: remove)
                 .onMove { model.moveEndpoints(from: $0, to: $1) }
             } header: {
-                Text("Endpoints")
+                Text(L10n.text("Endpoints"))
             } footer: {
-                Text("Tap an endpoint to edit its URL or test its connection. Use Edit to delete or reorder the list. Keep at least one endpoint.")
+                Text(L10n.text("Tap an endpoint to edit its URL or test its connection. Use Edit to delete or reorder the list. Keep at least one endpoint."))
             }
             Section {
                 Button {
                     draft = BackendEndpointDraft(endpoint: nil)
                 } label: {
-                    Label("Add endpoint", systemImage: "plus")
+                    Label(L10n.text("Add endpoint"), systemImage: "plus")
                 }
                 .accessibilityIdentifier("endpoints.add")
             } footer: {
-                Text("Requests start with the active endpoint, then try the remaining endpoints in order if it is unavailable. A successful endpoint becomes active automatically.")
+                Text(L10n.text("Requests start with the active endpoint, then try the remaining endpoints in order if it is unavailable. A successful endpoint becomes active automatically."))
             }
             ErrorNote(message: error)
+            }
         }
         .listStyle(.insetGrouped)
         .omiScreen()
-        .navigationTitle("Backend endpoints")
+        .navigationTitle(L10n.text("Backend endpoints"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -80,7 +87,7 @@ struct BackendEndpointsView: View {
         do {
             for endpoint in endpoints { try model.removeEndpoint(endpoint.id) }
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = L10n.error(error) }
     }
 }
 
@@ -88,7 +95,9 @@ private struct BackendEndpointRow: View {
     let endpoint: BackendEndpoint
     let isActive: Bool
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         HStack(spacing: 12) {
             Image(systemName: isActive ? "checkmark.circle.fill" : "network")
                 .foregroundStyle(isActive ? Theme.accent : .secondary)
@@ -98,7 +107,7 @@ private struct BackendEndpointRow: View {
                     .font(.body)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(isActive ? "Active" : "Fallback")
+                Text(isActive ? L10n.text("Active") : L10n.text("Fallback"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -134,7 +143,9 @@ private struct BackendEndpointEditor: View {
     private var isHTTP: Bool { URL(string: trimmedAddress)?.scheme?.lowercased() == "http" }
     private var isActive: Bool { endpoint?.id == model.backendConfiguration.activeEndpoint?.id }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             Form {
                 Section {
@@ -145,31 +156,31 @@ private struct BackendEndpointEditor: View {
                         .focused($addressFocused)
                         .submitLabel(.done)
                         .onSubmit { save() }
-                        .accessibilityLabel("Backend endpoint URL")
+                        .accessibilityLabel(L10n.text("Backend endpoint URL"))
                         .accessibilityIdentifier("endpoints.url")
                 } header: {
-                    Text("Endpoint URL")
+                    Text(L10n.text("Endpoint URL"))
                 } footer: {
-                    Text("Include http:// or https:// and a port if needed. Do not include credentials, a query or a fragment.")
+                    Text(L10n.text("Include http:// or https:// and a port if needed. Do not include credentials, a query or a fragment."))
                 }
                 if isHTTP {
                     Section {
-                        Label("HTTP is unencrypted. Use it only on a trusted LAN or private VPN. HTTPS is recommended.", systemImage: "exclamationmark.triangle")
+                        Label(L10n.text("HTTP is unencrypted. Use it only on a trusted LAN or private VPN. HTTPS is recommended."), systemImage: "exclamationmark.triangle")
                             .font(.callout).foregroundStyle(.orange)
                     }
                 }
                 if let endpoint, !hasChanges {
-                    Section("Connection") {
+                    Section(L10n.text("Connection")) {
                         if isActive {
-                            Label("Active endpoint", systemImage: "checkmark.circle.fill")
+                            Label(L10n.text("Active endpoint"), systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(Theme.accent)
                         } else {
-                            Button("Use this endpoint") { model.activateEndpoint(endpoint.id) }
+                            Button(L10n.text("Use this endpoint")) { model.activateEndpoint(endpoint.id) }
                                 .accessibilityIdentifier("endpoints.activate")
                         }
                         Button { testing = true } label: {
                             HStack {
-                                Text(testing ? "Testing…" : "Test connection")
+                                Text(testing ? L10n.text("Testing…") : L10n.text("Test connection"))
                                 Spacer()
                                 if testing { ProgressView() }
                             }
@@ -186,14 +197,14 @@ private struct BackendEndpointEditor: View {
             }
             .omiScreen()
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(endpoint == nil ? "Add endpoint" : "Edit endpoint")
+            .navigationTitle(endpoint == nil ? L10n.text("Add endpoint") : L10n.text("Edit endpoint"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.accessibilityIdentifier("endpoints.cancel")
+                    Button(L10n.text("Cancel")) { dismiss() }.accessibilityIdentifier("endpoints.cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(endpoint == nil ? "Add" : "Save", action: save)
+                    Button(endpoint == nil ? L10n.text("Add") : L10n.text("Save"), action: save)
                         .disabled(trimmedAddress.isEmpty || !hasChanges)
                         .accessibilityIdentifier("endpoints.save")
                 }
@@ -210,10 +221,10 @@ private struct BackendEndpointEditor: View {
                 do {
                     try await model.testEndpoint(endpoint)
                     guard !Task.isCancelled else { return }
-                    connectionResult = "Reachable"
+                    connectionResult = L10n.text("Reachable")
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self.error = error.localizedDescription
+                    self.error = L10n.error(error)
                 }
                 testing = false
             }
@@ -228,13 +239,13 @@ private struct BackendEndpointEditor: View {
             guard !model.backendEndpoints.contains(where: {
                 $0.id != endpoint?.id && $0.address.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == withoutTrailingSlash
             }) else {
-                error = "This endpoint is already in your list."
+                error = L10n.text("This endpoint is already in your list.")
                 return
             }
             try model.saveEndpoint(address: normalized, replacing: endpoint?.id)
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }

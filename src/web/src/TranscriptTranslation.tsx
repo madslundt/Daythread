@@ -178,7 +178,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
             : <>
               {translationError ? <p className="caption translation-error" role="alert">{translationError}</p> : null}
               <button type="button" className="translation-trigger" onClick={() => onTranslate(active)}>
-                {translationError ? t("Translate again") : `Translate to ${language}`}
+                {translationError ? t("Translate again") : t("Translate to {value0}", { value0: language })}
               </button>
             </>}
         </div>

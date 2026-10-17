@@ -7,6 +7,7 @@ import { dateTimeLabel, localDateTimeInput } from "./format";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
+import { VendorOptions, type Vendor } from "./vendors";
 import { ErrorState } from "./UI";
 
 export function UploadDialog({
@@ -35,6 +36,7 @@ export function UploadDialog({
       return { recordings: [], error: errorMessage(error) };
     }
   });
+  const vendors = useResource<{ items: Vendor[] }>("/v1/vendors");
   const [recordings, setRecordings] = useState(initialSelection.recordings);
   const [checking, setChecking] = useState(Boolean(initialSelection.recordings.length));
   const [fileErrors, setFileErrors] = useState(new Map<File, string>());
@@ -130,7 +132,7 @@ export function UploadDialog({
     event.preventDefault();
     if (!recordings.length || busy || checking) return;
     if (linkExisting && !conversationSourceId) {
-      setError("Choose a source from the same conversation.");
+      setError(t("Choose a source from the same conversation."));
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -152,7 +154,7 @@ export function UploadDialog({
         scope.current.signal.throwIfAborted();
         setActiveIndex(index);
         setUploadProgress(undefined);
-        setProgress("Preparing audio locally…");
+        setProgress(t("Preparing audio locally…"));
         try {
           await queue.upload(recording, linkExisting ? conversationSourceId : "",
             controller.current.signal, scope.current, setProgress, setUploadProgress);
@@ -164,7 +166,9 @@ export function UploadDialog({
       }
       setFileErrors(failures);
       if (failures.size) {
-        setError(`${failures.size} recording${failures.size === 1 ? "" : "s"} could not be uploaded. Retry to resume without duplicating completed uploads.`);
+        setError(failures.size === 1
+          ? t("1 recording could not be uploaded. Retry to resume without duplicating completed uploads.")
+          : t("{count} recordings could not be uploaded. Retry to resume without duplicating completed uploads.", { count: failures.size }));
       } else if (!queue.skipped.size) onClose();
     } catch (error) {
       setError(errorMessage(error));
@@ -216,8 +220,8 @@ export function UploadDialog({
         <p className="caption" id="audio-file-hint">{t("WAV, M4A, MP3, OGG, FLAC, or another format supported by your browser. Up to 100 MB and two hours per file. Audio is converted locally before upload; keep this window open until it finishes.")}</p>
         {checking ? <p role="status" className="caption">{t("Checking files for duplicates before upload…")}</p> : null}
         {!checking && queue.skipped.size ? <p role="status" className="caption">
-          {queue.completed.size} {t("uploaded ·")}{" "}{queue.skipped.size} {t("duplicate")}{queue.skipped.size === 1 ? "" : t("s")} {t("skipped.")}{" "}</p> : null}
-        {(recordings.length ? recordings : [{ recordedAt: "", timeReference: "end" as const, file: undefined }]).map((recording, index) => {
+          {t("{uploaded} uploaded · {skipped} duplicates skipped.", { uploaded: queue.completed.size, skipped: queue.skipped.size })}</p> : null}
+        {(recordings.length ? recordings : [{ recordedAt: "", timeReference: "end" as const, file: undefined, vendorId: "manual" }]).map((recording, index) => {
           const { file, recordedAt, timeReference } = recording;
           const suffix = index ? `_${index}` : "";
           const saved = file && queue.completed.has(file);
@@ -227,6 +231,11 @@ export function UploadDialog({
             {skipped ? <p role="status" className="caption">{t("Duplicate skipped:")}{" "}{skipped}</p> : null}
             {saved ? <p role="status" className="caption">{t("Uploaded")}</p> : null}
             {!skipped ? <>
+            <label htmlFor={`recording-vendor${suffix}`}>{t("Recording device or brand")}</label>
+            <select id={`recording-vendor${suffix}`} value={recording.vendorId ?? "manual"}
+              disabled={!file} onChange={(event) => updateRecording(index, { vendorId: event.target.value })}>
+              <VendorOptions vendors={vendors.data?.items ?? []} />
+            </select>
             <label htmlFor={`capture-time-reference${suffix}`}>{t("Time refers to")}</label>
             <select id={`capture-time-reference${suffix}`} name={`time_reference${suffix}`} value={timeReference}
               onChange={(event) => updateRecording(index, { timeReference: event.target.value === "start" ? "start" : "end" })}
@@ -248,7 +257,7 @@ export function UploadDialog({
             </> : null}
             {file && fileErrors.has(file) ? <ErrorState message={fileErrors.get(file)!} /> : null}
             {file && !queue.hasPlan(file) && recordings.length > 1 ? <button type="button" className="button"
-              aria-label={`Remove ${file.name}`} onClick={() => removeRecording(file)}>
+              aria-label={t("Remove {value0}", { value0: file.name })} onClick={() => removeRecording(file)}>
               {t("Remove recording")}{" "}</button> : null}
           </fieldset>;
         })}
@@ -272,7 +281,7 @@ export function UploadDialog({
             {conversations.data?.items.filter((s) => s.state !== "expired").map((source) =>
               <option key={source.id} value={source.id}>
                 {dateTimeLabel(source.started_at, Intl.DateTimeFormat().resolvedOptions().timeZone)}
-                {" · "}{source.title || source.source_id || source.text?.slice(0, 80) || "Recording"}
+                {" · "}{source.title || source.source_id || source.text?.slice(0, 80) || t("Recording")}
               </option>)}
           </select>
           {conversations.loading ? <p role="status" className="caption">{t("Loading conversations…")}</p> : null}
@@ -283,16 +292,16 @@ export function UploadDialog({
         {busy ? <div ref={feedback} className="upload-feedback">
           <p role="status" className="caption">{t("Recording")}{" "}{activeIndex + 1} {t("of")}{" "}{recordings.length}: {recordings[activeIndex]?.file.name} · {queue.completed.size} {t("uploaded")}</p>
           <p role="status" className="upload-stage">
-            <strong>{uploadProgress?.confirming ? `Saving part ${Math.min(uploadProgress.completed + 1, uploadProgress.parts)} of ${uploadProgress.parts} on the server…` : progress}</strong>
+            <strong>{uploadProgress?.confirming ? t("Saving part {value0} of {value1} on the server…", { value0: Math.min(uploadProgress.completed + 1, uploadProgress.parts), value1: uploadProgress.parts }) : progress}</strong>
             {percent !== undefined ? <span>{percent}{t("% sent")}</span> : null}
           </p>
           <progress className="upload-progress" aria-label={uploadProgress ? t("Recording upload progress") : t("Preparing audio")}
             value={uploadProgress?.sent} max={uploadProgress?.total ?? 1} />
           <p className="caption">{uploadProgress
-            ? `${(uploadProgress.sent / 1_000_000).toFixed(1)} of ${(uploadProgress.total / 1_000_000).toFixed(1)} MB · ${uploadProgress.completed} of ${uploadProgress.parts} parts saved`
+            ? t("{value0} of {value1} MB · {value2} of {value3} parts saved", { value0: (uploadProgress.sent / 1_000_000).toFixed(1), value1: (uploadProgress.total / 1_000_000).toFixed(1), value2: uploadProgress.completed, value3: uploadProgress.parts })
             : t("Preparing on this device. A time estimate is not available for this step.")}</p>
           <p className="caption">{progressTime(elapsed)} {t("elapsed ·")}{" "}{estimate !== undefined
-            ? `About ${progressTime(estimate)} left to upload`
+            ? t("About {value0} left to upload", { value0: progressTime(estimate) })
             : uploadProgress?.confirming ? t("Waiting for the server to confirm this part")
               : uploadProgress ? t("Estimating upload time…") : t("Keep this window open")}</p>
           <p className="caption">{t("Transcription continues on the server after upload. Follow its progress under Capture & sync.")}</p>
@@ -302,7 +311,7 @@ export function UploadDialog({
             onClick={handled ? onClose : undefined}
             disabled={!recordings.length || busy || checking || (!handled && linkExisting && !conversationSourceId)}>
             <Icon name="upload" size={18} />
-            {checking ? t("Checking duplicates…") : busy ? uploadProgress ? t("Uploading…") : t("Preparing audio…") : handled ? t("Done") : fileErrors.size ? t("Retry failed recordings") : remaining > 1 ? `Upload ${remaining} recordings` : t("Upload recording")}
+            {checking ? t("Checking duplicates…") : busy ? uploadProgress ? t("Uploading…") : t("Preparing audio…") : handled ? t("Done") : fileErrors.size ? t("Retry failed recordings") : remaining > 1 ? t("Upload {value0} recordings", { value0: remaining }) : t("Upload recording")}
           </button>
           <button
             className="button"
@@ -359,7 +368,7 @@ export function AudioDropArea({ files = [], busy, dragging, onDragging, onChoose
         disabled={busy}
       />
       <span id="selected-audio-file" className="selected-audio-file" role="status">
-        {files.length ? `${files.length} recording${files.length === 1 ? "" : "s"} selected` : t("Select one or more audio files")}
+        {files.length ? files.length === 1 ? t("{count} recording selected", { count: files.length }) : t("{count} recordings selected", { count: files.length }) : t("Select one or more audio files")}
       </span>
     </div>
   );

@@ -66,7 +66,7 @@ export function Diary({
                 <span>{dayLabel(entry.day, true)}</span>
                 <p>
                   {entry.summary?.replace(/[#*]/g, "").slice(0, 100) ||
-                    "Day recap"}
+                    t("Day recap")}
                 </p>
               </button>
             ))}

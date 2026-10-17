@@ -8,7 +8,11 @@ from datetime import datetime
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
-MATCH_VERSION = "2"
+from .locations import CaptureLocation
+from .vendor_catalog import file_vendor
+from .vendor_imports import transcript_import
+
+MATCH_VERSION = "3"
 MANUAL_UPLOAD_SQL = "(source_kind='manual_upload' OR (source_kind='' AND device_id='web'))"
 
 SCHEMA = """
@@ -35,6 +39,8 @@ END;
 
 
 class UploadGrouping(BaseModel):
+    vendor_id: str | None = Field(default=None, max_length=80)
+    location: CaptureLocation | None = None
     recording_id: str | None = None
     part_index: int | None = Field(default=None, ge=0, le=59)
     part_count: int | None = Field(default=None, ge=1, le=60)
@@ -44,6 +50,8 @@ class UploadGrouping(BaseModel):
 
     @model_validator(mode="after")
     def complete_parts(self):
+        if self.vendor_id is not None:
+            file_vendor(self.vendor_id)
         parts = (self.recording_id, self.part_index, self.part_count)
         if any(value is not None for value in parts) and (
             any(value is None for value in parts) or self.part_index >= self.part_count
@@ -119,8 +127,10 @@ class SourceMatchingStore:
             for candidate in candidates:
                 other = dict(candidate)
                 exact = (
-                    row["source_kind"] not in {"omi_api", "omi_audio_webhook"}
-                    and other["source_kind"] not in {"omi_api", "omi_audio_webhook"}
+                    not transcript_import(row["source_kind"])
+                    and not transcript_import(other["source_kind"])
+                    and row["source_kind"] != "omi_audio_webhook"
+                    and other["source_kind"] != "omi_audio_webhook"
                     and row["digest"] == other["digest"]
                     and ((row["started_at"], row["ended_at"]) ==
                          (other["started_at"], other["ended_at"])

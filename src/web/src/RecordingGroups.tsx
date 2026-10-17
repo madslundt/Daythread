@@ -1,3 +1,4 @@
+import { ConversationTags, type ConversationTag } from "./ConversationTags";
 import { t } from "./i18n";
 import { useState } from "react";
 import { Icon } from "./Icon";
@@ -14,6 +15,7 @@ export type RecordingGroup = {
   title: string;
   recording_count: number;
   estimated_times?: boolean;
+  tags?: ConversationTag[];
   sources: Source[];
 };
 export type RecordingGroupList = {
@@ -22,18 +24,18 @@ export type RecordingGroupList = {
   total_recordings: number;
 };
 
-export function RecordingGroups({ groups, day, query, timezone, onCorrect, timeline }: {
-  groups: RecordingGroup[]; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+  groups: RecordingGroup[]; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
   return <div className="source-list source-list-compact">
     {groups.map((group) => group.recording_count === 1 ? (
       <SourceList key={group.id} compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
-    ) : <RecordingSession key={group.id} group={group} day={day} query={query} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />)}
+    ) : <RecordingSession key={group.id} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />)}
   </div>;
 }
 
-function RecordingSession({ group, day, query, timezone, onCorrect, timeline }: {
-  group: RecordingGroup; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+  group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
   const [open, setOpen] = useState(false);
   return <details className="source-row source-row-compact recording-session" onToggle={(event) => {
@@ -46,16 +48,19 @@ function RecordingSession({ group, day, query, timezone, onCorrect, timeline }: 
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
-      {open ? <SessionSources key={`${day}:${query}`} group={group} day={day} query={query} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
+      <ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} />
+      {open ? <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
     </div>
   </details>;
 }
 
-function SessionSources({ group, day, query, timezone, onCorrect, timeline }: {
-  group: RecordingGroup; day: string; query: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+  group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
   const [page, setPage] = useState(0);
   const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
+  if (zoneID) params.set("zone_id", zoneID);
+  if (tagID) params.set("tag_id", tagID);
   const resource = useResource<{ items: Source[]; total: number }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>

@@ -109,11 +109,11 @@ export function ModelPicker({ id, label, value, onChange, provider, draft, row, 
         autoCapitalize="none" autoComplete="off" spellCheck={false}
         onChange={(event) => onChange(event.target.value)} />
     </label> : null}
-    <small id={`${id}-hint`}>{description || "Choose a model from this server, or enter a custom name."}</small>
+    <small id={`${id}-hint`}>{description || t("Choose a model from this server, or enter a custom name.")}</small>
     <p id={`${id}-catalog`} className={`caption model-catalog-status${current?.error || previewError ? " model-connection-error" : ""}`} role="status">
-      {previewError || (loading ? "Looking up available models…" : current?.error ? `${current.error} You can still enter a custom model.` : current?.models ?
-        models.length ? `${models.length} ${models.length === 1 ? "model" : "models"} returned by this server. Choose one that supports ${provider === "stt" ? "transcription" : "chat"}.` :
-        "This server returned no models. Use Custom to enter a model name." : "Models are looked up from your configured server.")}
+      {previewError || (loading ? t("Looking up available models…") : current?.error ? t("{value0} You can still enter a custom model.", { value0: current.error }) : current?.models ?
+        models.length ? t("{value0} {value1} returned by this server. Choose one that supports {value2}.", { value0: models.length, value1: models.length === 1 ? t("model") : t("models"), value2: provider === "stt" ? t("transcription") : t("chat") }) :
+        t("This server returned no models. Use Custom to enter a model name.") : t("Models are looked up from your configured server."))}
     </p>
     <div className="button-row model-connection-actions">
       <button type="button" className="button small" disabled={Boolean(testing) || !selectedModel || Boolean(previewError)} onClick={() => void testConnection()}>
@@ -124,7 +124,7 @@ export function ModelPicker({ id, label, value, onChange, provider, draft, row, 
     </div>
     <small>{t("Tests use your current entries without saving.")}{" "}{provider === "stt" ? t("A short synthetic audio clip is sent; your recordings are not used.") : t("A short test message is sent to the selected model.")}</small>
     {currentResult ? <p className={`notice ${currentResult.ok ? "notice-success" : "notice-error"} model-test-result`} role={currentResult.ok ? "status" : "alert"}>
-      {currentResult.message}{currentResult.latency_ms > 0 ? ` (${(currentResult.latency_ms / 1000).toFixed(1)}s)` : ""}
+      {t(currentResult.message)}{currentResult.latency_ms > 0 ? ` (${(currentResult.latency_ms / 1000).toFixed(1)}s)` : ""}
     </p> : null}
   </div>;
 }

@@ -20,7 +20,7 @@ export function PrepBrief({
         {t(". Interpretation of selected excerpts; review citations.")}{" "}</p>
       {prepSections.map(([key, title]) => (
         <section key={key}>
-          <h3>{title}</h3>
+          <h3>{t(title)}</h3>
           {result[key].length ? (
             result[key].map((item, index) => (
               <div className="prep-item" key={index}>
@@ -52,7 +52,7 @@ export function PrepBrief({
       <details>
         <summary>{t("Evidence coverage and limits")}</summary>
         {result.coverage.limitations.map((text) => (
-          <p key={text}>{text}</p>
+          <p key={text}>{t(text)}</p>
         ))}
         <p>
           {result.coverage.omitted_matches} {t("matching recordings were not selected.")}{" "}</p>

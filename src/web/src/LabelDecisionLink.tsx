@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { newId } from "./api";
@@ -69,8 +70,8 @@ export function LabelDecisionLink({
           <option value="">{t("Select a register record")}</option>
           {resource.data?.items.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.content?.choice.text} · {d.review_status} {t("· evidence")}{" "}
-              {d.evidence_condition}
+              {d.content?.choice.text} · {statusLabel(d.review_status)} {t("· evidence")}{" "}
+              {statusLabel(d.evidence_condition)}
             </option>
           ))}
         </select>

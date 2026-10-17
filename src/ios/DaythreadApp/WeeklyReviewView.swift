@@ -35,20 +35,22 @@ struct WeeklyReviewView: View {
     private var version: JSONValue { review["version"] }
     private var versionQuery: [String: String] { selectedVersion.isEmpty ? [:] : ["version_id": selectedVersion] }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("A little perspective").font(.caption.weight(.medium)).foregroundStyle(Theme.accent)
-                    Text("Your week, considered.").font(.system(.largeTitle, design: .serif).weight(.medium))
-                    Text("Decisions, commitments, and conversations worth coming back to.").foregroundStyle(.secondary)
+                    Text(L10n.text("A little perspective")).font(.caption.weight(.medium)).foregroundStyle(Theme.accent)
+                    Text(L10n.text("Your week, considered.")).font(.system(.largeTitle, design: .serif).weight(.medium))
+                    Text(L10n.text("Decisions, commitments, and conversations worth coming back to.")).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
             }.listRowBackground(Color.clear)
             navigation
             if error != nil {
-                Section { ErrorNote(message: error); Button("Try again") { refresh = UUID() } }
+                Section { ErrorNote(message: error); Button(L10n.text("Try again")) { refresh = UUID() } }
             }
-            if loading && review == .null { Section { ProgressView("Reading your week…") } }
+            if loading && review == .null { Section { ProgressView(L10n.text("Reading your week…")) } }
             if review != .null {
                 if version != .null {
                     WeeklyReviewContent(version: version, sources: review["sources"].array, selectSource: { selectedSource = SourceSelection(source: $0) })
@@ -56,17 +58,17 @@ struct WeeklyReviewView: View {
                 actions
                 if showHistory { historySection }
                 status
-                Section("About this review") {
-                    Text("This review uses two weeks of received recordings. It is not a complete backlog of older commitments. Absence of later mention never establishes completion.")
-                    Text("Unuploaded phone backlog is unknown. Missing recordings do not establish silence or device failure. Transcripts cover whole overlapping chunks, so dates and audio boundaries can differ.")
+                Section(L10n.text("About this review")) {
+                    Text(L10n.text("This review uses two weeks of received recordings. It is not a complete backlog of older commitments. Absence of later mention never establishes completion."))
+                    Text(L10n.text("Unuploaded phone backlog is unknown. Missing recordings do not establish silence or device failure. Transcripts cover whole overlapping chunks, so dates and audio boundaries can differ."))
                     if version != .null {
-                        Text("Saved \(timestamp(version["generated_at"].text, timezone: version["timezone"].text)) · cutoff \(timestamp(version["cutoff"].text, timezone: version["timezone"].text))\(version["partial"] == .bool(true) ? " · partial week" : "")")
-                        Text("Saved evidence: \(version["coverage"]["speech_sources"].integer) speech sources this week, \(version["comparison_coverage"]["speech_sources"].integer) the previous week. Bounds \(timestamp(version["start"].text, timezone: version["timezone"].text)) to \(timestamp(version["end"].text, timezone: version["timezone"].text)) (exclusive) · \(version["timezone"].text).")
+                        Text(L10n.text("Saved \(timestamp(version["generated_at"].text, timezone: version["timezone"].text)) · cutoff \(timestamp(version["cutoff"].text, timezone: version["timezone"].text))\(version["partial"] == .bool(true) ? L10n.text(" · partial week") : "")"))
+                        Text(L10n.text("Saved evidence: \(version["coverage"]["speech_sources"].integer) speech sources this week, \(version["comparison_coverage"]["speech_sources"].integer) the previous week. Bounds \(timestamp(version["start"].text, timezone: version["timezone"].text)) to \(timestamp(version["end"].text, timezone: version["timezone"].text)) (exclusive) · \(version["timezone"].text)."))
                     }
                 }.font(.caption).foregroundStyle(.secondary)
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Weekly review").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Today", action: goToToday) } }
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Weekly review")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Today"), action: goToToday) } }
             .task(id: loadKey) { await load() }
             .task(id: showHistory ? loadKey + ".history" : "") { if showHistory { await loadHistory() } }
             .task(id: context + job["id"].text + (running ? ".poll" : ".idle")) { await poll() }
@@ -86,46 +88,46 @@ struct WeeklyReviewView: View {
         Section {
             HStack {
                 Button { select(shift(week, by: -7)) } label: { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
-                    .accessibilityLabel("Previous week")
-                DatePicker("Week beginning", selection: Binding(get: { diary.date(for: week) ?? model.now }, set: {
+                    .accessibilityLabel(L10n.text("Previous week"))
+                DatePicker(L10n.text("Week beginning"), selection: Binding(get: { diary.date(for: week) ?? model.now }, set: {
                     select(diary.dayKey(diary.dateRange(for: .week, containing: $0).lowerBound))
                 }), in: ...model.now, displayedComponents: .date)
                     .environment(\.timeZone, diary.calendar.timeZone)
                 Button { select(shift(week, by: 7)) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
-                    .disabled(week >= currentWeek).accessibilityLabel("Next week")
+                    .disabled(week >= currentWeek).accessibilityLabel(L10n.text("Next week"))
             }.buttonStyle(.borderless)
             HStack {
-                Button("Last completed week") { select(shift(currentWeek, by: -7)) }
+                Button(L10n.text("Last completed week")) { select(shift(currentWeek, by: -7)) }
                 Spacer()
-                Button("This week") { select(currentWeek) }
+                Button(L10n.text("This week")) { select(currentWeek) }
             }.buttonStyle(.borderless).font(.subheadline)
             Text("\(dateLabel(week)) – \(dateLabel(shift(week, by: 6)))").font(.headline)
-            Text("Compared with \(dateLabel(shift(week, by: -7))) – \(dateLabel(shift(week, by: -1))) · \(diary.calendar.timeZone.identifier)")
+            Text(L10n.text("Compared with \(dateLabel(shift(week, by: -7))) – \(dateLabel(shift(week, by: -1))) · \(diary.calendar.timeZone.identifier)"))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var status: some View {
-        Section("Recorded coverage") {
+        Section(L10n.text("Recorded coverage")) {
             if review["partial"] == .bool(true) {
-                Label("Week in progress · evidence through \(timestamp(review["cutoff"].text))", systemImage: "clock")
+                Label(L10n.text("Week in progress · evidence through \(timestamp(review["cutoff"].text))"), systemImage: "clock")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            WeeklyCoverageRow(title: "Selected week", coverage: review["coverage"])
-            WeeklyCoverageRow(title: "Previous week", coverage: review["comparison_coverage"])
+            WeeklyCoverageRow(title: L10n.text("Selected week"), coverage: review["coverage"])
+            WeeklyCoverageRow(title: L10n.text("Previous week"), coverage: review["comparison_coverage"])
             if review["comparison_coverage"]["speech_sources"].integer == 0 {
-                Text("There is not enough recorded evidence to compare with the previous week.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("There is not enough recorded evidence to compare with the previous week.")).font(.caption).foregroundStyle(.secondary)
             }
             if review["state"].text == "empty" {
-                ContentUnavailableView("No transcribed speech yet", systemImage: "waveform", description: Text("Pending audio may appear here later."))
+                ContentUnavailableView(L10n.text("No transcribed speech yet"), systemImage: "waveform", description: Text(L10n.text("Pending audio may appear here later.")))
             }
             if review["stale"] == .bool(true) {
-                Label("Recorded evidence or configuration changed. Refresh this saved review before relying on it.", systemImage: "arrow.triangle.2.circlepath")
+                Label(L10n.text("Recorded evidence or configuration changed. Refresh this saved review before relying on it."), systemImage: "arrow.triangle.2.circlepath")
                     .font(.callout).foregroundStyle(Theme.accent)
             }
             if !selectedVersion.isEmpty {
-                Text("Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts.").font(.caption).foregroundStyle(.secondary)
-                Button("Return to latest review") { selectedVersion = "" }
+                Text(L10n.text("Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts.")).font(.caption).foregroundStyle(.secondary)
+                Button(L10n.text("Return to latest review")) { selectedVersion = "" }
             }
         }
     }
@@ -133,29 +135,29 @@ struct WeeklyReviewView: View {
     private var actions: some View {
         Section {
             if running {
-                ProgressView(job["state"].text == "queued" ? "Queued for local generation…" : "Generating locally · \(job["completed_calls"].integer) model calls")
-                Text("You can leave this view; home-core keeps working.").font(.caption).foregroundStyle(.secondary)
+                ProgressView(job["state"].text == "queued" ? L10n.text("Queued for local generation…") : L10n.text("Generating locally · \(job["completed_calls"].integer) model calls"))
+                Text(L10n.text("You can leave this view; home-core keeps working.")).font(.caption).foregroundStyle(.secondary)
             }
-            if job["state"].text == "failed" { ErrorNote(message: job["error"].text.isEmpty ? "Generation failed. Try again." : job["error"].text) }
+            if job["state"].text == "failed" { ErrorNote(message: job["error"].text.isEmpty ? L10n.text("Generation failed. Try again.") : job["error"].text) }
             Button { generate(force: false) } label: {
-                Label(busy ? "Working…" : version == .null ? "Generate review" : review["stale"] == .bool(true) ? "Refresh review" : "Use saved review", systemImage: "sparkles")
+                Label(busy ? L10n.text("Working…") : version == .null ? L10n.text("Generate review") : review["stale"] == .bool(true) ? L10n.text("Refresh review") : L10n.text("Use saved review"), systemImage: "sparkles")
             }.disabled(busy || running || review["coverage"]["speech_sources"].integer == 0)
             if version != .null {
-                Button("Regenerate review", systemImage: "arrow.clockwise") { generate(force: true) }.disabled(busy || running)
-                Button("Export Markdown", systemImage: "square.and.arrow.up") { exportMarkdown() }.disabled(busy)
+                Button(L10n.text("Regenerate review"), systemImage: "arrow.clockwise") { generate(force: true) }.disabled(busy || running)
+                Button(L10n.text("Export Markdown"), systemImage: "square.and.arrow.up") { exportMarkdown() }.disabled(busy)
             }
             NavigationLink {
                 ChatView(initialScope: .range(week, shift(week, by: 6)))
-            } label: { Label("Chat about this week", systemImage: "bubble.left.and.bubble.right") }
-            Button(showHistory ? "Hide review history" : "Review history", systemImage: "clock.arrow.circlepath") { showHistory.toggle() }
+            } label: { Label(L10n.text("Chat about this week"), systemImage: "bubble.left.and.bubble.right") }
+            Button(showHistory ? L10n.text("Hide review history") : L10n.text("Review history"), systemImage: "clock.arrow.circlepath") { showHistory.toggle() }
         }
     }
 
     private var historySection: some View {
-        Section("Saved reviews") {
+        Section(L10n.text("Saved reviews")) {
             ErrorNote(message: historyError)
-            if historyError != nil { Button("Retry history") { refresh = UUID() } }
-            if history.isEmpty { Text("No saved versions.").foregroundStyle(.secondary) }
+            if historyError != nil { Button(L10n.text("Retry history")) { refresh = UUID() } }
+            if history.isEmpty { Text(L10n.text("No saved versions.")).foregroundStyle(.secondary) }
             ForEach(Array(history.enumerated()), id: \.element["id"].text) { _, entry in
                 Button { selectedVersion = entry["id"].text } label: {
                     HStack {
@@ -175,11 +177,11 @@ struct WeeklyReviewView: View {
         do {
             let value = try await model.client().request(path, query: versionQuery)
             guard !Task.isCancelled, key == loadKey, requestID == token else { return }
-            guard value["week_start"].text == week else { throw BackendFailure(message: "Home-core returned a review for a different week.") }
+            guard value["week_start"].text == week else { throw BackendFailure(message: L10n.text("Home-core returned a review for a different week.")) }
             review = value; job = value["job"]
         } catch {
             guard !Task.isCancelled, key == loadKey, requestID == token else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 
@@ -189,7 +191,7 @@ struct WeeklyReviewView: View {
             let value = try await model.client().request(path + "/versions")
             guard !Task.isCancelled, key == loadKey else { return }
             history = value["items"].array
-        } catch { if !Task.isCancelled, key == loadKey { historyError = error.localizedDescription } }
+        } catch { if !Task.isCancelled, key == loadKey { historyError = L10n.error(error) } }
     }
 
     private func poll() async {
@@ -203,7 +205,7 @@ struct WeeklyReviewView: View {
                 job = value
                 if !running { refresh = UUID(); return }
             }
-        } catch { if !Task.isCancelled, context == key { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, context == key { self.error = L10n.error(error) } }
     }
 
     private func generate(force: Bool) {
@@ -220,7 +222,7 @@ struct WeeklyReviewView: View {
                 _ = try await model.client().request(requestedPath + "/generate", method: "POST", body: ["request_id": id.uuidString, "force": force])
                 guard !Task.isCancelled, context == key else { return }
                 generationRequest = nil; selectedVersion = ""; refresh = UUID()
-            } catch { if !Task.isCancelled, context == key { self.error = error.localizedDescription } }
+            } catch { if !Task.isCancelled, context == key { self.error = L10n.error(error) } }
         }
     }
 
@@ -234,7 +236,7 @@ struct WeeklyReviewView: View {
                 let result = try await ArchiveMarkdownExport.prepare(client: model.client(), path: requestedPath, query: query, name: name)
                 guard !Task.isCancelled, key == context else { result.remove(); return }
                 export = result
-            } catch { if !Task.isCancelled, context == key { self.error = error.localizedDescription } }
+            } catch { if !Task.isCancelled, context == key { self.error = L10n.error(error) } }
         }
     }
 

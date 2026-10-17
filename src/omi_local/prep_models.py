@@ -72,6 +72,8 @@ class PrepSource(PrepModel):
     segments: list[dict]
     audio_available: bool
     source_kind: str
+    vendor_id: str | None = None
+    vendor_label: str | None = None
     timestamp_basis: Literal["capture", "receipt_end_estimate"] = "capture"
     source_metadata: dict = Field(default_factory=dict)
     source_id: str

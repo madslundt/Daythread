@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, newId, post, request } from "./api";
@@ -16,7 +17,7 @@ function ClaimEditor({ label, claim, sources, onChange, required = false }: {
   const source = sources.find((item) => item.id === sourceId) || sources[0];
   function attach() {
     try {
-      if (!source) throw new Error("The source is unavailable. Reload before attaching evidence.");
+      if (!source) throw new Error(t("The source is unavailable. Reload before attaching evidence."));
       onChange({ text: claim?.text || "", evidence: [decisionAnchor(source, quote)] });
       setError("");
     } catch (error) { setError(errorMessage(error)); }
@@ -28,7 +29,7 @@ function ClaimEditor({ label, claim, sources, onChange, required = false }: {
         onChange={(event) => onChange(event.target.value ? { text: event.target.value, evidence: claim?.evidence || [] } : null)} />
     </label>
     {claim ? <>
-      <p className="caption">{t("Attached evidence:")}{" "}{claim.evidence.length ? `${claim.evidence.length} quotation(s)` : t("None — attach a quotation before saving.")}</p>
+      <p className="caption">{t("Attached evidence:")}{" "}{claim.evidence.length ? t("{value0} quotation(s)", { value0: claim.evidence.length }) : t("None — attach a quotation before saving.")}</p>
       {claim.evidence.map((anchor, index) => <blockquote key={index}>{anchor.quote}</blockquote>)}
       <details>
         <summary>{t("Choose or replace supporting quotation")}</summary>
@@ -74,10 +75,10 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
     setError("");
     const claims = [content.choice, content.context, content.rationale, ...content.alternatives, ...content.contradictions].filter((value) => value !== null);
     if (!content.choice.text.trim() || claims.some((claim) => !claim.text.trim() || !claim.evidence.length)) {
-      setError("Every recorded statement needs a supporting quotation. Leave unstated context or rationale empty."); return;
+      setError(t("Every recorded statement needs a supporting quotation. Leave unstated context or rationale empty.")); return;
     }
     if (claims.some((claim) => claim.evidence.some((anchor) => sources.find((item) => item.id === anchor.source_id)?.source_version !== anchor.source_version))) {
-      setError("Evidence has changed or is unavailable. Explicitly attach quotations from the current transcript before saving."); return;
+      setError(t("Evidence has changed or is unavailable. Explicitly attach quotations from the current transcript before saving.")); return;
     }
     setBusy(true);
     const key = JSON.stringify({ version: decision?.version, state, content });
@@ -95,7 +96,7 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
     setAddingSource(true); setError("");
     try {
       const item = await request<Source>(`/v1/transcripts/${encodeURIComponent(additionalSourceId.trim())}`, { cache: "no-store" });
-      if (item.state !== "done" || !item.text || !item.source_version) throw new Error("Choose a source with a current transcript.");
+      if (item.state !== "done" || !item.text || !item.source_version) throw new Error(t("Choose a source with a current transcript."));
       setSources((items) => [...items.filter((source) => source.id !== item.id), item]);
       setAdditionalSourceId("");
     } catch (error) { setError(errorMessage(error)); }
@@ -118,7 +119,7 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
       <ClaimEditor label={t("Context")} claim={content.context} sources={sources} onChange={(context) => setContent({ ...content, context })} />
       <ClaimEditor label={t("Rationale")} claim={content.rationale} sources={sources} onChange={(rationale) => setContent({ ...content, rationale })} />
       {content.alternatives.map((alternative, index) => <div key={index}>
-        <ClaimEditor label={`Alternative ${index + 1}`} claim={alternative} sources={sources} onChange={(claim) => setContent({ ...content, alternatives: content.alternatives.map((item, i) => i === index ? claim || { text: "", evidence: [] } : item) })} />
+        <ClaimEditor label={t("Alternative {value0}", { value0: index + 1 })} claim={alternative} sources={sources} onChange={(claim) => setContent({ ...content, alternatives: content.alternatives.map((item, i) => i === index ? claim || { text: "", evidence: [] } : item) })} />
         <button type="button" className="text-button" onClick={() => setContent({ ...content, alternatives: content.alternatives.filter((_, i) => i !== index) })}>{t("Remove alternative")}</button>
       </div>)}
       <button className="text-button" type="button" onClick={() => setContent({ ...content, alternatives: [...content.alternatives, { text: "", evidence: [] }] })}>{t("Add explicitly discussed alternative")}</button>
@@ -126,7 +127,7 @@ export function DecisionEditor({ decision, source, onClose, onSaved }: {
         <label><span>{t("Contradicted field")}</span><select value={opposing.field} onChange={(event) => setContent({ ...content, contradictions: content.contradictions.map((item, i) => i === index ? { ...item, field: event.target.value as DecisionContradiction["field"] } : item) })}>
           <option value="choice">{t("Choice")}</option><option value="context">{t("Context")}</option><option value="rationale">{t("Rationale")}</option><option value="alternatives">{t("Alternatives")}</option>
         </select></label>
-        <ClaimEditor label={`Opposing statement ${index + 1}`} claim={opposing} sources={sources} onChange={(claim) => setContent({ ...content, contradictions: content.contradictions.map((item, i) => i === index ? { ...(claim || { text: "", evidence: [] }), field: item.field } : item) })} />
+        <ClaimEditor label={t("Opposing statement {value0}", { value0: index + 1 })} claim={opposing} sources={sources} onChange={(claim) => setContent({ ...content, contradictions: content.contradictions.map((item, i) => i === index ? { ...(claim || { text: "", evidence: [] }), field: item.field } : item) })} />
         <button type="button" className="text-button" onClick={() => setContent({ ...content, contradictions: content.contradictions.filter((_, i) => i !== index) })}>{t("Remove opposing statement")}</button>
       </div>)}
       <button className="text-button" type="button" onClick={() => setContent({ ...content, contradictions: [...content.contradictions, { field: "choice", text: "", evidence: [] }] })}>{t("Add contradictory evidence")}</button>

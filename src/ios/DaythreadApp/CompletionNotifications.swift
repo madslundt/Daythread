@@ -32,8 +32,8 @@ final class CompletionNotifications {
 
     func configure(model: AppModel) {
         self.model = model
-        if scope == model.archiveIdentity && client?.profileID == model.selectedProfileID {
-            client?.router.replace(model.backendConfiguration)
+        if scope == model.archiveIdentity && client?.profileID == model.selectedProfileID && client?.authorization?.sessionID == model.managedAccount.sessionID {
+            client = try? model.client().snapshot()
             return
         }
         let oldClient = client, oldInstallation = installation
@@ -44,7 +44,7 @@ final class CompletionNotifications {
         scope = model.archiveIdentity
         // A profile/archive switch must not retarget cleanup requests through the
         // AppModel's mutable router to the newly selected archive.
-        client = model.hasSelectedProfile ? try? BackendClient(router: BackendEndpointRouter(configuration: model.backendConfiguration), profileID: model.selectedProfileID) : nil
+        client = model.hasSelectedProfile ? try? model.client().snapshot() : nil
         let key = storageKey("installation")
         installation = UserDefaults.standard.string(forKey: key) ?? UUID().uuidString.lowercased()
         UserDefaults.standard.set(installation, forKey: key)
@@ -86,7 +86,7 @@ final class CompletionNotifications {
             _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             await refreshPermission()
             if authorized { UIApplication.shared.registerForRemoteNotifications() }
-        } catch { status = error.localizedDescription }
+        } catch { status = L10n.error(error) }
     }
 
     func receivedToken(_ data: Data) {
@@ -96,7 +96,7 @@ final class CompletionNotifications {
         registeredToken = nil
     }
 
-    func registrationFailed(_ error: Error) { status = "Push registration: " + error.localizedDescription }
+    func registrationFailed(_ error: Error) { status = L10n.source("Push registration: \(L10n.error(error))") }
 
     func receivePush(_ payload: [AnyHashable: Any], open: Bool) {
         guard client != nil else { pendingPush = (payload, open); return }
@@ -143,7 +143,7 @@ final class CompletionNotifications {
                 try await readFeed(client: client, generation: current)
                 if current == generation { status = nil }
             } catch {
-                if current == generation, !Task.isCancelled { status = error.localizedDescription; registeredToken = nil }
+                if current == generation, !Task.isCancelled { status = L10n.error(error); registeredToken = nil }
             }
             do { try await Task.sleep(for: .seconds(10)) } catch { return }
         }
@@ -219,19 +219,21 @@ final class CompletionNotificationDelegate: NSObject, UNUserNotificationCenterDe
 
 struct CompletionBanner: View {
     @Environment(CompletionNotifications.self) private var notifications
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         if let event = notifications.banner {
             HStack(alignment: .top, spacing: 12) {
                 Button { notifications.open(event) } label: {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(event.title).font(.headline)
-                        Text(event.body).font(.subheadline).lineLimit(3)
-                        Text("Open result").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                        Text(L10n.key(event.title)).font(.headline)
+                        Text(L10n.key(event.body)).font(.subheadline).lineLimit(3)
+                        Text(L10n.text("Open result")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain).accessibilityIdentifier("notification.open")
                 Button { notifications.banner = nil } label: {
                     Image(systemName: "xmark").frame(width: 32, height: 32)
-                }.buttonStyle(.plain).accessibilityLabel("Dismiss notification")
+                }.buttonStyle(.plain).accessibilityLabel(L10n.text("Dismiss notification"))
             }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.accent.opacity(0.25)))
                 .shadow(color: .black.opacity(0.12), radius: 12, y: 4).padding(.horizontal).padding(.top, 8)
@@ -241,24 +243,26 @@ struct CompletionBanner: View {
 
 struct CompletionNotificationSettings: View {
     @Environment(CompletionNotifications.self) private var notifications
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Section {
             if notifications.authorized {
-                Label("Push notifications allowed", systemImage: "bell.badge")
+                Label(L10n.text("Push notifications allowed"), systemImage: "bell.badge")
             } else if notifications.permission == .denied {
-                Text("Notifications are disabled in iPhone Settings.")
+                Text(L10n.text("Notifications are disabled in iPhone Settings."))
             } else {
-                Button("Enable push notifications") { Task { await notifications.requestPermission() } }
+                Button(L10n.text("Enable push notifications")) { Task { await notifications.requestPermission() } }
                     .accessibilityIdentifier("settings.enableNotifications")
             }
-            Link("Notification settings on this iPhone", destination: URL(string: UIApplication.openNotificationSettingsURLString)!)
+            Link(L10n.text("Notification settings on this iPhone"), destination: URL(string: UIApplication.openNotificationSettingsURLString)!)
             if notifications.authorized && !notifications.pushConfigured {
-                Text("Home-core needs Apple push credentials before it can send notifications while the app is closed.")
+                Text(L10n.text("Home-core needs Apple push credentials before it can send notifications while the app is closed."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let status = notifications.status { Text(status).font(.caption).foregroundStyle(.secondary) }
-        } header: { Text("Notifications") } footer: {
-            Text("Get a notification when a rewind, recap, translation or weekly review is ready while Daythread is closed. While you use the app, results appear here as in-app notifications. Push previews include the result’s title, date or language; control lock-screen previews in iPhone Settings.")
+            if let status = notifications.status { Text(L10n.key(status)).font(.caption).foregroundStyle(.secondary) }
+        } header: { Text(L10n.text("Notifications")) } footer: {
+            Text(L10n.text("Get a notification when a rewind, recap, translation or weekly review is ready while Daythread is closed. While you use the app, results appear here as in-app notifications. Push previews include the result’s title, date or language; control lock-screen previews in iPhone Settings."))
         }
     }
 }
@@ -324,7 +328,9 @@ struct CompletionSceneOverlay: UIViewRepresentable {
         @Environment(AppModel.self) private var model
         @Environment(CompletionNotifications.self) private var notifications
         @AppStorage("appearancePreference") private var appearance = AppAppearance.system
-        var body: some View {
+        @Environment(\.locale) private var interfaceLocale
+    var body: some View {
+        let _ = interfaceLocale
             ZStack(alignment: .top) {
                 Color.clear.allowsHitTesting(false)
                 if notifications.banner != nil {

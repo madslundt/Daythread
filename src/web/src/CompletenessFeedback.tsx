@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { displayLocale, t } from "./i18n";
 import { useState } from "react";
 import { errorMessage, newId, post, request } from "./api";
@@ -10,7 +11,7 @@ import { ErrorState } from "./UI";
 export function CompletenessDetails({ value }: { value?: Completeness }) {
   if (!value) return null;
   const minutes = (key: string) =>
-    `${Math.round((value.seconds[key] || 0) / 60)} min`;
+    t("{value0} min", { value0: Math.round((value.seconds[key] || 0) / 60) });
   return (
     <details className="completeness-details">
       <summary>{t("Evidence available in this period")}</summary>
@@ -36,15 +37,15 @@ export function CompletenessDetails({ value }: { value?: Completeness }) {
         {value.unknown_count} {t("intervals have no known coverage. Available transcripts do not prove continuous capture.")}{" "}</p>
       {value.capture_intervals?.map((interval) => (
         <p className="caption" key={interval.event_id}>
-          {interval.state}: {new Date(interval.start).toLocaleString(displayLocale())} –{" "}
-          {new Date(interval.end).toLocaleString(displayLocale())} · {interval.cause}
+          {statusLabel(interval.state)}: {new Date(interval.start).toLocaleString(displayLocale())} –{" "}
+          {new Date(interval.end).toLocaleString(displayLocale())} · {statusLabel(interval.cause)}
           {interval.open ? t("(no closing transition reported)") : ""}
         </p>
       ))}
       {value.capture_gaps.map((gap) => (
         <p key={gap.gap_id} className="caption">
           {new Date(gap.started_at).toLocaleString(displayLocale())} –{" "}
-          {new Date(gap.ended_at).toLocaleString(displayLocale())}: {gap.cause} · {gap.reason}
+          {new Date(gap.ended_at).toLocaleString(displayLocale())}: {statusLabel(gap.cause)} · {t(gap.reason)}
         </p>
       ))}
       {value.unknown_intervals.map((gap) => (
@@ -88,13 +89,13 @@ export function EvidenceFeedback({
       {value ? (
         <p className="caption">
           {value.selected.length} {t("of")}{" "}{value.eligible_transcripts} {t("eligible transcript sources selected ·")}{" "}{value.cited_ids.length} {t("cited ·")}{" "}
-          {value.retrieval_mode.replaceAll("_", " ")}. {value.pending_chunks}{" "}
+          {statusLabel(value.retrieval_mode)}. {value.pending_chunks}{" "}
           {t("pending and")}{" "}{value.blocked_chunks} {t("blocked when generated. Evidence may pass through summarization. Selection and citations do not verify accuracy.")}{" "}</p>
       ) : null}
       {value?.pipeline ? (
         <p className="caption">
           {value.pipeline.reduction_used
-            ? `Evidence was summarized before the final call; ${value.pipeline.final_prompt_source_ids.length} selected source IDs remained in its prompt.`
+            ? t("Evidence was summarized before the final call; {value0} selected source IDs remained in its prompt.", { value0: value.pipeline.final_prompt_source_ids.length })
             : t("The final prompt included source evidence directly.")}{" "}
           {t("Intermediate omissions are not assessed.")}{" "}</p>
       ) : null}
@@ -188,7 +189,7 @@ function FeedbackReviewRow({
   return (
     <article>
       <p>
-        {item.issue} · {item.status} {t("· user stage:")}{" "}{item.stage} {t("· diagnostic suggestion:")}{" "}{item.suggested_stage.replaceAll("_", " ")}
+        {statusLabel(item.issue)} · {statusLabel(item.status)} {t("· user stage:")}{" "}{statusLabel(item.stage)} {t("· diagnostic suggestion:")}{" "}{statusLabel(item.suggested_stage)}
       </p>
       <p>{item.note}</p>
       {item.excerpt ? <blockquote>{item.excerpt}</blockquote> : null}
@@ -220,7 +221,7 @@ function FeedbackReviewRow({
       ) : null}
       <p className="caption">
         {item.events
-          .map((e) => `${e.status} (${e.stage}): ${e.note}`)
+          .map((e) => `${statusLabel(e.status)} (${statusLabel(e.stage)}): ${e.note}`)
           .join(" · ")}
       </p>
       <label>

@@ -89,7 +89,7 @@ describe("truthful capture observations", () => {
     );
     expect(html).toContain("stale; current state unknown");
     expect(html).toContain("Phone state unknown");
-    expect(html).toContain("wifi only");
+    expect(html).toContain("Wi-Fi only");
     expect(html).toContain("Backend unavailable");
   });
   it("keeps playback, transcript, pause, and missing-file coverage separate", () => {

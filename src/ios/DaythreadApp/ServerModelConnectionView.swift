@@ -19,30 +19,32 @@ struct ServerModelConnectionView: View {
     private var hasModel: Bool {
         !(modelName.isEmpty ? inheritedModel : modelName).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 10) {
             if !models.isEmpty {
-                Menu("Choose an available model", systemImage: "list.bullet") {
-                    if !inheritedModel.isEmpty { Button("Use default (\(inheritedModel))") { modelName = "" } }
+                Menu(L10n.text("Choose an available model"), systemImage: "list.bullet") {
+                    if !inheritedModel.isEmpty { Button(L10n.text("Use default (\(inheritedModel))")) { modelName = "" } }
                     ForEach(models, id: \.self) { name in Button(name) { modelName = name } }
                 }.accessibilityIdentifier("settings.availableModels.\(provider)")
-                Text("\(models.count) models returned. Choose one that supports \(provider == "stt" ? "transcription" : "chat").")
+                Text(L10n.text("\(models.count) models returned. Choose one that supports \(provider == "stt" ? L10n.text("transcription") : L10n.text("chat"))."))
                     .font(.caption).foregroundStyle(.secondary)
             } else if lookupFinished {
-                Text("The server returned no models. Enter a custom model name above.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("The server returned no models. Enter a custom model name above.")).font(.caption).foregroundStyle(.secondary)
             }
             HStack {
-                Button(busy && !testing ? "Looking up…" : "Find models") { run(test: false) }
+                Button(busy && !testing ? L10n.text("Looking up…") : L10n.text("Find models")) { run(test: false) }
                     .disabled(busy).accessibilityIdentifier("settings.findModels.\(provider)")
                 Spacer()
-                Button(busy && testing ? "Testing…" : "Test connection") { run(test: true) }
+                Button(busy && testing ? L10n.text("Testing…") : L10n.text("Test connection")) { run(test: true) }
                     .disabled(busy || !hasModel).accessibilityIdentifier("settings.testConnection.\(provider)")
             }.buttonStyle(.borderless)
-            Text("Tests use your current entries without saving. \(provider == "stt" ? "A short synthetic audio clip is sent; your recordings are not used." : "A short test message is sent to the selected model.")")
+            Text(L10n.text("Tests use your current entries without saving. \(provider == "stt" ? L10n.text("A short synthetic audio clip is sent; your recordings are not used.") : L10n.text("A short test message is sent to the selected model."))"))
                 .font(.caption).foregroundStyle(.secondary)
             ErrorNote(message: error)
             if case .object = testResult {
-                Label(testResult["message"].text, systemImage: testResult["ok"] == .bool(true) ? "checkmark.circle" : "exclamationmark.circle")
+                Label(L10n.key(testResult["message"].text), systemImage: testResult["ok"] == .bool(true) ? "checkmark.circle" : "exclamationmark.circle")
                     .font(.callout).foregroundStyle(testResult["ok"] == .bool(true) ? Color.primary : Color.red)
             }
         }.padding(.vertical, 4)
@@ -58,7 +60,7 @@ struct ServerModelConnectionView: View {
         guard !busy else { return }
         let body: [String: Any], client: BackendClient
         do { body = try requestBody(test); client = try model.client() }
-        catch { self.error = error.localizedDescription; return }
+        catch { self.error = L10n.error(error); return }
         let identity = model.archiveIdentity, request = UUID(), currentRevision = revision
         requestID = request; busy = true; testing = test; error = nil; testResult = .null
         operation = Task {
@@ -70,7 +72,7 @@ struct ServerModelConnectionView: View {
                 else { models = result["models"].array.map(\.text); lookupFinished = true }
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity, revision == currentRevision else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }

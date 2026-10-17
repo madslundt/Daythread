@@ -1,4 +1,5 @@
-import { t } from "./i18n";
+import { statusLabel } from "./statusLabels";
+import { t, source } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, audioUrl, errorMessage, newId, request } from "./api";
 import { dateTimeLabel } from "./format";
@@ -59,7 +60,7 @@ export function InboxEditor({
     setDuplicate(item.duplicate_of || "");
     setReset([]);
     resource.setData(item);
-    setSaved("Saved to your local backend.");
+    setSaved(t("Saved to your local backend."));
     operation.current = null;
     window.dispatchEvent(new Event("omi:archive-changed"));
   }
@@ -116,7 +117,7 @@ export function InboxEditor({
       }
       setError(
         error instanceof ApiError && error.status === 409
-          ? "The saved item changed. Your draft is preserved. Load the latest saved version below, compare it, then apply your draft."
+          ? t("The saved item changed. Your draft is preserved. Load the latest saved version below, compare it, then apply your draft.")
           : errorMessage(error),
       );
       resource.refresh();
@@ -130,7 +131,7 @@ export function InboxEditor({
       timezone,
       ...draft?.deadline,
       ...value,
-      basis: "user edit",
+      basis: source("user edit"),
     });
   }
   return (
@@ -168,9 +169,9 @@ export function InboxEditor({
             {conflict ? (
               <Notice>
                 {t("Latest saved:")}{" "}{resource.data!.title} ·{" "}
-                {resource.data!.owner || "Owner unknown"} ·{" "}
+                {resource.data!.owner || t("Owner unknown")} ·{" "}
                 {deadlineLabel(resource.data!.deadline)} ·{" "}
-                {resource.data!.status}.
+                {statusLabel(resource.data!.status)}.
                 <button
                   type="button"
                   className="text-button"
@@ -286,7 +287,7 @@ export function InboxEditor({
                       {key}:{" "}
                       {key === "deadline"
                         ? deadlineLabel(base.proposal.deadline)
-                        : String(base.proposal[key] ?? "Unknown")}
+                        : String(base.proposal[key] ?? t("Unknown"))}
                     </p>
                     <button
                       type="button"
@@ -300,7 +301,7 @@ export function InboxEditor({
                     >
                       {reset.includes(key)
                         ? t("Reset on save")
-                        : `Use extracted ${key}`}
+                        : t("Use extracted {value0}", { value0: key })}
                     </button>
                   </div>
                 ),
@@ -343,7 +344,7 @@ export function InboxEditor({
               <summary>{t("Change history")}</summary>
               {resource.data?.history?.map((event) => (
                 <p className="caption" key={event.id}>
-                  {dateTimeLabel(event.created_at, timezone)} · {event.kind}
+                  {dateTimeLabel(event.created_at, timezone)} · {statusLabel(event.kind)}
                 </p>
               ))}
             </details>

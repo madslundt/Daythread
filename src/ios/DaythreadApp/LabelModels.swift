@@ -113,22 +113,22 @@ extension BackendClient {
             _ = try await client.request("v1/labels/mutations", method: "POST", body: object)
             signature = nil
             return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch { self.error = L10n.error(error); return false }
     }
 }
 
 func associationMeaning(_ value: String) -> String {
     switch value {
-    case "mentioned": "Mentioned"
-    case "participant": "Participant · confirmed by you"
-    case "about_project": "About project"
-    default: "Related · no participation claim"
+    case "mentioned": L10n.text("Mentioned")
+    case "participant": L10n.text("Participant · confirmed by you")
+    case "about_project": L10n.text("About project")
+    default: L10n.text("Related · no participation claim")
     }
 }
 func annotationMeaning(_ value: String) -> String {
     switch value {
-    case "decision": "Decision note · personal annotation, separate from register"
-    case "open_question": "Open question · written by you"
-    default: "Conversation · grouped by you"
+    case "decision": L10n.text("Decision note · personal annotation, separate from register")
+    case "open_question": L10n.text("Open question · written by you")
+    default: L10n.text("Conversation · grouped by you")
     }
 }

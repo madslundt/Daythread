@@ -16,33 +16,35 @@ struct DecisionsSection: View {
     @State private var revision = 0
     @State private var requestID = UUID()
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
-        Section("Decisions") {
-            Text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final.")
+        let _ = interfaceLocale
+        Section(L10n.text("Decisions")) {
+            Text(L10n.text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final."))
                 .font(.caption).foregroundStyle(.secondary)
-            DisclosureGroup("Search & filter") {
-                TextField("Search decisions", text: $query).submitLabel(.search)
+            DisclosureGroup(L10n.text("Search & filter")) {
+                TextField(L10n.text("Search decisions"), text: $query).submitLabel(.search)
                     .onSubmit { submitted = String(query.prefix(200)) }
                     .accessibilityIdentifier("decisions.search")
-                Button("Search") { submitted = String(query.prefix(200)) }.disabled(busy)
-                Toggle("Across all days", isOn: $allDays).accessibilityIdentifier("decisions.allDays")
-                Picker("Review status", selection: $review) {
-                    Text("Active records").tag("")
-                    Text("Proposed").tag("proposed")
-                    Text("Confirmed").tag("confirmed")
-                    Text("Dismissed").tag("dismissed")
+                Button(L10n.text("Search")) { submitted = String(query.prefix(200)) }.disabled(busy)
+                Toggle(L10n.text("Across all days"), isOn: $allDays).accessibilityIdentifier("decisions.allDays")
+                Picker(L10n.text("Review status"), selection: $review) {
+                    Text(L10n.text("Active records")).tag("")
+                    Text(L10n.text("Proposed")).tag("proposed")
+                    Text(L10n.text("Confirmed")).tag("confirmed")
+                    Text(L10n.text("Dismissed")).tag("dismissed")
                 }.accessibilityIdentifier("decisions.reviewStatus")
             }
             ForEach(items) { item in
                 NavigationLink { DecisionDetail(id: item.id) } label: { DecisionRow(record: item) }
             }
-            Text("Showing \(items.count) of \(total) records").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.text("Showing \(items.count) of \(total) records")).font(.caption).foregroundStyle(.secondary)
             if items.count < total {
-                Button("Load more decisions") { Task { await loadMore() } }.disabled(busy)
+                Button(L10n.text("Load more decisions")) { Task { await loadMore() } }.disabled(busy)
             }
-            if items.isEmpty && !busy { Text(allDays || !submitted.isEmpty || !review.isEmpty ? "No matching decision records." : "No decision records for this day.").foregroundStyle(.secondary) }
-            Button("Refresh decisions") { revision += 1 }.disabled(busy)
-            if busy { ProgressView("Reading decisions…") }
+            if items.isEmpty && !busy { Text(allDays || !submitted.isEmpty || !review.isEmpty ? L10n.text("No matching decision records.") : L10n.text("No decision records for this day.")).foregroundStyle(.secondary) }
+            Button(L10n.text("Refresh decisions")) { revision += 1 }.disabled(busy)
+            if busy { ProgressView(L10n.text("Reading decisions…")) }
             ErrorNote(message: error)
         }
         .task(id: "\(model.archiveIdentity).\(model.archiveRevision).\(day).\(allDays).\(submitted).\(review).\(revision)") { await load() }
@@ -72,7 +74,7 @@ struct DecisionsSection: View {
             let result: DecisionList = try await model.client().decisionRequest("v1/decisions", query: filters(offset: 0))
             guard !Task.isCancelled, requestID == token else { return }
             items = result.items; total = result.total
-        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
     }
     private func loadMore() async {
         guard !busy, items.count < total else { return }
@@ -83,7 +85,7 @@ struct DecisionsSection: View {
             guard !Task.isCancelled, requestID == token else { return }
             let existing = Set(items.map(\.id))
             items.append(contentsOf: result.items.filter { !existing.contains($0.id) }); total = result.total
-        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
     }
 
 }
@@ -95,10 +97,12 @@ struct DecisionRow: View {
         guard let date = AppModel.date(record.started_at) else { return record.started_at }
         return DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM yyyy HHmm")
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 5) {
             Text(record.title).foregroundStyle(.primary)
-            Text("\(record.display_state.capitalized) · \(record.review_status) · evidence \(record.evidence_condition)")
+            Text(L10n.text("\(L10n.status(record.display_state)) · \(L10n.status(record.review_status)) · evidence \(L10n.status(record.evidence_condition))"))
                 .font(.caption).foregroundStyle(.secondary)
             Text(dateLabel).font(.caption).foregroundStyle(.secondary)
         }
@@ -122,7 +126,9 @@ struct DecisionDetail: View {
     @State private var requestID = UUID()
     @State private var actionKey = ""
     @State private var commandID = UUID().uuidString
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             if let record {
                 Section {
@@ -137,64 +143,64 @@ struct DecisionDetail: View {
                 if let content = record.content {
                     DecisionClaims(content: content, historical: record.evidence_condition != "current")
                     if !content.owner_notes.isEmpty {
-                        Section("Owner note · not recorded speech") { Text(content.owner_notes).textSelection(.enabled) }
+                        Section(L10n.text("Owner note · not recorded speech")) { Text(content.owner_notes).textSelection(.enabled) }
                     }
-                    Section("Review") {
-                        Text("Confirm that the record represents its sources. Missing rationale must remain unstated.").font(.caption).foregroundStyle(.secondary)
-                        Button("Edit record and evidence") { editor = DecisionEditSelection(record: record) }
+                    Section(L10n.text("Review")) {
+                        Text(L10n.text("Confirm that the record represents its sources. Missing rationale must remain unstated.")).font(.caption).foregroundStyle(.secondary)
+                        Button(L10n.text("Edit record and evidence")) { editor = DecisionEditSelection(record: record) }
                         if record.review_status != "confirmed" && record.predecessor_id == nil && record.successor_id == nil {
-                            Button(predecessor == nil ? "Choose earlier decision this revises…" : "Revises: \(predecessor!.title)") { choosingPredecessor = true }
-                            if predecessor != nil { Button("Clear earlier decision") { predecessor = nil } }
+                            Button(predecessor == nil ? L10n.text("Choose earlier decision this revises…") : L10n.text("Revises: \(predecessor!.title)")) { choosingPredecessor = true }
+                            if predecessor != nil { Button(L10n.text("Clear earlier decision")) { predecessor = nil } }
                         }
                         if record.review_status != "confirmed" {
-                            Button(predecessor == nil ? "Confirm accuracy" : "Confirm accuracy and revision") { Task { await event("confirm") } }
+                            Button(predecessor == nil ? L10n.text("Confirm accuracy") : L10n.text("Confirm accuracy and revision")) { Task { await event("confirm") } }
                                 .disabled(record.evidence_condition != "current")
                         }
                         if record.review_status != "confirmed" && record.predecessor_id == nil && record.successor_id == nil {
-                            Button("Dismiss proposal") { Task { await event("dismiss") } }
+                            Button(L10n.text("Dismiss proposal")) { Task { await event("dismiss") } }
                         }
-                        Button(record.evidence_condition == "conflicted" ? "Resolve conflict after review" : "Mark contradictory evidence") {
+                        Button(record.evidence_condition == "conflicted" ? L10n.text("Resolve conflict after review") : L10n.text("Mark contradictory evidence")) {
                             Task { await event(record.evidence_condition == "conflicted" ? "resolve" : "conflict") }
                         }.disabled(record.evidence_condition == "stale")
-                        Button("Delete record", role: .destructive) { deleting = true }
+                        Button(L10n.text("Delete record"), role: .destructive) { deleting = true }
                     }.disabled(busy)
                 }
-                Section("Decision thread") {
-                    if let previous = record.predecessor_id { NavigationLink("Earlier decision") { DecisionDetail(id: previous) } }
-                    if let next = record.successor_id { NavigationLink("Later revision") { DecisionDetail(id: next) } }
+                Section(L10n.text("Decision thread")) {
+                    if let previous = record.predecessor_id { NavigationLink(L10n.text("Earlier decision")) { DecisionDetail(id: previous) } }
+                    if let next = record.successor_id { NavigationLink(L10n.text("Later revision")) { DecisionDetail(id: next) } }
                     Text(record.thread_id).font(.caption.monospaced()).textSelection(.enabled)
                 }
-                Section("History") {
+                Section(L10n.text("History")) {
                     ForEach(Array((record.history ?? []).enumerated()), id: \.offset) { _, entry in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Version \(entry.version) · \(entry.event)").font(.headline)
+                            Text(L10n.text("Version \(entry.version) · \(entry.event)")).font(.headline)
                             Text(entry.created_at).font(.caption).foregroundStyle(.secondary)
                             if let content = entry.content {
                                 NavigationLink(content.choice.text) {
                                     List {
-                                        Text("Historical version · may no longer reflect current evidence").font(.caption).foregroundStyle(.secondary)
+                                        Text(L10n.text("Historical version · may no longer reflect current evidence")).font(.caption).foregroundStyle(.secondary)
                                         DecisionClaims(content: content, historical: true)
-                                        if !content.owner_notes.isEmpty { Section("Historical owner note") { Text(content.owner_notes) } }
-                                    }.navigationTitle("Version \(entry.version)")
+                                        if !content.owner_notes.isEmpty { Section(L10n.text("Historical owner note")) { Text(content.owner_notes) } }
+                                    }.navigationTitle(L10n.text("Version \(entry.version)"))
                                 }
                             }
                         }
                     }
                 }
             }
-            if busy { ProgressView("Reading decision…") }
+            if busy { ProgressView(L10n.text("Reading decision…")) }
             ErrorNote(message: error)
-            Button("Refresh record") { Task { await load() } }.disabled(busy)
+            Button(L10n.text("Refresh record")) { Task { await load() } }.disabled(busy)
         }
-        .navigationTitle("Decision").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(L10n.text("Decision")).navigationBarTitleDisplayMode(.inline)
         .task(id: model.archiveIdentity + model.archiveRevision + id) { await load() }
         .refreshable { await load() }
         .sheet(item: $editor, onDismiss: { Task { await load() } }) { selection in
             NavigationStack { DecisionEditor(record: selection.record, source: nil) }
         }
         .sheet(isPresented: $choosingPredecessor) { NavigationStack { DecisionPredecessorPicker(excluding: id, before: record?.started_at ?? "", selection: $predecessor) } }
-        .confirmationDialog("Delete this decision and its content history?", isPresented: $deleting, titleVisibility: .visible) {
-            Button("Delete decision", role: .destructive) { Task { await delete() } }
+        .confirmationDialog(L10n.text("Delete this decision and its content history?"), isPresented: $deleting, titleVisibility: .visible) {
+            Button(L10n.text("Delete decision"), role: .destructive) { Task { await delete() } }
         }
         .onChange(of: phase) { _, value in
             if value == .active, !followUpActionActive { Task { await load() } }
@@ -211,7 +217,7 @@ struct DecisionDetail: View {
             let result: DecisionRecord = try await model.client().decisionRequest("v1/decisions/\(id)")
             guard !Task.isCancelled, requestID == token else { return }
             record = result
-        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
     }
     private func event(_ type: String) async {
         guard let record else { return }; busy = true; error = nil
@@ -228,7 +234,7 @@ struct DecisionDetail: View {
         } catch {
             if !Task.isCancelled, requestID == token {
                 if (error as? BackendFailure)?.requiresDecisionReload == true { clearMutationState() }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }
@@ -241,7 +247,7 @@ struct DecisionDetail: View {
         do { try await model.client().deleteDecision(record); dismiss() }
         catch {
             if (error as? BackendFailure)?.requiresDecisionReload == true { clearMutationState() }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }
@@ -250,16 +256,18 @@ struct DecisionEditSelection: Identifiable { let id = UUID(); let record: Decisi
 struct DecisionClaims: View {
     let content: DecisionContent
     var historical = false
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
-        claim("Choice", content.choice)
-        if let context = content.context { claim("Recorded context", context) }
-        if let rationale = content.rationale { claim("Recorded rationale", rationale) }
-        else { Section("Recorded rationale") { Text("Not stated").foregroundStyle(.secondary) } }
-        ForEach(Array(content.alternatives.enumerated()), id: \.offset) { index, alternative in claim("Discussed alternative \(index + 1)", alternative) }
-        ForEach(Array(content.contradictions.enumerated()), id: \.offset) { _, opposing in claim("Contradictory evidence for \(opposing.field)", opposing.claim) }
+        let _ = interfaceLocale
+        claim(L10n.text("Choice"), content.choice)
+        if let context = content.context { claim(L10n.text("Recorded context"), context) }
+        if let rationale = content.rationale { claim(L10n.text("Recorded rationale"), rationale) }
+        else { Section(L10n.text("Recorded rationale")) { Text(L10n.text("Not stated")).foregroundStyle(.secondary) } }
+        ForEach(Array(content.alternatives.enumerated()), id: \.offset) { index, alternative in claim(L10n.text("Discussed alternative \(index + 1)"), alternative) }
+        ForEach(Array(content.contradictions.enumerated()), id: \.offset) { _, opposing in claim(L10n.text("Contradictory evidence for \(opposing.field)"), opposing.claim) }
         if !content.relationships.isEmpty {
-            Section("Related labels") {
-                ForEach(Array(content.relationships.enumerated()), id: \.offset) { _, relation in Text("\(relation.kind.capitalized): \(relation.label)") }
+            Section(L10n.text("Related labels")) {
+                ForEach(Array(content.relationships.enumerated()), id: \.offset) { _, relation in Text("\(L10n.status(relation.kind)): \(relation.label)") }
             }
         }
     }
@@ -269,9 +277,9 @@ struct DecisionClaims: View {
             ForEach(Array(claim.evidence.enumerated()), id: \.offset) { _, anchor in
                 VStack(alignment: .leading) {
                     Text("“\(anchor.quote)”").textSelection(.enabled)
-                    if historical { Text("Historical evidence · inspect the current transcript before relying on it.").font(.caption).foregroundStyle(.secondary) }
-                    NavigationLink("Inspect passage in source") { DecisionEvidenceSource(anchor: anchor) }
-                    Text("Source \(anchor.source_id) · characters \(anchor.start)–\(anchor.end)").font(.caption).foregroundStyle(.secondary)
+                    if historical { Text(L10n.text("Historical evidence · inspect the current transcript before relying on it.")).font(.caption).foregroundStyle(.secondary) }
+                    NavigationLink(L10n.text("Inspect passage in source")) { DecisionEvidenceSource(anchor: anchor) }
+                    Text(L10n.text("Source \(anchor.source_id) · characters \(anchor.start)–\(anchor.end)")).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -290,29 +298,31 @@ struct DecisionEvidenceSource: View {
                                           sourceVersion: source["source_version"].text, expectedID: anchor.source_id,
                                           expectedVersion: anchor.source_version, start: anchor.start, end: anchor.end, quote: anchor.quote)
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
-            Section("Saved quotation") {
+            Section(L10n.text("Saved quotation")) {
                 Text("“\(anchor.quote)”").textSelection(.enabled)
-                Text("Transcript characters \(anchor.start)–\(anchor.end)").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("Transcript characters \(anchor.start)–\(anchor.end)")).font(.caption).foregroundStyle(.secondary)
             }
             if let source {
-                Section("Current source transcript") {
+                Section(L10n.text("Current source transcript")) {
                     if let passage {
                         (Text(passage.before) + Text(passage.quote).bold().foregroundColor(Theme.accent) + Text(passage.after))
                             .textSelection(.enabled)
                     } else {
-                        Label("The transcript or passage changed. Edit the decision and attach current evidence before confirming.", systemImage: "exclamationmark.circle")
+                        Label(L10n.text("The transcript or passage changed. Edit the decision and attach current evidence before confirming."), systemImage: "exclamationmark.circle")
                             .font(.callout).foregroundStyle(.orange)
-                        Text(source["text"].text.isEmpty ? "No transcript remains." : source["text"].text).textSelection(.enabled)
+                        Text(source["text"].text.isEmpty ? L10n.text("No transcript remains.") : source["text"].text).textSelection(.enabled)
                     }
-                    NavigationLink("Open recording, audio & correction tools") { SourceDetail(source: source) }
+                    NavigationLink(L10n.text("Open recording, audio & correction tools")) { SourceDetail(source: source) }
                 }
             }
-            if loading { ProgressView("Loading source…") }
+            if loading { ProgressView(L10n.text("Loading source…")) }
             ErrorNote(message: error)
-            if error != nil { Button("Try again") { Task { await load() } } }
-        }.omiScreen().navigationTitle("Decision evidence").navigationBarTitleDisplayMode(.inline)
+            if error != nil { Button(L10n.text("Try again")) { Task { await load() } } }
+        }.omiScreen().navigationTitle(L10n.text("Decision evidence")).navigationBarTitleDisplayMode(.inline)
             .task(id: model.archiveIdentity + model.archiveRevision + anchor.source_id) { await load() }
             .onDisappear { source = nil }
     }
@@ -325,7 +335,7 @@ struct DecisionEvidenceSource: View {
             source = result
         } catch {
             guard !Task.isCancelled, identity == model.archiveIdentity else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }
@@ -342,23 +352,25 @@ struct DecisionPredecessorPicker: View {
     @State private var total = 0
     @State private var busy = false
     @State private var requestID = UUID()
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
-            Text("Select the earlier choice this decision explicitly replaces. Check the source and date; later capture alone is insufficient.").font(.caption)
+            Text(L10n.text("Select the earlier choice this decision explicitly replaces. Check the source and date; later capture alone is insufficient.")).font(.caption)
             ForEach(items.filter { $0.id != excluding && $0.review_status == "confirmed" && $0.successor_id == nil && $0.evidence_condition == "current" && $0.content != nil && (AppModel.date($0.started_at) ?? .distantFuture) < (AppModel.date(before) ?? .distantPast) }) { record in
                 VStack(alignment: .leading) {
                     DecisionRow(record: record)
-                    NavigationLink("Inspect evidence") { DecisionDetail(id: record.id) }
-                    Button("Use this earlier decision") { selection = record; dismiss() }
+                    NavigationLink(L10n.text("Inspect evidence")) { DecisionDetail(id: record.id) }
+                    Button(L10n.text("Use this earlier decision")) { selection = record; dismiss() }
                 }
             }
-            Text("Checked \(items.count) of \(total) matching records").font(.caption).foregroundStyle(.secondary)
-            if items.count < total { Button("Load more earlier decisions") { Task { await load(reset: false) } }.disabled(busy) }
-            if busy { ProgressView("Finding earlier decisions…") }
+            Text(L10n.text("Checked \(items.count) of \(total) matching records")).font(.caption).foregroundStyle(.secondary)
+            if items.count < total { Button(L10n.text("Load more earlier decisions")) { Task { await load(reset: false) } }.disabled(busy) }
+            if busy { ProgressView(L10n.text("Finding earlier decisions…")) }
             ErrorNote(message: error)
-            if error != nil { Button("Retry earlier decisions") { Task { await load(reset: false) } }.disabled(busy) }
-        }.navigationTitle("Earlier decision").searchable(text: $query)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            if error != nil { Button(L10n.text("Retry earlier decisions")) { Task { await load(reset: false) } }.disabled(busy) }
+        }.navigationTitle(L10n.text("Earlier decision")).searchable(text: $query)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() } } }
             .task(id: model.archiveIdentity + query) { await load(reset: true) }
             .onDisappear { requestID = UUID(); items = []; total = 0; busy = false }
     }
@@ -373,6 +385,6 @@ struct DecisionPredecessorPicker: View {
             guard !Task.isCancelled, requestID == token else { return }
             let existing = Set(items.map(\.id))
             items.append(contentsOf: result.items.filter { !existing.contains($0.id) }); total = result.total
-        } catch { if !Task.isCancelled, requestID == token { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
     }
 }

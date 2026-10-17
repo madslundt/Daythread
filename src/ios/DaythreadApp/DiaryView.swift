@@ -20,14 +20,16 @@ struct DiaryView: View {
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var calendarKey: String { model.archiveIdentity + model.archiveRevision + diary.monthKey(month) + diary.calendar.timeZone.identifier }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: "Your diary", title: "Look back. See more.").editorialRow()
+                EditorialTitle(eyebrow: L10n.text("Your diary"), title: L10n.text("Look back. See more.")).editorialRow()
             }
             Section {
                 NavigationLink { WeeklyReviewView() } label: {
-                    DestinationLabel(title: "Weekly review", subtitle: "Patterns, decisions & what changed", symbol: "calendar.badge.clock", color: Theme.sage)
+                    DestinationLabel(title: L10n.text("Weekly review"), subtitle: L10n.text("Patterns, decisions & what changed"), symbol: "calendar.badge.clock", color: Theme.sage)
                 }
             }
             Section {
@@ -37,19 +39,19 @@ struct DiaryView: View {
                 }
                 HStack(spacing: 6) {
                     Circle().fill(Theme.accent).frame(width: 6, height: 6)
-                    Text("Saved recap").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("Saved recap")).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if calendarLoading { ProgressView().accessibilityLabel("Loading saved recap dates") }
+                    if calendarLoading { ProgressView().accessibilityLabel(L10n.text("Loading saved recap dates")) }
                 }
                 ErrorNote(message: calendarError)
-                if calendarError != nil { Button("Retry calendar") { Task { await loadCalendar() } } }
-            } footer: { Text("Dates in \(diary.calendar.timeZone.identifier)") }
-            Section("Saved days") {
-                if loading && entries.isEmpty { ProgressView("Opening your diary…") }
+                if calendarError != nil { Button(L10n.text("Retry calendar")) { Task { await loadCalendar() } } }
+            } footer: { Text(L10n.text("Dates in \(diary.calendar.timeZone.identifier)")) }
+            Section(L10n.text("Saved days")) {
+                if loading && entries.isEmpty { ProgressView(L10n.text("Opening your diary…")) }
                 ErrorNote(message: error)
-                if error != nil { Button("Retry diary") { Task { await load() } } }
+                if error != nil { Button(L10n.text("Retry diary")) { Task { await load() } } }
                 if entries.isEmpty && !loading && error == nil {
-                    ContentUnavailableView("The start of your diary", systemImage: "book.closed", description: Text("Completed daily recaps are saved here, ready to return to."))
+                    ContentUnavailableView(L10n.text("The start of your diary"), systemImage: "book.closed", description: Text(L10n.text("Completed daily recaps are saved here, ready to return to.")))
                 }
                 ForEach(Array(entries.enumerated()), id: \.element["day"].text) { _, entry in
                     if let date = diary.date(for: entry["day"].text) {
@@ -71,12 +73,12 @@ struct DiaryView: View {
                 }
             }
             Section {
-                NavigationLink { ChatView(initialScope: .all) } label: { Label("Chat across your diary", systemImage: "bubble.left.and.bubble.right") }
+                NavigationLink { ChatView(initialScope: .all) } label: { Label(L10n.text("Chat across your diary"), systemImage: "bubble.left.and.bubble.right") }
             }
         }
         .listStyle(.insetGrouped).omiScreen()
-        .navigationTitle("Diary").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Today", action: goToToday).accessibilityIdentifier("diary.today") } }
+        .navigationTitle(L10n.text("Diary")).navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Today"), action: goToToday).accessibilityIdentifier("diary.today") } }
         .navigationDestination(for: String.self) { day in
             if let date = diary.date(for: day) { DayView(date: date) }
         }
@@ -120,7 +122,7 @@ struct DiaryView: View {
             guard !Task.isCancelled, identity == model.archiveIdentity, entryRequest == token else { return }
             entries = response["items"].array.sorted { $0["day"].text > $1["day"].text }
         } catch {
-            if !Task.isCancelled, identity == model.archiveIdentity, entryRequest == token { self.error = error.localizedDescription }
+            if !Task.isCancelled, identity == model.archiveIdentity, entryRequest == token { self.error = L10n.error(error) }
         }
     }
 
@@ -132,14 +134,14 @@ struct DiaryView: View {
         do {
             let response = try await model.client().request("v1/calendar", query: ["month": requestedMonth])
             guard !Task.isCancelled, calendarRequest == token, calendarKey == key else { return }
-            guard response["month"].text == requestedMonth, case .array = response["days"] else { throw BackendFailure(message: "The calendar response was invalid.") }
+            guard response["month"].text == requestedMonth, case .array = response["days"] else { throw BackendFailure(message: L10n.text("The calendar response was invalid.")) }
             days = [:]; loadedCalendarKey = key
             for value in response["days"].array {
                 let entry = CalendarDay(value)
                 if entry.day.hasPrefix(requestedMonth + "-"), diary.date(for: entry.day) != nil { days[entry.day] = entry }
             }
         } catch {
-            if !Task.isCancelled, calendarRequest == token, calendarKey == key { calendarError = error.localizedDescription }
+            if !Task.isCancelled, calendarRequest == token, calendarKey == key { calendarError = L10n.error(error) }
         }
     }
 }
@@ -163,16 +165,18 @@ private struct MonthCalendar: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
     private var todayKey: String { diary.dayKey(today) }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(spacing: 12) {
             HStack {
                 Button { month = diary.month(month, offset: -1) } label: { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
-                    .accessibilityLabel("Previous month")
+                    .accessibilityLabel(L10n.text("Previous month"))
                 Spacer(minLength: 0)
                 Text(diary.label(month, template: "MMMM yyyy")).font(.subheadline.weight(.medium))
                 Spacer(minLength: 0)
                 Button { month = diary.month(month, offset: 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
-                    .disabled(diary.monthKey(month) >= diary.monthKey(today)).accessibilityLabel("Next month")
+                    .disabled(diary.monthKey(month) >= diary.monthKey(today)).accessibilityLabel(L10n.text("Next month"))
             }.buttonStyle(.borderless)
             if dynamicTypeSize >= .xxLarge {
                 ForEach(diary.cells(in: month).compactMap { $0 }, id: \.self) { date in
@@ -208,7 +212,7 @@ private struct MonthCalendar: View {
             .overlay { if key == todayKey && !selected { RoundedRectangle(cornerRadius: 10).stroke(Theme.accent, lineWidth: 1) } }
             .contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(future)
-            .accessibilityLabel(diary.label(date, template: "EEEE d MMMM yyyy") + (key == todayKey ? ", today" : "") + (summary ? ", saved summary" : ""))
+            .accessibilityLabel(diary.label(date, template: "EEEE d MMMM yyyy") + (key == todayKey ? L10n.text(", today") : "") + (summary ? L10n.text(", saved summary") : ""))
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -217,7 +221,7 @@ private struct MonthCalendar: View {
         return Button { select(date) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(diary.label(date, template: "EEEE d MMMM"))
-                if days[key]?.hasSummary == true { Label("Saved summary", systemImage: "circle.fill").font(.caption) }
+                if days[key]?.hasSummary == true { Label(L10n.text("Saved summary"), systemImage: "circle.fill").font(.caption) }
             }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(8)
                 .background(key == diary.dayKey(day) ? Theme.accent.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain).disabled(key > todayKey)

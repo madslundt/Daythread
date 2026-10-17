@@ -1,6 +1,5 @@
 """Read-only import from Omi's personal developer API into the local archive."""
 
-import hashlib
 import json
 from datetime import timedelta
 from uuid import NAMESPACE_URL, uuid5
@@ -9,30 +8,21 @@ import httpx
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError, model_validator
 
 from .domain import stamp, utc_now
-from .service import public_source
 from .settings import Settings
 from .store import Store
+from .vendor_imports import (
+    TranscriptAdapter,
+    VendorError,
+    VendorImportRequest,
+    VendorPage,
+    VendorRecording,
+)
 
 ENDPOINT = "https://api.omi.me/v1/dev/user/conversations"
 
 
-class OmiAPIError(Exception):
-    def __init__(self, detail: str, status: int = 502):
-        self.detail, self.status = detail, status
-        super().__init__(detail)
-
-
-class ImportRequest(BaseModel):
-    start_date: AwareDatetime | None = None
-    end_date: AwareDatetime | None = None
-    limit: int = Field(default=25, ge=1, le=100)
-    offset: int = Field(default=0, ge=0, le=1_000_000)
-
-    @model_validator(mode="after")
-    def date_range(self):
-        if self.start_date and self.end_date and self.start_date >= self.end_date:
-            raise ValueError("Import start must be before end")
-        return self
+OmiAPIError = VendorError
+ImportRequest = VendorImportRequest
 
 
 class Segment(BaseModel):
@@ -90,7 +80,13 @@ class Conversation(BaseModel):
         }
 
 
-class OmiAPI:
+class OmiAPI(TranscriptAdapter):
+    vendor_id = "omi"
+    label = "Omi"
+    endpoint = ENDPOINT
+    identity_namespace = ENDPOINT
+    key_setting = "omi_api_key"
+
     def __init__(self, settings: Settings, client: httpx.AsyncClient, store: Store):
         self.key = settings.omi_api_key.get_secret_value().strip()
         self.client, self.store = client, store
@@ -103,12 +99,14 @@ class OmiAPI:
             "imports_audio": False,
         }
 
-    async def import_page(self, request: ImportRequest) -> dict:
+    async def fetch_page(self, request: ImportRequest) -> VendorPage:
         if not self.key:
             raise OmiAPIError(
                 "Save your Omi API key in app or web server settings to enable import", 503
             )
-        params = request.model_dump(exclude_none=True, mode="json") | {"include_transcript": "true"}
+        params = request.model_dump(exclude_none=True, mode="json", exclude={"cursor"}) | {
+            "include_transcript": "true"
+        }
         try:
             async with self.client.stream(
                 "GET",
@@ -156,51 +154,19 @@ class OmiAPI:
             raise OmiAPIError(
                 "Omi returned invalid conversation data; nothing was imported"
             ) from exc
-        imported, existing, skipped, items = 0, 0, 0, []
-        with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            for source in sources:
-                if source is None:
-                    skipped += 1
-                    continue
-                if db.execute("SELECT 1 FROM import_deletions WHERE source_id=?",
-                              (source["source_id"],)).fetchone():
-                    skipped += 1
-                    continue
-                old = db.execute("SELECT * FROM audio WHERE id=?", (source["id"],)).fetchone()
-                if old:
-                    # Repeated imports preserve local corrections and retention decisions.
-                    existing += 1
-                    items.append(public_source(dict(old)))
-                    continue
-                db.execute(
-                    "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,state,text,"
-                    "segments,audio_available,source_kind,source_id) "
-                    "VALUES(?,?,?,?,?,?,'done',?,?,0,'omi_api',?)",
-                    (
-                        source["id"],
-                        "omi-api",
-                        source["started_at"],
-                        source["ended_at"],
-                        hashlib.sha256(source["text"].encode()).hexdigest(),
-                        str(self.store.audio_dir / f"{source['id']}.wav"),
-                        source["text"],
-                        source["segments"],
-                        source["source_id"],
-                    ),
+        return VendorPage(
+            recordings=[
+                VendorRecording(
+                    source_id=source["source_id"],
+                    started_at=source["started_at"],
+                    ended_at=source["ended_at"],
+                    text=source["text"],
+                    segments=json.loads(source["segments"]),
                 )
-                db.execute(
-                    "INSERT INTO transcript_search VALUES(?,?)", (source["id"], source["text"])
-                )
-                self.store.refresh_source_matches(db, source["id"])
-                row = db.execute("SELECT * FROM audio WHERE id=?", (source["id"],)).fetchone()
-                items.append(public_source(dict(row)))
-                imported += 1
-        return {
-            "imported": imported,
-            "existing": existing,
-            "skipped": skipped,
-            "items": items,
-            "has_more": has_more,
-            "next_offset": next_offset,
-        }
+                if source
+                else None
+                for source in sources
+            ],
+            has_more=has_more,
+            next_offset=next_offset,
+        )

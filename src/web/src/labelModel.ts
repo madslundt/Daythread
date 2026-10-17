@@ -1,3 +1,4 @@
+import { source } from "./i18n";
 import type { Decision } from "./decisionModels";
 import { useRef, useState } from "react";
 import { errorMessage, newId, post } from "./api";
@@ -45,15 +46,15 @@ export const sourceRef = (source: Source): SourceRef => ({
   revision: source.source_version || "",
 });
 export const meanings: Record<string, string> = {
-  related: "Related · no participation claim",
-  mentioned: "Mentioned",
-  participant: "Participant · confirmed by you",
-  about_project: "About project",
+  related: source("Related · no participation claim"),
+  mentioned: source("Mentioned"),
+  participant: source("Participant · confirmed by you"),
+  about_project: source("About project"),
 };
 export const kinds: Record<string, string> = {
-  conversation: "Conversation · grouped by you",
-  decision: "Decision note · personal annotation, separate from register",
-  open_question: "Open question · written by you",
+  conversation: source("Conversation · grouped by you"),
+  decision: source("Decision note · personal annotation, separate from register"),
+  open_question: source("Open question · written by you"),
 };
 
 export function useLabelMutation(onSaved: (action?: string) => void) {

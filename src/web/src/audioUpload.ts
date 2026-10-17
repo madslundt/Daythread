@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { localDateTimeInput } from "./format";
 import { request, uploadRecording } from "./api";
 import type { ProfileScope } from "./profiles";
@@ -35,44 +36,44 @@ export function encodeWav(samples: Float32Array): ArrayBuffer {
 
 export function selectRecording(files: ArrayLike<File>): File {
   if (files.length !== 1)
-    throw new Error("Choose one recording at a time.");
+    throw new Error(t("Choose one recording at a time."));
   const file = files[0];
   if (!file.type.startsWith("audio/") && !/\.(wav|wave|m4a|mp3|mp4|ogg|oga|opus|flac|aac|aiff?|caf|webm)$/i.test(file.name))
-    throw new Error("Choose an audio file, such as WAV, M4A, or MP3.");
-  if (!file.size) throw new Error("The recording is empty. Choose another file.");
+    throw new Error(t("Choose an audio file, such as WAV, M4A, or MP3."));
+  if (!file.size) throw new Error(t("The recording is empty. Choose another file."));
   if (file.size > 100_000_000)
-    throw new Error("Choose a recording no larger than 100 MB.");
+    throw new Error(t("Choose a recording no larger than 100 MB."));
   if ([...file.name].length > 255)
-    throw new Error("Rename this file to a name of 255 characters or fewer before uploading.");
+    throw new Error(t("Rename this file to a name of 255 characters or fewer before uploading."));
   return file;
 }
 
 export function selectRecordings(files: ArrayLike<File>): File[] {
-  if (!files.length) throw new Error("Choose one or more audio files.");
+  if (!files.length) throw new Error(t("Choose one or more audio files."));
   return Array.from(files, (file) => {
     try { return selectRecording([file]); }
     catch (error) {
-      throw new Error(`${file.name}: ${error instanceof Error ? error.message : "Invalid recording."}`);
+      throw new Error(`${file.name}: ${error instanceof Error ? error.message : t("Invalid recording.")}`);
     }
   });
 }
 
-export type RecordingSelection = { file: File; recordedAt: string; timeReference: RecordingTimeReference };
+export type RecordingSelection = { file: File; recordedAt: string; timeReference: RecordingTimeReference; vendorId?: string };
 export type UploadProgress = {
   sent: number; total: number; completed: number; parts: number;
   attemptStarted: number; attemptBytes: number; updated: number; confirming: boolean;
 };
 type UploadPlan = {
   startedAt: string; endedAt: string; sourceId: string; recordingId: string; conversationSourceId: string;
-  sampleCount: number; ids: string[]; uploaded: boolean[];
+  vendorId: string; sampleCount: number; ids: string[]; uploaded: boolean[];
 };
 
 export type PrepareRecording = {
-  file_digest: string; digests: string[]; sample_count: number; source_id: string;
+  vendor_id?: string; file_digest: string; digests: string[]; sample_count: number; source_id: string;
   started_at: string; ended_at: string; conversation_source_id: string | null;
 };
 export type PreparedRecording = { status: "duplicate"; source_id: string } | {
-  status: "upload"; source_id: string; recording_id: string; started_at: string; ended_at: string;
+  status: "upload"; vendor_id?: string; source_id: string; recording_id: string; started_at: string; ended_at: string;
   conversation_source_id: string | null; parts: { id: string; digest: string; uploaded: boolean }[];
 };
 export type RecordingUploadAPI = {
@@ -134,14 +135,14 @@ export class RecordingUploadQueue {
       scope.signal.throwIfAborted();
       const owner = owners.get(digest);
       if (owner && owner !== file) {
-        this.skipped.set(file, `Same file as ${owner.name}`);
+        this.skipped.set(file, t("Same file as {value0}", { value0: owner.name }));
         continue;
       }
       owners.set(digest, file);
       const result = await this.backend.lookup(digest, signal, scope);
       signal.throwIfAborted();
       scope.signal.throwIfAborted();
-      if (result.duplicate) this.skipped.set(file, `Already uploaded as ${result.source_id || file.name}`);
+      if (result.duplicate) this.skipped.set(file, t("Already uploaded as {value0}", { value0: result.source_id || file.name }));
     }
   }
 
@@ -153,13 +154,13 @@ export class RecordingUploadQueue {
     if (this.completed.has(file) || this.skipped.has(file)) return;
     signal.throwIfAborted();
     scope.signal.throwIfAborted();
-    onStage("Checking for duplicate recordings…");
+    onStage(t("Checking for duplicate recordings…"));
     const fileDigest = await recordingFileDigest(file, signal);
     const match = await this.backend.lookup(fileDigest, signal, scope);
     signal.throwIfAborted();
     scope.signal.throwIfAborted();
     if (match.duplicate) {
-      this.skipped.set(file, `Already uploaded as ${match.source_id || file.name}`);
+      this.skipped.set(file, t("Already uploaded as {value0}", { value0: match.source_id || file.name }));
       return;
     }
     const chunkLength = 16000 * 120;
@@ -168,7 +169,7 @@ export class RecordingUploadQueue {
     scope.signal.throwIfAborted();
     const previous = this.plans.get(file);
     const bounds = recordingTimes(recording.recordedAt, samples.length, recording.timeReference);
-    onStage("Checking the converted audio for duplicates…");
+    onStage(t("Checking the converted audio for duplicates…"));
     const { sha256 } = await import("@noble/hashes/sha2.js");
     const digests: string[] = [];
     for (let offset = 0; offset < samples.length; offset += chunkLength) {
@@ -179,6 +180,7 @@ export class RecordingUploadQueue {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const prepared = await this.backend.prepare({
+      vendor_id: previous?.vendorId ?? recording.vendorId ?? "manual",
       file_digest: fileDigest, digests, sample_count: samples.length, source_id: file.name,
       started_at: previous?.startedAt ?? bounds.startedAt.toISOString(),
       ended_at: previous?.endedAt ?? bounds.endedAt.toISOString(), conversation_source_id: target || null,
@@ -186,13 +188,14 @@ export class RecordingUploadQueue {
     signal.throwIfAborted();
     scope.signal.throwIfAborted();
     if (prepared.status === "duplicate") {
-      this.skipped.set(file, `Already uploaded as ${prepared.source_id}`);
+      this.skipped.set(file, t("Already uploaded as {value0}", { value0: prepared.source_id }));
       this.plans.delete(file);
       return;
     }
     if (prepared.parts.length !== digests.length || prepared.parts.some((part, index) => part.digest !== digests[index]))
-      throw new Error("The server returned a mismatched recording upload plan.");
+      throw new Error(t("The server returned a mismatched recording upload plan."));
     const current: UploadPlan = {
+      vendorId: prepared.vendor_id ?? "manual",
       startedAt: prepared.started_at, endedAt: prepared.ended_at, sourceId: prepared.source_id,
       recordingId: prepared.recording_id, conversationSourceId: prepared.conversation_source_id || "",
       sampleCount: samples.length, ids: prepared.parts.map((part) => part.id), uploaded: prepared.parts.map((part) => part.uploaded),
@@ -218,12 +221,13 @@ export class RecordingUploadQueue {
           attemptStarted, attemptBytes: sent - initialBytes, updated: performance.now(), confirming: bytes === body.size });
       };
       reportProgress(0);
-      onStage(`Uploading part ${i + 1} of ${current.ids.length}… Keep this window open.`);
+      onStage(t("Uploading part {value0} of {value1}… Keep this window open.", { value0: i + 1, value1: current.ids.length }));
       const query = new URLSearchParams({
         device_id: "manual-web", started_at: partStartedAt, source_kind: "manual_upload", source_id: current.sourceId,
         recording_id: current.recordingId, part_index: String(i), part_count: String(current.ids.length),
         recording_started_at: current.startedAt, recording_ended_at: current.endedAt,
       });
+      if (current.vendorId !== "manual") query.set("vendor_id", current.vendorId);
       if (current.conversationSourceId) query.set("conversation_source_id", current.conversationSourceId);
       const receipt = await this.send(`/v1/audio/${current.ids[i]}?${query}`, body, reportProgress, signal, scope);
       signal.throwIfAborted();
@@ -262,15 +266,15 @@ export function recordingTimes(
 ): { startedAt: Date; endedAt: Date } {
   const selected = new Date(timestamp).getTime();
   if (!Number.isFinite(selected))
-    throw new Error("Choose a valid recording date and time.");
+    throw new Error(t("Choose a valid recording date and time."));
   if (!Number.isFinite(sampleCount) || sampleCount <= 0)
-    throw new Error("The recording contains no audio.");
+    throw new Error(t("The recording contains no audio."));
   const duration = sampleCount / 16;
   const end = reference === "end" ? selected : selected + duration;
   if (end > now + 30_000)
     throw new Error(reference === "end"
-      ? "Choose when the recording stopped, at or before now."
-      : "This recording would end in the future. Set when it began, or choose Recording ended to enter when it stopped.");
+      ? t("Choose when the recording stopped, at or before now.")
+      : t("This recording would end in the future. Set when it began, or choose Recording ended to enter when it stopped."));
   return { startedAt: new Date(end - duration), endedAt: new Date(end) };
 }
 
@@ -278,15 +282,15 @@ export async function decodeRecording(file: File, onStage?: (stage: string) => v
   selectRecording([file]);
   const decoder = new AudioContext();
   try {
-    onStage?.("Reading the recording on this device…");
+    onStage?.(t("Reading the recording on this device…"));
     const bytes = await file.arrayBuffer();
-    onStage?.("Decoding audio on this device…");
+    onStage?.(t("Decoding audio on this device…"));
     const decoded = await decoder.decodeAudioData(bytes);
     if (decoded.duration > 7200)
       throw new Error(
-        "Split recordings longer than two hours before uploading.",
+        t("Split recordings longer than two hours before uploading."),
       );
-    onStage?.("Converting audio for upload…");
+    onStage?.(t("Converting audio for upload…"));
     const offline = new OfflineAudioContext(
       1,
       Math.ceil(decoded.duration * 16000),
@@ -300,7 +304,7 @@ export async function decodeRecording(file: File, onStage?: (stage: string) => v
   } catch (error) {
     if (error instanceof Error && /two hours/.test(error.message)) throw error;
     throw new Error(
-      "Your browser could not decode this recording. Try a WAV, M4A, or MP3 file.",
+      t("Your browser could not decode this recording. Try a WAV, M4A, or MP3 file."),
     );
   } finally {
     await decoder.close();
@@ -308,9 +312,9 @@ export async function decodeRecording(file: File, onStage?: (stage: string) => v
 }
 
 export function progressTime(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, Math.ceil(seconds))} sec`;
-  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
-  return `${Math.floor(seconds / 3600)} hr ${Math.ceil((seconds % 3600) / 60)} min`;
+  if (seconds < 60) return t("{value0} sec", { value0: Math.max(1, Math.ceil(seconds)) });
+  if (seconds < 3600) return t("{value0} min", { value0: Math.ceil(seconds / 60) });
+  return t("{value0} hr {value1} min", { value0: Math.floor(seconds / 3600), value1: Math.ceil((seconds % 3600) / 60) });
 }
 
 export function uploadEstimate(sent: number, total: number, elapsed: number): number | undefined {
@@ -334,7 +338,7 @@ export function validateUploadReceipt(
     Date.parse(actual.ended_at) !== Date.parse(expected.ended_at)
   ) {
     throw new Error(
-      "The server returned a mismatched upload receipt. Retry to confirm this part before continuing.",
+      t("The server returned a mismatched upload receipt. Retry to confirm this part before continuing."),
     );
   }
 }

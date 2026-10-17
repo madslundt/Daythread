@@ -16,14 +16,14 @@ export async function copySummary(text: string): Promise<void> {
   input.focus();
   input.select();
   try {
-    if (!document.execCommand("copy")) throw new Error("Clipboard unavailable");
+    if (!document.execCommand("copy")) throw new Error(t("Clipboard unavailable"));
   } finally {
     input.remove();
     if (previous instanceof HTMLElement) previous.focus();
   }
 }
 
-export function CopySummary({ text, label = "Copy summary", context }: { text: string; label?: string; context?: string }) {
+export function CopySummary({ text, label = t("Copy summary"), context }: { text: string; label?: string; context?: string }) {
   const [status, setStatus] = useState<"ready" | "copied" | "failed">("ready");
   useEffect(() => {
     if (status !== "copied") return;

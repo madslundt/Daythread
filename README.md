@@ -20,15 +20,18 @@ Screenshots reflect the current redesign, captured in the Codex browser. Mobile 
 
 - **Capture:** durable offline phone queue, retryable uploads, pause/resume, capture-gap tracking, and optional Wi-Fi-only uploads.
 - **Import audio:** add recordings from other phones, computers, and voice recorders through the web app, preserving original start times and filenames.
+- **Recording brands:** choose Plaud, Pocket, Apple Voice Memos, Sony or Zoom for exported audio in web and iPhone imports. Web Settings → Connections also imports Pocket cloud transcripts with a backend API key and Plaud SRT/TXT transcript exports. Brands share a [capability catalog and import interface](docs/architecture.md#recording-vendors-and-import-adapters).
 - **Recording topics:** automatically generate descriptive titles and expandable topic sections after transcription, including for existing recordings.
 - **Recall:** transcript search and correction, audio rewind, and persistent chat grounded in recorded sources.
 - **Diary:** automatic daily recaps, meeting notes, history, and Markdown export.
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.
+- **Conversation tags:** add reusable manual tags, and combine tag and location-zone filters without changing recorded locations. See [tag behavior and API](docs/conversation-tags.md).
+- **Locations:** opt-in iPhone GPS tags for conversations, named zones with multiple locations and individual radii for recording filters, and confirmed arrival/departure reminders for places discussed in decision follow-ups. See [location setup and device checks](docs/location-support.md).
 - **Languages:** English and Danish interfaces on web and iPhone, with a device-level language choice separate from transcription and recap languages.
 
 ## Contribute a localization
 
-The web and iPhone apps have English and Danish interface catalogs. To add a language, translate the web JSON catalog and iPhone `Localizable.strings`, register the language in each app, then run the catalog check and app builds. See the [localization contributor guide](docs/localization.md) for file paths and steps. New interface text should be added to every catalog; recordings and generated content are not translated by this setting.
+The web and iPhone apps have English and Danish interface catalogs. To add a language, translate the web JSON catalog and iPhone `Localizable.strings`, register the language in each app, then run the catalog check and app builds. See the [localization contributor guide](docs/localization.md) for file paths and steps. The coverage check scans web and native source copy, shared server messages, status labels, and placeholders. New interface text should be added to every catalog; recordings and generated content are not translated by this setting.
 
 ## More screenshots
 

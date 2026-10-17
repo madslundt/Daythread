@@ -70,3 +70,17 @@ final class DecisionFollowUpTests: XCTestCase {
         XCTAssertNil(dated.calendarComposerDates(timeZone: .gmt))
     }
 }
+
+extension DecisionFollowUpTests {
+    func testLocationReminderIsActionableWithoutInventingDateOrCoordinates() throws {
+        let data = Data("""
+        {"kind":"reminder","title":"Pick up bike","notes":"","reason":"An errand",
+         "all_day":false,"location":"Nørrebro Cykler","location_trigger":"arrive"}
+        """.utf8)
+        let item = try JSONDecoder().decode(DecisionFollowUp.self, from: data)
+        XCTAssertTrue(item.hasLocationTrigger)
+        XCTAssertEqual(item.location_trigger, .arrive)
+        XCTAssertNil(item.actionDate(timeZone: .gmt))
+        XCTAssertEqual(try JSONDecoder().decode(DecisionFollowUp.self, from: JSONEncoder().encode(item)), item)
+    }
+}

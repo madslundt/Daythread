@@ -24,21 +24,27 @@ struct DecisionFollowUpLinks: View {
     @State private var exportID = UUID()
     @State private var store = EKEventStore()
     @State private var composer: CalendarComposition?
+    @State private var nearby: NearbyComposition?
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
             if let response {
                 ForEach(Array(response.suggestions.enumerated()), id: \.offset) { _, suggestion in
-                    if let date = suggestion.actionDate(timeZone: TimeZone(identifier: response.timezone) ?? .current) {
+                    if suggestion.hasLocationTrigger {
+                        action((suggestion.location_trigger == .leave ? String(localized: "When leaving") : String(localized: "When nearby")) + " · " + suggestion.location,
+                               suggestion: suggestion, timezone: response.timezone)
+                    } else if let date = suggestion.actionDate(timeZone: TimeZone(identifier: response.timezone) ?? .current) {
                         action(linkTitle(date, allDay: suggestion.all_day, timezone: response.timezone), suggestion: suggestion, timezone: response.timezone)
                     }
                 }
             }
-            if loading { ProgressView().controlSize(.mini).accessibilityLabel("Finding follow-ups") }
+            if loading { ProgressView().controlSize(.mini).accessibilityLabel(L10n.text("Finding follow-ups")) }
             if let error {
-                Text(error).font(.caption).foregroundStyle(.secondary)
+                Text(L10n.key(error)).font(.caption).foregroundStyle(.secondary)
                 if !invalid {
-                    Button("Retry") { Task { await load(force: true) } }
+                    Button(L10n.text("Retry")) { Task { await load(force: true) } }
                         .buttonStyle(.plain).foregroundStyle(.tint).underline()
                         .disabled(loading || exporting != nil)
                 }
@@ -54,16 +60,22 @@ struct DecisionFollowUpLinks: View {
                 composer = nil; nativeActionActive = false
             }
         }
+        .sheet(item: $nearby, onDismiss: { nativeActionActive = false }) { selection in
+            LocationReminderView(record: record, suggestion: selection.suggestion, timezone: selection.timezone) {
+                saved.insert(selection.suggestion.saveKey(record))
+            }
+        }
         .onChange(of: model.archiveIdentity) { _, _ in invalidate() }
         .onChange(of: model.archiveRevision) { _, _ in invalidate() }
         .onChange(of: phase) { _, value in
             if value == .background { invalidate() }
+            if value == .active, response == nil { Task { await load(force: true) } }
         }
         .onDisappear { requestID = UUID(); exportID = UUID(); loading = false; exporting = nil; nativeActionActive = false }
     }
 
     private func linkTitle(_ date: Date, allDay: Bool, timezone: String) -> String {
-        let formatter = DateFormatter()
+        let formatter = DateFormatter(); formatter.locale = L10n.locale
         formatter.timeZone = TimeZone(identifier: timezone) ?? .current
         var calendar = Calendar.current; calendar.timeZone = formatter.timeZone
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: Date())
@@ -84,13 +96,18 @@ struct DecisionFollowUpLinks: View {
         return HStack(spacing: 5) {
             if saved.contains(key) {
                 Label(title, systemImage: "checkmark.circle").foregroundStyle(.secondary)
-                    .accessibilityLabel("Added \(suggestion.title) to \(suggestion.kind == .event ? "Calendar" : "Reminders")")
+                    .accessibilityLabel(L10n.text("Added \(suggestion.title) to \(suggestion.kind == .event ? L10n.text("Calendar") : L10n.text("Reminders"))"))
             } else {
-                Button { Task { await export(suggestion, timezone: timezone) } } label: {
+                Button {
+                    if suggestion.hasLocationTrigger {
+                        nativeActionActive = true
+                        nearby = NearbyComposition(suggestion: suggestion, timezone: timezone)
+                    } else { Task { await export(suggestion, timezone: timezone) } }
+                } label: {
                     Text(title).underline()
                 }
                 .buttonStyle(.plain).foregroundStyle(.tint)
-                .accessibilityLabel("Add \(suggestion.title) to \(suggestion.kind == .event ? "Calendar" : "Reminders")")
+                .accessibilityLabel(L10n.text("Add \(suggestion.title) to \(suggestion.kind == .event ? L10n.text("Calendar") : L10n.text("Reminders"))"))
                 .accessibilityValue(title + " · " + timezone)
                 .disabled(exporting != nil || invalid)
                 if exporting == key { ProgressView().controlSize(.mini) }
@@ -99,7 +116,7 @@ struct DecisionFollowUpLinks: View {
     }
 
     private func invalidate() {
-        requestID = UUID(); exportID = UUID(); response = nil; composer = nil
+        requestID = UUID(); exportID = UUID(); response = nil; composer = nil; nearby = nil
         loading = false; exporting = nil; invalid = true; nativeActionActive = false
     }
 
@@ -107,13 +124,13 @@ struct DecisionFollowUpLinks: View {
         let latest: DecisionRecord = try await client.decisionRequest("v1/decisions/\(record.id)")
         guard latest.version == record.version, latest.canSuggestFollowUps else {
             invalid = true; response = nil
-            throw BackendFailure(message: "This decision changed or its evidence is no longer current. Refresh the decision.")
+            throw BackendFailure(message: L10n.text("This decision changed or its evidence is no longer current. Refresh the decision."))
         }
     }
 
     private func load(force: Bool = false) async {
         guard force || response == nil else { return }
-        let token = UUID(); requestID = token; loading = true; response = nil; error = nil
+        let token = UUID(); requestID = token; loading = true; response = nil; error = nil; invalid = false
         let identity = model.archiveIdentity, revision = model.archiveRevision
         defer { if requestID == token { loading = false } }
         do {
@@ -123,11 +140,11 @@ struct DecisionFollowUpLinks: View {
             let result: DecisionFollowUps = try await client.decisionRequest("v1/decisions/\(record.id)/suggestions", method: "POST", body: DecisionSuggestionRequest(expected_version: record.version))
             guard !Task.isCancelled, !invalid, requestID == token, model.archiveIdentity == identity, model.archiveRevision == revision else { return }
             guard result.decision_id == record.id, result.decision_version == record.version, TimeZone(identifier: result.timezone) != nil else {
-                throw BackendFailure(message: "The suggestions no longer match this decision. Refresh and try again.")
+                throw BackendFailure(message: L10n.text("The suggestions no longer match this decision. Refresh and try again."))
             }
             response = result
         } catch {
-            if !Task.isCancelled, requestID == token, model.archiveIdentity == identity, model.archiveRevision == revision { self.error = error.localizedDescription }
+            if !Task.isCancelled, requestID == token, model.archiveIdentity == identity, model.archiveRevision == revision { self.error = L10n.error(error) }
         }
     }
 
@@ -146,17 +163,17 @@ struct DecisionFollowUpLinks: View {
                 let status = EKEventStore.authorizationStatus(for: .reminder)
                 if status == .notDetermined {
                     guard try await store.requestFullAccessToReminders() else {
-                        throw BackendFailure(message: "Reminders access was declined. Enable access for Daythread in Settings to save a reminder.")
+                        throw BackendFailure(message: L10n.text("Reminders access was declined. Enable access for Daythread in Settings to save a reminder."))
                     }
                 } else if status != .fullAccess {
-                    throw BackendFailure(message: "Reminders access is unavailable. Check Daythread's Reminders access in Settings.")
+                    throw BackendFailure(message: L10n.text("Reminders access is unavailable. Check Daythread's Reminders access in Settings."))
                 }
                 try await currentDecision(client: client)
             }
             guard !Task.isCancelled, exportID == token, model.archiveIdentity == identity, model.archiveRevision == revision else { return }
             let timeZone = TimeZone(identifier: timezone) ?? .current
             var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
-            let provenance = "Daythread decision \(record.id) · version \(record.version)"
+            let provenance = L10n.text("Daythread decision \(record.id) · version \(record.version)")
             let notes = [suggestion.notes, provenance].filter { !$0.isEmpty }.joined(separator: "\n\n")
             if suggestion.kind == .event {
                 let event = EKEvent(eventStore: store)
@@ -169,11 +186,11 @@ struct DecisionFollowUpLinks: View {
                 composer = CalendarComposition(store: store, event: event, saveKey: key, identity: identity, revision: revision)
             } else {
                 guard let list = store.defaultCalendarForNewReminders(), list.allowsContentModifications else {
-                    throw BackendFailure(message: "No writable default Reminders list is available. Set up a list in Reminders, then try again.")
+                    throw BackendFailure(message: L10n.text("No writable default Reminders list is available. Set up a list in Reminders, then try again."))
                 }
                 let reminder = EKReminder(eventStore: store)
                 reminder.calendar = list; reminder.title = suggestion.title
-                reminder.notes = [notes, suggestion.location.isEmpty ? "" : "Location: \(suggestion.location)"].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                reminder.notes = [notes, suggestion.location.isEmpty ? "" : L10n.text("Location: \(suggestion.location)")].filter { !$0.isEmpty }.joined(separator: "\n\n")
                 if let due = DecisionFollowUp.date(suggestion.due_at, allDay: suggestion.all_day, timeZone: timeZone) {
                     var components = calendar.dateComponents(suggestion.all_day ? [.year, .month, .day] : [.year, .month, .day, .hour, .minute], from: due)
                     components.timeZone = timeZone; reminder.dueDateComponents = components
@@ -183,7 +200,7 @@ struct DecisionFollowUpLinks: View {
                 saved.insert(key)
             }
         } catch {
-            if exportID == token, model.archiveIdentity == identity, model.archiveRevision == revision { self.error = error.localizedDescription }
+            if exportID == token, model.archiveIdentity == identity, model.archiveRevision == revision { self.error = L10n.error(error) }
         }
     }
 }
@@ -223,4 +240,10 @@ private struct NativeEventComposer: UIViewControllerRepresentable {
         init(completed: @escaping (EKEventEditViewAction) -> Void) { self.completed = completed }
         func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) { completed(action) }
     }
+}
+
+private struct NearbyComposition: Identifiable {
+    let id = UUID()
+    let suggestion: DecisionFollowUp
+    let timezone: String
 }

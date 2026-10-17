@@ -5,9 +5,11 @@ struct InboxLink: View {
     @Environment(AppModel.self) private var model
     @State private var count: Int?
     @State private var countRequest = UUID()
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationLink { InboxView() } label: {
-            Label(count.map { "Inbox · \($0) pending across days" } ?? "Inbox · across all days", systemImage: "checklist")
+            Label(count.map { L10n.text("Inbox · \($0) pending across days") } ?? L10n.text("Inbox · across all days"), systemImage: "checklist")
         }.onAppear { Task { await refresh() } }
             .onChange(of: model.archiveIdentity) { _, _ in Task { await refresh() } }
     }
@@ -36,21 +38,23 @@ struct InboxView: View {
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var queryKey: String { "\(model.archiveIdentity)|\(status)|\(kind)|\(due)|\(offset)" }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: "Follow through", title: "Keep things moving.").editorialRow()
+                EditorialTitle(eyebrow: L10n.text("Follow through"), title: L10n.text("Keep things moving.")).editorialRow()
             }
             Section {
-                Picker("Show", selection: $status) {
-                    Text("Pending").tag("pending"); Text("Completed / answered").tag("completed"); Text("Dismissed").tag("dismissed")
+                Picker(L10n.text("Show"), selection: $status) {
+                    Text(L10n.text("Pending")).tag("pending"); Text(L10n.text("Completed / answered")).tag("completed"); Text(L10n.text("Dismissed")).tag("dismissed")
                 }
                 DisclosureGroup {
-                    Picker("Kind", selection: $kind) {
-                        Text("All kinds").tag(""); Text("Commitments").tag("commitment"); Text("Deadlines").tag("deadline"); Text("Questions").tag("question")
+                    Picker(L10n.text("Kind"), selection: $kind) {
+                        Text(L10n.text("All kinds")).tag(""); Text(L10n.text("Commitments")).tag("commitment"); Text(L10n.text("Deadlines")).tag("deadline"); Text(L10n.text("Questions")).tag("question")
                     }
-                    Picker("Deadline", selection: $due) {
-                        Text("All deadlines").tag(""); Text("Overdue").tag("overdue"); Text("Upcoming").tag("upcoming"); Text("Unknown / unresolved").tag("unknown")
+                    Picker(L10n.text("Deadline"), selection: $due) {
+                        Text(L10n.text("All deadlines")).tag(""); Text(L10n.text("Overdue")).tag("overdue"); Text(L10n.text("Upcoming")).tag("upcoming"); Text(L10n.text("Unknown / unresolved")).tag("unknown")
                     }
                 } label: {
                     Label(filterSummary, systemImage: "line.3.horizontal.decrease")
@@ -58,54 +62,54 @@ struct InboxView: View {
                 }
                 if busy { ProgressView() }
                 ErrorNote(message: error)
-                if let message { Text(message).font(.caption) }
+                if let message { Text(L10n.key(message)).font(.caption) }
             }
             if let page {
-                Section("\(status.capitalized) · all days") {
+                Section(L10n.text("\(L10n.status(status)) · all days")) {
                     ForEach(page.items) { item in
                         NavigationLink { InboxDetail(id: item.id) } label: {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(item.kind.capitalized + (item.reviewed_at == nil ? " · Unreviewed" : " · Reviewed")).font(.caption).foregroundStyle(.secondary)
+                                Text(L10n.status(item.kind) + (item.reviewed_at == nil ? L10n.text(" · Unreviewed") : L10n.text(" · Reviewed"))).font(.caption).foregroundStyle(.secondary)
                                 Text(item.title)
-                                Text("\(item.owner ?? "Owner unknown") · \(item.deadline?.label ?? "Deadline unknown")\(item.overdue == true ? " · Overdue" : "")").font(.caption).foregroundStyle(.secondary)
-                                if item.health != "current" { Text("Evidence \(item.health.replacingOccurrences(of: "_", with: " "))").font(.caption).foregroundStyle(Theme.accent) }
+                                Text("\(item.owner ?? L10n.text("Owner unknown")) · \(item.deadline?.label ?? L10n.text("Deadline unknown"))\(item.overdue == true ? L10n.text(" · Overdue") : "")").font(.caption).foregroundStyle(.secondary)
+                                if item.health != "current" { Text(L10n.text("Evidence \(L10n.status(item.health))")).font(.caption).foregroundStyle(Theme.accent) }
                             }
                         }
                     }
-                    if page.items.isEmpty { Text(page.coverage.jobs["done", default: 0] == 0 ? "No scan has completed yet. Capture new speech or scan earlier recordings below." : "No items match. Extraction may be incomplete; this does not establish that no obligations exist.").foregroundStyle(.secondary) }
+                    if page.items.isEmpty { Text(page.coverage.jobs["done", default: 0] == 0 ? L10n.text("No scan has completed yet. Capture new speech or scan earlier recordings below.") : L10n.text("No items match. Extraction may be incomplete; this does not establish that no obligations exist.")).foregroundStyle(.secondary) }
                     if page.total > 50 {
                         HStack {
-                            Button("Previous") { offset = max(0, offset - 50) }.disabled(offset == 0)
+                            Button(L10n.text("Previous")) { offset = max(0, offset - 50) }.disabled(offset == 0)
                             Spacer(); Text("\(offset + 1)–\(min(offset + 50, page.total)) / \(page.total)").font(.caption); Spacer()
-                            Button("Next") { offset += 50 }.disabled(offset + 50 >= page.total)
+                            Button(L10n.text("Next")) { offset += 50 }.disabled(offset + 50 >= page.total)
                         }
                     }
                 }
             }
-            if page == nil && error == nil { ProgressView("Opening your inbox…") }
+            if page == nil && error == nil { ProgressView(L10n.text("Opening your inbox…")) }
             Section {
                 if let page {
                     DisclosureGroup {
-                        Text("\(page.coverage.jobs["done", default: 0]) scanned · \(page.coverage.jobs["queued", default: 0]) waiting · \(page.coverage.jobs["running", default: 0]) extracting · \(page.coverage.jobs["failed", default: 0]) failed · \(page.coverage.unscanned_sources) unscanned sources")
+                        Text(L10n.text("\(page.coverage.jobs["done", default: 0]) scanned · \(page.coverage.jobs["queued", default: 0]) waiting · \(page.coverage.jobs["running", default: 0]) extracting · \(page.coverage.jobs["failed", default: 0]) failed · \(page.coverage.unscanned_sources) unscanned sources"))
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(page.recent_jobs.filter { $0.error != nil }) { job in
-                            Text("\(job.recording_start.map { $0 + " · " } ?? "")\(job.state): \(job.error ?? "") (attempt \(job.attempts))").font(.caption)
+                            Text(L10n.text("\(job.recording_start.map { $0 + " · " } ?? "")\(L10n.status(job.state)): \(L10n.key(job.error ?? "")) (attempt \(job.attempts))")).font(.caption)
                         }
                     } label: {
-                        Label(page.coverage.jobs["failed", default: 0] > 0 ? "Scan coverage · \(page.coverage.jobs["failed", default: 0]) failed" : "Scan status & coverage", systemImage: "checkmark.shield")
+                        Label(page.coverage.jobs["failed", default: 0] > 0 ? L10n.text("Scan coverage · \(page.coverage.jobs["failed", default: 0]) failed") : L10n.text("Scan status & coverage"), systemImage: "checkmark.shield")
                     }
                 }
-                DisclosureGroup("Scan earlier recordings / retry") {
-                    DatePicker("From", selection: $start, displayedComponents: .date)
-                    DatePicker("Through", selection: $end, displayedComponents: .date)
-                    Text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running.")
+                DisclosureGroup(L10n.text("Scan earlier recordings / retry")) {
+                    DatePicker(L10n.text("From"), selection: $start, displayedComponents: .date)
+                    DatePicker(L10n.text("Through"), selection: $end, displayedComponents: .date)
+                    Text(L10n.text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running."))
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Scan / retry failed work") { Task { await scan() } }.disabled(busy)
+                    Button(L10n.text("Scan / retry failed work")) { Task { await scan() } }.disabled(busy)
                 }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
-            } header: { Text("Recording coverage") } footer: {
-                Text("Proposals come from your recorded conversations and need your review.")
+            } header: { Text(L10n.text("Recording coverage")) } footer: {
+                Text(L10n.text("Proposals come from your recorded conversations and need your review."))
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Inbox").navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Inbox")).navigationBarTitleDisplayMode(.inline)
             .task(id: queryKey) { await load() }
             .task { while !Task.isCancelled { try? await Task.sleep(for: .seconds(10)); if !Task.isCancelled { await load() } } }
             .refreshable { await load() }
@@ -115,8 +119,20 @@ struct InboxView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
     }
     private var filterSummary: String {
-        let kindLabel = kind.isEmpty ? "All kinds" : kind.capitalized + "s"
-        let dueLabel = due.isEmpty ? "any deadline" : due == "unknown" ? "unresolved deadlines" : due + " deadlines"
+        let kindLabel: String
+        switch kind {
+        case "commitment": kindLabel = L10n.text("Commitments")
+        case "deadline": kindLabel = L10n.text("Deadlines")
+        case "question": kindLabel = L10n.text("Questions")
+        default: kindLabel = L10n.text("All kinds")
+        }
+        let dueLabel: String
+        switch due {
+        case "unknown": dueLabel = L10n.text("Unresolved deadlines")
+        case "overdue": dueLabel = L10n.text("Overdue deadlines")
+        case "upcoming": dueLabel = L10n.text("Upcoming deadlines")
+        default: dueLabel = L10n.text("Any deadline")
+        }
         return "\(kindLabel) · \(dueLabel)"
     }
     private func load() async {
@@ -125,13 +141,13 @@ struct InboxView: View {
             let result = try await model.client().decoded("v1/inbox", query: ["status": status, "limit": "50", "offset": "\(offset)"].merging(kind.isEmpty ? [:] : ["kind": kind]) { _, new in new }.merging(due.isEmpty ? [:] : ["due": due]) { _, new in new }, as: InboxPage.self)
             guard !Task.isCancelled, key == queryKey else { return }
             page = result; error = nil
-        } catch { if !Task.isCancelled, key == queryKey { self.error = error.localizedDescription } }
+        } catch { if !Task.isCancelled, key == queryKey { self.error = L10n.error(error) } }
     }
     private func scan() async {
         busy = true; defer { busy = false }
         do {
             let result = try await model.client().request("v1/inbox/extractions", method: "POST", body: ["start_day": diary.dayKey(start), "end_day": diary.dayKey(end), "retry_failed": true])
-            message = "\(result["total"].integer) windows queued or already scanned."; await load()
-        } catch { self.error = error.localizedDescription }
+            message = L10n.text("\(result["total"].integer) windows queued or already scanned."); await load()
+        } catch { self.error = L10n.error(error) }
     }
 }

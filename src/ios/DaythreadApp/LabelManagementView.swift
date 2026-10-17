@@ -16,38 +16,40 @@ struct LabelManagementView: View {
     @State private var error: String?
     @State private var confirmingDelete = false
     @State private var confirmingMerge = false
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Form {
             if let response {
-                Section("Merge") {
-                    Picker("Destination", selection: $target) {
-                        Text("Choose a label").tag("")
+                Section(L10n.text("Merge")) {
+                    Picker(L10n.text("Destination"), selection: $target) {
+                        Text(L10n.text("Choose a label")).tag("")
                         ForEach((directory?.items ?? []).filter { $0.id != entityID && $0.kind == response.entity.kind }) { entity in Text(entity.name + " · " + entity.description).tag(entity.id) }
                     }
                     if let preview {
-                        Text("Keep \(preview.entity.name). Combine its \(preview.total) entries with all \(response.total) entries from \(response.entity.name). Different association meanings stay distinct. The former name becomes an alias.")
-                        Text("Destination aliases: " + preview.entity.aliases.joined(separator: ", ")).font(.caption)
-                        Button("Review and confirm merge") { confirmingMerge = true }.disabled(writer.busy)
+                        Text(L10n.text("Keep \(preview.entity.name). Combine its \(preview.total) entries with all \(response.total) entries from \(response.entity.name). Different association meanings stay distinct. The former name becomes an alias."))
+                        Text(L10n.text("Destination aliases: ") + preview.entity.aliases.joined(separator: ", ")).font(.caption)
+                        Button(L10n.text("Review and confirm merge")) { confirmingMerge = true }.disabled(writer.busy)
                     }
                 }
-                Section("Split selected assignments") {
+                Section(L10n.text("Split selected assignments")) {
                     LabelDraftFields(draft: $splitDraft, fixedKind: true)
-                    Text("Only checked source associations and note assignments move. Existing aliases stay here; set aliases for the new label explicitly.").font(.caption)
+                    Text(L10n.text("Only checked source associations and note assignments move. Existing aliases stay here; set aliases for the new label explicitly.")).font(.caption)
                     ForEach(entries) { entry in
                         Toggle(isOn: Binding(get: { selected.contains(entry.id) }, set: { if $0 { selected.insert(entry.id) } else { selected.remove(entry.id) } })) {
                             VStack(alignment: .leading) { Text(entry.title ?? associationMeaning(entry.relation ?? "")); Text(entry.started_at).font(.caption) }
                         }
                     }
-                    Button("Move checked assignments into new label") { Task { await split() } }.disabled(writer.busy || selected.isEmpty || splitDraft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(L10n.text("Move checked assignments into new label")) { Task { await split() } }.disabled(writer.busy || selected.isEmpty || splitDraft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Section("Delete label") {
-                    Text("Deletes this label, its associations and attached annotations. Recordings remain, including any names in their transcripts.").font(.caption)
-                    Button("Delete label", role: .destructive) { confirmingDelete = true }.disabled(writer.busy)
+                Section(L10n.text("Delete label")) {
+                    Text(L10n.text("Deletes this label, its associations and attached annotations. Recordings remain, including any names in their transcripts.")).font(.caption)
+                    Button(L10n.text("Delete label"), role: .destructive) { confirmingDelete = true }.disabled(writer.busy)
                 }
             }
             ErrorNote(message: error ?? writer.error)
-            Button("Reload labels and assignments") { Task { await load() } }.disabled(writer.busy)
-        }.navigationTitle("Manage label").navigationBarTitleDisplayMode(.inline)
+            Button(L10n.text("Reload labels and assignments")) { Task { await load() } }.disabled(writer.busy)
+        }.navigationTitle(L10n.text("Manage label")).navigationBarTitleDisplayMode(.inline)
             .task(id: model.archiveIdentity) { await load() }
             .task(id: target) {
                 preview = nil
@@ -59,11 +61,11 @@ struct LabelManagementView: View {
                     preview = result
                 } catch {
                     guard !Task.isCancelled, requestedTarget == target, identity == model.archiveIdentity else { return }
-                    self.error = error.localizedDescription
+                    self.error = L10n.error(error)
                 }
             }
-            .confirmationDialog("Merge these labels and all their assignments?", isPresented: $confirmingMerge, titleVisibility: .visible) { Button("Merge labels") { Task { await merge() } } }
-            .confirmationDialog("Delete label and attached annotations? Recordings are kept.", isPresented: $confirmingDelete, titleVisibility: .visible) { Button("Delete label", role: .destructive) { Task { await remove() } } }
+            .confirmationDialog(L10n.text("Merge these labels and all their assignments?"), isPresented: $confirmingMerge, titleVisibility: .visible) { Button(L10n.text("Merge labels")) { Task { await merge() } } }
+            .confirmationDialog(L10n.text("Delete label and attached annotations? Recordings are kept."), isPresented: $confirmingDelete, titleVisibility: .visible) { Button(L10n.text("Delete label"), role: .destructive) { Task { await remove() } } }
     }
     private func load() async {
         let address = model.archiveIdentity
@@ -74,13 +76,13 @@ struct LabelManagementView: View {
             while all.count < first.total {
                 let next: LabelTimelineResponse = try await client.labels("v1/labels/\(entityID)/timeline", query: ["limit": "200", "offset": String(all.count), "revision": first.revision])
                 guard !Task.isCancelled, address == model.archiveIdentity else { return }
-                guard !next.items.isEmpty else { throw BackendFailure(message: "The label changed while loading. Reload its assignments before editing.") }
+                guard !next.items.isEmpty else { throw BackendFailure(message: L10n.text("The label changed while loading. Reload its assignments before editing.")) }
                 all += next.items
             }
             let labels: LabelDirectory = try await client.labels()
             guard address == model.archiveIdentity, !Task.isCancelled else { return }
             response = first; entries = all; directory = labels; splitDraft.kind = first.entity.kind; error = nil
-        } catch { if address == model.archiveIdentity { self.error = error.localizedDescription } }
+        } catch { if address == model.archiveIdentity { self.error = L10n.error(error) } }
     }
     private func merge() async {
         guard let response else { return }
@@ -103,6 +105,6 @@ struct LabelManagementView: View {
     }
     private func save(_ command: LabelCommand) async {
         do { if await writer.save(command, client: try model.client()) { dismiss(); await model.refreshStatus() } }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
 }

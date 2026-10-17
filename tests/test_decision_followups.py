@@ -418,3 +418,32 @@ def test_calendar_defaults_preserve_known_dates_and_leave_reminders_undated(clie
 def test_calendar_defaults_do_not_repair_invalid_explicit_dates(client, dates):
     d = create(client, source(client))
     assert export(client, d, kind="event", use_calendar_defaults=True, **dates).status_code == 422
+
+
+def test_place_bound_followup_needs_no_date_and_preserves_exact_spoken_place(client):
+    s = source(client, "We decided to pick up the bike at Nørrebro Cykler when nearby.")
+    d = create(client, s)
+    item = {"kind": "reminder", "title": "Pick up bike", "location": "Nørrebro Cykler",
+            "location_trigger": "arrive", "evidence": content(s)["choice"]["evidence"]}
+    client.app.state.memory.inference = Suggestions(s, [item])
+    result = suggest(client, d)
+    assert result.status_code == 200, result.text
+    proposal = result.json()["suggestions"][0]
+    assert proposal["due_at"] is None
+    assert proposal["location_trigger"] == "arrive"
+    assert proposal["location"] == "Nørrebro Cykler"
+    # ICS must never silently lose the alert and present it as a saved nearby reminder.
+    assert export(client, d, **proposal).status_code == 422
+
+
+@pytest.mark.parametrize("changes", [
+    {"location": "Invented branch"}, {"location": ""},
+    {"kind": "event"}, {"location_trigger": "sometimes"},
+])
+def test_invalid_location_followups_fail_closed(client, changes):
+    s = source(client, "We decided to collect the bike at Nørrebro Cykler.")
+    d = create(client, s)
+    item = {"kind": "reminder", "title": "Pick up bike", "location": "Nørrebro Cykler",
+            "location_trigger": "arrive", "evidence": content(s)["choice"]["evidence"], **changes}
+    client.app.state.memory.inference = Suggestions(s, [item])
+    assert suggest(client, d).status_code == 502

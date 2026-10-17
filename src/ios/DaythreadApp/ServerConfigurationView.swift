@@ -25,7 +25,7 @@ private struct ServerSecretEdit: Equatable {
     func change() throws -> JSONValue? {
         switch mode {
         case "replace":
-            guard !value.isEmpty else { throw BackendFailure(message: "Enter the replacement key or choose another key action.") }
+            guard !value.isEmpty else { throw BackendFailure(message: L10n.text("Enter the replacement key or choose another key action.")) }
             return .string(value)
         case "clear": return .string("")
         case "inherit": return .null
@@ -49,17 +49,19 @@ private struct ServerSecretControl: View {
     var route = false
     var nullable = false
     @Binding var edit: ServerSecretEdit
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(label) · \(configured ? "Configured" : "Not set")").font(.subheadline)
+            Text("\(label) · \(configured ? L10n.text("Configured") : L10n.text("Not set"))").font(.subheadline)
             Picker(label, selection: $edit.mode) {
-                Text("Keep current key").tag("keep")
-                Text("Replace key").tag("replace")
-                if route || nullable { Text(route ? "Use provider key" : "Use shared key").tag("inherit") }
-                Text(route || nullable ? "No authentication" : "Clear key").tag("clear")
+                Text(L10n.text("Keep current key")).tag("keep")
+                Text(L10n.text("Replace key")).tag("replace")
+                if route || nullable { Text(route ? L10n.text("Use provider key") : L10n.text("Use shared key")).tag("inherit") }
+                Text(route || nullable ? L10n.text("No authentication") : L10n.text("Clear key")).tag("clear")
             }.onChange(of: edit.mode) { _, _ in edit.value = "" }
             if edit.mode == "replace" {
-                SecureField("New \(label)", text: $edit.value)
+                SecureField(L10n.text("New \(label)"), text: $edit.value)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
             }
         }
@@ -72,23 +74,25 @@ private struct ServerRouteControl: View {
     let configured: Bool
     let remove: () -> Void
     private let tasks = ["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             if llm {
-                Picker("Task", selection: $route.name) {
+                Picker(L10n.text("Task"), selection: $route.name) {
                     ForEach(tasks, id: \.self) { Text($0).tag($0) }
                 }
             } else {
-                TextField("Language code or name (da, en, danish, auto)", text: $route.name)
-                    .accessibilityLabel("Language code or detector name")
+                TextField(L10n.text("Language code or name (da, en, danish, auto)"), text: $route.name)
+                    .accessibilityLabel(L10n.text("Language code or detector name"))
             }
-            TextField("Model override (blank inherits default)", text: $route.model)
-                .accessibilityLabel("Model override")
-            TextField("Endpoint override (blank inherits default)", text: $route.endpoint)
-                .keyboardType(.URL).accessibilityLabel("Endpoint override")
-            if llm { TextField("Revision override (blank inherits default)", text: $route.revision) }
-            ServerSecretControl(label: "Route key", configured: configured, route: true, edit: $route.secret)
-            Button("Remove route \(route.name)", role: .destructive, action: remove)
+            TextField(L10n.text("Model override (blank inherits default)"), text: $route.model)
+                .accessibilityLabel(L10n.text("Model override"))
+            TextField(L10n.text("Endpoint override (blank inherits default)"), text: $route.endpoint)
+                .keyboardType(.URL).accessibilityLabel(L10n.text("Endpoint override"))
+            if llm { TextField(L10n.text("Revision override (blank inherits default)"), text: $route.revision) }
+            ServerSecretControl(label: L10n.text("Route key"), configured: configured, route: true, edit: $route.secret)
+            Button(L10n.text("Remove route \(route.name)"), role: .destructive, action: remove)
         }.textInputAutocapitalization(.never).autocorrectionDisabled().padding(.vertical, 8)
     }
 }
@@ -119,27 +123,29 @@ struct ServerConfigurationView: View {
     }
     private func optionsTitle(_ group: String) -> String {
         switch group {
-        case "Transcription": "Transcription options & language routes"
-        case "Language models & chat": "Language model options & task routes"
+        case L10n.text("Transcription"): L10n.text("Transcription options & language routes")
+        case L10n.text("Language models & chat"): L10n.text("Language model options & task routes")
         default: group
         }
     }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Form {
             Section {
-                Text("STT and LLM connections are independent. Each can use a different endpoint, API key, and model.")
+                Text(L10n.text("STT and LLM connections are independent. Each can use a different endpoint, API key, and model."))
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Shared with the web app. Keys are write-only and stay on home-core.")
+                Text(L10n.text("Shared with the web app. Keys are write-only and stay on home-core."))
                     .font(.callout).foregroundStyle(.secondary)
                 if let snapshot, !snapshot.pending_restart.isEmpty {
-                    Text("Saved changes awaiting backend restart: \(snapshot.pending_restart.joined(separator: ", ")).")
+                    Text(L10n.text("Saved changes awaiting backend restart: \(snapshot.pending_restart.joined(separator: ", "))."))
                         .font(.callout)
                 }
                 ErrorNote(message: error)
-                if let status { Text(status).foregroundStyle(.secondary) }
-                if busy { ProgressView("Updating settings…") }
-                Button("Reload server settings") { Task { await load() } }.disabled(busy)
+                if let status { Text(L10n.key(status)).foregroundStyle(.secondary) }
+                if busy { ProgressView(L10n.text("Updating settings…")) }
+                Button(L10n.text("Reload server settings")) { Task { await load() } }.disabled(busy)
             }
             if let snapshot {
                 ForEach(connectionProviders, id: \.self) { provider in
@@ -152,28 +158,28 @@ struct ServerConfigurationView: View {
                                 try connectionRequest(provider: provider, includeModel: includeModel)
                             }
                         } header: {
-                            Text(provider == "stt" ? "Speech-to-text (STT)" : "Language model (LLM)")
+                            Text(provider == "stt" ? L10n.text("Speech-to-text (STT)") : L10n.text("Language model (LLM)"))
                         } footer: {
-                            Text(provider == "stt" ? "Transcribes your recordings into text. Enter a local or hosted endpoint and its credentials." : "Answers questions and generates summaries. Enter a local or hosted endpoint and its credentials.")
+                            Text(provider == "stt" ? L10n.text("Transcribes your recordings into text. Enter a local or hosted endpoint and its credentials.") : L10n.text("Answers questions and generates summaries. Enter a local or hosted endpoint and its credentials."))
                         }.disabled(busy)
                     }
                 }
                 ForEach(groups(snapshot), id: \.self) { group in
-                    Section(optionsTitle(group)) {
+                    Section(L10n.key(optionsTitle(group))) {
                         ForEach(snapshot.fields.filter { $0.group == group && !isConnectionField($0) && matches($0) }) { field in
                             setting(field, snapshot: snapshot)
                         }
                     }.disabled(busy)
                 }
                 Section {
-                    Button("Save server settings") { Task { await save(snapshot) } }
+                    Button(L10n.text("Save server settings")) { Task { await save(snapshot) } }
                         .disabled(busy).accessibilityIdentifier("settings.saveServer")
-                    Text("Settings marked restart required take effect the next time home-core starts.")
+                    Text(L10n.text("Settings marked restart required take effect the next time home-core starts."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-        }.navigationTitle("Server settings").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "Find a server setting")
+        }.navigationTitle(L10n.text("Server settings")).navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $search, prompt: L10n.text("Find a server setting"))
             .scrollDismissesKeyboard(.interactively).task { await load() }
             .onChange(of: values) { _, _ in connectionRevision = UUID() }
             .onChange(of: secrets) { _, _ in connectionRevision = UUID() }
@@ -187,7 +193,7 @@ struct ServerConfigurationView: View {
         }
     }
     private func matches(_ field: ServerSettingField) -> Bool {
-        search.isEmpty || "\(field.label) \(field.key) \(field.description)".localizedCaseInsensitiveContains(search)
+        search.isEmpty || "\(field.label) \(field.key) \(field.description) \(L10n.key(field.label)) \(L10n.key(field.description))".localizedCaseInsensitiveContains(search)
     }
     private func valueBinding(_ key: String) -> Binding<String> {
         Binding(get: {
@@ -200,7 +206,7 @@ struct ServerConfigurationView: View {
     }
     @ViewBuilder
     private func setting(_ field: ServerSettingField, snapshot: ServerConfiguration) -> some View {
-        let title = field.label + (field.restart_required ? " · restart required" : "")
+        let title = L10n.key(field.label) + (field.restart_required ? L10n.text(" · restart required") : "")
         if field.key == "translation_languages" {
             NavigationLink {
                 TranslationLanguageSelectionView(languages: Binding(
@@ -208,10 +214,10 @@ struct ServerConfigurationView: View {
                     set: { values[field.key] = .array($0.map(JSONValue.string)); status = nil }
                 ))
             } label: {
-                LabeledContent(title, value: "\(values[field.key]?.array.count ?? 0) selected")
+                LabeledContent(title, value: L10n.text("\(values[field.key]?.array.count ?? 0) selected"))
             }
         } else if field.kind == "routes" {
-            Text(field.label).font(.headline)
+            Text(L10n.key(field.label)).font(.headline)
             ForEach(routes[field.key] ?? []) { row in
                 ServerRouteControl(route: Binding(get: {
                     routes[field.key]?.first(where: { $0.id == row.id }) ?? row
@@ -232,14 +238,14 @@ struct ServerConfigurationView: View {
                     try connectionRequest(provider: provider, route: routes[field.key]?.first(where: { $0.id == row.id }) ?? row, includeModel: includeModel)
                 }
             }
-            Button(field.key == "stt_routes" ? "Add language route" : "Add task route") {
+            Button(field.key == "stt_routes" ? L10n.text("Add language route") : L10n.text("Add task route")) {
                 let name = field.key == "llm_routes" ? tasks.first(where: { task in
                     !(routes[field.key] ?? []).contains(where: { $0.name == task })
                 }) ?? "chat" : ""
                 routes[field.key, default: []].append(ServerModelRoute(name: name)); status = nil
             }.disabled(field.key == "llm_routes" && (routes[field.key]?.count ?? 0) >= tasks.count)
         } else if field.kind == "secret" {
-            ServerSecretControl(label: field.label, configured: snapshot.secrets[field.key] ?? false,
+            ServerSecretControl(label: L10n.key(field.label), configured: snapshot.secrets[field.key] ?? false,
                 nullable: field.nullable,
                 edit: Binding(get: { secrets[field.key] ?? ServerSecretEdit() }, set: { secrets[field.key] = $0; status = nil }))
         } else if field.kind == "boolean" {
@@ -248,7 +254,7 @@ struct ServerConfigurationView: View {
                     if case .bool(let value) = values[field.key] { return value ? "true" : "false" }
                     return "default"
                 }, set: { values[field.key] = $0 == "default" ? .null : .bool($0 == "true"); status = nil })) {
-                    Text("Model default").tag("default"); Text("Enabled").tag("true"); Text("Disabled").tag("false")
+                    Text(L10n.text("Model default")).tag("default"); Text(L10n.text("Enabled")).tag("true"); Text(L10n.text("Disabled")).tag("false")
                 }
             } else {
                 Toggle(title, isOn: Binding(get: { values[field.key] == .bool(true) }, set: { values[field.key] = .bool($0); status = nil }))
@@ -256,14 +262,14 @@ struct ServerConfigurationView: View {
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.subheadline)
-                TextField(field.nullable ? "Default" : field.label, text: valueBinding(field.key))
+                TextField(field.nullable ? L10n.text("Default") : L10n.key(field.label), text: valueBinding(field.key))
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(field.kind == "number" || field.kind == "integer" ? .numbersAndPunctuation : field.key.contains("base_url") ? .URL : .default)
                     .accessibilityLabel(title)
             }
         }
         if !field.description.isEmpty {
-            Text(field.description).font(.caption).foregroundStyle(.secondary)
+            Text(L10n.key(field.description)).font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -280,7 +286,7 @@ struct ServerConfigurationView: View {
         if let route {
             let name = route.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard name.range(of: "^[a-z-]{2,32}$", options: .regularExpression) != nil else {
-                throw BackendFailure(message: "Enter a language code or task name before checking this route.")
+                throw BackendFailure(message: L10n.text("Enter a language code or task name before checking this route."))
             }
             var item: [String: JSONValue] = [
                 "model": includeModel && !route.model.isEmpty ? .string(route.model.trimmingCharacters(in: .whitespacesAndNewlines)) : .null,
@@ -310,7 +316,7 @@ struct ServerConfigurationView: View {
         busy = true; error = nil; status = nil; defer { busy = false }
         do { apply(try await model.client().decoded("v1/configuration", as: ServerConfiguration.self)) }
         catch is CancellationError { return }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = L10n.error(error) }
     }
     private func save(_ snapshot: ServerConfiguration) async {
         busy = true; error = nil; status = nil; defer { busy = false }
@@ -327,7 +333,7 @@ struct ServerConfigurationView: View {
                     for row in routes[field.key] ?? [] {
                         let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                         guard name.range(of: "^[a-z-]{2,32}$", options: .regularExpression) != nil,
-                              map[name] == nil else { throw BackendFailure(message: "Enter a unique language code or task for every route.") }
+                              map[name] == nil else { throw BackendFailure(message: L10n.text("Enter a unique language code or task for every route.")) }
                         var route: [String: JSONValue] = ["model": row.model.isEmpty ? .null : .string(row.model), "base_url": row.endpoint.isEmpty ? .null : .string(row.endpoint)]
                         if field.key == "llm_routes" { route["revision"] = row.revision.isEmpty ? .null : .string(row.revision) }
                         if let token = try row.secret.change() { route["token"] = token }
@@ -336,18 +342,18 @@ struct ServerConfigurationView: View {
                     value = .object(map)
                 } else if field.kind == "integer" || field.kind == "number" {
                     if case .string(let text) = value {
-                        guard let number = Double(text), number.isFinite else { throw BackendFailure(message: "Enter a number for \(field.label).") }
+                        guard let number = Double(text), number.isFinite else { throw BackendFailure(message: L10n.text("Enter a number for \(L10n.key(field.label)).")) }
                         value = .number(number)
                     }
                 } else if field.nullable && value == .string("") { value = .null }
                 if value != snapshot.values[field.key] { changes[field.key] = value }
             }
-            if changes.isEmpty { status = "Server settings are up to date"; return }
+            if changes.isEmpty { status = L10n.text("Server settings are up to date"); return }
             let payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(JSONValue.object(changes)))
             let result = try await model.client().decoded("v1/configuration", method: "PATCH", body: ["revision": snapshot.revision, "changes": payload], as: ServerConfiguration.self)
-            apply(result); status = "Server settings saved on home-core"
+            apply(result); status = L10n.text("Server settings saved on home-core")
             await model.refreshStatus()
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = L10n.error(error) }
     }
 }
 

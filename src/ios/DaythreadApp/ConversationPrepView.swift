@@ -24,68 +24,70 @@ struct ConversationPrepView: View {
     private var hasDraft: Bool { !search.subject.isEmpty || !context.isEmpty || !aliases.isEmpty || !search.qualifier.isEmpty || !from.isEmpty || !through.isEmpty }
     private var zone: TimeZone { TimeZone(identifier: found?.timezone ?? model.serverTimeZoneIdentifier ?? "") ?? .current }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             List {
                 Section {
-                    Text("Find recordings, confirm relevance, then prepare a cited brief. A mention does not verify participation or identity.")
-                    Picker("Subject type", selection: $search.kind) {
-                        Text("Person").tag("person"); Text("Project").tag("project"); Text("Topic").tag("topic")
+                    Text(L10n.text("Find recordings, confirm relevance, then prepare a cited brief. A mention does not verify participation or identity."))
+                    Picker(L10n.text("Subject type"), selection: $search.kind) {
+                        Text(L10n.text("Person")).tag("person"); Text(L10n.text("Project")).tag("project"); Text(L10n.text("Topic")).tag("topic")
                     }
-                    TextField("Name or literal phrase", text: $search.subject).autocorrectionDisabled()
-                    TextField("Alternate names · one per line", text: $aliases, axis: .vertical).lineLimit(2...4)
-                    TextField("Qualifier · must also appear", text: $search.qualifier)
-                    TextField("From · YYYY-MM-DD (optional)", text: $from).autocorrectionDisabled()
-                    TextField("Through · YYYY-MM-DD (optional)", text: $through).autocorrectionDisabled()
-                    Text("Both dates or neither, inclusive in \(zone.identifier). All retained dates by default. Literal search can miss unnamed discussions; add alternate phrases or browse Rewind.").font(.caption).foregroundStyle(.secondary)
-                    Button("Find discussions") { launch { await find(offset: 0) } }.disabled(busy || search.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    TextField(L10n.text("Name or literal phrase"), text: $search.subject).autocorrectionDisabled()
+                    TextField(L10n.text("Alternate names · one per line"), text: $aliases, axis: .vertical).lineLimit(2...4)
+                    TextField(L10n.text("Qualifier · must also appear"), text: $search.qualifier)
+                    TextField(L10n.text("From · YYYY-MM-DD (optional)"), text: $from).autocorrectionDisabled()
+                    TextField(L10n.text("Through · YYYY-MM-DD (optional)"), text: $through).autocorrectionDisabled()
+                    Text(L10n.text("Both dates or neither, inclusive in \(zone.identifier). All retained dates by default. Literal search can miss unnamed discussions; add alternate phrases or browse Rewind.")).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("Find discussions")) { launch { await find(offset: 0) } }.disabled(busy || search.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Section("My context and goals · user-authored") {
-                    TextEditor(text: $context).frame(minHeight: 100).accessibilityLabel("My context and goals")
-                    Text("Not recorded evidence. This draft stays in this screen only and is sent separately to your local model.").font(.caption).foregroundStyle(.secondary)
+                Section(L10n.text("My context and goals · user-authored")) {
+                    TextEditor(text: $context).frame(minHeight: 100).accessibilityLabel(L10n.text("My context and goals"))
+                    Text(L10n.text("Not recorded evidence. This draft stays in this screen only and is sent separately to your local model.")).font(.caption).foregroundStyle(.secondary)
                 }
-                if busy { Section { ProgressView(checking ? "Checking current evidence…" : "Working…"); Button("Cancel request") { cancel() } } }
+                if busy { Section { ProgressView(checking ? L10n.text("Checking current evidence…") : L10n.text("Working…")); Button(L10n.text("Cancel request")) { cancel() } } }
                 if let error { Section { ErrorNote(message: error) } }
                 if let found, !checking {
-                    Section("Matching recordings · \(found.coverage.total_matches)") {
-                        Text("\(found.coverage.pending_chunks) pending chunks · \(found.coverage.capture_gaps) known gaps in searched dates. Uploads not received are unknown. This page omits \(found.coverage.omitted_matches) matches.").font(.caption)
-                        if found.sources.isEmpty { Text("No matching transcribed recordings. Try alternate names or different dates.") }
+                    Section(L10n.text("Matching recordings · \(found.coverage.total_matches)")) {
+                        Text(L10n.text("\(found.coverage.pending_chunks) pending chunks · \(found.coverage.capture_gaps) known gaps in searched dates. Uploads not received are unknown. This page omits \(found.coverage.omitted_matches) matches.")).font(.caption)
+                        if found.sources.isEmpty { Text(L10n.text("No matching transcribed recordings. Try alternate names or different dates.")) }
                         ForEach(found.sources) { row in candidate(row) }
                         HStack {
-                            Button("Previous") { launch { await find(offset: max(0, found.search.offset - 10)) } }.disabled(busy || found.search.offset == 0)
+                            Button(L10n.text("Previous")) { launch { await find(offset: max(0, found.search.offset - 10)) } }.disabled(busy || found.search.offset == 0)
                             Spacer()
-                            Button("Next") { launch { await find(offset: found.search.offset + 10) } }.disabled(busy || found.search.offset + 10 >= found.coverage.total_matches)
+                            Button(L10n.text("Next")) { launch { await find(offset: found.search.offset + 10) } }.disabled(busy || found.search.offset + 10 >= found.coverage.total_matches)
                         }
                     }
-                    Section("Confirm latest relevant recording") {
-                        Picker("Latest recording", selection: $latest) {
-                            Text("Choose after checking evidence").tag("")
+                    Section(L10n.text("Confirm latest relevant recording")) {
+                        Picker(L10n.text("Latest recording"), selection: $latest) {
+                            Text(L10n.text("Choose after checking evidence")).tag("")
                             ForEach(selected) { row in Text(label(row.started_at) + " · " + row.text.prefix(60)).tag(row.id) }
                         }
-                        Text("\(selected.count) selected. Excerpts are bounded to 4,000 characters each and 16,000 total; select fewer if exceeded.").font(.caption)
-                        Button("Prepare from confirmed evidence") { launch { await prepare() } }.disabled(busy || latest.isEmpty || selected.isEmpty)
+                        Text(L10n.text("\(selected.count) selected. Excerpts are bounded to 4,000 characters each and 16,000 total; select fewer if exceeded.")).font(.caption)
+                        Button(L10n.text("Prepare from confirmed evidence")) { launch { await prepare() } }.disabled(busy || latest.isEmpty || selected.isEmpty)
                     }
                 }
                 if let result, !checking {
-                    Section { Text("Generated \(label(result.generated_at)) · \(result.model). Evidence checked \(label(result.as_of)). Interpretation of selected excerpts; review citations.").font(.caption) }
-                    items("Latest confirmed recording", result.latest_discussion, result)
-                    items("Promises to check · completion and owner unknown", result.promises_to_check, result)
-                    items("Recorded questions", result.recorded_questions, result)
-                    items("Suggested questions · proposals based on evidence", result.suggested_questions, result)
-                    Section("Evidence coverage and limits") {
+                    Section { Text(L10n.text("Generated \(label(result.generated_at)) · \(result.model). Evidence checked \(label(result.as_of)). Interpretation of selected excerpts; review citations.")).font(.caption) }
+                    items(L10n.text("Latest confirmed recording"), result.latest_discussion, result)
+                    items(L10n.text("Promises to check · completion and owner unknown"), result.promises_to_check, result)
+                    items(L10n.text("Recorded questions"), result.recorded_questions, result)
+                    items(L10n.text("Suggested questions · proposals based on evidence"), result.suggested_questions, result)
+                    Section(L10n.text("Evidence coverage and limits")) {
                         ForEach(result.coverage.limitations, id: \.self) { Text($0).font(.caption) }
-                        Text("\(result.coverage.omitted_matches) matching recordings not selected.").font(.caption)
+                        Text(L10n.text("\(result.coverage.omitted_matches) matching recordings not selected.")).font(.caption)
                         ForEach(result.reviewed_excerpts) { excerpt in
-                            DisclosureGroup(label(excerpt.started_at) + " · reviewed excerpt · \(excerpt.omitted_characters) characters omitted") {
+                            DisclosureGroup(label(excerpt.started_at) + L10n.text(" · reviewed excerpt · \(excerpt.omitted_characters) characters omitted")) {
                                 Text(excerpt.text).font(.caption).textSelection(.enabled)
                             }
                         }
                     }
                 }
-            }.omiScreen().navigationTitle("Prepare").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { if hasDraft { discard = true } else { dismiss() } } } }
+            }.omiScreen().navigationTitle(L10n.text("Prepare")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Close")) { if hasDraft { discard = true } else { dismiss() } } } }
                 .interactiveDismissDisabled(hasDraft)
-                .confirmationDialog("Discard preparation and unsaved context?", isPresented: $discard, titleVisibility: .visible) { Button("Discard", role: .destructive) { dismiss() } }
+                .confirmationDialog(L10n.text("Discard preparation and unsaved context?"), isPresented: $discard, titleVisibility: .visible) { Button(L10n.text("Discard"), role: .destructive) { dismiss() } }
                 .sheet(item: $source) { selection in SourceDetail(source: selection.source, onCorrect: { changedEvidence() }) }
                 .onChange(of: search) { _, _ in invalidate() }
                 .onChange(of: aliases) { _, _ in invalidate() }
@@ -102,7 +104,7 @@ struct ConversationPrepView: View {
 
     private func label(_ stamp: String) -> String {
         guard let date = AppModel.date(stamp) else { return stamp }
-        let format = DateFormatter(); format.timeZone = zone; format.dateStyle = .medium; format.timeStyle = .short
+        let format = DateFormatter(); format.locale = L10n.locale; format.timeZone = zone; format.dateStyle = .medium; format.timeStyle = .short
         return format.string(from: date)
     }
     private func candidate(_ row: PrepSource) -> some View {
@@ -110,16 +112,16 @@ struct ConversationPrepView: View {
             Toggle(isOn: Binding(get: { selected.contains { $0.id == row.id } }, set: { include in
                 cancel(); result = nil
                 if include { selected.append(row) } else { selected.removeAll { $0.id == row.id }; if latest == row.id { latest = "" } }
-            })) { Text("Include " + label(row.started_at)) }
+            })) { Text(L10n.text("Include ") + label(row.started_at)) }
                 .disabled(busy || (selected.count >= 40 && !selected.contains { $0.id == row.id }))
-            if let date = AppModel.date(row.started_at), Date().timeIntervalSince(date) > 30 * 86400 { Text("Over 30 days old").font(.caption).foregroundStyle(.secondary) }
+            if let date = AppModel.date(row.started_at), Date().timeIntervalSince(date) > 30 * 86400 { Text(L10n.text("Over 30 days old")).font(.caption).foregroundStyle(.secondary) }
             Text(row.text).lineLimit(5)
-            Button("Inspect transcript and audio") { source = SourceSelection(source: row.json) }
+            Button(L10n.text("Inspect transcript and audio")) { source = SourceSelection(source: row.json) }
         }
     }
     private func items(_ title: String, _ items: [PrepItem], _ result: PrepResult) -> some View {
         Section(title) {
-            if items.isEmpty { Text("No supported items in reviewed excerpts.").foregroundStyle(.secondary) }
+            if items.isEmpty { Text(L10n.text("No supported items in reviewed excerpts.")).foregroundStyle(.secondary) }
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.text).textSelection(.enabled)
@@ -134,7 +136,7 @@ struct ConversationPrepView: View {
     }
     private func cancel() { task?.cancel(); requestID = UUID(); busy = false; checking = false }
     private func invalidate() { cancel(); found = nil; selected = []; latest = ""; result = nil; source = nil; error = nil }
-    private func changedEvidence() { invalidate(); error = "Evidence or backend changed. Find discussions again; your draft is retained." }
+    private func changedEvidence() { invalidate(); error = L10n.text("Evidence or backend changed. Find discussions again; your draft is retained.") }
     private func launch(_ action: @escaping @MainActor () async -> Void) { cancel(); task = Task { await action() } }
     private func perform(_ operation: (BackendClient) async throws -> Void) async {
         let id = UUID(), address = model.archiveIdentity
@@ -143,7 +145,7 @@ struct ConversationPrepView: View {
         do { try await operation(model.client()) }
         catch {
             guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
             if let failure = error as? BackendFailure, failure.status == 409 { found = nil; result = nil; selected = []; latest = "" }
         }
     }
@@ -183,7 +185,7 @@ struct ConversationPrepView: View {
                 if !value.valid { changedEvidence() }
             } catch {
                 guard !Task.isCancelled, requestID == id, model.archiveIdentity == address else { return }
-                changedEvidence(); self.error = "Could not verify current evidence. Find discussions again. \(error.localizedDescription)"
+                changedEvidence(); self.error = L10n.text("Could not verify current evidence. Find discussions again. \(L10n.error(error))")
             }
         }
     }

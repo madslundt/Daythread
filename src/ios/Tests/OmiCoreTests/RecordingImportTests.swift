@@ -75,6 +75,57 @@ final class RecordingImportTests: XCTestCase {
         XCTAssertThrowsError(try decode(body).validate(digests: ["first", "last"], sampleCount: 16_000 * 121))
     }
 
+    func testLegacyAndExplicitManualPlansKeepExistingUploadProtocol() throws {
+        let legacy = try decode(planBody())
+        XCTAssertEqual(legacy.resolvedVendorID, "manual")
+        XCTAssertNil(try legacy.query(for: 0)["vendor_id"])
+        var body = planBody()
+        body["vendor_id"] = "manual"
+        XCTAssertEqual(try decode(body).query(for: 0), try legacy.query(for: 0))
+        body["vendor_id"] = NSNull()
+        XCTAssertEqual(try decode(body).resolvedVendorID, "manual")
+        XCTAssertTrue(RecordingImport.vendorParameters(vendorID: "manual").isEmpty)
+    }
+
+    func testBrandedServerPlanPreservesVendorAcrossAllRetriedParts() throws {
+        var body = planBody()
+        body["vendor_id"] = "plaud"
+        let plan = try decode(body)
+        try plan.validate(digests: ["first", "last"], sampleCount: 16_000 * 121)
+        XCTAssertEqual(plan.resolvedVendorID, "plaud")
+        for index in plan.parts.indices {
+            let query = try plan.query(for: index)
+            XCTAssertEqual(query["vendor_id"], "plaud")
+            XCTAssertEqual(query["source_kind"], "manual_upload")
+            XCTAssertEqual(query["device_id"], RecordingImport.deviceID)
+        }
+        XCTAssertEqual(RecordingImport.vendorParameters(vendorID: plan.resolvedVendorID), ["vendor_id": "plaud"])
+    }
+
+    func testFutureBrandsUseCatalogCapabilitiesWithoutAClientRelease() throws {
+        let body: [String: Any] = ["items": [
+            ["id": "new-recorder", "label": "New recorder", "capabilities": ["file_upload", "new_capability"],
+             "setup_url": "https://example.com", "import_instructions": "Export your recording.", "configured": false],
+            ["id": "cloud-only", "label": "Cloud", "capabilities": ["transcript_import"],
+             "setup_url": "", "import_instructions": "", "configured": true, "key_setting": "cloud_key"],
+        ]]
+        let catalog = try JSONDecoder().decode(VendorCatalog.self, from: data(body))
+        XCTAssertEqual(catalog.fileUploadVendors.map(\.id), ["new-recorder"])
+        XCTAssertNil(catalog.items[0].keySetting)
+        XCTAssertEqual(catalog.items[1].keySetting, "cloud_key")
+        var plan = planBody()
+        plan["vendor_id"] = catalog.fileUploadVendors[0].id
+        XCTAssertEqual(try decode(plan).query(for: 1)["vendor_id"], "new-recorder")
+    }
+
+    func testInvalidBrandInServerPlanIsRejected() throws {
+        for vendor in ["", String(repeating: "a", count: 81)] {
+            var body = planBody()
+            body["vendor_id"] = vendor
+            XCTAssertThrowsError(try decode(body).validate(digests: ["first", "last"], sampleCount: 16_000 * 121))
+        }
+    }
+
     func testEachPartRequiresItsOwnReceiptBeforeContinuing() throws {
         let plan = try decode(planBody())
         var receipt: [String: Any] = [

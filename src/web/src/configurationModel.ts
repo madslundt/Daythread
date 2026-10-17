@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { newId } from "./api";
 
 export type ConfigurationField = {
@@ -77,7 +78,7 @@ export function configurationChanges(
       value = null;
     } else if (field.kind === "number" || field.kind === "integer") {
       if (value === "" || value == null || !Number.isFinite(Number(value)))
-        throw new Error(`Enter a number for ${field.label}.`);
+        throw new Error(t("Enter a number for {value0}.", { value0: t(field.label) }));
       value = Number(value);
     }
     if (!sameValue(value, previous)) changes[field.key] = value;
@@ -118,7 +119,7 @@ export function matchingConfigurationFields(
 ): ConfigurationField[] {
   const query = search.trim().toLowerCase();
   return fields.filter((field) => !hiddenFields.includes(field.key) &&
-    `${field.group} ${field.label} ${field.key} ${field.description}`.toLowerCase().includes(query));
+    `${field.group} ${field.label} ${field.key} ${field.description} ${t(field.group)} ${t(field.label)} ${t(field.description)}`.toLowerCase().includes(query));
 }
 
 export function routeRows(value: Record<string, ModelOverride>): RouteRow[] {
@@ -131,7 +132,7 @@ export function secretChange(edit: SecretEdit): string | null | undefined {
   if (edit.mode === "keep") return undefined;
   if (edit.mode === "inherit") return null;
   if (edit.mode === "clear") return "";
-  if (!edit.value) throw new Error("Enter the replacement key or choose another key action.");
+  if (!edit.value) throw new Error(t("Enter the replacement key or choose another key action."));
   return edit.value;
 }
 
@@ -140,8 +141,8 @@ export function routeChanges(rows: Omit<RouteRow, "id">[], llm: boolean): Record
   for (const row of rows) {
     const name = row.name.trim().toLowerCase();
     if (!/^[a-z-]{2,32}$/.test(name) || (llm && !tasks.includes(name)))
-      throw new Error("Enter a language code/name for every STT route, or select an LLM task.");
-    if (Object.hasOwn(routes, name)) throw new Error(`The ${name} route is listed twice.`);
+      throw new Error(t("Enter a language code/name for every STT route, or select an LLM task."));
+    if (Object.hasOwn(routes, name)) throw new Error(t("The {value0} route is listed twice.", { value0: name }));
     const token = secretChange(row.secret);
     routes[name] = {
       model: row.model?.trim() || null,

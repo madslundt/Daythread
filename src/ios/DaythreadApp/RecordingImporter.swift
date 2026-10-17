@@ -43,6 +43,7 @@ final class RecordingImporter {
     var confirming = false
     var linking = false
     var conversationSourceID = ""
+    var vendorID = "manual"
     private let workspace = ImportWorkspace()
     private var transferID = UUID()
 
@@ -57,7 +58,7 @@ final class RecordingImporter {
 
     func add(_ urls: [URL], client: BackendClient) async {
         guard !locked else { return }
-        busy = true; error = nil; stage = "Checking recordings…"
+        busy = true; error = nil; stage = L10n.source("Checking recordings…")
         defer { busy = false; stage = ""; activeName = "" }
         for url in urls {
             do {
@@ -65,21 +66,21 @@ final class RecordingImporter {
                 activeName = url.lastPathComponent
                 var recording = try await Self.stage(url, workspace: workspace)
                 if let existing = recordings.first(where: { $0.digest == recording.digest }) {
-                    recording.skipped = "Same file as \(existing.name)"
+                    recording.skipped = L10n.source("Same file as \(existing.name)")
                     recording.duplicateOf = existing.id
                 } else {
                     do { recording.skipped = try await duplicate(recording.digest, client: client) }
                     catch {
                         try Task.checkCancellation()
                         // Network failure must not prevent selecting dates or retrying.
-                        recording.error = "Duplicate check unavailable. Upload will check again."
+                        recording.error = L10n.source("Duplicate check unavailable. Upload will check again.")
                     }
                 }
                 try Task.checkCancellation()
                 recordings.append(recording)
             } catch {
                 if Task.isCancelled { return }
-                self.error = "\(url.lastPathComponent): \(error.localizedDescription)"
+                self.error = "\(url.lastPathComponent): \(L10n.error(error))"
             }
         }
     }
@@ -96,7 +97,7 @@ final class RecordingImporter {
             let owner = recordings[promoted]
             for index in recordings.indices where recordings[index].duplicateOf == id {
                 recordings[index].duplicateOf = owner.id
-                recordings[index].skipped = "Same file as \(owner.name)"
+                recordings[index].skipped = L10n.source("Same file as \(owner.name)")
             }
         }
     }
@@ -118,13 +119,13 @@ final class RecordingImporter {
             do { try await upload(index, client: client, wiFiOnly: wiFiOnly) }
             catch {
                 if Task.isCancelled { break }
-                recordings[index].error = error.localizedDescription
+                recordings[index].error = L10n.error(error)
             }
         }
         if Task.isCancelled {
-            error = "Upload paused. Retry to resume with the same recording IDs."
+            error = L10n.source("Upload paused. Retry to resume with the same recording IDs.")
         } else if recordings.contains(where: { !$0.handled && $0.error != nil }) {
-            error = "Some recordings need another try. Completed parts are saved and will not be uploaded twice."
+            error = L10n.source("Some recordings need another try. Completed parts are saved and will not be uploaded twice.")
         }
     }
 
@@ -132,20 +133,22 @@ final class RecordingImporter {
         let result = try await client.request("v1/recording-uploads/check", method: "POST", body: ["digest": digest])
         try Task.checkCancellation()
         switch result["duplicate"] {
-        case .bool(true): return "Already imported\(result["source_id"].text.isEmpty ? "" : " as " + result["source_id"].text)"
+        case .bool(true):
+            let source = result["source_id"].text
+            return source.isEmpty ? L10n.source("Already imported") : L10n.source("Already imported as \(source)")
         case .bool(false): return nil
-        default: throw RecordingImportError("The server returned an invalid duplicate check.")
+        default: throw RecordingImportError(L10n.source("The server returned an invalid duplicate check."))
         }
     }
 
     private func upload(_ index: Int, client: BackendClient, wiFiOnly: Bool) async throws {
-        stage = "Checking for duplicates…"
+        stage = L10n.source("Checking for duplicates…")
         if let match = try await duplicate(recordings[index].digest, client: client) {
             recordings[index].skipped = match
             return
         }
         if recordings[index].converted == nil {
-            stage = "Preparing audio on this iPhone…"
+            stage = L10n.source("Preparing audio on this iPhone…")
             let file = recordings[index].url
             let owner = workspace
             let converted = try await RecordingAudioConverter.convert(file, into: file.deletingLastPathComponent().appendingPathComponent("parts"))
@@ -156,17 +159,22 @@ final class RecordingImporter {
         guard let converted = recordings[index].converted else { return }
         let record = recordings[index]
         let bounds = try RecordingBounds(recordedAt: record.recordedAt, sampleCount: converted.sampleCount, reference: record.reference)
-        stage = "Confirming the upload plan…"
-        let body: [String: Any] = [
+        stage = L10n.source("Confirming the upload plan…")
+        var body: [String: Any] = [
             "file_digest": record.digest, "digests": converted.parts.map(\.digest), "sample_count": converted.sampleCount,
             "source_id": record.name, "started_at": record.plan?.startedAt ?? DurableStore.stamp(bounds.startedAt),
             "ended_at": record.plan?.endedAt ?? DurableStore.stamp(bounds.endedAt),
             "conversation_source_id": linking ? conversationSourceID as Any : NSNull(),
         ]
+        // A resumed server plan owns provenance, including legacy manual plans.
+        let plannedVendor = record.plan?.resolvedVendorID ?? vendorID
+        for (key, value) in RecordingImport.vendorParameters(vendorID: plannedVendor) {
+            body[key] = value
+        }
         let response = try await client.decoded("v1/recording-uploads/prepare", method: "POST", body: body, as: RecordingPreparation.self)
         try Task.checkCancellation()
         guard case .upload(let plan) = response else {
-            if case .duplicate(let source) = response { recordings[index].skipped = "Already imported as \(source)" }
+            if case .duplicate(let source) = response { recordings[index].skipped = L10n.source("Already imported as \(source)") }
             return
         }
         try plan.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount)
@@ -182,7 +190,7 @@ final class RecordingImporter {
             let baseline = confirmedBytes
             let currentTransfer = UUID()
             transferID = currentTransfer
-            stage = "Uploading part \(partIndex + 1) of \(partCount)…"
+            stage = L10n.source("Uploading part \(partIndex + 1) of \(partCount)…")
             let receipt = try await client.uploadRecording(part.url, id: plan.parts[partIndex].id,
                 query: plan.query(for: partIndex), wiFiOnly: wiFiOnly) { [weak self] bytes in
                 guard let self, self.transferID == currentTransfer else { return }
@@ -208,7 +216,7 @@ final class RecordingImporter {
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         try Task.checkCancellation()
         let values = try source.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
-        guard values.isRegularFile == true else { throw RecordingImportError("Choose an audio file.") }
+        guard values.isRegularFile == true else { throw RecordingImportError(L10n.source("Choose an audio file.")) }
         try RecordingImport.validateFile(name: source.lastPathComponent, bytes: values.fileSize ?? 0)
         let directory = workspace.url.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,

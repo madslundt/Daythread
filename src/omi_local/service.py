@@ -21,6 +21,8 @@ from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
 from .speakers import Speakers
 from .store import Store
+from .vendor_catalog import vendor_definition
+from .vendor_imports import transcript_import
 from .voices import Voices
 
 
@@ -36,7 +38,21 @@ def public_source(row: dict) -> dict:
     result["timestamp_basis"] = (
         "receipt_end_estimate" if row.get("source_kind") == "omi_audio_webhook" else "capture"
     )
+    if row.get("tags"):
+        result["tags"] = row["tags"]
     result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
+    vendor_id = result["source_metadata"].get("vendor_id")
+    if not vendor_id and transcript_import(result["source_kind"]):
+        vendor_id = result["source_kind"].rsplit("_", 1)[0]
+    if not vendor_id and (result["source_kind"] == "omi_audio_webhook" or
+                          result["device_id"].startswith("omi")):
+        vendor_id = "omi"
+    if vendor_id:
+        result["vendor_id"] = vendor_id
+        try:
+            result["vendor_label"] = vendor_definition(vendor_id).label
+        except ValueError:
+            result["vendor_label"] = vendor_id
     result["transcription_details"] = json.loads(row.get("transcription_details", "{}"))
     topics = json.loads(row.get("topic_details") or "{}")
     result["title"] = topics.get("title")

@@ -22,6 +22,8 @@ Navigation uses URL paths, with the backend serving the app for direct links and
 
 Use **Upload recording** to import audio exported from another phone, Voice Memos, a voice recorder, or a computer. Drag one audio file into the drop area, or use **Choose audio file**, then enter either the recording end or start time. The default is **Recording ended** at the current local date and time: this means when recording stopped. The app subtracts the decoded audio duration to calculate its start, including across midnight. Choose **Recording started** to enter when it began instead. Files may be up to 100 MB and two hours, subject to the browser's codec support and available memory. The archive records `source_kind=manual_upload`, the original filename, and the supplied capture time; playback downloads contain the converted WAV. Keep the dialog open while uploading. An interrupted request can be retried with the same chunk IDs while the dialog remains open, and each response is checked before advancing; closing or reloading discards that upload plan. File import works on LAN HTTP without microphone permission.
 
+Settings → Connections lists recording brands from the server vendor catalog. Capabilities determine which brands offer audio uploads, transcript export imports, or optional cloud imports. Choose the device or brand for each file in Upload recordings; the server upload plan preserves that provenance when resuming an interrupted upload. Pocket cloud imports use a server-held API key. Plaud supports exported audio and original SRT/TXT transcript files; transcript imports require explicit original start and end times and do not include audio. Setup links open the vendor’s documentation.
+
 The UI shows empty, queued, failure, and model-unavailable states from the actual API. Recaps, chats, original audio, and correction history always come from home-core. Rewind audio uses the exact same end timestamp as its summary request. Gesture hints do not crop recordings, and the UI observes the configured flag cooldown.
 
 Today shows identical manually uploaded audio once, even when it was uploaded again with a
@@ -49,3 +51,17 @@ Opening a language tab only checks its saved translation; an untranslated tab sh
 original with an explicit **Translate** action. Generation keeps that preview with a progress
 status, then displays the saved translation. Failures show an error and **Translate again**
 over the blurred preview. Original remains accessible throughout.
+
+Use **Record audio → Start recording** on Today to capture this device’s microphone.
+Stop to listen, **Upload now**, **Remove**, or **Upload later**. Stopped recordings
+are saved in IndexedDB for the current account and profile and remain available after
+reload. Uploads use the original capture start and the existing resumable upload
+plans; failed transfers keep the local copy. A confirmed upload removes that copy.
+You can also download a local recording before removing it.
+
+Microphone capture requires HTTPS or localhost, browser microphone permission, and
+MediaRecorder support. A plain LAN HTTP address can still upload saved audio files.
+Keep the page open while capturing; recordings stop before two hours or at the local
+size limit. Closing/crashing the tab during capture can lose the unfinished recording.
+Browser storage limits or clearing site data can remove local recordings. If saving
+fails, keep the page open to retry or download the captured audio.

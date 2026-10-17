@@ -62,7 +62,7 @@ export function RecapContent({ text, day, version, sources, timezone, onChat, on
           onToggle={() => toggle(part.text)}
           sources={sources}
           timezone={timezone}
-          onChat={() => onChat({ kind: "day", day }, `Tell me more about this point from my day recap: ${part.text}`)}
+          onChat={() => onChat({ kind: "day", day }, t("Tell me more about this point from my day recap: {value0}", { value0: part.text }))}
           onCorrect={onCorrect}
           compact={compact}
         />
@@ -125,14 +125,14 @@ function RecapItem({ text, topic, importanceTarget, action, checked, onToggle, s
       <div className="recap-item-line">
         {action ? (
           <label className="recap-check-target">
-            <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Mark complete: ${(compact ? recapReadingText(text) : text).replace(/\*\*/g, "")}`} />
+            <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t("Mark complete: {value0}", { value0: (compact ? recapReadingText(text) : text).replace(/\*\*/g, "") })} />
           </label>
         ) : <span className="recap-bullet" aria-hidden="true">•</span>}
         <button type="button" className="recap-item-button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}>
           <span><InlineText text={compact ? recapReadingText(text) : text} /></span>
           <Icon name="chevron-right" size={16} />
         </button>
-        {compact && importanceTarget ? <ImportanceButton target={importanceTarget} label={`recap point: ${recapReadingText(text).replace(/\*\*/g, "")}`} compact /> : null}
+        {compact && importanceTarget ? <ImportanceButton target={importanceTarget} label={t("recap point: {value0}", { value0: recapReadingText(text).replace(/\*\*/g, "") })} compact /> : null}
       </div>
       {!compact && importanceTarget ? <ImportanceButton target={importanceTarget} label={t("recap point")} /> : null}
       <div id={id} hidden={!open} className="recap-item-detail">

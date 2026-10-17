@@ -84,6 +84,10 @@ def export_calendar(memory, key: str, body: CalendarExportRequest) -> dict:
         db.execute("BEGIN")
         row, _ = current_decision(memory.store, key, body.expected_version, db)
         item = body.suggestion
+        if item.location_trigger:
+            raise ValueError(
+                "Open this follow-up on iPhone to confirm its place and location alert"
+            )
         start, end, defaults_note = item.start_at, item.end_at, ""
         component = "VEVENT" if item.kind == "event" else "VTODO"
         if item.kind == "event":

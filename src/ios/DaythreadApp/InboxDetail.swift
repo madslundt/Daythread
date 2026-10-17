@@ -26,66 +26,68 @@ struct InboxDetail: View {
     @State private var mutationID = UUID()
     private var conflict: Bool { base?.version != latest?.version }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         Form {
             if let base {
-                Section("Review") {
-                    Text("Unsaved edits remain here if saving fails. Leaving this screen discards them.").font(.caption)
+                Section(L10n.text("Review")) {
+                    Text(L10n.text("Unsaved edits remain here if saving fails. Leaving this screen discards them.")).font(.caption)
                     ErrorNote(message: error)
-                    if let saved { Text(saved).font(.caption).foregroundStyle(Theme.accent) }
+                    if let saved { Text(L10n.key(saved)).font(.caption).foregroundStyle(Theme.accent) }
                     if conflict, let latest {
-                        Text("Saved version changed: \(latest.title) · \(latest.owner ?? "Owner unknown") · \(latest.deadline?.label ?? "Deadline unknown") · \(latest.status)").font(.caption)
-                        Button("Use latest version as save base (keep draft)") { self.base = latest }
+                        Text(L10n.text("Saved version changed: \(latest.title) · \(latest.owner ?? L10n.text("Owner unknown")) · \(latest.deadline?.label ?? L10n.text("Deadline unknown")) · \(L10n.status(latest.status))")).font(.caption)
+                        Button(L10n.text("Use latest version as save base (keep draft)")) { self.base = latest }
                     }
-                    TextField("Title", text: $title, axis: .vertical)
-                    Picker("Kind", selection: $kind) {
-                        Text("Commitment").tag("commitment"); Text("Deadline").tag("deadline"); Text("Question").tag("question")
+                    TextField(L10n.text("Title"), text: $title, axis: .vertical)
+                    Picker(L10n.text("Kind"), selection: $kind) {
+                        Text(L10n.text("Commitment")).tag("commitment"); Text(L10n.text("Deadline")).tag("deadline"); Text(L10n.text("Question")).tag("question")
                     }
-                    TextField("Owner unknown", text: $owner)
-                    Picker("Deadline precision", selection: $precision) {
-                        Text("Unknown / unresolved").tag("unknown"); Text("Date only").tag("date"); Text("Exact instant").tag("datetime")
+                    TextField(L10n.text("Owner unknown"), text: $owner)
+                    Picker(L10n.text("Deadline precision"), selection: $precision) {
+                        Text(L10n.text("Unknown / unresolved")).tag("unknown"); Text(L10n.text("Date only")).tag("date"); Text(L10n.text("Exact instant")).tag("datetime")
                     }
                     if precision == "date" { TextField("YYYY-MM-DD", text: $day).textInputAutocapitalization(.never) }
-                    if precision == "datetime" { TextField("ISO instant with UTC offset", text: $instant).textInputAutocapitalization(.never) }
-                    TextField("Deadline timezone", text: $timezone).textInputAutocapitalization(.never)
-                    Picker("Status", selection: $status) {
-                        Text("Pending").tag("pending"); Text(kind == "question" ? "Answered" : "Completed").tag("completed"); Text("Dismissed").tag("dismissed")
+                    if precision == "datetime" { TextField(L10n.text("ISO instant with UTC offset"), text: $instant).textInputAutocapitalization(.never) }
+                    TextField(L10n.text("Deadline timezone"), text: $timezone).textInputAutocapitalization(.never)
+                    Picker(L10n.text("Status"), selection: $status) {
+                        Text(L10n.text("Pending")).tag("pending"); Text(kind == "question" ? L10n.text("Answered") : L10n.text("Completed")).tag("completed"); Text(L10n.text("Dismissed")).tag("dismissed")
                     }
                     if status == "dismissed" {
-                        Picker("Duplicate of", selection: $duplicate) {
-                            Text("Ordinary dismissal").tag("")
+                        Picker(L10n.text("Duplicate of"), selection: $duplicate) {
+                            Text(L10n.text("Ordinary dismissal")).tag("")
                             ForEach(alternatives.filter { $0.id != id && $0.duplicate_of == nil }) { Text($0.title).tag($0.id) }
                         }
                     }
-                    Button(busy ? "Saving…" : "Save review") { Task { await save() } }.disabled(busy || conflict || latest == nil)
+                    Button(busy ? L10n.text("Saving…") : L10n.text("Save review")) { Task { await save() } }.disabled(busy || conflict || latest == nil)
                 }
-                Section("Extracted values / reset overrides") {
-                    Text("\(base.proposal.kind): \(base.proposal.title)\n\(base.proposal.owner ?? "Owner unknown") · \(base.proposal.deadline?.label ?? "Deadline unknown")").font(.caption)
+                Section(L10n.text("Extracted values / reset overrides")) {
+                    Text("\(L10n.status(base.proposal.kind)): \(base.proposal.title)\n\(base.proposal.owner ?? L10n.text("Owner unknown")) · \(base.proposal.deadline?.label ?? L10n.text("Deadline unknown"))").font(.caption)
                     ForEach(["title", "kind", "owner", "deadline"], id: \.self) { field in
-                        Button(resets.contains(field) ? "\(field.capitalized) resets on save" : "Use extracted \(field)") { reset(field, from: base.proposal) }
+                        Button(resets.contains(field) ? L10n.text("\(L10n.status(field)) resets on save") : L10n.text("Use extracted \(L10n.status(field))")) { reset(field, from: base.proposal) }
                     }
                 }
-                Section("Transcript evidence") {
-                    if base.health != "current" { Text("Evidence changed or was withdrawn. Prior excerpts are historical; review before relying on this item.").foregroundStyle(Theme.accent) }
-                    if kind == "question" { Text("No answer found in the scanned context; other recordings may contain one.").font(.caption) }
+                Section(L10n.text("Transcript evidence")) {
+                    if base.health != "current" { Text(L10n.text("Evidence changed or was withdrawn. Prior excerpts are historical; review before relying on this item.")).foregroundStyle(Theme.accent) }
+                    if kind == "question" { Text(L10n.text("No answer found in the scanned context; other recordings may contain one.")).font(.caption) }
                     ForEach(Array((latest?.evidence ?? []).enumerated()), id: \.offset) { _, span in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(span.quote).textSelection(.enabled)
-                            Text("\(span.started_at) · \(span.current ? "Current transcript" : "Prior transcript") · chunk timing\n\(span.source_id)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text(L10n.text("\(span.started_at) · \(span.current ? L10n.text("Current transcript") : L10n.text("Prior transcript")) · chunk timing\n\(span.source_id)")).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                             if span.audio_available {
-                                Button("Play source audio") { Task { await play(span.source_id) } }.disabled(busy)
-                            } else { Text("Original audio unavailable").font(.caption).foregroundStyle(.secondary) }
+                                Button(L10n.text("Play source audio")) { Task { await play(span.source_id) } }.disabled(busy)
+                            } else { Text(L10n.text("Original audio unavailable")).font(.caption).foregroundStyle(.secondary) }
                         }
                     }
                 }
-                Section("Change history") {
-                    ForEach(latest?.history ?? []) { event in Text("\(event.created_at) · \(event.kind)").font(.caption) }
+                Section(L10n.text("Change history")) {
+                    ForEach(latest?.history ?? []) { event in Text("\(event.created_at) · \(L10n.status(event.kind))").font(.caption) }
                 }
             } else {
-                ProgressView("Loading inbox item…"); ErrorNote(message: error)
-                Button("Retry") { Task { await load() } }
+                ProgressView(L10n.text("Loading inbox item…")); ErrorNote(message: error)
+                Button(L10n.text("Retry")) { Task { await load() } }
             }
-        }.omiScreen().disabled(busy).navigationTitle("Review item").navigationBarTitleDisplayMode(.inline)
+        }.omiScreen().disabled(busy).navigationTitle(L10n.text("Review item")).navigationBarTitleDisplayMode(.inline)
             .task(id: model.archiveIdentity) {
                 base = nil; latest = nil; alternatives = []; await load()
                 let identity = model.archiveIdentity
@@ -120,7 +122,7 @@ struct InboxDetail: View {
             if base == nil { base = item; fill(item) }
         } catch {
             guard !Task.isCancelled, address == model.archiveIdentity, requestID == token else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
             if (error as? BackendFailure)?.status == 404 { latest = nil }
         }
     }
@@ -141,7 +143,7 @@ struct InboxDetail: View {
         guard let base else { return }
         let identity = model.archiveIdentity, token = UUID()
         let client: BackendClient
-        do { client = try model.client() } catch { self.error = error.localizedDescription; return }
+        do { client = try model.client() } catch { self.error = L10n.error(error); return }
         mutationID = token; busy = true; saved = nil; error = nil
         defer { if mutationID == token { busy = false } }
         var changes: [String: Any] = [:]
@@ -149,7 +151,7 @@ struct InboxDetail: View {
         if kind != base.kind { changes["kind"] = kind }
         if owner != (base.owner ?? "") { changes["owner"] = owner.isEmpty ? NSNull() : owner as Any }
         if precision != (base.deadline?.precision ?? "unknown") || day != (base.deadline?.day ?? "") || instant != (base.deadline?.instant ?? "") || timezone != (base.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC") {
-            changes["deadline"] = ["precision": precision, "day": precision == "date" ? day as Any : NSNull(), "instant": precision == "datetime" ? instant as Any : NSNull(), "timezone": timezone, "basis": "user edit"]
+            changes["deadline"] = ["precision": precision, "day": precision == "date" ? day as Any : NSNull(), "instant": precision == "datetime" ? instant as Any : NSNull(), "timezone": timezone, "basis": L10n.source("user edit")]
         }
         for field in resets { changes.removeValue(forKey: field) }
         var body: [String: Any] = ["expected_version": base.version, "changes": changes, "status": status, "reset": resets.sorted()]
@@ -171,12 +173,12 @@ struct InboxDetail: View {
             guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
             await load()
             guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
-            self.error = (error as? BackendFailure)?.status == 409 ? "Saved version changed. Your draft is preserved. Refresh and compare before applying it." : error.localizedDescription
+            self.error = (error as? BackendFailure)?.status == 409 ? L10n.text("Saved version changed. Your draft is preserved. Refresh and compare before applying it.") : L10n.error(error)
         }
     }
     private func accept(_ result: InboxItem) {
         self.base = result; latest = result; fill(result); resets = []; operation = nil
-        saved = "Saved to your local backend."
+        saved = L10n.text("Saved to your local backend.")
     }
     private func play(_ source: String) async {
         let identity = model.archiveIdentity, token = UUID()
@@ -188,7 +190,7 @@ struct InboxDetail: View {
             model.play(file)
         } catch {
             guard !Task.isCancelled, identity == model.archiveIdentity, mutationID == token else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }

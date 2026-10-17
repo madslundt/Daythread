@@ -1,4 +1,5 @@
-import { t } from "./i18n";
+import { statusLabel } from "./statusLabels";
+import { t, source } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, errorMessage, newId, request } from "./api";
 import { ErrorState, Loading } from "./UI";
@@ -16,7 +17,7 @@ function SecretControl({ id, label, configured, edit, onChange, route = false, n
   onChange: (edit: SecretEdit) => void; route?: boolean; nullable?: boolean; description?: string;
 }) {
   return <div className="setting-field">
-    <label htmlFor={id}>{label} · {configured ? t("Configured") : t("Not set")}</label>
+    <label htmlFor={id}>{t(label)} · {configured ? t("Configured") : t("Not set")}</label>
     <select id={id} value={edit.mode} aria-describedby={description ? `${id}-hint` : undefined} onChange={(event) =>
       onChange({ mode: event.target.value as SecretEdit["mode"], value: "" })}>
       <option value="keep">{configured ? t("Keep current key") : route || nullable ? t("Keep current setting") : t("Leave key unset")}</option>
@@ -25,11 +26,11 @@ function SecretControl({ id, label, configured, edit, onChange, route = false, n
       <option value="clear">{route || nullable ? t("No authentication") : t("Clear key")}</option>
     </select>
     {edit.mode === "replace" ? <input
-      type="password" aria-label={`New ${label}`} value={edit.value}
+      type="password" aria-label={t("New {value0}", { value0: label })} value={edit.value}
       autoComplete="new-password" spellCheck={false}
       onChange={(event) => onChange({ ...edit, value: event.target.value })}
     /> : null}
-    {description ? <small id={`${id}-hint`}>{description}</small> : null}
+    {description ? <small id={`${id}-hint`}>{t(description)}</small> : null}
   </div>;
 }
 
@@ -43,14 +44,14 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
     onChange(rows.map((row) => row.id === id ? { ...row, ...changes } : row));
   }
   return <div className="model-routes">
-    <p className="caption">{field.description}</p>
+    <p className="caption">{t(field.description)}</p>
     {rows.map((row, index) => <fieldset className="model-route" key={row.id}>
       <legend>{llm ? t("Task") : t("Language")} {t("route")}{" "}{index + 1}</legend>
       <div className="settings-grid">
         <label className="setting-field">
           <span>{llm ? t("Task") : t("Language code or detector name")}</span>
           {llm ? <select value={row.name} onChange={(event) => update(row.id, { name: event.target.value })}>
-            {tasks.map((task) => <option key={task} value={task}>{task}</option>)}
+            {tasks.map((task) => <option key={task} value={task}>{statusLabel(task)}</option>)}
           </select> : <input value={row.name} placeholder={t("da, en, danish, auto…")} autoCapitalize="none"
             spellCheck={false} onChange={(event) => update(row.id, { name: event.target.value })} />}
         </label>
@@ -65,7 +66,7 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
         <SecretControl id={`route-key-${row.id}`} label={t("Route key")} route
           configured={Boolean(secrets[`${field.key}.${row.name.toLowerCase()}.token`])}
           edit={row.secret} onChange={(secret) => update(row.id, { secret })} />
-        <ModelPicker id={`route-model-${row.id}`} label={`Model for ${row.name || `route ${index + 1}`}`}
+        <ModelPicker id={`route-model-${row.id}`} label={t("Model for {value0}", { value0: row.name || t("route {value0}", { value0: index + 1 }) })}
           value={row.model || ""} provider={llm ? "llm" : "stt"} draft={connectionDraft} row={row}
           revision={revision} onChange={(model) => update(row.id, { model })} />
       </div>
@@ -77,28 +78,28 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
       onClick={() => onChange([...rows, {
         id: newId(), name: llm ? tasks.find((task) => !rows.some((row) => row.name === task)) || "chat" : "",
         model: "", base_url: "", revision: "", secret: keepSecret(),
-      }])}>{t("Add")}{" "}{llm ? t("task") : t("language")} {t("route")}</button>
+      }])}>{llm ? t("Add task route") : t("Add language route")}</button>
   </div>;
 }
 
 const groupDescriptions: Record<string, string> = {
-  "Transcription": "Turn recordings into text with your chosen speech model.",
-  "Language models & chat": "Choose models for answers, summaries, and other tasks.",
-  "Semantic search": "Find related conversations by meaning.",
-  "Local inference": "Shared connection settings for your model services.",
-  "Omi connections": "Credentials for optional Omi imports and audio forwarding.",
-  "Capture & hints": "Fine-tune how flags and meeting gestures are interpreted.",
-  "Archive & processing": "Control storage locations and background processing.",
+  "Transcription": source("Turn recordings into text with your chosen speech model."),
+  "Language models & chat": source("Choose models for answers, summaries, and other tasks."),
+  "Semantic search": source("Find related conversations by meaning."),
+  "Local inference": source("Shared connection settings for your model services."),
+  "Omi connections": source("Credentials for optional Omi imports and audio forwarding."),
+  "Capture & hints": source("Fine-tune how flags and meeting gestures are interpreted."),
+  "Archive & processing": source("Control storage locations and background processing."),
 };
 
 const modelConnections = [
-  { provider: "stt", title: "Speech-to-text (STT)", description: "Transcribes your recordings into text." },
-  { provider: "llm", title: "Language model (LLM)", description: "Answers questions and generates summaries." },
+  { provider: "stt", title: source("Speech-to-text (STT)"), description: source("Transcribes your recordings into text.") },
+  { provider: "llm", title: source("Language model (LLM)"), description: source("Answers questions and generates summaries.") },
 ] as const;
 const connectionKeys = modelConnections.flatMap(({ provider }) =>
   [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]);
-const optionsTitle = (group: string) => group === "Transcription" ? "Transcription options & language routes" :
-  group === "Language models & chat" ? "Language model options & task routes" : group;
+const optionsTitle = (group: string) => group === "Transcription" ? t("Transcription options & language routes") :
+  group === "Language models & chat" ? t("Language model options & task routes") : group;
 
 export function Configuration({ onSaved, hiddenFields = [], search: controlledSearch,
   onSearchResults, onDirtyChange, refreshRevision = 0 }: {
@@ -154,7 +155,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         setConflict("");
       } else {
         setError("");
-        setConflict("Server settings changed while you were editing. Your edits are still here. Discard changes to load the current settings before making further changes.");
+        setConflict(t("Server settings changed while you were editing. Your edits are still here. Discard changes to load the current settings before making further changes."));
       }
     }
   }, [resource.data, baseline, draft, hiddenFields]);
@@ -194,7 +195,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
   function control(field: ConfigurationField) {
     const id = `config-${field.key}`;
     if (field.key === "stt_model" || field.key === "llm_model") return <ModelPicker
-      id={id} label={field.label} description={field.description} value={String(draft!.values[field.key] || "")}
+      id={id} label={t(field.label)} description={t(field.description)} value={String(draft!.values[field.key] || "")}
       provider={field.key === "stt_model" ? "stt" : "llm"} draft={draft!} revision={baseline!.revision}
       onChange={(value) => update(field.key, value)} />;
     if (field.kind === "routes") return <ModelRoutes field={field} rows={draft!.routes[field.key] || []}
@@ -202,15 +203,15 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         setDraft((current) => current ? { ...current, routes: { ...current.routes, [field.key]: rows } } : current);
         setSaved(false); setError("");
       }} />;
-    if (field.kind === "secret") return <SecretControl id={id} label={field.label}
+    if (field.kind === "secret") return <SecretControl id={id} label={t(field.label)}
       nullable={field.nullable}
       configured={Boolean(baseline!.secrets[field.key])} edit={draft!.secrets[field.key] || keepSecret()}
-      description={field.description} onChange={(edit) => {
+      description={t(field.description)} onChange={(edit) => {
         setDraft((current) => current ? { ...current, secrets: { ...current.secrets, [field.key]: edit } } : current);
         setSaved(false); setError("");
       }} />;
     return <label className="setting-field" htmlFor={id}>
-      <span id={`${id}-label`}>{field.label}{field.restart_required ? t("· restart required") : ""}</span>
+      <span id={`${id}-label`}>{t(field.label)}{field.restart_required ? t("· restart required") : ""}</span>
       {field.kind === "boolean" ? field.nullable ? <select id={id}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         value={draft!.values[field.key] == null ? "default" : String(draft!.values[field.key])}
@@ -225,12 +226,12 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         step={field.kind === "integer" ? 1 : "any"} min={field.minimum} max={field.maximum}
         value={String(draft!.values[field.key] ?? "")} spellCheck={false} autoCapitalize="none"
         onChange={(event) => update(field.key, event.target.value)} />}
-      {field.description ? <small id={`${id}-hint`}>{field.description}</small> : null}
+      {field.description ? <small id={`${id}-hint`}>{t(field.description)}</small> : null}
     </label>;
   }
   const fields = matchingConfigurationFields(baseline?.fields || [], search, hiddenFields);
   const otherFields = fields.filter((field) => !connectionKeys.includes(field.key));
-  const groupOrder = ["Transcription", "Language models & chat", "Local inference", "Omi connections", "Semantic search", "Archive & processing"];
+  const groupOrder = [source("Transcription"), source("Language models & chat"), source("Local inference"), source("Omi connections"), source("Semantic search"), source("Archive & processing")];
   const groups = [...new Set(otherFields.map((field) => field.group))].sort((a, b) => {
     const rank = (group: string) => groupOrder.includes(group) ? groupOrder.indexOf(group) : groupOrder.length;
     return rank(a) - rank(b);
@@ -245,13 +246,13 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {baseline && draft ? <form onSubmit={save} aria-busy={busy}>
       {baseline.pending_restart.length ? <p role="status" className="notice">{t("Restart your server to apply:")}{" "}{baseline.pending_restart.map((key) =>
-        baseline.fields.find((field) => field.key === key)?.label || key.replaceAll("_", " ")).join(", ")}.</p> : null}
+        t(baseline.fields.find((field) => field.key === key)?.label || key.replaceAll("_", " "))).join(", ")}.</p> : null}
       {controlledSearch === undefined ? <label className="setting-field"><span>{t("Find a server setting")}</span>
         <input type="search" value={localSearch} placeholder={t("Search models, keys, storage…")}
           onChange={(event) => setLocalSearch(event.target.value)} />
       </label> : null}
       {search.trim() ? <p className="caption" role="status">{fields.length ?
-        `${fields.length} matching server ${fields.length === 1 ? "setting" : "settings"}.` :
+        t("{value0} matching server {value1}.", { value0: fields.length, value1: fields.length === 1 ? t("setting") : t("settings") }) :
         t("No server settings match your search. Try a model name, connection, or storage setting.")}</p> : null}
       <div className="model-connections">
         {modelConnections.map(({ provider, title, description }) => {
@@ -259,8 +260,8 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
             .flatMap((key) => fields.filter((field) => field.key === key));
           if (!connectionFields.length) return null;
           return <fieldset key={provider} disabled={busy} className="model-connection">
-            <legend>{title}</legend>
-            <p className="caption">{description} {t("Enter a local or hosted endpoint and its credentials.")}</p>
+            <legend>{t(title)}</legend>
+            <p className="caption">{t(description)} {t("Enter a local or hosted endpoint and its credentials.")}</p>
             {connectionFields.map((field) => <div key={field.key}>{control(field)}</div>)}
           </fieldset>;
         })}
@@ -269,12 +270,12 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         const groupFields = otherFields.filter((field) => field.group === group);
         return <details key={group} open={search.trim() ? true : undefined}>
           <summary>
-            <span className="configuration-group-heading">{optionsTitle(group)} <span className="caption">{groupFields.length} {groupFields.length === 1 ? t("setting") : t("settings")}</span></span>
-            <small className="configuration-group-description">{groupDescriptions[group] || "Additional server preferences."}</small>
+            <span className="configuration-group-heading">{t(optionsTitle(group))} <span className="caption">{groupFields.length} {groupFields.length === 1 ? t("setting") : t("settings")}</span></span>
+            <small className="configuration-group-description">{t(groupDescriptions[group] || t("Additional server preferences."))}</small>
           </summary>
           <fieldset disabled={busy} className="configuration-fields">
             {groupFields.map((field) => <div key={field.key} className={field.kind === "routes" ? "configuration-routes" : ""}>
-              {field.kind === "routes" ? <h3>{field.label}</h3> : null}{control(field)}
+              {field.kind === "routes" ? <h3>{t(field.label)}</h3> : null}{control(field)}
             </div>)}
           </fieldset>
         </details>;

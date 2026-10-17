@@ -17,7 +17,7 @@ export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }
   return <article className="recap-evidence">
     <div className="recap-evidence-heading">
       <span className="caption">{timeLabel(source.started_at, timezone)}</span>
-      <span>{sections.length === 1 ? sections[0].title : source.title || "Recording"}</span>
+      <span>{sections.length === 1 ? sections[0].title : source.title || t("Recording")}</span>
       <ImportanceButton target={{ kind: "source", id: source.id }} label={t("recording")} compact />
     </div>
     <p className="caption">{sections.length ? t("Matching topic passages") : t("Original transcript · no specific topic passage identified. Open the full recording to inspect its context.")}</p>

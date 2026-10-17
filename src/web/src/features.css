@@ -405,3 +405,20 @@
   .conversation-panel:has(.chat-starters) .messages { order: 2; min-height: 0; padding: 0; }
   .messages > .empty-state { padding-top: 24px; }
 }
+
+.conversation-tags { margin: 12px 0; }
+.conversation-tags > summary { cursor: pointer; font-weight: 600; }
+.conversation-tags label { display: grid; gap: 6px; }
+.conversation-tags .button-row { align-items: center; margin: 10px 0; }
+
+.browser-recorder { margin: 0 0 24px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.browser-recorder[hidden] { display: none; }
+.browser-recorder .section-heading { flex-wrap: wrap; gap: 12px; }
+.browser-recorder .section-heading h2 { margin: 0; }
+.browser-recorder .button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.recording-clock { color: var(--accent); font-variant-numeric: tabular-nums; }
+.local-recordings { margin-top: 20px; }
+.local-recording { padding: 14px 0; border-top: 1px solid var(--line); }
+.local-recording > p { margin: 0 0 12px; }
+.local-recording audio { display: block; width: min(100%, 480px); margin: 12px 0; }
+@media (max-width: 760px) { .browser-recorder { padding: 18px; } }

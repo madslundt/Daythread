@@ -1,4 +1,4 @@
-import { interfaceLanguage } from "./i18n";
+import { interfaceLanguage, source } from "./i18n";
 
 export function localDay(timeZone: string, value = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -19,12 +19,12 @@ export function shiftDay(day: string, offset: number): string {
 }
 
 export const dateRangeShortcuts = [
-  { id: "this_week", label: "This week" },
-  { id: "this_month", label: "This month" },
-  { id: "this_year", label: "This year" },
-  { id: "last_week", label: "Last week" },
-  { id: "last_month", label: "Last month" },
-  { id: "last_year", label: "Last year" },
+  { id: "this_week", label: source("This week") },
+  { id: "this_month", label: source("This month") },
+  { id: "this_year", label: source("This year") },
+  { id: "last_week", label: source("Last week") },
+  { id: "last_month", label: source("Last month") },
+  { id: "last_year", label: source("Last year") },
 ] as const;
 
 export type DateRangeShortcut = (typeof dateRangeShortcuts)[number]["id"];

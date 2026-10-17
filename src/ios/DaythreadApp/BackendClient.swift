@@ -32,27 +32,35 @@ enum JSONValue: Codable, Equatable {
 struct BackendFailure: LocalizedError {
     let message: String
     var status: Int? = nil
-    var errorDescription: String? { message }
+    var errorDescription: String? { L10n.key(message) }
 }
 
 struct BackendClient {
     let router: BackendEndpointRouter
     let profileID: String
+    let authorization: ManagedAuthorization?
+    var destinationIdentity: String { authorization?.destinationIdentity ?? ManagedServiceOrigin.ownDestination(archiveIdentity: router.configuration.archiveIdentity) }
 
     init(address: String, profileID: String = "default") throws {
         let url = try Self.validatedURL(address)
         let endpoint = BackendEndpoint(address: url.absoluteString)
         self.router = BackendEndpointRouter(configuration: .init(endpoints: [endpoint], activeID: endpoint.id))
         self.profileID = profileID
+        self.authorization = nil
     }
 
-    init(router: BackendEndpointRouter, profileID: String) throws {
+    init(router: BackendEndpointRouter, profileID: String, authorization: ManagedAuthorization? = nil) throws {
         guard !router.configuration.endpoints.isEmpty else {
-            throw BackendFailure(message: "Add at least one http:// or https:// backend endpoint.")
+            throw BackendFailure(message: L10n.source("Add at least one http:// or https:// backend endpoint."))
         }
         for endpoint in router.configuration.endpoints { _ = try Self.validatedURL(endpoint.address) }
+        if let authorization, router.configuration.endpoints.contains(where: { endpoint in
+            guard let url = URL(string: endpoint.address) else { return true }
+            return !authorization.origin.contains(url)
+        }) { throw BackendFailure(message: L10n.source("The managed service address is fixed by this app.")) }
         self.router = router
         self.profileID = profileID
+        self.authorization = authorization
     }
 
     var base: URL { URL(string: router.activeEndpoint?.address ?? "")! }
@@ -72,15 +80,15 @@ struct BackendClient {
             for (key, value) in query { parameters[key] = value }
             for (key, value) in route.parameters { parameters[key] = value }
             let jobID = UUID().uuidString.lowercased()
-            let jobClient = try BackendClient(router: BackendEndpointRouter(configuration: router.configuration), profileID: profileID)
+            let jobClient = try snapshot()
             var job = try await jobClient.request("v1/jobs", method: "POST", body: ["id": jobID, "kind": route.kind, "parameters": parameters])
             while true {
                 try Task.checkCancellation()
                 switch job["state"].text {
                 case "completed": return job["result"]
-                case "failed": throw BackendFailure(message: job["error"].text.isEmpty ? "Generation failed. Open Notifications for details." : job["error"].text)
+                case "failed": throw BackendFailure(message: job["error"].text.isEmpty ? L10n.source("Generation failed. Open Notifications for details.") : job["error"].text)
                 case "queued", "running": break
-                default: throw BackendFailure(message: "Home-core returned an invalid generation status.")
+                default: throw BackendFailure(message: L10n.source("Home-core returned an invalid generation status."))
                 }
                 // Cancelling this view stops polling. The accepted backend job and
                 // its completion notification continue after the app is closed.
@@ -101,8 +109,12 @@ struct BackendClient {
         return try JSONDecoder().decode(type, from: JSONEncoder().encode(value))
     }
 
+    func vendorCatalog() async throws -> VendorCatalog {
+        try await decoded("v1/vendors", as: VendorCatalog.self)
+    }
+
     private func requireProfile() throws {
-        guard !profileID.isEmpty else { throw BackendFailure(message: "Choose a profile in Settings first.") }
+        guard !profileID.isEmpty else { throw BackendFailure(message: L10n.source("Choose a profile in Settings first.")) }
     }
 
     @MainActor
@@ -125,7 +137,7 @@ struct BackendClient {
                 guard !receivedBytes, index < candidates.count - 1, Self.shouldTryNextEndpoint(error) else { throw error }
             }
         }
-        throw lastError ?? BackendFailure(message: "The answer could not be completed.")
+        throw lastError ?? BackendFailure(message: L10n.source("The answer could not be completed."))
     }
 
     private func streamChat(endpoint: BackendEndpoint, body: Data, onEvent: @escaping @MainActor (JSONValue) -> Void) async throws -> JSONValue {
@@ -136,38 +148,39 @@ struct BackendClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
         request.httpBody = body
+        try authorize(&request)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForResource = 3600
-        let session = URLSession(configuration: configuration)
+        let session = URLSession(configuration: configuration, delegate: authorization == nil ? nil : ManagedRedirectPolicy.shared, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         return try await withTaskCancellationHandler {
             let (bytes, response) = try await session.bytes(for: request)
-            try Self.validate(response, data: Data())
+            try validateResponse(response, data: Data())
             var size = 0, textSize = 0
             for try await line in bytes.lines {
                 try Task.checkCancellation()
                 size += line.utf8.count
-                guard size <= 16_000_000 else { throw BackendFailure(message: "The answer exceeded its response limit.") }
+                guard size <= 16_000_000 else { throw BackendFailure(message: L10n.source("The answer exceeded its response limit.")) }
                 if line.isEmpty { continue }
                 let event = try JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
                 switch event["type"].text {
                 case "done":
                     let result = event["result"]
                     guard !result["session_id"].text.isEmpty, !result["message_id"].text.isEmpty,
-                          !result["answer"].text.isEmpty else { throw BackendFailure(message: "The answer response was invalid.") }
+                          !result["answer"].text.isEmpty else { throw BackendFailure(message: L10n.source("The answer response was invalid.")) }
                     return result
                 case "error":
-                    throw BackendFailure(message: event["message"].text.isEmpty ? "The answer could not be completed." : event["message"].text, status: event["status"].integer)
+                    throw BackendFailure(message: event["message"].text.isEmpty ? L10n.source("The answer could not be completed.") : event["message"].text, status: event["status"].integer)
                 case "delta":
                     textSize += event["text"].text.count
-                    guard textSize <= 30_000 else { throw BackendFailure(message: "The answer exceeded its text limit.") }
+                    guard textSize <= 30_000 else { throw BackendFailure(message: L10n.source("The answer exceeded its text limit.")) }
                     await onEvent(event)
                 case "status": await onEvent(event)
                 case "heartbeat": break
-                default: throw BackendFailure(message: "The answer response was invalid.")
+                default: throw BackendFailure(message: L10n.source("The answer response was invalid."))
                 }
             }
-            throw BackendFailure(message: "The answer was interrupted. Please try again.")
+            throw BackendFailure(message: L10n.source("The answer was interrupted. Please try again."))
         } onCancel: {
             session.invalidateAndCancel()
         }
@@ -192,8 +205,10 @@ struct BackendClient {
                 components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
                 request.url = components.url
                 request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
-                let (temporary, response) = try await URLSession.shared.download(for: request)
-                try Self.validate(response, data: (try? Data(contentsOf: temporary)) ?? Data())
+                try authorize(&request)
+                let session = makeSession(); defer { session.finishTasksAndInvalidate() }
+                let (temporary, response) = try await session.download(for: request)
+                try validateResponse(response, data: (try? Data(contentsOf: temporary)) ?? Data())
                 let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
                 try FileManager.default.moveItem(at: temporary, to: destination)
                 router.markSuccess(endpoint.id)
@@ -203,7 +218,7 @@ struct BackendClient {
                 guard index < candidates.count - 1, Self.shouldTryNextEndpoint(error) else { throw error }
             }
         }
-        throw lastError ?? BackendFailure(message: "The download could not be completed.")
+        throw lastError ?? BackendFailure(message: L10n.source("The download could not be completed."))
     }
 
     /// Sends a JSON request through the ordered endpoint list. Specialized clients
@@ -223,17 +238,19 @@ struct BackendClient {
                 request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
                 if let profileHeader { request.setValue(profileHeader, forHTTPHeaderField: "X-Omi-Profile") }
                 if let body { request.httpBody = body; request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+                try authorize(&request)
                 let session: URLSession
-                if ephemeral {
+                if ephemeral || authorization != nil {
                     let configuration = URLSessionConfiguration.ephemeral
                     configuration.urlCache = nil
-                    session = URLSession(configuration: configuration)
+                    configuration.httpCookieStorage = nil
+                    session = URLSession(configuration: configuration, delegate: authorization == nil ? nil : ManagedRedirectPolicy.shared, delegateQueue: nil)
                 } else {
                     session = URLSession.shared
                 }
-                defer { if ephemeral { session.finishTasksAndInvalidate() } }
+                defer { if ephemeral || authorization != nil { session.finishTasksAndInvalidate() } }
                 let (responseData, response) = try await session.data(for: request)
-                try Self.validate(response, data: responseData)
+                try validateResponse(response, data: responseData)
                 router.markSuccess(endpoint.id)
                 return responseData
             } catch {
@@ -241,14 +258,32 @@ struct BackendClient {
                 guard index < candidates.count - 1, Self.shouldTryNextEndpoint(error) else { throw error }
             }
         }
-        throw lastError ?? BackendFailure(message: "The request could not be completed.")
+        throw lastError ?? BackendFailure(message: L10n.source("The request could not be completed."))
+    }
+
+    func snapshot() throws -> BackendClient {
+        try BackendClient(router: BackendEndpointRouter(configuration: router.configuration), profileID: profileID, authorization: authorization)
+    }
+    func authorize(_ request: inout URLRequest) throws {
+        if let authorization { try authorization.authorize(&request) }
+        request.setValue(destinationIdentity, forHTTPHeaderField: "X-Daythread-Destination")
+        request.setValue(authorization?.sessionID.uuidString, forHTTPHeaderField: "X-Daythread-Session")
+    }
+    func validateResponse(_ response: URLResponse, data: Data) throws {
+        authorization?.expireIfNeeded(response)
+        try Self.validate(response, data: data)
+    }
+    func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil; configuration.httpCookieStorage = nil
+        return URLSession(configuration: configuration, delegate: authorization == nil ? nil : ManagedRedirectPolicy.shared, delegateQueue: nil)
     }
 
     static func validatedURL(_ address: String) throws -> URL {
         guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased()), url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
-            throw BackendFailure(message: "Enter an http:// or https:// home-core address without credentials or a query.")
+            throw BackendFailure(message: L10n.source("Enter an http:// or https:// home-core address without credentials or a query."))
         }
         return url
     }
@@ -277,7 +312,7 @@ struct BackendClient {
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let detail = (try? JSONDecoder().decode(JSONValue.self, from: data))?["detail"].text
-            throw BackendFailure(message: "Home-core HTTP \(status): \(detail?.isEmpty == false ? detail! : String(data: data.prefix(500), encoding: .utf8) ?? "No response detail")", status: status)
+            throw BackendFailure(message: L10n.source("Home-core HTTP \(status): \(detail?.isEmpty == false ? L10n.key(detail!) : String(data: data.prefix(500), encoding: .utf8) ?? L10n.source("No response detail"))"), status: status)
         }
     }
 }

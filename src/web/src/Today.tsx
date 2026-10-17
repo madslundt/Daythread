@@ -1,3 +1,5 @@
+import { TagFilter } from "./ConversationTags";
+import { ZoneFilter } from "./LocationZones";
 import { t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { ImportanceButton } from "./Importance";
@@ -137,12 +139,12 @@ export function RecapSection({
 
 function emptyRecapMessage(recap?: Recap): string {
   if (recap?.no_recap_content)
-    return "No useful recap content in completed conversations yet. Your recordings and transcripts remain in the archive under your retention settings.";
+    return t("No useful recap content in completed conversations yet. Your recordings and transcripts remain in the archive under your retention settings.");
   if (recap?.deferred_conversations || recap?.deferred_sources)
-    return "Your current conversation is waiting to finish before it can be included in a recap.";
+    return t("Your current conversation is waiting to finish before it can be included in a recap.");
   if (recap?.pending_chunks)
-    return "Audio is still being transcribed. Completed conversations can be included once it is ready.";
-  return "Completed conversations will bring the important parts of your day together here.";
+    return t("Audio is still being transcribed. Completed conversations can be included once it is ready.");
+  return t("Completed conversations will bring the important parts of your day together here.");
 }
 
 export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: string }) {
@@ -152,8 +154,8 @@ export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: str
     {recap.included_through ? <p>{t("Includes completed conversations through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
       : recap.included_through === null ? <p>{t("No completed conversations included yet.")}</p> : null}
     {deferred || deferredSources ? <p>
-      {deferred ? `${deferred} ${deferred === 1 ? "conversation is" : "conversations are"}` : t("Recent recordings are")} {t("waiting to finish before being included. Active conversations stay out of the recap.")}{" "}</p> : null}
-    {recap.boundary_note ? <p>{recap.boundary_note}</p> : null}
+      {deferred ? `${deferred} ${deferred === 1 ? t("conversation is") : t("conversations are")}` : t("Recent recordings are")} {t("waiting to finish before being included. Active conversations stay out of the recap.")}{" "}</p> : null}
+    {recap.boundary_note ? <p>{t(recap.boundary_note)}</p> : null}
   </div>;
 }
 
@@ -288,10 +290,14 @@ function TranscriptTimeline({
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const [zoneID, setZoneID] = useState("");
+  const [tagID, setTagID] = useState("");
   const [page, setPage] = useState(0);
   const params = new URLSearchParams({
     day,
     q: submitted,
+    ...(zoneID ? { zone_id: zoneID } : {}),
+    ...(tagID ? { tag_id: tagID } : {}),
     limit: "30",
     offset: String(page * 30),
   });
@@ -299,6 +305,10 @@ function TranscriptTimeline({
     `/v1/recording-groups?${params}`,
     15_000,
   );
+  useEffect(() => {
+    window.addEventListener("omi:tags-changed", resource.refresh);
+    return () => window.removeEventListener("omi:tags-changed", resource.refresh);
+  }, [resource.refresh]);
   const markers =
     timeline?.markers.filter(
       (mark) => localDay(timezone, new Date(mark.occurred_at)) === day,
@@ -349,10 +359,10 @@ function TranscriptTimeline({
                 onClick={() =>
                   onChat({ kind: "meeting", meeting_id: meeting.id })
                 }
-                aria-label={`Chat with meeting at ${timeLabel(meeting.started_at, timezone)}`}
+                aria-label={t("Chat with meeting at {value0}", { value0: timeLabel(meeting.started_at, timezone) })}
               >
                 {t("Chat with meeting")}{" "}</button>
-              <ImportanceButton target={{ kind: "meeting", id: meeting.id }} label={`meeting at ${timeLabel(meeting.started_at, timezone)}`} />
+              <ImportanceButton target={{ kind: "meeting", id: meeting.id }} label={t("meeting at {value0}", { value0: timeLabel(meeting.started_at, timezone) })} />
               </p>
               <MeetingSpeakers id={meeting.id} />
             </div>
@@ -361,7 +371,9 @@ function TranscriptTimeline({
             {t("Hints guide interpretation of nearby speech; these are approximate times.")}{" "}</p>
         </div>
       ) : null}
-      {resource.data?.total || submitted ? (
+      <TagFilter value={tagID} onChange={(value) => { setTagID(value); setPage(0); }} />
+      <ZoneFilter value={zoneID} onChange={(value) => { setZoneID(value); setPage(0); }} />
+      {resource.data?.total || submitted || zoneID || tagID ? (
         <form
           className="search-form"
           onSubmit={(event) => {
@@ -397,7 +409,7 @@ function TranscriptTimeline({
         <Loading>{t("Loading recordings…")}</Loading>
       ) : groups.length ? (
         <>
-          <RecordingGroups groups={groups} day={day} query={submitted} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} />
+          <RecordingGroups groups={groups} day={day} query={submitted} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} />
           {(resource.data?.total || 0) > 30 || page > 0 ? <div className="pagination">
             <span className="caption">
               {page * 30 + 1}–{page * 30 + groups.length} {t("of")}{" "}
@@ -421,10 +433,10 @@ function TranscriptTimeline({
         </>
       ) : (
         <EmptyState
-          icon={submitted ? "search" : "mic"}
-          title={submitted ? t("No matching recordings") : t("Make room for your first memory")}
+          icon={submitted || zoneID || tagID ? "search" : "mic"}
+          title={submitted || zoneID || tagID ? t("No matching recordings") : t("Make room for your first memory")}
         >
-          {submitted
+          {submitted || zoneID || tagID
             ? t("Try another word or choose a different day.")
             : t("Connect Omi on your iPhone, or upload a recording.")}
           <span className="empty-action">

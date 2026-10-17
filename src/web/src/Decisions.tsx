@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage, newId, post, request } from "./api";
@@ -28,7 +29,7 @@ function useDecisions<T>(path: string | null, interval = 0) {
 
 function Claim({ label, claim, historical = false, opposing = false, actions }: { label: string; claim: DecisionClaim | null; historical?: boolean; opposing?: boolean; actions?: ReactNode }) {
   return <div className="decision-claim"><h4>{label}</h4>
-    <p>{claim?.text || "Not stated"}{actions}</p>
+    <p>{claim?.text || t("Not stated")}{actions}</p>
     {claim?.evidence.map((anchor, index) => <DecisionEvidence key={index} anchor={anchor} historical={historical} opposing={opposing} />)}
   </div>;
 }
@@ -38,10 +39,10 @@ function Contents({ content, historical = false, actions }: { content: DecisionC
     <Claim label={t("Choice")} claim={content.choice} historical={historical} actions={actions} />
     <Claim label={t("Context")} claim={content.context} historical={historical} />
     <Claim label={t("Rationale")} claim={content.rationale} historical={historical} />
-    {content.alternatives.map((claim, index) => <Claim key={index} label={`Explicitly discussed alternative ${index + 1}`} claim={claim} historical={historical} />)}
-    {(content.contradictions || []).map((claim, index) => <Claim key={`opposing-${index}`} label={`Contradictory evidence for ${claim.field}`} claim={claim} historical={historical} opposing />)}
+    {content.alternatives.map((claim, index) => <Claim key={index} label={t("Explicitly discussed alternative {value0}", { value0: index + 1 })} claim={claim} historical={historical} />)}
+    {(content.contradictions || []).map((claim, index) => <Claim key={`opposing-${index}`} label={t("Contradictory evidence for {value0}", { value0: claim.field })} claim={claim} historical={historical} opposing />)}
     {content.owner_notes ? <div className="decision-claim"><h4>{t("Owner notes")}</h4><p>{content.owner_notes}</p><p className="caption">{t("Owner interpretation; not recorded speech.")}</p></div> : null}
-    {content.relationships.length ? <p className="caption">{t("Links:")}{" "}{content.relationships.map((link) => `${link.kind}: ${link.label}${link.target_id ? "" : " (local label)"}`).join(" · ")}</p> : null}
+    {content.relationships.length ? <p className="caption">{t("Links:")}{" "}{content.relationships.map((link) => `${statusLabel(link.kind)}: ${link.label}${link.target_id ? "" : t(" (local label)")}`).join(" · ")}</p> : null}
   </>;
 }
 
@@ -85,7 +86,7 @@ export function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: stri
   }, []);
   async function act(type: "confirm" | "dismiss" | "conflict" | "resolve" | "delete") {
     if (!decision) return;
-    if (type === "delete" && !window.confirm("Permanently delete this decision and its saved content history? Source transcripts remain. This cannot be undone.")) return;
+    if (type === "delete" && !window.confirm(t("Permanently delete this decision and its saved content history? Source transcripts remain. This cannot be undone."))) return;
     setBusy(true); setError("");
     const key = JSON.stringify({ type, version: decision.version, predecessor: revising ? previous?.id : null, predecessorVersion: previous?.version });
     if (pendingCommand.current?.key !== key) pendingCommand.current = { key, id: newId() };
@@ -105,8 +106,8 @@ export function DecisionDetail({ id, timezone, onClose, onNavigate }: { id: stri
     <div className="section-heading"><h3>{t("Decision record")}</h3><button className="text-button" onClick={onClose}>{t("Close record")}</button></div>
     {error || resource.error ? <ErrorState message={error || resource.error} retry={resource.refresh} /> : null}
     {!decision ? resource.loading ? <Loading /> : null : <>
-      <p className="decision-meta">{dateTimeLabel(decision.started_at, timezone)} · {decision.display_state} · {decision.review_status} {t("· version")}{" "}{decision.version}</p>
-      {decision.evidence_condition !== "current" ? <Notice tone="error">{t("Evidence is")}{" "}{decision.evidence_condition}. {decision.evidence_condition === "stale" ? t("Review corrected transcripts and explicitly reattach evidence before confirming again.") : t("Resolve the evidence issue before confirming.")}</Notice> : null}
+      <p className="decision-meta">{dateTimeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)} {t("· version")}{" "}{decision.version}</p>
+      {decision.evidence_condition !== "current" ? <Notice tone="error">{t("Evidence is")}{" "}{statusLabel(decision.evidence_condition)}. {decision.evidence_condition === "stale" ? t("Review corrected transcripts and explicitly reattach evidence before confirming again.") : t("Resolve the evidence issue before confirming.")}</Notice> : null}
       {decision.predecessor_id ? <button className="text-button" onClick={() => onNavigate(decision.predecessor_id!)}>{t("View earlier choice")}</button> : null}
       {decision.successor_id ? <button className="text-button" onClick={() => onNavigate(decision.successor_id!)}>{t("View revised choice")}</button> : null}
       {decision.content ? <Contents content={decision.content} historical={decision.evidence_condition !== "current"} actions={<DecisionFollowups key={`${decision.id}:${decision.version}`} decision={decision} timezone={timezone} />} /> : <p>{t("Content removed with its source evidence.")}</p>}
@@ -166,7 +167,7 @@ export function Decisions({ day, timezone, compact = false }: { day: string; tim
     {compact ? <details className="decision-search"><summary>{t("Search & filter")}{submitted || allDays || review ? t("· filters active") : ""}</summary>{filters}</details> : filters}
     {resource.loading && !resource.data ? <Loading>{t("Loading decisions…")}</Loading> : resource.data?.items.length ? <div className="decision-list">
       {resource.data.items.map((decision) => <button key={decision.id} className={`decision-row ${selected === decision.id ? "selected" : ""}`} onClick={() => setSelected(decision.id)}>
-        <span>{decision.content?.choice.text || "Content removed"}</span><small>{dateTimeLabel(decision.started_at, timezone)} · {decision.display_state} · {decision.review_status}{decision.evidence_condition !== "current" ? ` · evidence ${decision.evidence_condition}` : ""}</small>
+        <span>{decision.content?.choice.text || t("Content removed")}</span><small>{dateTimeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)}{decision.evidence_condition !== "current" ? t(" · evidence {value0}", { value0: statusLabel(decision.evidence_condition) }) : ""}</small>
       </button>)}
       <p className="caption">{t("Showing")}{" "}{page * 30 + 1}–{page * 30 + resource.data.items.length} {t("of")}{" "}{resource.data.total} {t("records")}{allDays ? t("across all days") : t("for this day")}.</p>
     </div> : <div className={compact ? "decision-empty" : ""}><p className="caption">{compact && !submitted && !allDays && !review ? t("No decisions saved for this day.") : t("No matching decision records.")} <span>{t("Model proposals require your review before confirmation.")}</span></p></div>}

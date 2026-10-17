@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export type InboxStatus = "pending" | "completed" | "dismissed";
 export type InboxKind = "commitment" | "deadline" | "question";
 export interface Deadline {
@@ -54,7 +55,7 @@ export interface InboxPage {
 }
 export function deadlineLabel(value: Deadline | null): string {
   if (!value || value.precision === "unknown")
-    return value?.phrase ? `Unresolved: ${value.phrase}` : "Deadline unknown";
+    return value?.phrase ? t("Unresolved: {value0}", { value0: value.phrase }) : t("Deadline unknown");
   return value.precision === "date"
     ? value.day!
     : `${value.instant} (${value.timezone})`;

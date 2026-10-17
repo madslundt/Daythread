@@ -61,8 +61,8 @@ export function ImportanceButton({ target, label, compact = false }: { target: I
   const busy = pending.has(importanceKey(target));
   return <span className="importance-control">
     <button type="button" className={`text-button importance-button ${compact ? "importance-icon" : ""} ${important ? "is-important" : ""}`}
-      aria-label={`${important ? "Remove importance from" : "Mark as important:"} ${label}`}
-      title={`${important ? "Remove importance from" : "Mark as important:"} ${label}`}
+      aria-label={`${important ? t("Remove importance from") : t("Mark as important:")} ${label}`}
+      title={`${important ? t("Remove importance from") : t("Mark as important:")} ${label}`}
       aria-pressed={important} disabled={busy || (!marks && !loadError)}
       onClick={async () => {
         if (!marks) { retry(); return; }

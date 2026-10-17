@@ -14,8 +14,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from .completeness import audio_availability
+from .conversation_tags import decorate_tags, tag_filter
 from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
+from .location_zones import zone_filter
 from .source_matching import MANUAL_UPLOAD_SQL
 from .weekly_models import markdown as weekly_markdown
 
@@ -114,7 +116,7 @@ class ArchiveStore:
 
     def transcripts(
         self, start: datetime | None, end: datetime | None, query: str, limit: int, offset: int,
-        *, deduplicate: bool = False,
+        *, deduplicate: bool = False, zone_id: str | None = None, tag_id: str | None = None,
     ) -> tuple[list[dict], int]:
         filters, args = ["1=1"], []
         if start and end:
@@ -125,8 +127,15 @@ class ArchiveStore:
             filters.append("text LIKE ? ESCAPE '\\'")
             escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             args.append(f"%{escaped}%")
-        where = " AND ".join(filters)
         with self.connect() as db:
+            db.execute("BEGIN")
+            zone_sql, zone_args = zone_filter(db, zone_id)
+            filters.append(zone_sql)
+            args.extend(zone_args)
+            tag_sql, tag_args = tag_filter(db, tag_id)
+            filters.append(tag_sql)
+            args.extend(tag_args)
+            where = " AND ".join(filters)
             if deduplicate:
                 # Group before counting/paging so duplicates cannot leak onto later pages.
                 # Keep the earliest supplied capture time as the stable display row.
@@ -157,13 +166,13 @@ class ArchiveStore:
                         alternatives.setdefault(row["upload_key"], []).append(dict(row))
                     for row in rows:
                         row["alternate_sources"] = alternatives.get(row["upload_key"], [])
-                return rows, total
+                return decorate_tags(db, rows), total
             total = db.execute(f"SELECT count(*) FROM audio WHERE {where}", args).fetchone()[0]
             rows = db.execute(
                 f"SELECT * FROM audio WHERE {where} ORDER BY started_at DESC,id LIMIT ? OFFSET ?",
                 (*args, limit, offset),
             ).fetchall()
-        return [dict(row) for row in rows], total
+            return decorate_tags(db, [dict(row) for row in rows]), total
 
     def correct_transcript(self, audio_id: str, text: str) -> dict | None:
         with self.connect() as db:
@@ -438,9 +447,15 @@ class ArchiveStore:
                 cutoff = stamp(now - timedelta(days=transcript_days))
                 rows = db.execute(
                     "SELECT id FROM audio WHERE ended_at<? "
-                    "AND (text IS NOT NULL OR state!='expired')",
+                    "AND (text IS NOT NULL OR state!='expired' "
+                    "OR json_type(source_metadata,'$.location') IS NOT NULL)",
                     (cutoff,),
                 ).fetchall()
+                db.execute(
+                    "UPDATE audio SET source_metadata=json_remove(source_metadata,'$.location') "
+                    "WHERE ended_at<? AND json_type(source_metadata,'$.location') IS NOT NULL",
+                    (cutoff,),
+                )
                 removed_transcripts = [row["id"] for row in rows]
                 self.invalidate_decision_sources(db, removed_transcripts, purge=True)
                 for key in removed_transcripts:

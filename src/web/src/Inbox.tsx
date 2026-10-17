@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import { errorMessage, post } from "./api";
@@ -12,7 +13,7 @@ export function InboxEntry() {
   return (
     <a className="button" href="/inbox">
       {t("Inbox")}{" "}{inbox.data
-        ? ` · ${inbox.data.pending} pending across days`
+        ? t(" · {value0} pending across days", { value0: inbox.data.pending })
         : t("· across all days")}
     </a>
   );
@@ -57,7 +58,7 @@ export function Inbox({ timezone }: { timezone: string }) {
         retry_failed: true,
       });
       setMessage(
-        `${result.total} extraction window(s) queued or already scanned. Progress appears below; the local worker must be running.`,
+        t("{value0} extraction window(s) queued or already scanned. Progress appears below; the local worker must be running.", { value0: result.total }),
       );
       resource.refresh();
     } catch (error) {
@@ -122,7 +123,7 @@ export function Inbox({ timezone }: { timezone: string }) {
                 {j.recording_start
                   ? `${dateTimeLabel(j.recording_start, timezone)} · `
                   : ""}
-                {j.state}: {j.error} {t("(attempt")}{" "}{j.attempts})
+                {statusLabel(j.state)}: {t(j.error || "")} {t("(attempt")}{" "}{j.attempts})
               </p>
             ))}
         </div>
@@ -175,11 +176,11 @@ export function Inbox({ timezone }: { timezone: string }) {
         <article className="inbox-card" key={item.id}>
           <button className="inbox-open" onClick={() => setSelected(item.id)}>
             <span className="eyebrow">
-              {item.kind} · {item.reviewed_at ? t("Reviewed") : t("Unreviewed")}
+              {statusLabel(item.kind)} · {item.reviewed_at ? t("Reviewed") : t("Unreviewed")}
             </span>
             <h2>{item.title}</h2>
             <p>
-              {item.owner || "Owner unknown"} · {deadlineLabel(item.deadline)}
+              {item.owner || t("Owner unknown")} · {deadlineLabel(item.deadline)}
               {item.overdue ? t("· Overdue") : ""}
             </p>
             {item.health !== "current" ? (

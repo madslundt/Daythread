@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { displayLocale, t } from "./i18n";
 import { useState } from "react";
 import { errorMessage, newId, request } from "./api";
@@ -61,7 +62,7 @@ export function FeedbackForm({
       });
       if (receipt.id?.toLowerCase() !== id.toLowerCase())
         throw new Error(
-          "Backend receipt was not confirmed. Retry this report safely.",
+          t("Backend receipt was not confirmed. Retry this report safely."),
         );
       setSaved(true);
       setOpen(false);
@@ -168,7 +169,7 @@ export function FeedbackForm({
                   }}
                 />
                 {new Date(source.started_at).toLocaleString(displayLocale())} ·{" "}
-                {(source.text || source.state).slice(0, 160)}
+                {(source.text || statusLabel(source.state)).slice(0, 160)}
               </label>
             ))}
             {expectedIDs.length ? (

@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { displayLocale, t } from "./i18n";
 import type { Status } from "./types";
 import { ErrorState } from "./UI";
@@ -13,7 +14,7 @@ export function CaptureStatus({
   compact?: boolean;
 }) {
   const when = (at?: string | null) =>
-    at ? new Date(at).toLocaleString(displayLocale()) : "unknown";
+    at ? new Date(at).toLocaleString(displayLocale()) : t("Unknown");
   const processing = status?.processing;
   const stale =
     !!error ||
@@ -25,7 +26,7 @@ export function CaptureStatus({
         <summary>
           <span className="capture-overview-title">{t("Capture & sync")}<Icon name="chevron-right" size={16} /></span>
           <span className="capture-glance"><span className={`status-dot ${status && !stale ? "online" : ""}`} />{stale ? t("Status needs a refresh") : status ? t("Backend connected") : t("Connecting to backend…")}</span>
-          <span className="caption">{phone ? `Phone: ${phone.capture_state.replaceAll("_", " ")}` : t("Live capture unknown")}</span>
+          <span className="caption">{phone ? t("Phone: {value0}", { value0: statusLabel(phone.capture_state) }) : t("Live capture unknown")}</span>
           {processing && (processing.queued > 0 || processing.transcribing > 0) ? <span className="caption">{processing.queued} {t("queued ·")}{" "}{processing.transcribing} {t("processing")}</span> : null}
           {processing && !stale && status?.worker_running ? <ProcessingProgress processing={processing} compact /> : null}
           {processing?.blocked ? <span className="status-warning caption">{processing.blocked} {t("blocked · needs attention")}</span> : null}
@@ -48,7 +49,7 @@ export function CaptureStatus({
             <span>{stale ? t("Status needs a refresh") : t("Backend connected")}</span>
           </div>
           <p className="caption">{status.ingestion?.last_received_at
-            ? `Last recording received ${when(status.ingestion.last_received_at)}`
+            ? t("Last recording received {value0}", { value0: when(status.ingestion.last_received_at) })
             : t("Ready for your first recording.")}</p>
           {processing ? <dl className="processing-stats">
             <div><dt>{t("Queued")}</dt><dd>{processing.queued}</dd></div>
@@ -84,12 +85,12 @@ export function CaptureStatus({
                 {t("Oldest known pending receipt:")}{" "}
                 {when(processing.oldest_received_at)}
                 {processing.oldest_age_seconds != null
-                  ? ` · waiting ${Math.round(processing.oldest_age_seconds / 60)} min`
+                  ? t(" · waiting {value0} min", { value0: Math.round(processing.oldest_age_seconds / 60) })
                   : ""}
               </p>
               {processing.recent_errors.map((e) => (
                 <p className="caption" key={e.id}>
-                  {e.id}: {e.error_code} · {e.attempts} {t("attempts")}{" "}</p>
+                  {e.id}: {statusLabel(e.error_code)} · {e.attempts} {t("attempts")}{" "}</p>
               ))}
             </>
           ) : null}
@@ -105,20 +106,20 @@ export function CaptureStatus({
                 <p>
                   {t("Phone")}{" "}
                   {phone.fresh && !stale
-                    ? phone.capture_state
+                    ? statusLabel(phone.capture_state)
                     : t("state unknown")}
                 </p>
                 <p className="caption">
-                  {t("Reported")}{" "}{when(phone.observed_at)}: {phone.capture_state} (
-                  {phone.cause}{t("). Last decoded audio")}{" "}
+                  {t("Reported")}{" "}{when(phone.observed_at)}: {statusLabel(phone.capture_state)} (
+                  {statusLabel(phone.cause)}{t("). Last decoded audio")}{" "}
                   {when(phone.last_decoded_at)}.
                 </p>
                 <p className="caption">
                   {phone.pending_recordings} {t("recordings waiting ·")}{" "}
                   {phone.recovery_items} {t("unfinished/recovery ·")}{" "}
                   {Math.round(phone.pending_seconds / 60)} {t("min ·")}{" "}
-                  {phone.upload_policy.replaceAll("_", " ")} ·{" "}
-                  {phone.upload_state}
+                  {statusLabel(phone.upload_policy)} ·{" "}
+                  {statusLabel(phone.upload_state)}
                 </p>
               </div>
             ))
@@ -136,12 +137,12 @@ export function CaptureStatus({
 }
 
 function remainingTime(seconds: number): string {
-  if (seconds < 60) return "less than a minute";
+  if (seconds < 60) return t("less than a minute");
   const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return t("{value0} min", { value0: minutes });
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return `${hours} hr${rest ? ` ${rest} min` : ""}`;
+  return t("{value0} hr{value1}", { value0: hours, value1: rest ? t(" {value0} min", { value0: rest }) : "" });
 }
 
 function ProcessingProgress({ processing, compact = false }: {
@@ -151,30 +152,30 @@ function ProcessingProgress({ processing, compact = false }: {
   if (!processing.queued && !processing.transcribing) return null;
   const active = processing.active || [];
   const labels: Record<string, string> = {
-    analyzing: "Analyzing audio", transcribing: "Transcribing",
-    enhancing: "Checking enhanced audio", saving: "Saving transcript",
+    analyzing: t("Analyzing audio"), transcribing: t("Transcribing"),
+    enhancing: t("Checking enhanced audio"), saving: t("Saving transcript"),
   };
   const estimate = processing.estimated_remaining_seconds;
   const time = estimate != null && estimate > 0
-    ? `Approx. ${remainingTime(estimate)} remaining for the processing queue`
+    ? t("Approx. {value0} remaining for the processing queue", { value0: remainingTime(estimate) })
     : processing.retrying || processing.blocked
-      ? "Time remaining unavailable while recordings need retry or repair"
+      ? t("Time remaining unavailable while recordings need retry or repair")
       : (processing.estimate_sample_count || 0) === 0
-        ? "Estimating time remaining after the first transcription"
-        : "Time remaining unavailable";
+        ? t("Estimating time remaining after the first transcription")
+        : t("Time remaining unavailable");
   if (compact) {
     const item = active[0];
-    return <span className="caption">{item ? `${labels[item.stage] || "Processing audio"}${item.total_chunks ? ` · ${item.completed_chunks} of ${item.total_chunks} chunks complete` : ""}. ` : ""}{time}</span>;
+    return <span className="caption">{item ? `${labels[item.stage] || t("Processing audio")}${item.total_chunks ? t(" · {value0} of {value1} chunks complete", { value0: item.completed_chunks, value1: item.total_chunks }) : ""}. ` : ""}{time}</span>;
   }
   return <div className="processing-progress" role="status" aria-live="polite">
     {active.map((item) => <div key={item.id}>
       <p className="caption">
-        {labels[item.stage] || "Processing audio"}
-        {item.total_chunks ? ` · ${item.completed_chunks} of ${item.total_chunks} chunks complete` : ""}
-        {item.elapsed_seconds != null ? ` · ${Math.floor(item.elapsed_seconds)} sec elapsed` : ""}
+        {labels[item.stage] || t("Processing audio")}
+        {item.total_chunks ? t(" · {value0} of {value1} chunks complete", { value0: item.completed_chunks, value1: item.total_chunks }) : ""}
+        {item.elapsed_seconds != null ? t(" · {value0} sec elapsed", { value0: Math.floor(item.elapsed_seconds) }) : ""}
       </p>
       {item.total_chunks > 0 ? <progress
-        aria-label={`${labels[item.stage] || "Processing audio"} chunks complete`}
+        aria-label={t("{value0} chunks complete", { value0: labels[item.stage] || t("Processing audio") })}
         value={item.completed_chunks} max={item.total_chunks}
       /> : null}
     </div>)}

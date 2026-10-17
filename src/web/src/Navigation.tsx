@@ -1,4 +1,4 @@
-import { t } from "./i18n";
+import { t, source } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 
@@ -11,40 +11,40 @@ export const pages: {
 }[] = [
   {
     id: "today",
-    label: "Today",
+    label: source("Today"),
     icon: "home",
-    title: "Your day, remembered.",
+    title: source("Your day, remembered."),
   },
   {
     id: "rewind",
-    label: "Rewind",
+    label: source("Rewind"),
     icon: "rewind",
-    title: "Come back to a moment.",
+    title: source("Come back to a moment."),
   },
   {
     id: "diary",
-    label: "Diary",
+    label: source("Diary"),
     icon: "diary",
-    title: "The days add up.",
+    title: source("The days add up."),
   },
   {
     id: "chat",
-    label: "Chat",
+    label: source("Chat"),
     icon: "chat",
-    title: "A conversation with your days.",
+    title: source("A conversation with your days."),
   },
-  { id: "labels", label: "People", icon: "people", title: "People & projects." },
+  { id: "labels", label: source("People"), icon: "people", title: source("People & projects.") },
   {
     id: "inbox",
-    label: "Inbox",
+    label: source("Inbox"),
     icon: "inbox",
-    title: "Follow through.",
+    title: source("Follow through."),
   },
   {
     id: "settings",
-    label: "Settings",
+    label: source("Settings"),
     icon: "settings",
-    title: "Settings",
+    title: source("Settings"),
   },
 ];
 

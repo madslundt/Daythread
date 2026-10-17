@@ -17,6 +17,7 @@ from . import conversation_prep
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .configuration import RESTART_FIELDS, Configuration
+from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
 from .domain import (
     ButtonEvent,
@@ -42,6 +43,8 @@ from .inbox_api import inbox_router
 from .inference import InferenceError
 from .label_api import router as label_router
 from .label_models import LabelError
+from .location_zones import location_zone_routes
+from .locations import CaptureLocation
 from .model_connections import model_connection_routes
 from .notification_api import notification_routes
 from .omi_api import ImportRequest, OmiAPIError
@@ -56,6 +59,8 @@ from .source_matching import UploadGrouping
 from .speaker_api import speaker_routes
 from .store import Store
 from .translation import translation_routes
+from .vendor_catalog import file_vendor
+from .vendor_routes import vendor_routes
 from .voice_api import voice_routes
 from .weekly_api import weekly_routes
 
@@ -172,6 +177,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
+    app.include_router(location_zone_routes(memory))
+    app.include_router(conversation_tag_routes(memory))
+    app.include_router(vendor_routes(lambda: config, runtime))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:
@@ -308,6 +316,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             profile.memory.notifications.settings = revised
             profile.memory.inference.settings = revised
             profile.omi.key = revised.omi_api_key.get_secret_value().strip()
+            for adapter in profile.vendors.values():
+                adapter.key = getattr(revised, adapter.key_setting).get_secret_value().strip()
             if profile.memory is not app.state.memory:
                 profile.memory.store.save_settings({
                     key: getattr(revised, key) for key in changes if key in RUNTIME_FIELDS
@@ -389,15 +399,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         started_at: AwareDatetime,
         source_kind: Literal["", "manual_upload"] = "",
         source_id: Annotated[str, Query(max_length=255)] = "",
+        vendor_id: Annotated[str, Query(max_length=80)] = "manual",
         recording_id: UUID | None = None,
         part_index: Annotated[int | None, Query(ge=0, le=59)] = None,
         part_count: Annotated[int | None, Query(ge=1, le=60)] = None,
         conversation_source_id: UUID | None = None,
         recording_started_at: AwareDatetime | None = None,
         recording_ended_at: AwareDatetime | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        horizontal_accuracy: float | None = None,
+        location_captured_at: AwareDatetime | None = None,
     ) -> dict:
         try:
+            file_vendor(vendor_id)
+            if vendor_id != "manual" and source_kind != "manual_upload":
+                raise ValueError("Vendor provenance applies to imported audio files")
             grouping = UploadGrouping(
+                vendor_id=vendor_id if vendor_id != "manual" else None,
                 recording_id=str(recording_id) if recording_id else None,
                 part_index=part_index, part_count=part_count,
                 conversation_source_id=(
@@ -407,6 +426,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).model_dump(exclude_none=True, mode="json")
             if grouping and source_kind != "manual_upload":
                 raise ValueError("Recording groups apply to manual uploads")
+            if any(v is not None for v in (
+                latitude, longitude, horizontal_accuracy, location_captured_at
+            )):
+                location = CaptureLocation(
+                    latitude=latitude, longitude=longitude,
+                    horizontal_accuracy=horizontal_accuracy, captured_at=location_captured_at,
+                )
+                if source_kind or device_id in {"web", "manual-web"}:
+                    raise ValueError("GPS observations apply only to phone capture")
+                location.validate_capture_time(started_at)
+                grouping["location"] = location.model_dump(mode="json")
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         if started_at > utc_now() + timedelta(seconds=30):
@@ -478,19 +508,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def timeline_recording_groups(
         day: date, q: str = Query(default="", max_length=200),
         limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
+        zone_id: UUID | None = None,
+        tag_id: UUID | None = None,
     ) -> dict:
         start, end = memory().day_window(day)
-        return recording_groups(memory().store, start, end, q, limit, offset)
+        return recording_groups(
+            memory().store, start, end, q, limit, offset,
+            zone_id=str(zone_id) if zone_id else None,
+            tag_id=str(tag_id) if tag_id else None,
+        )
 
     @app.get("/v1/recording-groups/{group_id}/sources")
     def timeline_group_sources(
         group_id: UUID, day: date, q: str = Query(default="", max_length=200),
         limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
+        zone_id: UUID | None = None,
+        tag_id: UUID | None = None,
     ) -> dict:
         start, end = memory().day_window(day)
         try:
             return recording_groups(
                 memory().store, start, end, q, limit, offset, group_id=str(group_id),
+                zone_id=str(zone_id) if zone_id else None,
+                tag_id=str(tag_id) if tag_id else None,
             )
         except KeyError as exc:
             raise HTTPException(404, "Recording group unavailable") from exc
@@ -502,10 +542,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
         deduplicate: bool = False,
+        zone_id: UUID | None = None,
+        tag_id: UUID | None = None,
     ) -> dict:
         start, end = memory().day_window(day) if day else (None, None)
         rows, total = memory().store.transcripts(
             start, end, q, limit, offset, deduplicate=deduplicate,
+            zone_id=str(zone_id) if zone_id else None,
+            tag_id=str(tag_id) if tag_id else None,
         )
         return {"items": [public_source(row) for row in rows], "total": total}
 

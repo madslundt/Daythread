@@ -47,6 +47,8 @@ def group(key: str) -> str:
         return "Semantic search"
     if key in {"inference_token", "inference_timeout_seconds"}:
         return "Local inference"
+    if key.startswith("pocket_"):
+        return "Device connections"
     if key.startswith("omi_") or key.startswith("audio_forwarding_"):
         return "Omi connections"
     if key.startswith(("meeting_", "marker_")):
@@ -115,6 +117,7 @@ DESCRIPTIONS = {
     "Blank model, endpoint or revision inherits the defaults. Route keys override provider keys.",
     "inference_token": "Shared STT/LLM gateway credential, used when no provider key is set. "
     "Leave unchanged to keep it.",
+    "pocket_api_key": "Pocket developer API key for optional transcript import.",
     "omi_api_key": "Personal Omi developer API key for optional transcript import.",
     "audio_forwarding_token": "Separate receiver secret: 32–128 URL-safe letters, digits, _ or -.",
     "embedding_enabled": "Requires a model, immutable revision and positive output dimension.",
@@ -152,6 +155,7 @@ def descriptors() -> list[dict]:
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
         title = {
+            "pocket_api_key": "Pocket API key",
             "stt_base_url": "STT endpoint URL",
             "stt_api_key": "STT API key",
             "stt_model": "STT model",

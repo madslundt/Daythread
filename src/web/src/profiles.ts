@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export type Profile = { id: string; name: string };
 export type ProfileDirectory = { profiles: Profile[]; default_profile_id: string };
 export type ProfileScope = { id: string; signal: AbortSignal };
@@ -33,11 +34,12 @@ export function profileStorageKey(key: string): string {
 
 export function globalEndpoint(path: string): boolean {
   const route = path.split("?")[0];
+  if (/^\/v1\/vendors(?:\/[^/]+)?$/.test(route)) return true;
   return ["/v1/profiles", "/v1/settings", "/v1/configuration"].some((base) => route === base || route.startsWith(`${base}/`));
 }
 
 export function profileRequestOptions(path: string, options: RequestInit, scope = profileScope()): RequestInit {
-  if (!globalEndpoint(path) && !scope.id) throw new Error("Choose a profile in Settings → Profiles first.");
+  if (!globalEndpoint(path) && !scope.id) throw new Error(t("Choose a profile in Settings → Profiles first."));
   const headers = new Headers(options.headers);
   if (globalEndpoint(path)) headers.delete("X-Omi-Profile");
   else headers.set("X-Omi-Profile", scope.id);

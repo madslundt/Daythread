@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     audio_forwarding_enabled: bool = False
     audio_forwarding_token: SecretStr = SecretStr("")
     omi_api_key: SecretStr = SecretStr("")
+    pocket_api_key: SecretStr = SecretStr("")
     apns_team_id: str = Field(default="", max_length=10, pattern=r"^(?:[A-Z0-9]{10})?$")
     apns_key_id: str = Field(default="", max_length=10, pattern=r"^(?:[A-Z0-9]{10})?$")
     apns_private_key: SecretStr = SecretStr("")

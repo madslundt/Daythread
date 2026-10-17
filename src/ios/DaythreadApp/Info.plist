@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>DaythreadManagedServiceURL</key>
+	<string>https://daythread.elcc.dk</string>
 	<key>APNSEnvironment</key>
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
@@ -45,6 +47,10 @@
 	<string>Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Daythread sends recordings to your own home-core on your local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Daythread uses your microphone to record audio when you tap Start recording. You choose when to upload or remove each recording.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Daythread uses your location to tag conversations when enabled and to choose a place for nearby reminders.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -58,6 +64,7 @@
 		<string>audio</string>
 		<string>processing</string>
 		<string>fetch</string>
+		<string>location</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

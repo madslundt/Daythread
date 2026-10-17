@@ -22,7 +22,7 @@ export function RecapTopic({ title, parts, day, sources, timezone, onChat, onCor
   const related = itemSources(parts.map((part) => part.text).join("\n"), sources);
   const actions = <div className="recap-topic-actions">
     <CopySummary text={`${heading}\n\n${plain}`} context={heading} />
-    <button type="button" className="text-button" onClick={() => onChat({ kind: "day", day }, `Tell me more about this topic from my day recap: ${heading}\n${plain}`)}>
+    <button type="button" className="text-button" onClick={() => onChat({ kind: "day", day }, t("Tell me more about this topic from my day recap: {value0}\n{value1}", { value0: heading, value1: plain }))}>
       <Icon name="chat" size={16} />{t("Chat about this")}{" "}</button>
   </div>;
   const body = <>

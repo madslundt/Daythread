@@ -27,6 +27,7 @@ class FollowUp(Boundary):
     due_at: AwareDatetime | None = None
     all_day: bool = False
     location: str = Field(default="", max_length=1000)
+    location_trigger: Literal["arrive", "leave"] | None = None
 
     @field_validator("title", "notes", "reason", "location")
     @classmethod
@@ -49,6 +50,8 @@ class FollowUp(Boundary):
 
     @model_validator(mode="after")
     def ordered(self):
+        if self.location_trigger and (self.kind != "reminder" or not self.location.strip()):
+            raise ValueError("A location trigger requires a reminder and a named place")
         if self.start_at and self.end_at and self.end_at <= self.start_at:
             raise ValueError("The end must follow the start")
         return self
@@ -79,10 +82,16 @@ NEVER today's date. ISO datetimes must include the correct timezone offset for t
 including daylight saving. Leave unknown dates/times null; do not guess dates, event duration,
 end times, reminder deadlines, locations, attendees or identity. A date without time may be all_day
 at local midnight; all-day event end dates are exclusive, only if the duration is explicit.
+For place-bound errands or explicit proximity requests, suggest a reminder with location set to
+an EXACT place phrase in the supporting quotation and location_trigger "arrive" (or "leave" only
+when departure is explicit). Such reminders need no date. Do not create proximity reminders for
+incidental place mentions. Never infer the destination from the phone's capture location and never
+invent coordinates or resolve ambiguous branches. The owner will choose the actual place on iPhone.
+Otherwise location_trigger is null. Events may have a location but no location_trigger.
 For reminders use due_at, leaving start_at/end_at null. For events use start_at/end_at, due_at null.
 Return only JSON {"suggestions":[{"kind":"reminder|event","title":"action",
 "notes":"supported details, preserving uncertainty","reason":"why this is useful",
-"start_at":null,"end_at":null,"due_at":null,"all_day":false,"location":"",
+"start_at":null,"end_at":null,"due_at":null,"all_day":false,"location":"","location_trigger":null,
 "evidence":[{"source_id":"UUID","source_version":"supplied version",
 "quote":"EXACT substring","start":0,"end":10}]}]}.
 Evidence offsets are Unicode code points in the FULL transcript, adding text_offset to positions
@@ -167,6 +176,10 @@ async def suggest_followups(memory, key: str, body: FollowUpRequest) -> dict:
         if memory.settings.timezone != timezone:
             raise EvidenceChanged("Timezone changed while suggesting follow-ups; retry")
         for suggestion in output.suggestions:
+            if suggestion.location_trigger and not any(
+                suggestion.location in anchor.quote for anchor in suggestion.evidence
+            ):
+                raise InferenceError("Location reminder needs an exact cited place phrase")
             for anchor in suggestion.evidence:
                 match = next(
                     (

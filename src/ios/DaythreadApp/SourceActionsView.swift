@@ -15,12 +15,14 @@ struct SourceActionsView: View {
     private var sourceID: String { source["id"].text }
     private var canPlay: Bool { source["audio_available"] != .bool(false) && source["audio_availability"].text != "missing" }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
-        Section("Recording details & tools") {
+        let _ = interfaceLocale
+        Section(L10n.text("Recording details & tools")) {
             SourceProvenanceView(source: source)
             if !source["alternate_sources"].array.isEmpty {
-                DisclosureGroup("Other uploads of this recording (\(source["alternate_sources"].array.count))") {
-                    Text("Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript.")
+                DisclosureGroup(L10n.text("Other uploads of this recording (\(source["alternate_sources"].array.count))")) {
+                    Text(L10n.text("Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript."))
                         .font(.caption).foregroundStyle(.secondary)
                     SourceList(sources: source["alternate_sources"].array)
                 }
@@ -28,25 +30,25 @@ struct SourceActionsView: View {
             NavigationLink {
                 SourceCorrectionHistoryView(sourceID: sourceID)
             } label: {
-                Label("Correction history", systemImage: "clock.arrow.circlepath")
+                Label(L10n.text("Correction history"), systemImage: "clock.arrow.circlepath")
             }.accessibilityIdentifier("source.correctionHistory")
             if canPlay {
                 if let exportedAudio {
-                    ShareLink(item: exportedAudio) { Label("Share audio", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: exportedAudio) { Label(L10n.text("Share audio"), systemImage: "square.and.arrow.up") }
                 } else {
-                    Button("Export audio", systemImage: "square.and.arrow.up") { exportAudio() }
+                    Button(L10n.text("Export audio"), systemImage: "square.and.arrow.up") { exportAudio() }
                         .disabled(busy).accessibilityIdentifier("source.exportAudio")
                 }
             }
-            Button("Delete recording", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+            Button(L10n.text("Delete recording"), systemImage: "trash", role: .destructive) { confirmingDelete = true }
                 .disabled(busy).accessibilityIdentifier("source.delete")
-            if busy { ProgressView("Updating recording…") }
+            if busy { ProgressView(L10n.text("Updating recording…")) }
             ErrorNote(message: error)
         }
-        .confirmationDialog("Delete this recording and transcript?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete recording", role: .destructive) { delete() }
+        .confirmationDialog(L10n.text("Delete this recording and transcript?"), isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button(L10n.text("Delete recording"), role: .destructive) { delete() }
         } message: {
-            Text("Derived diary entries, weekly reviews and chat history will also be cleared. Related decisions and inbox items, including manual edits and review history, will be removed because they used this recording. This cannot be undone.")
+            Text(L10n.text("Derived diary entries, weekly reviews and chat history will also be cleared. Related decisions and inbox items, including manual edits and review history, will be removed because they used this recording. This cannot be undone."))
         }
         .onDisappear {
             requestID = UUID(); operation?.cancel(); operation = nil; busy = false
@@ -68,7 +70,7 @@ struct SourceActionsView: View {
                 exportedAudio = file
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }
@@ -88,7 +90,7 @@ struct SourceActionsView: View {
                 onDelete()
             } catch {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                self.error = error.localizedDescription
+                self.error = L10n.error(error)
             }
         }
     }
@@ -96,19 +98,40 @@ struct SourceActionsView: View {
 
 struct SourceProvenanceView: View {
     let source: JSONValue
+    static func vendorLabel(for source: JSONValue) -> String {
+        if !source["vendor_label"].text.isEmpty { return L10n.key(source["vendor_label"].text) }
+        let vendor = source["source_metadata"]["vendor_id"].text
+        switch vendor.isEmpty ? source["source_kind"].text : vendor {
+        case "omi", "omi_api": return "Omi"
+        case "plaud", "plaud_export": return L10n.text("Plaud")
+        case "pocket", "pocket_api": return L10n.text("Pocket")
+        case "manual", "manual_upload", "": return L10n.text("Other device")
+        default: return vendor
+        }
+    }
+    static func isTranscriptImport(_ source: JSONValue) -> Bool {
+        let kind = source["source_kind"].text
+        return kind.hasSuffix("_api") || kind.hasSuffix("_export")
+    }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
             if source["source_kind"].text == "manual_upload" {
-                Text("Manually uploaded recording\(source["source_id"].text.isEmpty ? "" : " · " + source["source_id"].text)")
-                Text("Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16 kHz.")
+                if source["source_metadata"]["vendor_id"].text.isEmpty || source["source_metadata"]["vendor_id"].text == "manual" {
+                    Text(L10n.text("Manually uploaded recording\(source["source_id"].text.isEmpty ? "" : " · " + source["source_id"].text)"))
+                } else {
+                    Text(L10n.text("Uploaded from \(Self.vendorLabel(for: source)) · \(source["source_id"].text)"))
+                }
+                Text(L10n.text("Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16 kHz."))
             } else if source["source_kind"].text == "omi_audio_webhook" {
-                Text("Forwarded from the official Omi integration")
-                Text("Times estimate server receipt, not capture time. Each delivery is separate; overlap, gaps and order are uncertain. Account identity is supplied by the sender; pendant identity is unknown.")
-            } else if source["source_kind"].text == "omi_api" {
-                Text("Imported Omi transcript · original audio unavailable")
+                Text(L10n.text("Forwarded from the official Omi integration"))
+                Text(L10n.text("Times estimate server receipt, not capture time. Each delivery is separate; overlap, gaps and order are uncertain. Account identity is supplied by the sender; pendant identity is unknown."))
+            } else if Self.isTranscriptImport(source) {
+                Text(L10n.text("Imported from \(Self.vendorLabel(for: source)) · transcript only; original audio unavailable."))
             }
-            if !source["device_id"].text.isEmpty { Text("Device: \(source["device_id"].text)") }
-            Text("Source: \(source["id"].text)").textSelection(.enabled)
+            if !source["device_id"].text.isEmpty { Text(L10n.text("Device: \(source["device_id"].text)")) }
+            Text(L10n.text("Source: \(source["id"].text)")).textSelection(.enabled)
         }.font(.caption).foregroundStyle(.secondary)
     }
 }
@@ -123,23 +146,25 @@ struct TranscriptionCleanupReviewView: View {
     private var unavailable: Bool {
         chunks.contains { ["failed", "timeout", "unavailable", "budget_exhausted"].contains($0["enhancement_status"].text) }
     }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         if unavailable || !alternatives.isEmpty {
-            Section("Transcription cleanup review") {
+            Section(L10n.text("Transcription cleanup review")) {
                 if unavailable {
-                    Text("Audio cleanup was unavailable or did not finish. The original transcription was kept.")
+                    Text(L10n.text("Audio cleanup was unavailable or did not finish. The original transcription was kept."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !alternatives.isEmpty {
-                    DisclosureGroup("Alternative cleanup reading · needs review") {
-                        Text("Cleanup can miss quiet voices or mistake noise for words. These readings are excluded from search and summaries. Listen to the original audio, compare the readings, then save a correction if needed. Simultaneous voices may still be missing.")
+                    DisclosureGroup(L10n.text("Alternative cleanup reading · needs review")) {
+                        Text(L10n.text("Cleanup can miss quiet voices or mistake noise for words. These readings are excluded from search and summaries. Listen to the original audio, compare the readings, then save a correction if needed. Simultaneous voices may still be missing."))
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(Array(alternatives.enumerated()), id: \.offset) { _, chunk in
-                            Text("\(seconds(chunk["start"]))–\(seconds(chunk["end"])) seconds into this recording")
+                            Text(L10n.text("\(seconds(chunk["start"]))–\(seconds(chunk["end"])) seconds into this recording"))
                                 .font(.caption).foregroundStyle(.secondary)
                             Text(chunk["candidate"]["text"].text).textSelection(.enabled)
                         }
-                        Button("Review and correct transcript", action: onReview)
+                        Button(L10n.text("Review and correct transcript"), action: onReview)
                             .accessibilityIdentifier("source.reviewCleanup")
                     }
                 }
@@ -159,23 +184,25 @@ private struct SourceCorrectionHistoryView: View {
     @State private var loading = true
     @State private var error: String?
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
-            if loading { ProgressView("Loading corrections…") }
+            if loading { ProgressView(L10n.text("Loading corrections…")) }
             ErrorNote(message: error)
-            if error != nil { Button("Try again") { Task { await load() } } }
+            if error != nil { Button(L10n.text("Try again")) { Task { await load() } } }
             if !loading && error == nil && revisions.isEmpty {
-                ContentUnavailableView("No corrections yet", systemImage: "clock.arrow.circlepath", description: Text("Saved transcript corrections will appear here."))
+                ContentUnavailableView(L10n.text("No corrections yet"), systemImage: "clock.arrow.circlepath", description: Text(L10n.text("Saved transcript corrections will appear here.")))
             }
             ForEach(Array(revisions.enumerated()), id: \.element["id"].text) { _, revision in
                 DisclosureGroup(AppModel.date(revision["created_at"].text).map { diary.label($0, template: "d MMM yyyy HHmm") } ?? revision["created_at"].text) {
-                    Text("Previous transcript").font(.caption).foregroundStyle(.secondary)
-                    Text(revision["previous_text"].text.isEmpty ? "No transcript text" : revision["previous_text"].text).textSelection(.enabled)
-                    Text("Corrected transcript").font(.caption).foregroundStyle(.secondary)
-                    Text(revision["text"].text.isEmpty ? "No transcript text" : revision["text"].text).textSelection(.enabled)
+                    Text(L10n.text("Previous transcript")).font(.caption).foregroundStyle(.secondary)
+                    Text(revision["previous_text"].text.isEmpty ? L10n.text("No transcript text") : revision["previous_text"].text).textSelection(.enabled)
+                    Text(L10n.text("Corrected transcript")).font(.caption).foregroundStyle(.secondary)
+                    Text(revision["text"].text.isEmpty ? L10n.text("No transcript text") : revision["text"].text).textSelection(.enabled)
                 }
             }
-        }.omiScreen().navigationTitle("Correction history").navigationBarTitleDisplayMode(.inline)
+        }.omiScreen().navigationTitle(L10n.text("Correction history")).navigationBarTitleDisplayMode(.inline)
             .task(id: model.archiveIdentity + model.archiveRevision + sourceID) { await load() }
             .refreshable { await load() }
     }
@@ -188,7 +215,7 @@ private struct SourceCorrectionHistoryView: View {
             revisions = result["items"].array
         } catch {
             guard !Task.isCancelled, model.archiveIdentity == identity else { return }
-            self.error = error.localizedDescription
+            self.error = L10n.error(error)
         }
     }
 }

@@ -3,21 +3,23 @@ import OmiCore
 
 struct CompletionNotificationsView: View {
     @Environment(CompletionNotifications.self) private var notifications
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         List {
             if notifications.items.isEmpty {
-                ContentUnavailableView("No notifications yet", systemImage: "bell", description: Text("Completed rewinds, recaps, translations and weekly reviews will appear here."))
+                ContentUnavailableView(L10n.text("No notifications yet"), systemImage: "bell", description: Text(L10n.text("Completed rewinds, recaps, translations and weekly reviews will appear here.")))
             }
             ForEach(notifications.items) { event in
                 Button { notifications.open(event) } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(event.title).font(.headline).foregroundStyle(.primary)
-                        Text(event.body).font(.subheadline).foregroundStyle(.secondary)
+                        Text(L10n.key(event.title)).font(.headline).foregroundStyle(.primary)
+                        Text(L10n.key(event.body)).font(.subheadline).foregroundStyle(.secondary)
                         if let date = AppModel.date(event.createdAt) { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) }
                     }.padding(.vertical, 6)
                 }.buttonStyle(.plain)
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Notifications")
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Notifications"))
     }
 }
 
@@ -34,7 +36,9 @@ struct CompletionResultView: View {
     private var parameters: JSONValue { job["parameters"] }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
 
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale
         NavigationStack {
             Group {
                 if let week = event.target.weekStart, event.target.jobID == nil {
@@ -45,7 +49,7 @@ struct CompletionResultView: View {
                     savedResult
                 }
             }
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
         }
         .task(id: model.archiveIdentity + event.id.uuidString) { await load() }
         .onDisappear { if playing { model.player?.stop(); model.playbackStatus = "" } }
@@ -54,48 +58,48 @@ struct CompletionResultView: View {
     private var savedResult: some View {
         List {
             Section {
-                Text(event.title).font(.title2.weight(.semibold))
-                Text(event.body).foregroundStyle(.secondary)
-                if loading { ProgressView("Opening saved result…") }
+                Text(L10n.key(event.title)).font(.title2.weight(.semibold))
+                Text(L10n.key(event.body)).foregroundStyle(.secondary)
+                if loading { ProgressView(L10n.text("Opening saved result…")) }
                 ErrorNote(message: error)
-                if error != nil { Button("Try again") { Task { await load() } } }
+                if error != nil { Button(L10n.text("Try again")) { Task { await load() } } }
             }
             if job["state"].text == "failed" {
-                Section("Could not finish") { Text(job["error"].text.isEmpty ? "This request failed. Return to the original recording or day to try again." : job["error"].text) }
+                Section(L10n.text("Could not finish")) { Text(job["error"].text.isEmpty ? L10n.text("This request failed. Return to the original recording or day to try again.") : L10n.key(job["error"].text)) }
             } else if job["state"].text == "completed" {
                 if job["kind"].text == "translation" {
-                    Section("Translation") {
+                    Section(L10n.text("Translation")) {
                         let translation = result["translation"]
                         let language = translation["language"].text
-                        if !language.isEmpty { Text(Locale.current.localizedString(forLanguageCode: language) ?? language).font(.headline) }
+                        if !language.isEmpty { Text(L10n.locale.localizedString(forLanguageCode: language) ?? language).font(.headline) }
                         if !translation["text"].text.isEmpty { Text(translation["text"].text).textSelection(.enabled) }
-                        else { Text("This recording is already in the requested language.") }
-                        Text("The original transcript is preserved.").font(.caption).foregroundStyle(.secondary)
+                        else { Text(L10n.text("This recording is already in the requested language.")) }
+                        Text(L10n.text("The original transcript is preserved.")).font(.caption).foregroundStyle(.secondary)
                     }
-                    if source != .null { Section("Original recording") { SourceList(sources: [source]) } }
+                    if source != .null { Section(L10n.text("Original recording")) { SourceList(sources: [source]) } }
                 } else {
                     if !result["summary"].text.isEmpty {
-                        Section("Saved summary") {
+                        Section(L10n.text("Saved summary")) {
                             if job["kind"].text == "recap" {
                                 RecapContentView(recap: result, day: parameters["day"].text)
                             } else { Text(.init(result["summary"].text)).textSelection(.enabled) }
                         }
                     }
                     if job["kind"].text == "rewind" {
-                        Section("Rewind window") {
-                            Text("Last \(parameters["minutes"].integer) minutes · ending \(parameters["end"].text)").font(.caption).foregroundStyle(.secondary)
-                            Button(playing ? "Stop audio" : "Play saved window", systemImage: playing ? "stop.circle" : "play.circle") {
+                        Section(L10n.text("Rewind window")) {
+                            Text(L10n.text("Last \(parameters["minutes"].integer) minutes · ending \(parameters["end"].text)")).font(.caption).foregroundStyle(.secondary)
+                            Button(playing ? L10n.text("Stop audio") : L10n.text("Play saved window"), systemImage: playing ? "stop.circle" : "play.circle") {
                                 if playing { model.player?.stop(); playing = false }
                                 else { Task { await playRewind() } }
                             }
                             CompletenessView(value: result["completeness"])
                         }
                     }
-                    if !result["sources"].array.isEmpty { Section("Recorded evidence") { SourceList(sources: result["sources"].array) } }
-                    else if result["summary"].text.isEmpty { Section { Text("No transcribed speech was available for this result.").foregroundStyle(.secondary) } }
+                    if !result["sources"].array.isEmpty { Section(L10n.text("Recorded evidence")) { SourceList(sources: result["sources"].array) } }
+                    else if result["summary"].text.isEmpty { Section { Text(L10n.text("No transcribed speech was available for this result.")).foregroundStyle(.secondary) } }
                 }
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle("Saved result").navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Saved result")).navigationBarTitleDisplayMode(.inline)
     }
 
     private func load() async {
@@ -117,7 +121,7 @@ struct CompletionResultView: View {
                 guard scope == model.archiveIdentity, !Task.isCancelled else { return }
                 source = value["source"] == .null ? value : value["source"]
             }
-        } catch { if scope == model.archiveIdentity, !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch { if scope == model.archiveIdentity, !Task.isCancelled { self.error = L10n.error(error) } }
     }
 
     private func playRewind() async {
@@ -126,6 +130,6 @@ struct CompletionResultView: View {
             let url = try await model.client().download("v1/rewind/audio", query: ["minutes": String(parameters["minutes"].integer), "end": parameters["end"].text])
             guard scope == model.archiveIdentity, !Task.isCancelled else { return }
             model.play(url); playing = true
-        } catch { if scope == model.archiveIdentity, !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch { if scope == model.archiveIdentity, !Task.isCancelled { self.error = L10n.error(error) } }
     }
 }

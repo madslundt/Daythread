@@ -8,11 +8,12 @@ public enum DiaryPeriod: String, CaseIterable {
 public struct DiaryCalendar {
     public let calendar: Calendar
 
-    public init(timeZone: TimeZone, locale: Locale = .current) {
+    public init(timeZone: TimeZone, locale: Locale = AppLocalization.locale) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = locale
         calendar.timeZone = timeZone
         calendar.firstWeekday = Calendar.current.firstWeekday
+        if locale.language.languageCode?.identifier == "da" { calendar.firstWeekday = 2 }
         self.calendar = calendar
     }
 

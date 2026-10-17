@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from .domain import project_events, stamp
 from .source_matching import manual_upload, merge_groups
+from .vendor_imports import transcript_import
 from .voice_activity import VERSION
 
 
@@ -90,12 +91,12 @@ def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Con
     for row in snapshot["rows"]:
         if row["started_at"] > stamp(now) or row["state"] == "expired":
             continue
-        if manual_upload(row) or row.get("source_kind") == "omi_api":
+        if manual_upload(row) or transcript_import(row.get("source_kind", "")):
             if (row["text"] or row["state"] != "done"
                     or json.loads(row.get("source_metadata") or "{}").get("recording_id")):
                 result.append(Conversation(
                     [row], row["ended_at"] if row["ended_at"] <= settled else None,
-                    "finished_import" if row["source_kind"] == "omi_api" else "uploaded_file",
+                    "finished_import" if transcript_import(row["source_kind"]) else "uploaded_file",
                 ))
             continue
         streams.setdefault(row["device_id"], []).append(row)

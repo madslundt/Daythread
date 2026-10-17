@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { displayLocale, t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { useState } from "react";
@@ -25,7 +26,7 @@ export function ForwardingDetails({ status }: { status: ForwardingStatus }) {
     {status.last_source_id ? <p className="caption">{t("Latest source:")}{" "}<code>{status.last_source_id}</code>{t(". Open Rewind to play and inspect its transcription.")}</p> : null}
     {!status.worker_enabled ? <p className="caption">{t("Transcription worker is disabled. Enable Worker enabled in server settings and restart the backend to process accepted audio.")}</p> : null}
     {status.last_failure ? <p className="caption" role="alert">
-      {t("Last receiver failure (")}{status.last_failure.status}{t(") at")}{" "}{new Date(status.last_failure.at).toLocaleString(displayLocale())}: {status.last_failure.detail}.
+      {t("Last receiver failure (")}{status.last_failure.status}{t(") at")}{" "}{new Date(status.last_failure.at).toLocaleString(displayLocale())}: {t(status.last_failure.detail)}.
       {status.last_received_at && status.last_received_at > status.last_failure.at ? t("New audio has arrived since this failure.") : ""}
     </p> : null}
   </>;

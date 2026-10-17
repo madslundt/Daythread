@@ -16,9 +16,11 @@ from .generation_jobs import GenerationJobs
 from .inference import Inference
 from .notifications import NotificationService
 from .omi_api import OmiAPI
+from .pocket_api import PocketAPI
 from .service import Memory
 from .settings import Settings
 from .store import Store
+from .vendor_imports import TranscriptAdapter
 from .weekly import WeeklyReviews
 from .worker import run_worker
 
@@ -50,6 +52,7 @@ class ProfileRuntime:
     jobs: GenerationJobs
     generation_worker: asyncio.Task
     notification_worker: asyncio.Task
+    vendors: dict[str, TranscriptAdapter]
 
 
 class Profiles:
@@ -137,7 +140,9 @@ class Profiles:
             jobs,
             asyncio.create_task(jobs.run()),
             asyncio.create_task(memory.notifications.run()),
+            {},
         )
+        runtime.vendors = {"omi": runtime.omi, "pocket": PocketAPI(settings, self.client, store)}
         self.runtimes[profile_id] = runtime
         return runtime
 

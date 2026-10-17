@@ -122,7 +122,7 @@ export function Rewind({
                   aria-label={t("Play rewind audio")}
                 />
                 {audioError ? (
-                  <ErrorState message="Audio for this window is unavailable. You can still read the available transcripts below." />
+                  <ErrorState message={t("Audio for this window is unavailable. You can still read the available transcripts below.")} />
                 ) : null}
               </div> : (
                 <Notice>{t("Original audio is unavailable for these sources. You can read the transcripts below.")}</Notice>
@@ -148,7 +148,7 @@ export function Rewind({
                   {t("There")}{" "}
                   {result.audio_gaps.length === 1
                     ? t("is 1 gap")
-                    : `are ${result.audio_gaps.length} gaps`}{" "}
+                    : t("are {value0} gaps", { value0: result.audio_gaps.length })}{" "}
                   {t("in recorded audio for this window.")}{" "}</p>
               ) : null}
               <div className="section-heading">

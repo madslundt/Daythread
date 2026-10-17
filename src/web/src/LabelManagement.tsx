@@ -1,3 +1,4 @@
+import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { navigatePath } from "./routing";
 import { useState } from "react";
@@ -73,7 +74,7 @@ export function EntityManagement({
           {t("Save changes")}{" "}</button>
       </form>
       <details>
-        <summary>{t("Merge into another")}{" "}{entity.kind}</summary>
+        <summary>{t("Merge into another")}{" "}{statusLabel(entity.kind)}</summary>
         <p>
           {t("Moves all associations and note assignments. The old name becomes an alias. Different association meanings stay distinct.")}{" "}</p>
         <label>
@@ -97,7 +98,7 @@ export function EntityManagement({
             </p>
             <p>
               {t("Destination aliases:")}{" "}
-              {preview.data.entity.aliases.join(", ") || "None"}
+              {preview.data.entity.aliases.join(", ") || t("None")}
             </p>
             <button
               className="button"
@@ -105,7 +106,7 @@ export function EntityManagement({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Merge ${entity.name} into ${preview.data!.entity.name}? Review names and associations before confirming.`,
+                    t("Merge {value0} into {value1}? Review names and associations before confirming.", { value0: entity.name, value1: preview.data!.entity.name }),
                   )
                 )
                   void mutation.mutate({
@@ -139,7 +140,7 @@ export function EntityManagement({
               }
             />
             <span>
-              {entry.title || meanings[entry.relation || ""]} ·{" "}
+              {entry.title || t(meanings[entry.relation || ""] || "")} ·{" "}
               {entry.started_at}
             </span>
           </label>
@@ -186,7 +187,7 @@ export function EntityManagement({
         onClick={() => {
           if (
             window.confirm(
-              "Delete this label and its associations and attached annotations? Recordings remain, including any names in their transcripts.",
+              t("Delete this label and its associations and attached annotations? Recordings remain, including any names in their transcripts."),
             )
           )
             void mutation.mutate({

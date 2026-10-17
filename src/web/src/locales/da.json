@@ -2299,5 +2299,7 @@
   "Copy a WAV or MP3 recording from your recorder and choose the audio file.": "Kopiér en WAV- eller MP3-optagelse fra din optager, og vælg lydfilen.",
   "Compare plans & credit pricing": "Sammenlign abonnementer og kreditpriser",
   "Plans & pricing": "Abonnementer og priser",
-  "iPhone, devices & imports": "iPhone, enheder og import"
+  "iPhone, devices & imports": "iPhone, enheder og import",
+  "Automatic retention deletion is disabled for hosted archives": "Automatisk sletning efter opbevaringsperioden er deaktiveret for hostede arkiver.",
+  "Deployment policy cannot be changed through settings": "Politikken for udrulning kan ikke ændres i indstillingerne."
 }

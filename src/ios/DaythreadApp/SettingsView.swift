@@ -29,8 +29,10 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("settings.appearance")
                 Picker(L10n.text("Interface language"), selection: $interfaceLanguagePreference) {
                     Text(L10n.text("System language")).tag("system")
-                    Text("English").tag("en")
-                    Text("Dansk").tag("da")
+                    ForEach(L10n.languages, id: \.self) { code in
+                        Text(verbatim: Locale(identifier: code).localizedString(forLanguageCode: code) ?? code)
+                            .tag(code)
+                    }
                 }.accessibilityIdentifier("settings.interfaceLanguage")
                 Text(L10n.text("Saved on this iPhone. This changes the interface, not transcription or summary languages."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -213,24 +215,34 @@ struct SettingsView: View {
     }
     private var archiveSection: some View {
         Section {
-            Picker(L10n.text("Keep original audio"), selection: $audioRetentionDays) {
+            Picker(L10n.text("Keep original audio"), selection: model.usesManagedHosting ? .constant(0) : $audioRetentionDays) {
                 ForEach(retentionChoices(audioRetentionDays), id: \.self) { days in
                     Text(retentionLabel(days)).tag(days)
                 }
-            }.accessibilityIdentifier("settings.audioRetention")
-            Text(L10n.text("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period."))
-                .font(.caption).foregroundStyle(.secondary)
-            Picker(L10n.text("Keep transcripts"), selection: $transcriptRetentionDays) {
+            }.accessibilityIdentifier("settings.audioRetention").disabled(model.usesManagedHosting)
+            if !model.usesManagedHosting {
+                Text(L10n.text("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Picker(L10n.text("Keep transcripts"), selection: model.usesManagedHosting ? .constant(0) : $transcriptRetentionDays) {
                 ForEach(retentionChoices(transcriptRetentionDays), id: \.self) { days in
                     Text(retentionLabel(days)).tag(days)
                 }
-            }.accessibilityIdentifier("settings.transcriptRetention")
-            Text(L10n.text("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history."))
-                .font(.caption).foregroundStyle(.secondary)
-            Button(L10n.text("Save archive retention")) { Task { await saveRetention() } }
-                .accessibilityIdentifier("settings.saveRetention")
-        } header: { Text(L10n.text("Local archive")) } footer: {
-            Text(L10n.text("Saved on home-core and shared with the web app. Shorter retention periods apply to existing recordings when saved. Earlier backups keep their own copies."))
+            }.accessibilityIdentifier("settings.transcriptRetention").disabled(model.usesManagedHosting)
+            if !model.usesManagedHosting {
+                Text(L10n.text("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Button(L10n.text("Save archive retention")) { Task { await saveRetention() } }
+                    .accessibilityIdentifier("settings.saveRetention")
+            }
+        } header: {
+            Text(model.usesManagedHosting ? L10n.text("Archive & phone storage") : L10n.text("Local archive"))
+        } footer: {
+            if model.usesManagedHosting {
+                Text(L10n.text("Until I remove it"))
+            } else {
+                Text(L10n.text("Saved on home-core and shared with the web app. Shorter retention periods apply to existing recordings when saved. Earlier backups keep their own copies."))
+            }
         }.disabled(loading || !retentionLoaded)
     }
     private func retentionChoices(_ current: Int) -> [Int] {
@@ -261,7 +273,7 @@ struct SettingsView: View {
         } catch { if !Task.isCancelled { self.error = L10n.error(error) } }
     }
     private func saveRetention() async {
-        guard retentionLoaded else { return }
+        guard retentionLoaded, !model.usesManagedHosting else { return }
         loading = true; error = nil; status = nil; defer { loading = false }
         do {
             let settings = try await model.client().request("v1/settings", method: "PATCH", body: [

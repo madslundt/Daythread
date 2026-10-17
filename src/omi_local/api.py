@@ -54,7 +54,7 @@ from .recording_groups import recording_groups
 from .recording_uploads import recording_upload_routes
 from .retrieval import DateScopeError
 from .service import Memory, public_source
-from .settings import RUNTIME_FIELDS, Settings, public_settings
+from .settings import RUNTIME_FIELDS, Settings, public_settings, validate_setting_changes
 from .source_matching import UploadGrouping
 from .speaker_api import speaker_routes
 from .store import Store
@@ -75,7 +75,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         nonlocal config
         store = Store(config.data_dir)
-        config = Settings.model_validate(config.model_dump() | store.runtime_settings())
+        saved = {
+            key: value for key, value in store.runtime_settings().items() if key in RUNTIME_FIELDS
+        }
+        config = Settings.model_validate(config.model_dump() | saved)
         async with httpx.AsyncClient(
             timeout=config.inference_timeout_seconds, follow_redirects=False
         ) as client:
@@ -379,8 +382,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if unknown := changes.keys() - set(RUNTIME_FIELDS):
                 raise HTTPException(422, f"Unknown settings: {', '.join(sorted(unknown))}")
             try:
+                validate_setting_changes(config, changes)
                 revised = Settings.model_validate(config.model_dump() | changes)
-            except ValidationError as exc:
+            except ValueError as exc:
                 raise HTTPException(422, "Invalid setting value") from exc
             app.state.memory.store.save_settings({key: getattr(revised, key) for key in changes})
             activate_settings(revised, changes)

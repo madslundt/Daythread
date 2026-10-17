@@ -3,19 +3,19 @@ import XCTest
 
 final class ManagedConnectionTests: XCTestCase {
     func testManagedAuthorizationRequiresTheExactHTTPSOrigin() throws {
-        let service = try XCTUnwrap(ManagedServiceOrigin("https://daythread.elcc.dk"))
-        XCTAssertTrue(service.contains(URL(string: "https://daythread.elcc.dk/v1/chat")!))
-        XCTAssertTrue(service.contains(URL(string: "https://DAYTHREAD.elcc.dk:443/v1/audio")!))
-        for address in ["http://daythread.elcc.dk/v1/chat", "https://daythread.elcc.dk.evil.example/v1/chat",
-                        "https://daythread.elcc.dk:8443/v1/chat", "https://other.example", "https://user@daythread.elcc.dk"] {
+        let service = try XCTUnwrap(ManagedServiceOrigin("https://app.daythread.elcc.dk"))
+        XCTAssertTrue(service.contains(URL(string: "https://app.daythread.elcc.dk/v1/chat")!))
+        XCTAssertTrue(service.contains(URL(string: "https://APP.DAYTHREAD.elcc.dk:443/v1/audio")!))
+        for address in ["https://daythread.elcc.dk/v1/chat", "http://app.daythread.elcc.dk/v1/chat", "https://app.daythread.elcc.dk.evil.example/v1/chat",
+                        "https://app.daythread.elcc.dk:8443/v1/chat", "https://other.example", "https://user@app.daythread.elcc.dk"] {
             XCTAssertFalse(service.contains(URL(string: address)!), address)
         }
-        for address in ["", "http://daythread.elcc.dk", "https://example.com/account", "https://user:secret@example.com", "https://example.com?key=x"] {
+        for address in ["", "http://app.daythread.elcc.dk", "https://example.com/account", "https://user:secret@example.com", "https://example.com?key=x"] {
             XCTAssertNil(ManagedServiceOrigin(address), address)
         }
     }
     func testAccountsAtTheSameOriginHaveDifferentDestinations() throws {
-        let service = try XCTUnwrap(ManagedServiceOrigin("https://daythread.elcc.dk"))
+        let service = try XCTUnwrap(ManagedServiceOrigin("https://app.daythread.elcc.dk"))
         XCTAssertNotEqual(service.destination(accountID: "a"), service.destination(accountID: "b"))
         XCTAssertNotEqual(service.destination(accountID: "a"), ManagedServiceOrigin.ownDestination(archiveIdentity: service.url.absoluteString))
     }

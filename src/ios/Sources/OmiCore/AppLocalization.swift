@@ -3,12 +3,19 @@ import Foundation
 /// Interface copy is resolved separately from transcripts, model output and protocol values.
 public enum AppLocalization {
     public static let preferenceKey = "interfaceLanguagePreference"
-    public static let languages = ["en", "da"]
+    public static let languages = ["en", "da", "de", "es", "fr", "nb", "sv"]
 
     public static var language: String {
-        let preference = UserDefaults.standard.string(forKey: preferenceKey) ?? "system"
+        resolveLanguage(preference: UserDefaults.standard.string(forKey: preferenceKey) ?? "system",
+                        preferredLanguages: Locale.preferredLanguages)
+    }
+
+    public static func resolveLanguage(preference: String, preferredLanguages: [String]) -> String {
         if languages.contains(preference) { return preference }
-        return Locale.preferredLanguages.lazy.map { $0.lowercased().split(separator: "-")[0].description }
+        return preferredLanguages.lazy.map {
+            let code = $0.lowercased().components(separatedBy: CharacterSet(charactersIn: "-_"))[0]
+            return code == "no" ? "nb" : code
+        }
             .first(where: { languages.contains($0) }) ?? "en"
     }
     public static var locale: Locale { Locale(identifier: language) }

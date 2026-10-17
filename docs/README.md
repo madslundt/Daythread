@@ -1,8 +1,12 @@
 # Daythread
 
-The web and iPhone interfaces support English and Danish through separate on-device language preferences. Translation contributors can follow the [localization guide](localization.md) to add a language and verify both catalogs.
+The web and iPhone interfaces support English, Danish, German, Spanish, French, Norwegian Bokmål, and Swedish through separate on-device language preferences. Translation contributors can follow the [localization guide](localization.md) to add a language and verify both catalogs.
 
 A local audio memory system: **Omi → iPhone → your backend and local models → rewind, diary, and chat**. The native app captures wearable audio; the responsive web app works from a computer or phone. Both share one backend. Application and API authentication are intentionally disabled.
+
+## Android companion
+
+The [Android guide](../src/android/README.md) covers installation, native microphone/Omi capture, offline uploads, permissions, and device acceptance. Build with `bash scripts/build_android.sh` using JDK 17+ and Android SDK 36; install the resulting `dist/android/Daythread-debug.apk`. Android's Archive screen uses the existing responsive interface and the same backend. Native capture profiles are selected separately in Connection.
 
 ## Run web and backend
 

@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from pydantic import SecretStr, ValidationError
 
-from .settings import RUNTIME_FIELDS, Settings
+from .settings import DEPLOYMENT_FIELDS, RUNTIME_FIELDS, Settings, validate_setting_changes
 
 RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
     key for key in Settings.model_fields if key.startswith("embedding_")
@@ -145,6 +145,8 @@ def descriptors() -> list[dict]:
     schema = Settings.model_json_schema()["properties"]
     result = []
     for key, prop in schema.items():
+        if key in DEPLOYMENT_FIELDS:
+            continue
         variants = prop.get("anyOf", [prop])
         kind = next((item.get("type") for item in variants if item.get("type") != "null"), "string")
         if key in SECRET_FIELDS:
@@ -201,6 +203,8 @@ class Configuration:
                 # Older installations could force a transcription language. Retire that
                 # preference while preserving all remaining private configuration.
                 self.overrides.pop("language", None)
+                for key in DEPLOYMENT_FIELDS:
+                    self.overrides.pop(key, None)
                 if self.overrides.keys() - Settings.model_fields.keys():
                     raise ValueError
             except (ValueError, KeyError, TypeError) as exc:
@@ -220,6 +224,8 @@ class Configuration:
     def view(self, active: Settings) -> dict:
         desired = self.desired(active)
         values = plain(desired.model_dump())
+        for key in DEPLOYMENT_FIELDS:
+            values.pop(key, None)
         secrets = {}
         for key in SECRET_FIELDS:
             secrets[key] = bool(values[key])
@@ -238,6 +244,7 @@ class Configuration:
         }
 
     def prepare(self, active: Settings, changes: dict) -> Settings:
+        validate_setting_changes(active, changes)
         if changes.keys() - Settings.model_fields.keys():
             raise ValueError("Unknown configuration setting")
         base = self.desired(active).model_dump()

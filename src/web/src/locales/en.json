@@ -2299,5 +2299,7 @@
   "Copy a WAV or MP3 recording from your recorder and choose the audio file.": "Copy a WAV or MP3 recording from your recorder and choose the audio file.",
   "Compare plans & credit pricing": "Compare plans & credit pricing",
   "Plans & pricing": "Plans & pricing",
-  "iPhone, devices & imports": "iPhone, devices & imports"
+  "iPhone, devices & imports": "iPhone, devices & imports",
+  "Automatic retention deletion is disabled for hosted archives": "Automatic retention deletion is disabled for hosted archives",
+  "Deployment policy cannot be changed through settings": "Deployment policy cannot be changed through settings"
 }

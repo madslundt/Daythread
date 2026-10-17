@@ -1,6 +1,6 @@
 # Daythread web app
 
-The interface supports English and Danish. Choose **Settings → Daily preferences → Interface language** to follow the browser language or select one on this device. To contribute another language or add interface copy, follow the [localization guide](../../docs/localization.md); run `npm run i18n:check` with the web checks.
+The interface supports English, Danish, German, Spanish, French, Norwegian Bokmål, and Swedish. Choose **Settings → Daily preferences → Interface language** to follow the browser language or select one on this device. To contribute another language or add interface copy, follow the [localization guide](../../docs/localization.md); run `npm run i18n:check` with the web checks.
 
 The React app talks to the backend on the same origin. It has no sign-in, remote fonts, analytics, or cloud dependencies. The backend serves the built app at `/`.
 

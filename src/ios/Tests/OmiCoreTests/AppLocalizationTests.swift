@@ -2,6 +2,24 @@ import XCTest
 @testable import OmiCore
 
 final class AppLocalizationTests: XCTestCase {
+    func testSupportedLanguagesResolveRegionalDevicePreferences() {
+        for (device, expected) in [("de-AT", "de"), ("es-MX", "es"), ("fr-CA", "fr"),
+                                   ("nb-NO", "nb"), ("no-NO", "nb"), ("sv-SE", "sv")] {
+            XCTAssertEqual(AppLocalization.resolveLanguage(preference: "system", preferredLanguages: [device, "en-US"]), expected)
+        }
+        XCTAssertEqual(AppLocalization.resolveLanguage(preference: "system", preferredLanguages: ["ja-JP", "fr-FR", "de-DE"]), "fr")
+        XCTAssertEqual(AppLocalization.resolveLanguage(preference: "system", preferredLanguages: ["ja-JP"]), "en")
+        XCTAssertEqual(AppLocalization.resolveLanguage(preference: "system", preferredLanguages: []), "en")
+        XCTAssertEqual(AppLocalization.resolveLanguage(preference: "invalid", preferredLanguages: ["sv-SE"]), "sv")
+    }
+
+    func testExplicitLanguageOverridesTheDeviceAndHasASelfName() {
+        for language in AppLocalization.languages {
+            XCTAssertEqual(AppLocalization.resolveLanguage(preference: language, preferredLanguages: ["da-DK"]), language)
+            XCTAssertNotNil(Locale(identifier: language).localizedString(forLanguageCode: language))
+        }
+    }
+
     func testInterpolatedMessagesHaveStableKeysAndPreserveValues() {
         let message: AppLocalization.Message = "Imported \(2) recordings from \("Today")"
         XCTAssertEqual(message.key, "Imported {value0} recordings from {value1}")

@@ -4,9 +4,44 @@ import { Loading } from "./UI";
 import { ModelRoutes } from "./Configuration";
 import { matchingConfigurationFields } from "./configurationModel";
 import { statusLabel } from "./statusLabels";
-import { source, t, setLanguagePreference } from "./i18n";
+import { source, t, setLanguagePreference, interfaceLanguages } from "./i18n";
+import { pages } from "./Navigation";
+import { matchesSettings } from "./SettingsNavigation";
+
+const catalogs = import.meta.glob<Record<string, string>>("./locales/*.json", { eager: true, import: "default" });
 
 afterEach(() => setLanguagePreference("en"));
+
+it.each(interfaceLanguages)("loads the complete %s catalog across every page", (language) => {
+  setLanguagePreference(language);
+  const catalog = catalogs[`./locales/${language}.json`];
+  expect(catalog).toBeDefined();
+  expect(Object.keys(catalog).sort()).toEqual(Object.keys(catalogs["./locales/en.json"]).sort());
+  for (const [key, translation] of Object.entries(catalog)) {
+    expect(t(key), `${language}: ${key}`).toBe(translation);
+  }
+  for (const page of pages) {
+    expect(catalog[page.label]).toBeDefined();
+    expect(catalog[page.title]).toBeDefined();
+  }
+  if (language !== "en") {
+    for (const key of ["Today", "Settings", "Loading…", "Save preferences", "Interface language", "System language"]) {
+      expect(t(key), `${language}: ${key}`).not.toBe(key);
+    }
+  }
+});
+
+it.each(interfaceLanguages.filter((language) => language !== "en"))(
+  "preserves user data in %s interpolated and stored messages", (language) => {
+    setLanguagePreference(language);
+    const name = "Today {value1} 東京";
+    expect(t("Remove {value0}", { value0: name })).toContain(name);
+    expect(t(`Remove ${name}`)).toContain(name);
+    expect(t("Unknown provider diagnostic")).toBe("Unknown provider diagnostic");
+    expect(statusLabel("pending")).not.toBe("status.pending");
+    expect(source("Today")).toBe("Today");
+  },
+);
 
 it("localizes default loading copy", () => {
   setLanguagePreference("da");
@@ -24,6 +59,15 @@ it("localizes setting descriptions supplied by the server", () => {
   expect(matchingConfigurationFields([{ key: "stt_routes", label: "STT routes",
     description: "Transcription", group: "Transcription", kind: "routes",
     nullable: false, restart_required: false }], "transskription")).toHaveLength(1);
+});
+
+it("finds settings by translated words regardless of capitalization", () => {
+  setLanguagePreference("de");
+  expect(matchesSettings("appearance", "Darstellung")).toBe(true);
+  expect(matchesSettings("appearance", "DARSTELLUNG")).toBe(true);
+  expect(matchesSettings("storage", "Speicher")).toBe(true);
+  expect(matchesSettings("storage", "SPEICHER")).toBe(true);
+  expect(matchesSettings("storage", "appearance")).toBe(false);
 });
 
 it("localizes protocol display labels while keeping values and user text intact", () => {

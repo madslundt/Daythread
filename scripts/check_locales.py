@@ -19,6 +19,17 @@ def format_tokens(text: str) -> Counter:
     return Counter(re.findall(r"%(?:[0-9]+\$)?(?:\.[0-9]+)?(?:ll|l)?[@difus]", text))
 
 
+def translated_copy(language: str, catalog: dict[str, str], source: dict[str, str]) -> None:
+    if language == "en":
+        return
+    copied = []
+    for key, value in catalog.items():
+        literal = re.sub(r"\{[^}]*\}|%[\d.$a-z@]+", "", source[key])
+        if value == source[key] and len(re.findall(r"\b[A-Za-z]{2,}\b", literal)) >= 5:
+            copied.append(key)
+    assert not copied, f"{language}: untranslated interface sentences: {copied}"
+
+
 def web_catalogs() -> dict[str, dict[str, str]]:
     catalogs = {
         path.stem: json.loads(path.read_text()) for path in (WEB / "locales").glob("*.json")
@@ -31,8 +42,9 @@ def web_catalogs() -> dict[str, dict[str, str]]:
             f"extra keys {sorted(set(catalog) - set(source))}"
         )
         assert all(isinstance(value, str) and value for value in catalog.values()), language
+        translated_copy(language, catalog, source)
         for key, value in catalog.items():
-            assert set(placeholders.findall(key)) == set(placeholders.findall(value)), (
+            assert Counter(placeholders.findall(key)) == Counter(placeholders.findall(value)), (
                 f"{language}: placeholders differ for {key}"
             )
     used = set()
@@ -78,15 +90,34 @@ def ios_catalogs(name: str = "Localizable.strings") -> dict[str, dict[str, str]]
             f"extra keys {sorted(set(catalog) - set(source))}"
         )
         assert all(value for value in catalog.values()), language
+        translated_copy(language, catalog, source)
         for key, value in catalog.items():
             assert format_tokens(key) == format_tokens(value), (
                 f"{language}: native format specifiers differ for {key}"
             )
             tokens = r"\{([A-Za-z][A-Za-z0-9_]*)\}"
-            assert set(re.findall(tokens, key)) == set(re.findall(tokens, value)), (
+            assert Counter(re.findall(tokens, key)) == Counter(re.findall(tokens, value)), (
                 f"{language}: iOS placeholders differ for {key}"
             )
     return catalogs
+
+
+def registered_languages(web: dict, ios: dict, info: dict) -> None:
+    web_source = (WEB / "i18n.ts").read_text()
+    native_source = (ROOT / "src/ios/Sources/OmiCore/AppLocalization.swift").read_text()
+    web_codes = set(json.loads(re.search(r"interfaceLanguages = (\[.*?\])", web_source).group(1)))
+    native_codes = set(json.loads(re.search(r"let languages = (\[.*?\])", native_source).group(1)))
+    assert web_codes == native_codes == set(web) == set(ios) == set(info), (
+        "Registered web/iOS languages must match all UI and permission catalogs: "
+        f"web registry={web_codes}, iOS registry={native_codes}, "
+        f"web catalogs={set(web)}, iOS catalogs={set(ios)}, permissions={set(info)}"
+    )
+    project = (ROOT / "src/ios/Daythread.xcodeproj/project.pbxproj").read_text()
+    regions_block = re.search(r"knownRegions = \((.*?)\);", project, re.S).group(1)
+    regions = set(re.findall(r"\b[a-z]{2}\b", regions_block))
+    assert native_codes <= regions, (
+        "Regenerate the Xcode project to include every supported language"
+    )
 
 
 def native_source_coverage(catalog: dict[str, str]) -> None:
@@ -130,9 +161,9 @@ if __name__ == "__main__":
     info = ios_catalogs("InfoPlist.strings")
     native_source_coverage(ios["en"])
     shared_source_coverage(web, ios)
-    assert {"en", "da"} <= set(web) and {"en", "da"} <= set(ios)
-    assert set(ios) == set(info), "Each iOS locale needs permission descriptions"
+    registered_languages(web, ios, info)
     print(
         f"Web: {len(web['en'])} keys; iOS: {len(ios['en'])} UI "
-        f"and {len(info['en'])} permission keys. Catalogs match."
+        f"and {len(info['en'])} permission keys. "
+        f"Catalogs and registrations match for {', '.join(sorted(web))}."
     )

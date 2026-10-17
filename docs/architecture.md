@@ -64,6 +64,17 @@ The phone preserves compressed source frames and uploads decoded 30-second WAV c
 
 Use capture time, not upload time, throughout. The BLE sequence counter detects loss and wraps; it is not a wall clock. Anchor frames to a monotonic phone clock, persist the wall-clock mapping, and do not stitch across missing frames as though speech were continuous. After reconnect, handle hardware storage import only if the actual model supports a confirmed protocol. Disconnected physical button-event preservation is unconfirmed; a phone queue only protects events already received.
 
+## Android companion
+
+The Android app embeds the existing responsive archive interface and uses a native foreground
+service for phone microphone and Omi BLE capture. It shares the same WAV, events, capture-state,
+and gap API contracts. A private per-chunk journal preserves its preallocated UUID, capture clock,
+profile and endpoint snapshot. Completed 30-second chunks upload with persisted JobScheduler
+retries; receipt validation precedes local deletion. Queue recovery excludes writers still owned
+by the live service. The WebView exposes no JavaScript/native bridge. See the
+[Android guide](../src/android/README.md) for build steps, capture policy, platform differences,
+and physical acceptance checks.
+
 ## Location context
 
 Opt-in phone observations attach to audio chunks before upload through the durable outbox. Latitude,

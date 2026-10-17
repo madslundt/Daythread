@@ -32,7 +32,8 @@ const searchTerms: Record<string, string> = {
 
 export function matchesSettings(group: string, query: string): boolean {
   const terms = query.trim().toLowerCase().split(/\s+/);
-  return terms.every((term) => `${searchTerms[group] || ""} ${t(searchTerms[group] || "")}`.includes(term));
+  const searchable = `${searchTerms[group] || ""} ${t(searchTerms[group] || "")}`.toLowerCase();
+  return terms.every((term) => searchable.includes(term));
 }
 
 export function SettingsNavigation({ section, search, onSearch, onSelect, preferencesDirty, serverDirty, managed = false }: {

@@ -1,5 +1,5 @@
 // A trusted build-time destination. Account addresses are never user-entered.
-export const MANAGED_SERVICE_ORIGIN = "https://daythread.elcc.dk";
+export const MANAGED_SERVICE_ORIGIN = "https://app.daythread.elcc.dk";
 
 export type ManagedAccount = {
   id: string;

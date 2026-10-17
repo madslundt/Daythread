@@ -1,6 +1,6 @@
 # Daythread
 
-A private audio memory system: Omi pendant → iPhone → your backend and local AI. Turn recordings into searchable transcripts, daily diaries, meeting notes, and chat with source references. Access your archive through the native companion or responsive web app.
+A private audio memory system: Omi pendant → iPhone or Android → your backend and local AI. Turn recordings into searchable transcripts, daily diaries, meeting notes, and chat with source references. Access your archive through the native companion or responsive web app.
 
 Direct capture with local models needs no Omi account or cloud AI subscription. You can also configure compatible hosted HTTPS model endpoints with provider API keys. Existing hosted Omi transcripts can optionally be imported. An optional official-app audio webhook receiver is also available; current upstream sends it from Omi’s backend, so a phone-only LAN/VPN connection is insufficient.
 
@@ -27,11 +27,11 @@ Screenshots reflect the current redesign, captured in the Codex browser. Mobile 
 - **Control:** important-moment flags, meeting controls, configurable retention, and archive backup/restore.
 - **Conversation tags:** add reusable manual tags, and combine tag and location-zone filters without changing recorded locations. See [tag behavior and API](docs/conversation-tags.md).
 - **Locations:** opt-in iPhone GPS tags for conversations, named zones with multiple locations and individual radii for recording filters, and confirmed arrival/departure reminders for places discussed in decision follow-ups. See [location setup and device checks](docs/location-support.md).
-- **Languages:** English and Danish interfaces on web and iPhone, with a device-level language choice separate from transcription and recap languages.
+- **Languages:** English, Danish, German, Spanish, French, Norwegian Bokmål, and Swedish interfaces on web and iPhone, with a device-level language choice separate from transcription and recap languages.
 
 ## Contribute a localization
 
-The web and iPhone apps have English and Danish interface catalogs. To add a language, translate the web JSON catalog and iPhone `Localizable.strings`, register the language in each app, then run the catalog check and app builds. See the [localization contributor guide](docs/localization.md) for file paths and steps. The coverage check scans web and native source copy, shared server messages, status labels, and placeholders. New interface text should be added to every catalog; recordings and generated content are not translated by this setting.
+The web and iPhone apps have English, Danish, German, Spanish, French, Norwegian Bokmål, and Swedish interface catalogs. To add a language, translate the web JSON catalog and iPhone `Localizable.strings`, register the language in each app, then run the catalog check and app builds. See the [localization contributor guide](docs/localization.md) for file paths and steps. The coverage check scans web and native source copy, shared server messages, status labels, and placeholders. New interface text should be added to every catalog; recordings and generated content are not translated by this setting.
 
 ## More screenshots
 
@@ -131,7 +131,7 @@ Daily preferences for appearance, timezone, transcription, and recaps, with sepa
 
 ```mermaid
 flowchart LR
-    O[Omi pendant] -->|BLE audio and buttons| P[iPhone companion]
+    O[Omi pendant] -->|BLE audio and buttons| P[iPhone or Android companion]
     P --> Q[Durable local outbox]
     Q -->|LAN or private VPN| B[FastAPI backend]
     W[React web app] <-->|HTTP API| B
@@ -144,14 +144,14 @@ flowchart LR
     F[Optional official Omi backend webhook] -->|PCM; reachable ingress required| B
 ```
 
-The SwiftUI/CoreBluetooth companion preserves capture timestamps and IDs across retries. One Python process serves the web app/API and runs background transcription/recaps. SQLite provides keyword/date retrieval; models run in separate local services.
+The SwiftUI/CoreBluetooth iPhone companion and Android native capture service preserve capture timestamps and IDs across retries. Android uses the shared mobile web interface for its archive; see the [Android guide](src/android/README.md). One Python process serves the web app/API and runs background transcription/recaps. SQLite provides keyword/date retrieval; models run in separate local services.
 
 ## Hardware and prerequisites
 
 | Component | Requirement |
 |---|---|
 | Wearable capture | Omi pendant with compatible BLE firmware; supported codecs are PCM16 (`0`) and Opus (`20`/`21`). |
-| Phone | iPhone running iOS 17+ with Bluetooth and access to the backend. |
+| Phone | iPhone running iOS 17+, or Android 8.0+ with Bluetooth and access to the backend. |
 | Backend | Always-on computer/server with persistent storage; Python 3.15.0+, `uv` 0.13.1+, Node.js 26.12.0+ and npm 12.2.0+ for a source install, or Docker Compose. |
 | Local AI | Compatible `/audio/transcriptions` and `/chat/completions` HTTP services. Models are not bundled; RAM/GPU requirements depend on your models. |
 | iOS development | Mac with Xcode supporting iOS 17+ and signing configured. XcodeGen is only needed to regenerate the included project. |
@@ -248,6 +248,12 @@ Current upstream sends from **Omi’s backend** and rejects private destinations
 
 Keep the backend awake and port 8787 reachable. Away from the server, recordings queue locally and upload after reconnection; summaries/chat require reachable models.
 
+### Android companion
+
+Build an installable APK with `bash scripts/build_android.sh` (JDK 17+ and Android SDK 36 required), or open `src/android` in Android Studio. Install `dist/android/Daythread-debug.apk`, then enter your backend origin in **Connection → Save & test connection** and choose a capture profile.
+
+**Archive** opens the existing mobile interface. **Capture** records the phone microphone or connects directly to an Omi pendant, with a foreground notification, durable offline queue, background retries, and optional unmetered-only uploads. Native capture uploads completed chunks automatically and retains originals until matching server confirmation. Physical Omi and all-day Android reliability still require device acceptance. See the [Android installation, behavior, and validation guide](src/android/README.md).
+
 ## First use and operation
 
 Check `curl --fail http://localhost:8787/v1/status`, then upload a short recording with its actual start time. Confirm transcription, generate a recap, and ask a question. Status alone does not test model connectivity.
@@ -277,6 +283,6 @@ npm --prefix src/web run build
 
 For frontend development, run `npm --prefix src/web run dev` alongside the backend. Rebuild afterward with `bash scripts/build.sh`.
 
-Source: `src/omi_local/` (backend), `src/ios/` (companion), `src/web/` (React/TypeScript). Deployment, tooling, and backend tests live in `config/`, `scripts/`, and `tests/`.
+Source: `src/omi_local/` (backend), `src/ios/` (iPhone), `src/android/` (Android companion), `src/web/` (React/TypeScript). Deployment, tooling, and backend tests live in `config/`, `scripts/`, and `tests/`.
 
 [Operations and API guide](docs/README.md) · [Architecture](docs/architecture.md) · [Hardware and acceptance plan](docs/device-research.md) · [Implementation plan](docs/implementation-plan.md)

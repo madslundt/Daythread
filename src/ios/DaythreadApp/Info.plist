@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>DaythreadManagedServiceURL</key>
-	<string>https://daythread.elcc.dk</string>
+	<string>https://app.daythread.elcc.dk</string>
 	<key>APNSEnvironment</key>
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>

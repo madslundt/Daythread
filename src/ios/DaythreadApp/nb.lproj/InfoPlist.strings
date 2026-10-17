@@ -1,0 +1,7 @@
+/* Daythread interface translations. Preserve source keys and placeholders. */
+"CFBundleDisplayName" = "Daythread";
+"NSMicrophoneUsageDescription" = "Daythread bruker mikrofonen din til å ta opp lyd når du trykker på «Start opptak». Du velger når hvert opptak skal lastes opp eller fjernes.";
+"NSBluetoothAlwaysUsageDescription" = "Daythread kobler til anhenget ditt for å lagre lyd og knappemarkeringer på iPhone og home-core.";
+"NSLocalNetworkUsageDescription" = "Daythread sender opptak til din egen home-core på det lokale nettverket ditt.";
+"NSRemindersFullAccessUsageDescription" = "Daythread legger bare til en oppfølging av en beslutning i standardlisten i Påminnelser når du trykker på «Lagre i Påminnelser».";
+"NSLocationWhenInUseUsageDescription" = "Daythread bruker posisjonen din til å stedmerke samtaler når funksjonen er slått på, og til å velge et sted for påminnelser i nærheten.";

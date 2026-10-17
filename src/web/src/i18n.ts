@@ -1,11 +1,16 @@
 import { useSyncExternalStore } from "react";
 import danish from "./locales/da.json";
+import german from "./locales/de.json";
+import spanish from "./locales/es.json";
+import french from "./locales/fr.json";
+import norwegian from "./locales/nb.json";
+import swedish from "./locales/sv.json";
 import interfaceLabels from "../../../config/interface-labels.json";
 import { isManagedOrigin } from "./managedService";
 
 // English copy in the components is the source catalog and the fallback.
 // Add a locale here and in locales/ to expose another interface language.
-export const interfaceLanguages = ["en", "da"] as const;
+export const interfaceLanguages = ["en", "da", "de", "es", "fr", "nb", "sv"] as const;
 export type InterfaceLanguage = typeof interfaceLanguages[number];
 export type LanguagePreference = InterfaceLanguage | "system";
 
@@ -13,6 +18,11 @@ const storageKey = "daythread.interfaceLanguage";
 const catalogs: Record<string, Record<string, string>> = {
   en: Object.fromEntries(Object.entries(interfaceLabels).map(([code, label]) => [`status.${code}`, label])),
   da: danish,
+  de: german,
+  es: spanish,
+  fr: french,
+  nb: norwegian,
+  sv: swedish,
 };
 const listeners = new Set<() => void>();
 let unsavedPreference: LanguagePreference | undefined;
@@ -23,7 +33,8 @@ function deviceLanguage(): InterfaceLanguage {
     ? navigator.languages : [navigator.language];
   for (const language of languages) {
     if (typeof language !== "string") continue;
-    const base = language.toLowerCase().split("-")[0];
+    const code = language.toLowerCase().split(/[-_]/)[0];
+    const base = code === "no" ? "nb" : code;
     if (interfaceLanguages.some((item) => item === base)) return base as InterfaceLanguage;
   }
   return "en";

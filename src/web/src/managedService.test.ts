@@ -32,8 +32,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("fixed managed service boundary", () => {
   it.each([
-    "http://localhost:8787", "http://daythread.elcc.dk", "https://daythread.elcc.dk.attacker.test",
-    "https://attacker.test", "https://daythread.elcc.dk:444", "",
+    "https://daythread.elcc.dk", "http://localhost:8787", "http://app.daythread.elcc.dk", "https://app.daythread.elcc.dk.attacker.test",
+    "https://attacker.test", "https://app.daythread.elcc.dk:444", "",
   ])("never sends service requests or CSRF to another origin (%s)", async (origin) => {
     browser(origin);
     const fetch = provider();

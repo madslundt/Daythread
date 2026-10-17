@@ -109,13 +109,14 @@ function retentionLabel(days: number): string {
   return days === 0 ? t("Until I remove it")
     : new Intl.NumberFormat(displayLocale(), { style: "unit", unit: "day", unitDisplay: "long" }).format(days);
 }
-function NumberSelect({ id, value, options, onChange, label, unavailable }: {
+function NumberSelect({ id, value, options, onChange, label, unavailable, disabled }: {
   id: string;
   value: number;
   options: number[];
   onChange: (value: number) => void;
   label: (value: number) => string;
   unavailable?: (value: number) => boolean;
+  disabled?: boolean;
 }) {
   // Keep exact values saved by another client, even when they are not a preset.
   const values = options.includes(value)
@@ -125,6 +126,7 @@ function NumberSelect({ id, value, options, onChange, label, unavailable }: {
     <select
       id={id}
       value={value}
+      disabled={disabled}
       aria-labelledby={`${id}-label`}
       aria-describedby={`${id}-hint`}
       onChange={(event) => onChange(Number(event.target.value))}
@@ -208,7 +210,9 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
     setError("");
     setSaved(false);
     try {
-      const changes = Object.fromEntries(editableSettings.map((key) => [key, draft[key]]));
+      const changes = Object.fromEntries(editableSettings
+        .filter((key) => !managed || !["audio_retention_days", "transcript_retention_days"].includes(key))
+        .map((key) => [key, draft[key]]));
       resource.setData(
         await request<SettingsData>("/v1/settings", {
           method: "PATCH",
@@ -420,30 +424,32 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
           </fieldset>
           <fieldset disabled={busy} hidden={!show("storage", "storage")}>
             <legend>{t("Storage & privacy")}</legend>
-            <p className="settings-description muted">{t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
+            <p className="settings-description muted">{managed ? t("Until I remove it") : t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="audio-retention">
                 <span id="audio-retention-label">{t("Keep original audio")}</span>
                 <NumberSelect
                   id="audio-retention"
-                  value={draft.audio_retention_days}
+                  value={managed ? 0 : draft.audio_retention_days}
+                  disabled={managed}
                   options={retentionOptions}
                   label={retentionLabel}
                   onChange={(value) => update("audio_retention_days", value)}
                 />
-                <small id="audio-retention-hint">{t("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.")}</small>
+                <small id="audio-retention-hint">{managed ? t("Until I remove it") : t("Default: 7 days. Expired audio is removed automatically; transcripts have their own retention period.")}</small>
               </label>
               <label className="setting-field" htmlFor="transcript-retention">
                 <span id="transcript-retention-label">{t("Keep transcripts")}</span>
                 <NumberSelect
                   id="transcript-retention"
-                  value={draft.transcript_retention_days}
+                  value={managed ? 0 : draft.transcript_retention_days}
+                  disabled={managed}
                   options={retentionOptions}
                   label={retentionLabel}
                   onChange={(value) => update("transcript_retention_days", value)}
                 />
                 <small id="transcript-retention-hint">
-                  {t("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.")}{" "}</small>
+                  {managed ? t("Until I remove it") : t("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.")}{" "}</small>
               </label>
             </div>
             <p className="caption access-note">

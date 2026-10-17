@@ -2261,3 +2261,5 @@
 "Omi" = "Omi";
 "Apple Voice Memos" = "Apple Voice Memos";
 "Sony" = "Sony";
+"Automatic retention deletion is disabled for hosted archives" = "Automatisk sletning efter opbevaringsperioden er deaktiveret for hostede arkiver.";
+"Deployment policy cannot be changed through settings" = "Politikken for udrulning kan ikke ændres i indstillingerne.";

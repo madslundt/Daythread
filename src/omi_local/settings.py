@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Path("data")
+    managed_hosting: bool = False
     timezone: str = "Europe/Copenhagen"
     stt_base_url: str = "http://127.0.0.1:4000/v1"
     llm_base_url: str = "http://127.0.0.1:4000/v1"
@@ -175,6 +176,14 @@ class Settings(BaseSettings):
     voice_recognition_enabled: bool = False
     voice_recognition_report: Path | None = None
     web_dir: Path | None = None
+
+    @model_validator(mode="after")
+    def hosted_retention(self):
+        # Deployment policy wins over environment defaults and restored preferences.
+        if self.managed_hosting:
+            self.audio_retention_days = 0
+            self.transcript_retention_days = 0
+        return self
 
     @field_validator("translation_languages")
     @classmethod
@@ -313,6 +322,18 @@ RUNTIME_FIELDS = (
     "audio_retention_days",
     "transcript_retention_days",
 )
+
+DEPLOYMENT_FIELDS = {"managed_hosting"}
+RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
+
+
+def validate_setting_changes(active: Settings, changes: dict) -> None:
+    if DEPLOYMENT_FIELDS & changes.keys():
+        raise ValueError("Deployment policy cannot be changed through settings")
+    if active.managed_hosting and any(
+        changes[key] != 0 for key in RETENTION_FIELDS & changes.keys()
+    ):
+        raise ValueError("Automatic retention deletion is disabled for hosted archives")
 
 
 def public_settings(settings: Settings) -> dict:

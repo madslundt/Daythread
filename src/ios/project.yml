@@ -34,7 +34,7 @@ targets:
       path: DaythreadApp/Info.plist
       properties:
         CFBundleDisplayName: Daythread
-        DaythreadManagedServiceURL: https://daythread.elcc.dk
+        DaythreadManagedServiceURL: https://app.daythread.elcc.dk
         APNSEnvironment: $(APS_ENVIRONMENT)
         UILaunchScreen: {}
         UIApplicationSceneManifest:

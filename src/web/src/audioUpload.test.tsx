@@ -30,6 +30,24 @@ describe("upload time estimates", () => {
 });
 
 describe("recordings chosen or dropped from another device", () => {
+  it("prefills the dialog with a recording dropped on Today and its last-modified time", () => {
+    const file = new File(["audio"], "Voice Memo.M4A", { lastModified: new Date("2026-10-15T12:34:00Z").getTime() });
+    const html = renderToStaticMarkup(<UploadDialog initialFiles={[file]} onClose={() => {}} onUploaded={() => {}} />);
+    expect(html).toContain("Voice Memo.M4A ·");
+    expect(html.match(/<input[^>]+name="recorded_at"[^>]*>/)?.[0]).toContain(`value="${recordingEndTime(file)}"`);
+    expect(html).toContain('<option value="end" selected="">Recording ended</option>');
+    expect(html).toContain('<option value="auto" selected="">Match automatically after transcription</option>');
+    expect(html).not.toContain('class="button accent" disabled=""');
+  });
+  it("shows the existing validation errors for invalid drops on Today", () => {
+    const wav = new File(["audio"], "memo.wav");
+    for (const files of [[wav, wav], [new File(["text"], "notes.txt")], [new File([], "empty.wav")]]) {
+      const html = renderToStaticMarkup(<UploadDialog initialFiles={files} onClose={() => {}} onUploaded={() => {}} />);
+      expect(html).toContain('role="alert"');
+      expect(html).toContain("One audio file at a time");
+      expect(html).toContain('class="button accent" disabled=""');
+    }
+  });
   it("requires an explicit timestamp until a file provides one", () => {
     vi.useFakeTimers();
     try {

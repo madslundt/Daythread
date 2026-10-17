@@ -9,9 +9,11 @@ import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
 
 export function UploadDialog({
+  initialFiles,
   onClose,
   onUploaded,
 }: {
+  initialFiles?: ArrayLike<File>;
   onClose: () => void;
   onUploaded: () => void;
 }) {
@@ -33,8 +35,16 @@ export function UploadDialog({
       }
     | undefined
   >(undefined);
-  const [file, setFile] = useState<File>();
-  const [recordedAt, setRecordedAt] = useState("");
+  const [initialSelection] = useState<{ file?: File; error?: string }>(() => {
+    if (!initialFiles?.length) return {};
+    try {
+      return { file: selectRecording(initialFiles) };
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+  });
+  const [file, setFile] = useState(initialSelection.file);
+  const [recordedAt, setRecordedAt] = useState(() => initialSelection.file ? recordingEndTime(initialSelection.file) : "");
   const [timeReference, setTimeReference] = useState<RecordingTimeReference>("end");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
@@ -44,7 +54,7 @@ export function UploadDialog({
   }>();
   const [started, setStarted] = useState(0);
   const [now, setNow] = useState(0);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialSelection.error ?? "");
   const [dragging, setDragging] = useState(false);
   const [linkExisting, setLinkExisting] = useState(false);
   const [conversationSourceId, setConversationSourceId] = useState("");

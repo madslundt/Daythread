@@ -74,7 +74,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
   const hrefForPage = (next: Page) => pagePath(next, next === "today" ? undefined : selectedDay);
   const [prepOpen, setPrepOpen] = useState(false);
   const [prepDirty, setPrepDirty] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[] | null>(null);
   const [version, setVersion] = useState(0);
   const [rewindIntent, setRewindIntent] = useState<RewindIntent>();
   const [chatIntent, setChatIntent] = useState<{
@@ -168,7 +168,18 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
           </div>
         </div>
       </aside>
-      <main className="main-canvas" data-page={page} id="main-content" tabIndex={-1}>
+      <main className="main-canvas" data-page={page} id="main-content" tabIndex={-1}
+        onDragOver={(event) => {
+          if (page !== "today" || prepOpen || !event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = uploadFiles === null ? "copy" : "none";
+        }}
+        onDrop={(event) => {
+          if (page !== "today" || prepOpen || !event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          if (uploadFiles === null && event.dataTransfer.files.length)
+            setUploadFiles(Array.from(event.dataTransfer.files));
+        }}>
         <header className={`page-header ${page === "today" && !prepOpen ? "today-header" : ""}`}>
           <div className="topbar">
             <a
@@ -239,7 +250,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
             statusError={status.error}
             timeline={timeline.data}
             onPrepare={() => setPrepOpen(true)}
-            onUpload={() => setUploadOpen(true)}
+            onUpload={() => setUploadFiles([])}
             onRewind={rewind}
             onChat={openChat}
           />
@@ -276,9 +287,10 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
         )}
       </main>
       <Navigation page={page} navigate={navigate} hrefForPage={hrefForPage} mobile />
-      {uploadOpen ? (
+      {uploadFiles !== null ? (
         <UploadDialog
-          onClose={() => setUploadOpen(false)}
+          initialFiles={uploadFiles}
+          onClose={() => setUploadFiles(null)}
           onUploaded={uploaded}
         />
       ) : null}

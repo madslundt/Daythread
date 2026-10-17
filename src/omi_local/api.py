@@ -46,6 +46,7 @@ from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
 from .recording_groups import recording_groups
+from .recording_uploads import recording_upload_routes
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .settings import RUNTIME_FIELDS, Settings, public_settings
@@ -166,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(translation_routes(memory))
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
+    app.include_router(recording_upload_routes(memory))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:

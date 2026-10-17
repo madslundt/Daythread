@@ -27,6 +27,8 @@ from .processing_progress import ProcessingProgressStore
 from .recap_store import SCHEMA as RECAP_SCHEMA
 from .recap_store import RecapStore
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
+from .recording_uploads import SCHEMA as RECORDING_UPLOADS_SCHEMA
+from .recording_uploads import RecordingUploadStore
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
 from .source_matching import MATCH_VERSION, SourceMatchingStore, UploadGrouping
@@ -69,6 +71,7 @@ class Store(
     TranslationStore,
     RecapStore,
     SourceMatchingStore,
+    RecordingUploadStore,
     ProcessingProgressStore,
 ):
     def __init__(self, root: Path):
@@ -154,6 +157,7 @@ class Store(
             db.executescript(RECAP_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
+            db.executescript(RECORDING_UPLOADS_SCHEMA)
             db.executescript(SOURCE_EVIDENCE_SCHEMA)
             db.execute(
                 "INSERT OR IGNORE INTO upload_parts "
@@ -223,6 +227,9 @@ class Store(
             raise ValueError("Audio part must fall within its recording bounds")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self.validate_recording_upload(
+                db, key, digest, device, source_kind, source_id, metadata, at,
+            )
             old = db.execute("SELECT * FROM audio WHERE id=?", (key,)).fetchone()
             if old:
                 if (

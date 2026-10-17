@@ -1,7 +1,7 @@
 import { profileScope } from "./profiles";
 import { useEffect, useId, useRef, useState } from "react";
-import { decodeRecording, encodeWav, progressTime, recordingEndTime, recordingTimes, selectRecording, uploadEstimate, validateUploadReceipt, type RecordingTimeReference } from "./audioUpload";
-import { errorMessage, newId, uploadRecording } from "./api";
+import { progressTime, recordingEndTime, selectRecordings, uploadEstimate, RecordingUploadQueue, type RecordingSelection, type UploadProgress } from "./audioUpload";
+import { errorMessage } from "./api";
 import { dateTimeLabel, localDateTimeInput } from "./format";
 import { Icon } from "./Icon";
 import type { Source } from "./types";
@@ -19,39 +19,28 @@ export function UploadDialog({
 }) {
   const scope = useRef(profileScope());
   const controller = useRef(new AbortController());
+  const duplicateCheck = useRef(new AbortController());
   const dialog = useRef<HTMLDialogElement>(null);
   const feedback = useRef<HTMLDivElement>(null);
   const heading = useId();
   const description = useId();
-  const plan = useRef<
-    | {
-        file: File;
-        startedAt: string;
-        recordingId: string;
-        conversationSourceId: string;
-        samples: Float32Array;
-        ids: string[];
-        completed: number;
-      }
-    | undefined
-  >(undefined);
-  const [initialSelection] = useState<{ file?: File; error?: string }>(() => {
-    if (!initialFiles?.length) return {};
+  const [queue] = useState(() => new RecordingUploadQueue());
+  const [initialSelection] = useState<{ recordings: RecordingSelection[]; error?: string }>(() => {
     try {
-      return { file: selectRecording(initialFiles) };
+      return { recordings: initialFiles?.length ? selectRecordings(initialFiles).map((file) => ({
+        file, recordedAt: recordingEndTime(file), timeReference: "end",
+      })) : [] };
     } catch (error) {
-      return { error: errorMessage(error) };
+      return { recordings: [], error: errorMessage(error) };
     }
   });
-  const [file, setFile] = useState(initialSelection.file);
-  const [recordedAt, setRecordedAt] = useState(() => initialSelection.file ? recordingEndTime(initialSelection.file) : "");
-  const [timeReference, setTimeReference] = useState<RecordingTimeReference>("end");
+  const [recordings, setRecordings] = useState(initialSelection.recordings);
+  const [checking, setChecking] = useState(Boolean(initialSelection.recordings.length));
+  const [fileErrors, setFileErrors] = useState(new Map<File, string>());
+  const [activeIndex, setActiveIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
-  const [uploadProgress, setUploadProgress] = useState<{
-    sent: number; total: number; completed: number; parts: number;
-    attemptStarted: number; attemptBytes: number; updated: number; confirming: boolean;
-  }>();
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>();
   const [started, setStarted] = useState(0);
   const [now, setNow] = useState(0);
   const [error, setError] = useState(initialSelection.error ?? "");
@@ -61,7 +50,7 @@ export function UploadDialog({
   const [sourceQuery, setSourceQuery] = useState("");
   const conversations = useResource<{ items: Source[] }>(linkExisting
     ? `/v1/transcripts?limit=50&q=${encodeURIComponent(sourceQuery)}` : null);
-  const locked = busy || Boolean(plan.current?.completed);
+  const locked = busy || queue.started;
   const transferring = Boolean(uploadProgress);
   useEffect(() => {
     if (busy) feedback.current?.scrollIntoView({ block: "nearest" });
@@ -79,118 +68,107 @@ export function UploadDialog({
     element?.querySelector<HTMLInputElement>('input[type="file"]')?.focus();
     return () => {
       controller.current.abort();
+      duplicateCheck.current.abort();
       element?.close();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
   }, []);
+  useEffect(() => {
+    if (initialSelection.recordings.length)
+      void checkSelection(initialSelection.recordings.map((item) => item.file));
+  }, [initialSelection]);
+  async function checkSelection(files: File[]) {
+    duplicateCheck.current.abort();
+    const check = new AbortController();
+    duplicateCheck.current = check;
+    setChecking(true);
+    try {
+      await queue.inspect(files, check.signal, scope.current);
+    } catch (error) {
+      if (!check.signal.aborted && !scope.current.signal.aborted) setError(errorMessage(error));
+    } finally {
+      if (!check.signal.aborted) setChecking(false);
+    }
+  }
   function chooseRecording(files: ArrayLike<File>) {
     if (locked) return;
     try {
-      const selected = selectRecording(files);
-      setFile(selected);
-      setRecordedAt(recordingEndTime(selected));
-      setTimeReference("end");
+      const selected = selectRecordings(files);
+      setRecordings(selected.map((file) => ({ file, recordedAt: recordingEndTime(file), timeReference: "end" })));
+      setFileErrors(new Map());
       setLinkExisting(false);
       setConversationSourceId("");
       setSourceQuery("");
-      plan.current = undefined;
       setError("");
+      void checkSelection(selected);
     } catch (error) {
       setError(errorMessage(error));
     }
   }
+  function updateRecording(index: number, change: Partial<RecordingSelection>) {
+    setRecordings((items) => items.map((item, i) => i === index ? { ...item, ...change } : item));
+    setFileErrors((errors) => {
+      const next = new Map(errors);
+      next.delete(recordings[index].file);
+      return next;
+    });
+    setError("");
+  }
+  function removeRecording(file: File) {
+    const remaining = recordings.filter((item) => item.file !== file);
+    setRecordings(remaining);
+    if (!queue.started) void checkSelection(remaining.map((item) => item.file));
+    setFileErrors((errors) => {
+      const next = new Map(errors);
+      next.delete(file);
+      return next;
+    });
+    setError("");
+  }
   async function upload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file) return;
+    if (!recordings.length || busy || checking) return;
+    if (linkExisting && !conversationSourceId) {
+      setError("Choose a source from the same conversation.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const selected = recordings.map((item, index) => ({ ...item,
+      recordedAt: String(form.get(index ? `recorded_at_${index}` : "recorded_at") ?? item.recordedAt),
+    }));
+    setRecordings(selected);
     setBusy(true);
     setError("");
-    setUploadProgress(undefined);
+    setFileErrors(new Map());
     setStarted(performance.now());
     setNow(performance.now());
-    setProgress("Preparing audio locally…");
+    const completedBefore = queue.completed.size;
+    const failures = new Map<File, string>();
     try {
-      const form = new FormData(event.currentTarget);
-      const timestamp = String(form.get("recorded_at") ?? recordedAt);
-      const reference = (form.get("time_reference") ?? timeReference) === "start" ? "start" : "end";
-      setRecordedAt(timestamp);
-      setTimeReference(reference);
-      const samples = plan.current?.file === file
-        ? plan.current.samples
-        : await decodeRecording(file, setProgress);
-      controller.current.signal.throwIfAborted();
-      scope.current.signal.throwIfAborted();
-      const { startedAt: start } = recordingTimes(timestamp, samples.length, reference);
-      const recordingStarted = start.toISOString();
-      const target = linkExisting ? conversationSourceId : "";
-      if (linkExisting && !target) throw new Error("Choose a source from the same conversation.");
-      const chunkLength = 16000 * 120;
-      if (
-        !plan.current ||
-        plan.current.file !== file ||
-        plan.current.startedAt !== recordingStarted ||
-        plan.current.conversationSourceId !== target
-      ) {
-        plan.current = {
-          file,
-          startedAt: recordingStarted,
-          recordingId: newId(),
-          conversationSourceId: target,
-          samples,
-          ids: Array.from(
-            { length: Math.ceil(samples.length / chunkLength) },
-            newId,
-          ),
-          completed: 0,
-        };
+      for (const [index, recording] of selected.entries()) {
+        if (queue.completed.has(recording.file) || queue.skipped.has(recording.file)) continue;
+        controller.current.signal.throwIfAborted();
+        scope.current.signal.throwIfAborted();
+        setActiveIndex(index);
+        setUploadProgress(undefined);
+        setProgress("Preparing audio locally…");
+        try {
+          await queue.upload(recording, linkExisting ? conversationSourceId : "",
+            controller.current.signal, scope.current, setProgress, setUploadProgress);
+        } catch (error) {
+          controller.current.signal.throwIfAborted();
+          scope.current.signal.throwIfAborted();
+          failures.set(recording.file, errorMessage(error));
+        }
       }
-      const current = plan.current;
-      const totalBytes = current.samples.length * 2 + current.ids.length * 44;
-      const initialBytes = Math.min(current.samples.length, current.completed * chunkLength) * 2 + current.completed * 44;
-      const attemptStarted = performance.now();
-      let confirmedBytes = initialBytes;
-      for (let i = current.completed; i < current.ids.length; i++) {
-        const offset = i * chunkLength;
-        const samples = current.samples.subarray(offset, offset + chunkLength);
-        const partStartedAt = new Date(start.getTime() + offset / 16).toISOString();
-        const body = new Blob([encodeWav(samples)], { type: "audio/wav" });
-        const reportProgress = (bytes: number) => {
-          const sent = confirmedBytes + bytes;
-          setUploadProgress({ sent, total: totalBytes, completed: current.completed, parts: current.ids.length,
-            attemptStarted, attemptBytes: sent - initialBytes, updated: performance.now(), confirming: bytes === body.size });
-        };
-        reportProgress(0);
-        setProgress(`Uploading part ${i + 1} of ${current.ids.length}… Keep this window open.`);
-        const query = new URLSearchParams({
-          device_id: "manual-web",
-          started_at: partStartedAt,
-          source_kind: "manual_upload",
-          source_id: file.name,
-          recording_id: current.recordingId,
-          part_index: String(i),
-          part_count: String(current.ids.length),
-          recording_started_at: current.startedAt,
-          recording_ended_at: new Date(start.getTime() + current.samples.length / 16).toISOString(),
-        });
-        if (current.conversationSourceId) query.set("conversation_source_id", current.conversationSourceId);
-        const receipt = await uploadRecording(`/v1/audio/${current.ids[i]}?${query}`,
-          body, reportProgress, controller.current.signal, scope.current);
-        validateUploadReceipt(receipt, {
-          id: current.ids[i],
-          device_id: "manual-web",
-          started_at: partStartedAt,
-          ended_at: new Date(start.getTime() + (offset + samples.length) / 16).toISOString(),
-        });
-        current.completed = i + 1;
-        reportProgress(body.size);
-        confirmedBytes += body.size;
-      }
-      onUploaded();
-      onClose();
+      setFileErrors(failures);
+      if (failures.size) {
+        setError(`${failures.size} recording${failures.size === 1 ? "" : "s"} could not be uploaded. Retry to resume without duplicating completed uploads.`);
+      } else if (!queue.skipped.size) onClose();
     } catch (error) {
-      setError(
-        `${errorMessage(error)}${plan.current?.completed ? " Retry to resume the remaining recordings without duplicating uploads." : ""}`,
-      );
+      setError(errorMessage(error));
     } finally {
+      if (!scope.current.signal.aborted && queue.completed.size > completedBefore) onUploaded();
       setBusy(false);
       setProgress("");
     }
@@ -202,6 +180,8 @@ export function UploadDialog({
       (Math.max(now, uploadProgress.updated) - uploadProgress.attemptStarted) / 1000)
     : undefined;
   const percent = uploadProgress ? Math.floor(uploadProgress.sent / uploadProgress.total * 100) : undefined;
+  const handled = recordings.length > 0 && recordings.every(({ file }) => queue.completed.has(file) || queue.skipped.has(file));
+  const remaining = recordings.length - queue.skipped.size;
   return (
     <dialog
       ref={dialog}
@@ -217,7 +197,7 @@ export function UploadDialog({
     >
       <form onSubmit={upload} aria-busy={busy}>
         <div className="section-heading">
-          <h2 id={heading}>Upload recording</h2>
+          <h2 id={heading}>Upload recordings</h2>
           <button
             className="icon-button"
             type="button"
@@ -230,45 +210,59 @@ export function UploadDialog({
         </div>
         <p className="muted" id={description}>
           Import audio from another phone, voice recorder, or computer, including
-          exported Voice Memos. Choose a file and when the recording stopped
+          exported Voice Memos. Choose one or more files and when each recording stopped
           or began. Long recordings are uploaded in parts automatically.
         </p>
-        <AudioDropArea file={file} busy={locked} dragging={dragging}
+        <AudioDropArea files={recordings.map((item) => item.file)} busy={locked} dragging={dragging}
           onDragging={setDragging} onChoose={chooseRecording} />
-        <p className="caption" id="audio-file-hint">WAV, M4A, MP3, OGG, FLAC, or another format supported by your browser. Up to 100 MB and two hours. Audio is converted locally before upload; keep this window open until it finishes.</p>
-        <label htmlFor="capture-time-reference">Time refers to</label>
-        <select id="capture-time-reference" name="time_reference" value={timeReference}
-          onChange={(event) => { setTimeReference(event.target.value === "start" ? "start" : "end"); setError(""); }}
-          disabled={locked}>
-          <option value="end">Recording ended</option>
-          <option value="start">Recording started</option>
-        </select>
-        <label htmlFor="capture-time">{timeReference === "end" ? "Recording ended" : "Recording started"}</label>
-        <input
-          id="capture-time"
-          name="recorded_at"
-          type="datetime-local"
-          value={recordedAt}
-          aria-describedby="capture-time-hint"
-          onChange={(event) => { setRecordedAt(event.target.value); setError(""); }}
-          max={localDateTimeInput()}
-          required
-          disabled={locked}
-        />
-        <p className="caption" id="capture-time-hint">
-          Time on this device:{" "}
-          {Intl.DateTimeFormat().resolvedOptions().timeZone}.{" "}
-          {timeReference === "end"
-            ? "The file’s last-modified date and time is used when available. Otherwise, enter when the recording stopped. You can correct this time. Its start time is calculated from the audio duration."
-            : "Choose when the recording began. Its end time is calculated from the audio duration."}
-        </p>
+        <p className="caption" id="audio-file-hint">WAV, M4A, MP3, OGG, FLAC, or another format supported by your browser. Up to 100 MB and two hours per file. Audio is converted locally before upload; keep this window open until it finishes.</p>
+        {checking ? <p role="status" className="caption">Checking files for duplicates before upload…</p> : null}
+        {!checking && queue.skipped.size ? <p role="status" className="caption">
+          {queue.completed.size} uploaded · {queue.skipped.size} duplicate{queue.skipped.size === 1 ? "" : "s"} skipped.
+        </p> : null}
+        {(recordings.length ? recordings : [{ recordedAt: "", timeReference: "end" as const, file: undefined }]).map((recording, index) => {
+          const { file, recordedAt, timeReference } = recording;
+          const suffix = index ? `_${index}` : "";
+          const saved = file && queue.completed.has(file);
+          const skipped = file && queue.skipped.get(file);
+          return <fieldset className="upload-recording" key={index} disabled={busy || checking || Boolean(file && queue.hasPlan(file))}>
+            {file ? <legend>{file.name} · {(file.size / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB</legend> : null}
+            {skipped ? <p role="status" className="caption">Duplicate skipped: {skipped}</p> : null}
+            {saved ? <p role="status" className="caption">Uploaded</p> : null}
+            {!skipped ? <>
+            <label htmlFor={`capture-time-reference${suffix}`}>Time refers to</label>
+            <select id={`capture-time-reference${suffix}`} name={`time_reference${suffix}`} value={timeReference}
+              onChange={(event) => updateRecording(index, { timeReference: event.target.value === "start" ? "start" : "end" })}
+              disabled={!file}>
+              <option value="end">Recording ended</option>
+              <option value="start">Recording started</option>
+            </select>
+            <label htmlFor={`capture-time${suffix}`}>{timeReference === "end" ? "Recording ended" : "Recording started"}</label>
+            <input id={`capture-time${suffix}`} name={`recorded_at${suffix}`} type="datetime-local"
+              value={recordedAt} aria-describedby={`capture-time-hint${suffix}`}
+              onChange={(event) => updateRecording(index, { recordedAt: event.target.value })}
+              max={localDateTimeInput()} required disabled={!file} />
+            <p className="caption" id={`capture-time-hint${suffix}`}>
+              Time on this device: {Intl.DateTimeFormat().resolvedOptions().timeZone}.{" "}
+              {timeReference === "end"
+                ? "The file’s last-modified date and time is used when available. Otherwise, enter when the recording stopped. You can correct this time. Its start time is calculated from the audio duration."
+                : "Choose when the recording began. Its end time is calculated from the audio duration."}
+            </p>
+            </> : null}
+            {file && fileErrors.has(file) ? <ErrorState message={fileErrors.get(file)!} /> : null}
+            {file && !queue.hasPlan(file) && recordings.length > 1 ? <button type="button" className="button"
+              aria-label={`Remove ${file.name}`} onClick={() => removeRecording(file)}>
+              Remove recording
+            </button> : null}
+          </fieldset>;
+        })}
         <label htmlFor="upload-conversation">Conversation</label>
         <select id="upload-conversation" value={linkExisting ? "existing" : "auto"}
           disabled={locked} onChange={(event) => setLinkExisting(event.target.value === "existing")}>
           <option value="auto">Match automatically after transcription</option>
           <option value="existing">Add another source to an existing conversation</option>
         </select>
-        <p className="caption">Overlapping recordings with shared speech are combined in the recap.
+        <p className="caption">{recordings.length > 1 ? "This conversation choice applies to all selected files. " : ""}Overlapping recordings with shared speech are combined in the recap.
           Every source is kept so details missing from one recording can be included from another.</p>
         {linkExisting ? <>
           <label htmlFor="conversation-search">Find a conversation</label>
@@ -293,6 +287,7 @@ export function UploadDialog({
         </> : null}
         {error ? <ErrorState message={error} /> : null}
         {busy ? <div ref={feedback} className="upload-feedback">
+          <p role="status" className="caption">Recording {activeIndex + 1} of {recordings.length}: {recordings[activeIndex]?.file.name} · {queue.completed.size} uploaded</p>
           <p role="status" className="upload-stage">
             <strong>{uploadProgress?.confirming ? `Saving part ${Math.min(uploadProgress.completed + 1, uploadProgress.parts)} of ${uploadProgress.parts} on the server…` : progress}</strong>
             {percent !== undefined ? <span>{percent}% sent</span> : null}
@@ -309,9 +304,11 @@ export function UploadDialog({
           <p className="caption">Transcription continues on the server after upload. Follow its progress under Capture &amp; sync.</p>
         </div> : null}
         <div className="button-row">
-          <button className="button accent" disabled={!file || busy || (linkExisting && !conversationSourceId)}>
+          <button className="button accent" type={handled ? "button" : "submit"}
+            onClick={handled ? onClose : undefined}
+            disabled={!recordings.length || busy || checking || (!handled && linkExisting && !conversationSourceId)}>
             <Icon name="upload" size={18} />
-            {busy ? uploadProgress ? "Uploading…" : "Preparing audio…" : error && plan.current?.completed ? "Resume upload" : "Upload recording"}
+            {checking ? "Checking duplicates…" : busy ? uploadProgress ? "Uploading…" : "Preparing audio…" : handled ? "Done" : fileErrors.size ? "Retry failed recordings" : remaining > 1 ? `Upload ${remaining} recordings` : "Upload recording"}
           </button>
           <button
             className="button"
@@ -327,8 +324,8 @@ export function UploadDialog({
   );
 }
 
-export function AudioDropArea({ file, busy, dragging, onDragging, onChoose }: {
-  file?: File;
+export function AudioDropArea({ files = [], busy, dragging, onDragging, onChoose }: {
+  files?: File[];
   busy: boolean;
   dragging: boolean;
   onDragging: (dragging: boolean) => void;
@@ -352,13 +349,14 @@ export function AudioDropArea({ file, busy, dragging, onDragging, onChoose }: {
       }}
     >
       <Icon name="upload" size={27} />
-      <strong>{dragging ? "Drop your recording here" : "Drag and drop a recording"}</strong>
-      <span>or choose an audio file from your device</span>
-      <label className="button" htmlFor="audio-file">Choose audio file</label>
+      <strong>{dragging ? "Drop your recordings here" : "Drag and drop recordings"}</strong>
+      <span>or choose audio files from your device</span>
+      <label className="button" htmlFor="audio-file">Choose audio files</label>
       <input
         className="sr-only"
         id="audio-file"
         type="file"
+        multiple
         accept="audio/*,.wav,.m4a,.mp3,.ogg,.flac,.aac,.opus,.aiff,.caf,.webm"
         aria-describedby="audio-file-hint selected-audio-file"
         onChange={(event) => {
@@ -368,7 +366,7 @@ export function AudioDropArea({ file, busy, dragging, onDragging, onChoose }: {
         disabled={busy}
       />
       <span id="selected-audio-file" className="selected-audio-file" role="status">
-        {file ? `${file.name} · ${(file.size / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB` : "One audio file at a time"}
+        {files.length ? `${files.length} recording${files.length === 1 ? "" : "s"} selected` : "Select one or more audio files"}
       </span>
     </div>
   );

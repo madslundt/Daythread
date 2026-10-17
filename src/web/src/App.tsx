@@ -126,7 +126,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
     timeline.refresh();
     setVersion((value) => value + 1);
     setNotice(
-      "Recording uploaded. Follow transcription progress under Capture & sync.",
+      "Audio uploaded. Follow transcription progress under Capture & sync.",
     );
   }
   function rewind(minutes: number) {

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { progressTime, recordingEndTime, recordingTimes, selectRecording, uploadEstimate, validateUploadReceipt } from "./audioUpload";
+import { progressTime, recordingEndTime, recordingTimes, selectRecording, selectRecordings, RecordingUploadQueue, type RecordingSelection, type PrepareRecording, type PreparedRecording, type RecordingUploadAPI, recordingFileDigest, uploadEstimate, validateUploadReceipt } from "./audioUpload";
+import { newId } from "./api";
 import { localDateTimeInput } from "./format";
 import { SourceList } from "./SourceList";
 import { AudioDropArea, UploadDialog } from "./UploadDialog";
@@ -39,13 +40,32 @@ describe("recordings chosen or dropped from another device", () => {
     expect(html).toContain('<option value="auto" selected="">Match automatically after transcription</option>');
     expect(html).not.toContain('class="button accent" disabled=""');
   });
+  it("accepts multiple initial drops and gives every recording its own capture time", () => {
+    const first = new File(["audio"], "first.wav", { lastModified: Date.parse("2026-10-15T12:00:00Z") });
+    const second = new File(["audio"], "second.m4a", { lastModified: Date.parse("2026-10-16T09:00:00Z") });
+    const html = renderToStaticMarkup(<UploadDialog initialFiles={[first, second]} onClose={() => {}} onUploaded={() => {}} />);
+    expect(html).toContain("2 recordings selected");
+    expect(html).toContain("Checking files for duplicates before upload");
+    expect(html.match(/<input[^>]+name="recorded_at"[^>]*>/)?.[0]).toContain(`value="${recordingEndTime(first)}"`);
+    expect(html.match(/<input[^>]+name="recorded_at_1"[^>]*>/)?.[0]).toContain(`value="${recordingEndTime(second)}"`);
+    expect(html).not.toContain('role="alert"');
+    expect(selectRecordings({ 0: first, 1: second, length: 2 })).toEqual([first, second]);
+    expect(() => selectRecordings([first, new File([], "bad.wav")])).toThrow("bad.wav: The recording is empty");
+  });
+  it("passes every dropped file to the upload dialog", () => {
+    const files = [new File(["audio"], "first.wav"), new File(["audio"], "second.wav")];
+    const onChoose = vi.fn();
+    AudioDropArea({ busy: false, dragging: false, onChoose, onDragging: vi.fn() })
+      .props.onDrop({ preventDefault: vi.fn(), dataTransfer: { files } });
+    expect(onChoose).toHaveBeenCalledWith(files);
+  });
   it("shows the existing validation errors for invalid drops on Today", () => {
     const wav = new File(["audio"], "memo.wav");
-    for (const files of [[wav, wav], [new File(["text"], "notes.txt")], [new File([], "empty.wav")]]) {
+    for (const files of [[wav, new File(["text"], "notes.txt")], [new File([], "empty.wav")]]) {
       const html = renderToStaticMarkup(<UploadDialog initialFiles={files} onClose={() => {}} onUploaded={() => {}} />);
       expect(html).toContain('role="alert"');
-      expect(html).toContain("One audio file at a time");
-      expect(html).toContain('class="button accent" disabled=""');
+      expect(html).toContain("Select one or more audio files");
+      expect(html.match(/<button[^>]+class="button accent"[^>]*>/)?.[0]).toContain('disabled=""');
     }
   });
   it("requires an explicit timestamp until a file provides one", () => {
@@ -106,8 +126,9 @@ describe("recordings chosen or dropped from another device", () => {
   });
   it("offers keyboard file selection alongside the drop area without requiring native input files", () => {
     const html = renderToStaticMarkup(<UploadDialog onClose={() => {}} onUploaded={() => {}} />);
-    expect(html).toContain("Drag and drop a recording");
-    expect(html).toContain("Choose audio file");
+    expect(html).toContain("Drag and drop recordings");
+    expect(html).toContain("Choose audio files");
+    expect(html.match(/<input[^>]+type="file"[^>]*>/)?.[0]).toContain('multiple=""');
     expect(html).toContain('aria-label="Audio file drop area"');
     // Dropped files live in React state, rather than the browser's read-only FileList.
     expect(html.match(/<input[^>]+type="file"[^>]*>/)?.[0]).not.toContain("required");
@@ -199,5 +220,196 @@ describe("manual upload origin", () => {
     expect(html).toContain("Voice Memos &lt;meeting&gt;.m4a");
     expect(html).toContain("Capture time was supplied when importing");
     expect(html).toContain("Download archived audio");
+  });
+});
+
+
+describe("bulk recording upload retries", () => {
+  const first: RecordingSelection = {
+    file: new File(["audio"], "first.wav"), recordedAt: "2026-10-15T12:05:00Z", timeReference: "end",
+  };
+  const second: RecordingSelection = {
+    file: new File(["different audio"], "second.wav"), recordedAt: "2026-10-16T09:00:00Z", timeReference: "start",
+  };
+  const scope = { id: "test-profile", signal: new AbortController().signal };
+  function receipt(path: string, body: Blob) {
+    const url = new URL(path, "http://localhost");
+    return { id: url.pathname.split("/").at(-1), device_id: "manual-web",
+      started_at: url.searchParams.get("started_at"),
+      ended_at: new Date(Date.parse(url.searchParams.get("started_at")!) + (body.size - 44) / 32).toISOString(),
+    };
+  }
+  function createQueue(decode: (file: File) => Promise<Float32Array>, send: (path: string, body: Blob) => Promise<unknown>) {
+    const plans = new Map<string, Extract<PreparedRecording, { status: "upload" }>>();
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: async (body) => {
+        let plan = plans.get(body.file_digest);
+        if (!plan) {
+          plan = { ...body, status: "upload", recording_id: newId(),
+            parts: body.digests.map((digest) => ({ id: newId(), digest, uploaded: false })) };
+          plans.set(body.file_digest, plan);
+        }
+        return structuredClone(plan);
+      },
+    };
+    return new RecordingUploadQueue(decode, async (path, body) => {
+      const result = await send(path, body);
+      const actual = result as { id?: string };
+      for (const plan of plans.values()) for (const part of plan.parts)
+        if (part.id === actual.id) part.uploaded = true;
+      return result;
+    }, backend);
+  }
+  it("preserves file provenance and distinct recording IDs and capture bounds", async () => {
+    const decode = vi.fn(async () => new Float32Array(16000));
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
+    const queue = createQueue(decode, send);
+    for (const recording of [first, second]) await queue.upload(recording, "conversation", scope.signal, scope, vi.fn(), vi.fn());
+    const urls = send.mock.calls.map(([path]) => new URL(path, "http://localhost"));
+    expect(urls.map((url) => url.searchParams.get("source_id"))).toEqual(["first.wav", "second.wav"]);
+    expect(urls.map((url) => url.searchParams.get("started_at"))).toEqual(["2026-10-15T12:04:59.000Z", "2026-10-16T09:00:00.000Z"]);
+    expect(new Set(urls.map((url) => url.searchParams.get("recording_id"))).size).toBe(2);
+    for (const url of urls) expect(url.searchParams.get("conversation_source_id")).toBe("conversation");
+    expect(queue.completed.size).toBe(2);
+    await queue.upload(first, "", scope.signal, scope, vi.fn(), vi.fn());
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it("retries the unconfirmed chunk with identical IDs and skips saved files and parts", async () => {
+    const decode = vi.fn(async (file: File) => new Float32Array(file === second.file ? 16000 * 121 : 16000));
+    let fail = true;
+    const send = vi.fn(async (path: string, body: Blob) => {
+      if (new URL(path, "http://localhost").searchParams.get("part_index") === "1" && fail) {
+        fail = false;
+        return { ...receipt(path, body), id: "mismatched-receipt" };
+      }
+      return receipt(path, body);
+    });
+    const queue = createQueue(decode, send);
+    await queue.upload(first, "", scope.signal, scope, vi.fn(), vi.fn());
+    await expect(queue.upload(second, "", scope.signal, scope, vi.fn(), vi.fn())).rejects.toThrow("mismatched upload receipt");
+    expect(queue.completed.has(first.file)).toBe(true);
+    expect(queue.completed.has(second.file)).toBe(false);
+    expect(queue.hasPlan(second.file)).toBe(true);
+    await queue.upload(first, "", scope.signal, scope, vi.fn(), vi.fn());
+    await queue.upload(second, "", scope.signal, scope, vi.fn(), vi.fn());
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(send.mock.calls[3][0]).toBe(send.mock.calls[2][0]);
+    expect(queue.completed.size).toBe(2);
+  });
+  it("keeps a stable plan even when the first chunk fails without an acknowledgement", async () => {
+    const decode = vi.fn(async () => new Float32Array(16000));
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body))
+      .mockRejectedValueOnce(new Error("Connection lost"));
+    const queue = createQueue(decode, send);
+    await expect(queue.upload(first, "", scope.signal, scope, vi.fn(), vi.fn())).rejects.toThrow("Connection lost");
+    await queue.upload(second, "", scope.signal, scope, vi.fn(), vi.fn());
+    await queue.upload(first, "", scope.signal, scope, vi.fn(), vi.fn());
+    expect(send.mock.calls[2][0]).toBe(send.mock.calls[0][0]);
+    expect(queue.completed.size).toBe(2);
+  });
+  it("stops after a profile change during local decoding before sending any file", async () => {
+    const profile = new AbortController();
+    const decode = vi.fn(async () => { profile.abort(); return new Float32Array(16000); });
+    const send = vi.fn();
+    const queue = createQueue(decode, send);
+    await expect(queue.upload(first, "", scope.signal, { id: "old", signal: profile.signal }, vi.fn(), vi.fn()))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("duplicate recording detection", () => {
+  const signal = new AbortController().signal;
+  const scope = { id: "default", signal };
+  const first: RecordingSelection = {
+    file: new File(["first export"], "first.wav"), recordedAt: "2026-10-15T12:00:00Z", timeReference: "end",
+  };
+  function plan(body: PrepareRecording): Extract<PreparedRecording, { status: "upload" }> {
+    return { ...body, status: "upload", recording_id: newId(),
+      parts: body.digests.map((digest) => ({ id: newId(), digest, uploaded: false })) };
+  }
+  function receipt(path: string, body: Blob) {
+    const url = new URL(path, "http://localhost");
+    return { id: url.pathname.split("/").at(-1), device_id: "manual-web",
+      started_at: url.searchParams.get("started_at"),
+      ended_at: new Date(Date.parse(url.searchParams.get("started_at")!) + (body.size - 44) / 32).toISOString() };
+  }
+  it("hashes actual bytes on LAN HTTP without relying on browser Web Crypto", async () => {
+    vi.stubGlobal("crypto", {});
+    try {
+      expect(await recordingFileDigest(new File(["abc"], "memo.wav"), signal))
+        .toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+      const a = await recordingFileDigest(new File(["same"], "a.wav"), signal);
+      expect(await recordingFileDigest(new File(["same"], "renamed.wav"), signal)).toBe(a);
+      expect(await recordingFileDigest(new File(["different"], "a.wav"), signal)).not.toBe(a);
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("finds duplicate selected bytes before decoding or sending audio, including renamed copies", async () => {
+    const copy = new File(["first export"], "renamed.wav");
+    const sameNameDifferentBytes = new File(["different"], "first.wav");
+    const backend = { lookup: vi.fn(async () => ({ duplicate: false })), prepare: vi.fn() };
+    const decode = vi.fn(), send = vi.fn();
+    const queue = new RecordingUploadQueue(decode, send, backend);
+    await queue.inspect([first.file, copy, sameNameDifferentBytes], signal, scope);
+    expect(queue.skipped.get(copy)).toContain("first.wav");
+    expect(queue.skipped.has(first.file)).toBe(false);
+    expect(queue.skipped.has(sameNameDifferentBytes)).toBe(false);
+    expect(backend.lookup).toHaveBeenCalledTimes(2);
+    await queue.upload({ ...first, file: copy }, "", signal, scope, vi.fn(), vi.fn());
+    expect(decode).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    await queue.inspect([copy], signal, scope);
+    expect(queue.skipped.has(copy)).toBe(false); // Removing the original promotes its copy.
+  });
+  it("skips an archived duplicate without decoding or uploading any audio", async () => {
+    const backend = { lookup: vi.fn(async () => ({ duplicate: true, source_id: "original.m4a" })), prepare: vi.fn() };
+    const decode = vi.fn(), send = vi.fn();
+    const queue = new RecordingUploadQueue(decode, send, backend);
+    await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
+    expect(queue.skipped.get(first.file)).toContain("original.m4a");
+    expect(decode).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(backend.prepare).not.toHaveBeenCalled();
+  });
+  it("checks every converted part before transfer and skips identical decoded audio", async () => {
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: vi.fn().mockImplementationOnce(async (body: PrepareRecording) => plan(body))
+        .mockResolvedValueOnce({ status: "duplicate", source_id: "first.wav" }),
+    };
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
+    const queue = new RecordingUploadQueue(async () => new Float32Array(16000 * 121), send, backend);
+    await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
+    const copy = { ...first, file: new File(["different container"], "another-export.m4a") };
+    await queue.upload(copy, "", signal, scope, vi.fn(), vi.fn());
+    const prepare = vi.mocked(backend.prepare);
+    expect(prepare.mock.calls[0][0].digests).toHaveLength(2);
+    expect(prepare.mock.calls[1][0].digests).toEqual(prepare.mock.calls[0][0].digests);
+    expect(send).toHaveBeenCalledTimes(2); // Two parts of only the first recording.
+    expect(queue.skipped.get(copy.file)).toContain("first.wav");
+    expect(queue.completed.size).toBe(1);
+  });
+  it("resumes an existing partial upload using canonical metadata and only missing parts", async () => {
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: async (body) => {
+        const original = plan(body);
+        original.source_id = "original.wav";
+        original.started_at = "2026-10-14T12:00:00Z";
+        original.ended_at = "2026-10-14T12:02:01Z";
+        original.parts[0].uploaded = true;
+        return original;
+      },
+    };
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
+    const queue = new RecordingUploadQueue(async () => new Float32Array(16000 * 121), send, backend);
+    await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
+    expect(send).toHaveBeenCalledOnce();
+    const query = new URL(send.mock.calls[0][0], "http://localhost").searchParams;
+    expect(query.get("source_id")).toBe("original.wav");
+    expect(query.get("part_index")).toBe("1");
+    expect(query.get("started_at")).toBe("2026-10-14T12:02:00.000Z");
   });
 });

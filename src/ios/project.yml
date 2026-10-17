@@ -35,8 +35,10 @@ targets:
         NSLocalNetworkUsageDescription: Daythread sends recordings to your own home-core on your local network.
         NSRemindersFullAccessUsageDescription: Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            daythread.home.arpa:
+              NSExceptionAllowsInsecureHTTPLoads: true
         UIBackgroundModes: [bluetooth-central, audio, processing, fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.daythread.sync]
         ITSAppUsesNonExemptEncryption: false

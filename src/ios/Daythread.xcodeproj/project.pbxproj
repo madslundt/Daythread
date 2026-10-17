@@ -14,6 +14,7 @@
 		1193826A7496FFF93F272CC1 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9B231914E1791C040EBABEC /* DecisionsView.swift */; };
 		2B3AC4B187300F27A7226FBE /* InboxDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */; };
 		2F512DBEA7A0785812A0080B /* CompletenessFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F7B8BFA3E233C9A828B12E /* CompletenessFeedback.swift */; };
+		364BBC33337956712091C2A8 /* BackendEndpointsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AC7EA03D7D0CEE3B70A0BB /* BackendEndpointsView.swift */; };
 		3BCF04BC8C2A728CAD14C96F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D76DF33EEF04DB3A8A6140 /* SettingsView.swift */; };
 		3E52E409C4C00667C688F3AC /* CaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 096573541F1197E4105E64B8 /* CaptureView.swift */; };
 		40EC2BCFE8A3EF97AAB11402 /* DaythreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2721B9908BFBD82A5D7663D7 /* DaythreadApp.swift */; };
@@ -70,6 +71,7 @@
 		D966400DBBB58B9611CAD378 /* BackgroundUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundUploader.swift; sourceTree = "<group>"; };
 		D9B231914E1791C040EBABEC /* DecisionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsView.swift; sourceTree = "<group>"; };
 		F3D76DF33EEF04DB3A8A6140 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F7AC7EA03D7D0CEE3B70A0BB /* BackendEndpointsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendEndpointsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +92,7 @@
 				4D1043BC92213D97DA30B8A6 /* AppModel.swift */,
 				38F938352BFD5D3D1451DC01 /* Assets.xcassets */,
 				AB9431A4038E138C213F99FF /* BackendClient.swift */,
+				F7AC7EA03D7D0CEE3B70A0BB /* BackendEndpointsView.swift */,
 				D966400DBBB58B9611CAD378 /* BackgroundUploader.swift */,
 				096573541F1197E4105E64B8 /* CaptureView.swift */,
 				8BBC405B79DAB5B0FE042AB3 /* ChatView.swift */,
@@ -223,6 +226,7 @@
 			files = (
 				0A9FD73DEE9A4519F19D0141 /* AppModel.swift in Sources */,
 				76E71D234DF046C275633196 /* BackendClient.swift in Sources */,
+				364BBC33337956712091C2A8 /* BackendEndpointsView.swift in Sources */,
 				C7D462AD3E1F1F43F8D4F36A /* BackgroundUploader.swift in Sources */,
 				3E52E409C4C00667C688F3AC /* CaptureView.swift in Sources */,
 				42EC0B6977B04BB5AA69E158 /* ChatView.swift in Sources */,

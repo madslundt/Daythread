@@ -9,6 +9,7 @@ struct RewindView: View {
     @State private var error: String?
     @State private var loading = false
     @State private var localMessage: String?
+    private let minuteOptions = [1, 5, 10, 15, 30, 45, 60]
     var body: some View {
         List {
             Section {
@@ -16,7 +17,14 @@ struct RewindView: View {
                     .editorialRow()
             }
             Section {
-                Stepper("Last \(minutes) minutes", value: $minutes, in: 1...60).disabled(loading)
+                Picker("Rewind last", selection: $minutes) {
+                    ForEach(minuteOptions, id: \.self) { duration in
+                        Text("\(duration) \(duration == 1 ? "minute" : "minutes")").tag(duration)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(loading)
+                .accessibilityIdentifier("rewind.minutes")
                 Button { Task { await rewind() } } label: { Label("Rewind & summarize", systemImage: "gobackward") }
                     .buttonStyle(PrimaryActionStyle()).disabled(loading).accessibilityIdentifier("rewind.generate")
                 Button { playLocal() } label: { Label("Play phone buffer", systemImage: "play.circle") }

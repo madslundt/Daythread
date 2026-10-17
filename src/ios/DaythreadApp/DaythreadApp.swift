@@ -71,35 +71,23 @@ struct RootView: View {
     @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .day : .settings
     @State private var settingsPath: [SettingsDestination] = []
     var body: some View {
-        TabView(selection: Binding(get: { model.hasSelectedProfile ? selectedTab : .settings }, set: { tab in
-            if !model.hasSelectedProfile && tab != .settings { settingsPath = [.profiles] }
-            selectedTab = model.hasSelectedProfile ? tab : .settings
-        })) {
-            NavigationStack { if model.hasSelectedProfile { DayView() } }.tabItem { Label("Day", systemImage: "book.closed") }.tag(RootTab.day)
-            NavigationStack { if model.hasSelectedProfile { RewindView() } }.tabItem { Label("Rewind", systemImage: "gobackward.10") }.tag(RootTab.rewind)
-            NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label("Capture", systemImage: "waveform") }.tag(RootTab.capture)
-            NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
-            NavigationStack(path: $settingsPath) {
-                SettingsView().navigationDestination(for: SettingsDestination.self) { destination in
-                    switch destination { case .profiles: ProfilesSettingsView() }
-                }
-            }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }.tag(RootTab.settings)
-        }
-        .id(model.archiveIdentity)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image("DaythreadMark")
-                        .resizable().scaledToFit().frame(width: 24, height: 24)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .accessibilityHidden(true)
-                    Text("Daythread").font(.headline)
-                }
-                Spacer(minLength: 8)
-                if model.hasSelectedProfile {
-                    Text(model.selectedProfileName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }.padding(.horizontal, 20).padding(.vertical, 8).background(Theme.canvas)
+        VStack(spacing: 0) {
+            appHeader
+            TabView(selection: Binding(get: { model.hasSelectedProfile ? selectedTab : .settings }, set: { tab in
+                if !model.hasSelectedProfile && tab != .settings { settingsPath = [.profiles] }
+                selectedTab = model.hasSelectedProfile ? tab : .settings
+            })) {
+                NavigationStack { if model.hasSelectedProfile { DayView() } }.tabItem { Label("Day", systemImage: "book.closed") }.tag(RootTab.day)
+                NavigationStack { if model.hasSelectedProfile { RewindView() } }.tabItem { Label("Rewind", systemImage: "gobackward.10") }.tag(RootTab.rewind)
+                NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label("Capture", systemImage: "waveform") }.tag(RootTab.capture)
+                NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
+                NavigationStack(path: $settingsPath) {
+                    SettingsView().navigationDestination(for: SettingsDestination.self) { destination in
+                        switch destination { case .profiles: ProfilesSettingsView() }
+                    }
+                }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }.tag(RootTab.settings)
+            }
+            .id(model.archiveIdentity)
         }
         .task {
             if !model.hasSelectedProfile { settingsPath = [.profiles] }
@@ -119,6 +107,23 @@ struct RootView: View {
         .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
+    }
+
+    // Reserve space above the tab navigation bars so the brand never covers Back or toolbar controls.
+    private var appHeader: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image("DaythreadMark")
+                    .resizable().scaledToFit().frame(width: 24, height: 24)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .accessibilityHidden(true)
+                Text("Daythread").font(.headline)
+            }
+            Spacer(minLength: 8)
+            if model.hasSelectedProfile {
+                Text(model.selectedProfileName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }.padding(.horizontal, 20).padding(.vertical, 8).background(Theme.canvas)
     }
 }
 

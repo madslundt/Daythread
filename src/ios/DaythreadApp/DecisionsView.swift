@@ -48,7 +48,8 @@ struct DecisionsSection: View {
             ErrorNote(message: error)
         }
         .task(id: "\(model.archiveIdentity).\(model.archiveRevision).\(day).\(allDays).\(submitted).\(review).\(revision)") { await load() }
-        .task(id: model.archiveIdentity + day + ".automatic-decisions") {
+        .task(id: model.archiveIdentity + day + ".automatic-decisions." + String(describing: phase)) {
+            guard phase == .active else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 guard !Task.isCancelled else { return }

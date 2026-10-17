@@ -5,6 +5,7 @@ struct DayView: View {
     /// Nil follows the current server day, including midnight while the app is open.
     var date: Date? = nil
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.goToToday) private var goToToday
     private enum Destination: Hashable { case rewind, chat(String) }
     @State private var destination: Destination?
@@ -165,7 +166,8 @@ struct DayView: View {
             if !query.isEmpty { do { try await Task.sleep(for: .milliseconds(300)) } catch { return } }
             await load()
         }
-        .task(id: cacheKey + model.archiveRevision + ".poll") {
+        .task(id: cacheKey + model.archiveRevision + ".poll." + String(describing: scenePhase)) {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 if !loading { await refresh() }
@@ -350,6 +352,7 @@ private struct TimelineRecordingSession: View {
     var timeline: JSONValue = .null
     var onCorrect: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var expanded = false
     @State private var requestID = UUID()
     @State private var sources: [JSONValue] = []
@@ -385,8 +388,8 @@ private struct TimelineRecordingSession: View {
         .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(group["recording_count"].integer)") {
             if expanded { await load(reset: true) }
         }
-        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).poll") {
-            guard expanded else { return }
+        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(scenePhase).poll") {
+            guard expanded, scenePhase == .active else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 if !busy { await load(reset: true) }

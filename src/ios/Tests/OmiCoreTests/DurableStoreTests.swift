@@ -8,6 +8,49 @@ final class DurableStoreTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
     }
+    func testAudioSyncIsBatchedToOneSecondAndFinishesPartialTail() throws {
+        var synchronizations = 0
+        let store = try DurableStore(directory: folder(), synchronizeSource: {
+            synchronizations += 1; try $0.synchronize()
+        })
+        try store.begin(deviceID: "p", codec: 0, clock: CaptureClock())
+        let frame = Data(repeating: 7, count: 640) // 20 ms of 16 kHz mono PCM.
+        for _ in 0..<49 { try store.append(frame: frame, decoded: frame) }
+        XCTAssertEqual(synchronizations, 0)
+        try store.append(frame: frame, decoded: frame)
+        XCTAssertEqual(synchronizations, 1)
+        for _ in 0..<5 { try store.append(frame: frame, decoded: frame) }
+        XCTAssertEqual(synchronizations, 1)
+        try store.finish()
+        XCTAssertEqual(synchronizations, 2)
+        let item = try XCTUnwrap(store.pending.first)
+        XCTAssertEqual(try Data(contentsOf: store.file(item.id, extension: "wav")).count, 55 * 640 + 44)
+
+        // A new segment starts with a fresh sync budget.
+        try store.begin(deviceID: "p", codec: 0, clock: CaptureClock())
+        try store.append(frame: frame, decoded: frame)
+        XCTAssertEqual(synchronizations, 2)
+        try store.finish()
+        XCTAssertEqual(synchronizations, 3)
+    }
+    func testFailedBatchedSyncKeepsAudioForFinalizationRetry() throws {
+        var attempts = 0
+        let store = try DurableStore(directory: folder(), synchronizeSource: {
+            attempts += 1
+            if attempts == 1 { throw CocoaError(.fileWriteUnknown) }
+            try $0.synchronize()
+        })
+        try store.begin(deviceID: "p", codec: 0, clock: CaptureClock())
+        let frame = Data(repeating: 7, count: 640)
+        for _ in 0..<49 { try store.append(frame: frame, decoded: frame) }
+        XCTAssertThrowsError(try store.append(frame: frame, decoded: frame))
+        XCTAssertTrue(store.isRecording)
+        XCTAssertEqual(store.segmentSeconds, 1)
+        try store.finish()
+        XCTAssertEqual(attempts, 2)
+        let item = try XCTUnwrap(store.pending.first)
+        XCTAssertEqual(try Data(contentsOf: store.file(item.id, extension: "wav")).dropFirst(44), Data(repeating: 7, count: 32_000))
+    }
     func testProfileOwnershipSurvivesSwitchRetryAndRestart() throws {
         let directory = try folder(), store = try DurableStore(directory: directory)
         let captured = Date(timeIntervalSince1970: 1000)

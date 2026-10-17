@@ -226,6 +226,12 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         Self.backgroundCompletion?(); Self.backgroundCompletion = nil
     }
     static func scheduleRetry() {
+        guard let uploader = shared, let client = uploader.client,
+              uploader.active.isEmpty,
+              !uploader.store.pending(destinationID: client.destinationIdentity).isEmpty else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: "com.daythread.sync")
+            return
+        }
         let request = BGProcessingTaskRequest(identifier: "com.daythread.sync")
         request.requiresNetworkConnectivity = true; request.requiresExternalPower = false
         request.earliestBeginDate = Date().addingTimeInterval(60)

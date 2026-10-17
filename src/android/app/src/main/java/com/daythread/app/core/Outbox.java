@@ -21,6 +21,15 @@ public final class Outbox {
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot open recording storage");
     }
     public record Item(String id, String kind, Destination destination, Json data, File file) {}
+    public synchronized boolean hasPending() throws IOException {
+        for (File file : files()) if (file.getName().endsWith(".json")) return true;
+        return false;
+    }
+    public synchronized int pendingCount() throws IOException {
+        int count = 0;
+        for (File file : files()) if (file.getName().endsWith(".json")) count++;
+        return count;
+    }
     public synchronized List<Item> pending() throws IOException {
         List<Item> items = new ArrayList<>();
         for (File file : files()) if (file.getName().endsWith(".json")) {

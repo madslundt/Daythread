@@ -1,5 +1,6 @@
 import Foundation
 import OmiCore
+import UIKit
 
 enum JSONValue: Codable, Equatable {
     case string(String), number(Double), bool(Bool), object([String: JSONValue]), array([JSONValue]), null
@@ -93,6 +94,7 @@ struct BackendClient {
                 // Cancelling this view stops polling. The accepted backend job and
                 // its completion notification continue after the app is closed.
                 try await Task.sleep(for: .seconds(2))
+                try await Self.waitForForeground()
                 job = try await jobClient.request("v1/jobs/" + jobID)
             }
         }
@@ -102,6 +104,19 @@ struct BackendClient {
         let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || (path.hasPrefix("v1/transcripts/") && path.hasSuffix("/translation")))
         let responseData = try await data(path: path, method: method, query: query, body: bodyData, profileHeader: global ? nil : profileID, timeout: inference ? 3600 : 180)
         return try JSONDecoder().decode(JSONValue.self, from: responseData)
+    }
+
+    @MainActor
+    private static func waitForForeground() async throws {
+        // Preserve the accepted job while suspending its UI polling with no periodic wakeups.
+        let activations = NotificationCenter.default.notifications(named: UIApplication.didBecomeActiveNotification)
+        if UIApplication.shared.applicationState != .active {
+            for await _ in activations {
+                try Task.checkCancellation()
+                if UIApplication.shared.applicationState == .active { break }
+            }
+        }
+        try Task.checkCancellation()
     }
 
     func decoded<T: Decodable>(_ path: String, method: String = "GET", query: [String: String] = [:], body: [String: Any]? = nil, as type: T.Type) async throws -> T {

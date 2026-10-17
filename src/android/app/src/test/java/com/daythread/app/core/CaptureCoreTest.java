@@ -90,10 +90,12 @@ public class CaptureCoreTest {
     }
     @Test public void openingActivityCannotRecoverTheServiceLiveWriter() throws Exception {
         Outbox outbox = new Outbox(temporary.newFolder());
+        assertFalse(outbox.hasPending()); assertEquals(0, outbox.pendingCount());
         try (Outbox.Writer writer = outbox.begin(destination, "android-test", started)) {
             writer.append(new byte[640], 0, 640, null); assertEquals(0, outbox.recover()); assertTrue(outbox.pending().isEmpty());
+            assertFalse(outbox.hasPending()); assertEquals(0, outbox.pendingCount());
         }
-        assertEquals(1, outbox.pending().size());
+        assertEquals(1, outbox.pending().size()); assertTrue(outbox.hasPending()); assertEquals(1, outbox.pendingCount());
     }
     private Json receipt(Outbox.Item item) { return new Json(item.data().toString()).put("id", item.id()).put("state", "queued"); }
     @Test public void arbitrarySuccessWrongProfileAndWrongCaptureBoundsKeepOriginalAudio() throws Exception {
@@ -105,6 +107,7 @@ public class CaptureCoreTest {
         assertThrows(IOException.class, () -> outbox.acknowledge(item, receipt(item).put("ended_at", started.plusSeconds(1).toString()), "default"));
         assertTrue(item.file().exists()); assertEquals(item.id(), outbox.pending().get(0).id());
         outbox.acknowledge(item, receipt(item), "default"); assertFalse(item.file().exists()); assertTrue(outbox.pending().isEmpty());
+        assertFalse(outbox.hasPending()); assertEquals(0, outbox.pendingCount());
     }
     @Test public void rawEventRetriesKeepTheirIdAndCapturedPolicy() throws Exception {
         Outbox outbox = new Outbox(temporary.newFolder());

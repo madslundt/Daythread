@@ -20,7 +20,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     var name = "Omi"
     var buttonAvailable = false
     var identifier: String { peripheral?.identifier.uuidString ?? "iphone" }
-    var captureEnabled = true { didSet { updateAudioSubscription() } }
+    var captureEnabled = false { didSet { if oldValue != captureEnabled { updateAudioSubscription() } } }
     @ObservationIgnored private var manager: CBCentralManager!
     @ObservationIgnored private var peripheral: CBPeripheral?
     @ObservationIgnored private var audio: CBCharacteristic?
@@ -32,6 +32,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     @ObservationIgnored private var wanted = true
     @ObservationIgnored private var capabilityFailure = false
     @ObservationIgnored private var pendingSubscriptions: Set<CBUUID> = []
+    @ObservationIgnored private var scanTimeout: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -42,13 +43,23 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     }
     func scan() {
         guard manager.state == .poweredOn else { status = L10n.source("Enable Bluetooth in Settings"); return }
+        stopScan()
         wanted = true; scanning = true; devices = []; status = L10n.source("Looking for Omi")
         // Foreground pairing also finds firmware that advertises a name without the audio service.
         // Reconnection uses the saved peripheral identifier, including in the background.
         manager.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        scanTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            self?.stopScan()
+        }
+    }
+    func stopScan() {
+        scanTimeout?.cancel(); scanTimeout = nil
+        manager.stopScan(); scanning = false
     }
     func connect(_ device: CBPeripheral) {
-        wanted = true; capabilityFailure = false; manager.stopScan(); scanning = false
+        wanted = true; capabilityFailure = false; stopScan()
         if let previous = peripheral, previous.identifier != device.identifier {
             manager.cancelPeripheralConnection(previous)
             lostConnection()
@@ -58,7 +69,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         manager.connect(device, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
     }
     func disconnect() {
-        wanted = false; manager.stopScan(); scanning = false
+        wanted = false; stopScan()
         if let peripheral { manager.cancelPeripheralConnection(peripheral) }
         UserDefaults.standard.removeObject(forKey: "pairedDevice")
     }
@@ -84,6 +95,12 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         for device in candidates where device.identifier.uuidString != savedID { central.cancelPeripheralConnection(device) }
         guard let restored = candidates.first(where: { $0.identifier.uuidString == savedID }) else { return }
         peripheral = restored; restored.delegate = self
+        // Restored subscriptions may still stream before codec discovery finishes.
+        for service in restored.services ?? [] {
+            for characteristic in service.characteristics ?? [] where characteristic.uuid == Self.audioID {
+                if !captureEnabled { subscribe(false, to: characteristic) }
+            }
+        }
         if restored.state == .connected { configure(restored) }
         else if restored.state == .disconnected { central.connect(restored) }
     }
@@ -108,7 +125,8 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier else { return }
         status = error?.localizedDescription ?? L10n.source("Could not connect"); onError?(status)
-        if wanted { central.connect(peripheral) }
+        // CoreBluetooth owns the pending reconnect even while the app is suspended.
+        if wanted, central.state == .poweredOn { central.connect(peripheral) }
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier else { return }
@@ -118,6 +136,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         if wanted, central.state == .poweredOn { central.connect(peripheral) }
     }
     private func lostConnection() {
+        stopScan()
         if connected { onDisconnect?() }
         connected = false; scanning = false; clearCapabilities()
     }
@@ -170,8 +189,9 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         updateAudioSubscription()
     }
     private func updateAudioSubscription() {
-        guard let audio, codec != nil, !capabilityFailure else { return }
-        subscribe(captureEnabled, to: audio)
+        guard let audio, !capabilityFailure else { return }
+        // Always unsubscribe while paused, including while a restored codec read is pending.
+        subscribe(captureEnabled && codec != nil, to: audio)
         if audio.isNotifying == captureEnabled { status = captureEnabled ? L10n.source("Receiving audio") : L10n.source("Capture paused") }
     }
     private func canNotify(_ characteristic: CBCharacteristic) -> Bool {

@@ -73,4 +73,16 @@
     <string name="notices">Open source-licenser</string>
     <string name="listen_saved">Lyt til gemt lyd</string>
     <string name="no_saved_audio">Ingen lyd i kø er tilgængelig til afspilning.</string>
+    <string name="microphone_enabled">Mikrofon aktiveret</string>
+    <string name="microphone_off_help">Når du slår fra, stopper optagelsen straks. Gemte optagelser bevares. Du kan altid starte manuelt.</string>
+    <string name="recording_schedule">Optagelsesplan</string>
+    <string name="schedule_source">Planlagt lydkilde</string>
+    <string name="schedule_enable_at">Aktivér kl.</string>
+    <string name="schedule_disable_at">Deaktivér kl.</string>
+    <string name="schedule_invalid">Vælg mindst én dag og forskellige start- og sluttider.</string>
+    <string name="schedule_override">Manuel styring er aktiv. Følg planen for at genoptage automatisk optagelse.</string>
+    <string name="follow_schedule">Følg planen</string>
+    <string name="schedule_time_help">Tider følger enhedens tidszone. Perioder over midnat hører til den dag, de starter.</string>
+    <string name="schedule_background_help">Den aktive optagelsestjeneste starter og stopper automatisk på de planlagte tidspunkter. Behold dens notifikation aktiv. Åbn appen, og følg planen igen efter tvangsstop, genstart eller manglende tilladelse.</string>
+    <string name="schedule_waiting">Plan aktiv · mikrofon slukket indtil næste periode</string>
 </resources>

@@ -71,7 +71,9 @@ struct WeeklyReviewView: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Today"), action: goToToday) } }
             .task(id: loadKey) { await load() }
             .task(id: showHistory ? loadKey + ".history" : "") { if showHistory { await loadHistory() } }
-            .task(id: context + job["id"].text + (running ? ".poll" : ".idle")) { await poll() }
+            .task(id: context + job["id"].text + (running ? ".poll" : ".idle") + String(describing: scenePhase)) {
+                if scenePhase == .active { await poll() }
+            }
             .refreshable { refresh = UUID() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refresh = UUID() } }
             .onChange(of: context) { _, _ in

@@ -115,9 +115,10 @@ struct RootView: View {
                 todayNavigationID = UUID()
                 selectedTab = .today
             })
-        .task {
+        .task(id: scenePhase) {
             notifications.configure(model: model)
             notifications.setActive(scenePhase == .active)
+            guard scenePhase == .active else { return }
             if !model.hasSelectedProfile { settingsPath = [model.usesManagedHosting ? .account : .profiles] }
             await model.refreshStatus()
             while !Task.isCancelled {
@@ -140,8 +141,9 @@ struct RootView: View {
         .onChange(of: model.archiveRevision) { old, _ in if !old.isEmpty { notifications.clearPreviews() } }
         .onChange(of: scenePhase) { _, phase in
             notifications.setActive(phase == .active)
+            if phase != .active { model.bluetooth.stopScan() }
             if phase == .background { model.checkpoint(); BackgroundUploader.scheduleRetry() }
-            if phase == .active { model.reconnectBackend(); Task { await model.refreshStatus() } }
+            if phase == .active { model.applyRecordingSchedule(); model.reconnectBackend() }
         }
         .background(CompletionSceneOverlay(model: model, notifications: notifications))
         .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {

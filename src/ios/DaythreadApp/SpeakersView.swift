@@ -301,7 +301,7 @@ struct SpeakersView: View {
     }
 
     private func stopPlayback() {
-        if playingSpeakerID != nil { model.player?.stop(); model.playbackStatus = ""; playingSpeakerID = nil }
+        if playingSpeakerID != nil { model.stopPlayback(); playingSpeakerID = nil }
     }
 
     private func invalidate() {

@@ -2263,3 +2263,16 @@
 "Sony" = "Sony";
 "Automatic retention deletion is disabled for hosted archives" = "Automatic retention deletion is disabled for hosted archives";
 "Deployment policy cannot be changed through settings" = "Deployment policy cannot be changed through settings";
+"Microphone enabled" = "Microphone enabled";
+"Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available." = "Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available.";
+"Recording schedule" = "Recording schedule";
+"Scheduled source" = "Scheduled source";
+"Omi pendant" = "Omi pendant";
+"Enable at" = "Enable at";
+"Disable at" = "Disable at";
+"Choose at least one day and different start and stop times." = "Choose at least one day and different start and stop times.";
+"Manual override is active. Follow schedule to resume automatic recording." = "Manual override is active. Follow schedule to resume automatic recording.";
+"Follow schedule" = "Follow schedule";
+"Times follow this device’s time zone. Overnight windows belong to the day they start." = "Times follow this device’s time zone. Overnight windows belong to the day they start.";
+"Recording starts automatically during scheduled hours while the app is available. iOS cannot wake a suspended or closed app to start the microphone. Open the app to resume. Pair Omi first for pendant capture." = "Recording starts automatically during scheduled hours while the app is available. iOS cannot wake a suspended or closed app to start the microphone. Open the app to resume. Pair Omi first for pendant capture.";
+"Microphone & schedule" = "Microphone & schedule";

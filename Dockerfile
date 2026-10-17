@@ -4,6 +4,7 @@ WORKDIR /web
 COPY src/web/package*.json ./
 RUN npm install --global npm@12.2.0 && npm ci
 COPY src/web ./
+COPY config/interface-labels.json /config/interface-labels.json
 RUN npm run build
 
 FROM python:3.15.0-slim-trixie AS build

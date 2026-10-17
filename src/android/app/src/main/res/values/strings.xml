@@ -73,4 +73,16 @@
     <string name="notices">Open-source licenses</string>
     <string name="listen_saved">Listen to saved audio</string>
     <string name="no_saved_audio">No queued audio is available to play.</string>
+    <string name="microphone_enabled">Microphone enabled</string>
+    <string name="microphone_off_help">Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available.</string>
+    <string name="recording_schedule">Recording schedule</string>
+    <string name="schedule_source">Scheduled source</string>
+    <string name="schedule_enable_at">Enable at</string>
+    <string name="schedule_disable_at">Disable at</string>
+    <string name="schedule_invalid">Choose at least one day and different start and stop times.</string>
+    <string name="schedule_override">Manual override is active. Follow schedule to resume automatic recording.</string>
+    <string name="follow_schedule">Follow schedule</string>
+    <string name="schedule_time_help">Times follow this device’s time zone. Overnight windows belong to the day they start.</string>
+    <string name="schedule_background_help">The ongoing capture service starts and stops automatically during scheduled hours. Keep its notification active. Reopen the app and follow the schedule after a force-stop, restart, or permission failure.</string>
+    <string name="schedule_waiting">Schedule active · microphone off until the next window</string>
 </resources>

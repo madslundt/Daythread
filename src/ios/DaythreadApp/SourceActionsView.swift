@@ -83,7 +83,7 @@ struct SourceActionsView: View {
             do {
                 _ = try await model.client().request("v1/audio/\(sourceID)", method: "DELETE")
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                model.player?.stop(); model.playbackStatus = ""
+                model.stopPlayback()
                 // Dismiss before a revision refresh removes this source's tools.
                 // The refresh must survive the sheet cancelling its own operation.
                 Task { await model.refreshStatus() }

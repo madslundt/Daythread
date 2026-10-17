@@ -40,8 +40,14 @@ public final class DurableStore {
     private var source: FileHandle?
     private var currentID: UUID?
     private var pcm = Data()
-    public init(directory: URL) throws {
+    private var synchronizedPCMBytes = 0
+    private let synchronizeSource: (FileHandle) throws -> Void
+    public convenience init(directory: URL) throws {
+        try self.init(directory: directory, synchronizeSource: { try $0.synchronize() })
+    }
+    init(directory: URL, synchronizeSource: @escaping (FileHandle) throws -> Void) throws {
         self.directory = directory
+        self.synchronizeSource = synchronizeSource
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         #if os(iOS)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
@@ -123,7 +129,7 @@ public final class DurableStore {
         try commit(items + [item])
         let url = file(id, extension: "frames")
         try write(Data(), to: url)
-        source = try FileHandle(forWritingTo: url); currentID = id; pcm.removeAll()
+        source = try FileHandle(forWritingTo: url); currentID = id; pcm.removeAll(); synchronizedPCMBytes = 0
     }
 
     public func append(frame: Data, decoded: Data) throws {
@@ -133,13 +139,19 @@ public final class DurableStore {
         var size = UInt32(frame.count).littleEndian
         let header = withUnsafeBytes(of: &size) { Data($0) }
         try source.write(contentsOf: header + frame)
-        try source.synchronize()
         pcm.append(decoded); usedBytes += Int64(frame.count + 4)
+        // Write every frame for process-crash recovery, but force storage sync only
+        // once per second of 16 kHz PCM. Finish always syncs the final partial tail.
+        // A sudden device power loss can therefore lose up to one second of audio.
+        if pcm.count - synchronizedPCMBytes >= 32_000 {
+            try synchronizeSource(source)
+            synchronizedPCMBytes = pcm.count
+        }
     }
 
     public func finish() throws {
         guard let id = currentID, let index = items.firstIndex(where: { $0.id == id }) else { return }
-        try source?.synchronize(); try source?.close(); source = nil
+        if let source { try synchronizeSource(source); try source.close() }; source = nil
         guard !pcm.isEmpty else {
             var updated = items; updated.remove(at: index); try commit(updated)
             currentID = nil
@@ -191,7 +203,7 @@ public final class DurableStore {
             body = ["gap_id": item.id.uuidString, "device_id": item.deviceID, "started_at": Self.stamp(item.capturedAt), "ended_at": Self.stamp(endedAt), "reason": reason]
         }
         if item.kind == .gap, let cause = item.cause { body["cause"] = cause }
-        return try JSONSerialization.data(withJSONObject: body)
+        return try JSONSerialization.data(withJSONObject: body, options: .sortedKeys)
     }
     private func appendMetadata(_ original: OutboxItem) throws -> UUID {
         var item = original

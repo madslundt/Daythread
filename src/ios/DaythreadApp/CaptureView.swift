@@ -20,7 +20,7 @@ struct CaptureView: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(L10n.key(model.bluetooth.status)).font(.headline)
-                        Text(model.bluetooth.connected ? (model.paused ? L10n.text("Capture is paused. Resume when you’re ready.") : L10n.text("Audio is saved on this iPhone before uploading.")) : L10n.text("Keep your Omi nearby and powered on."))
+                        Text(model.bluetooth.connected ? (!model.bluetooth.captureEnabled ? L10n.text("Capture is paused. Resume when you’re ready.") : L10n.text("Audio is saved on this iPhone before uploading.")) : L10n.text("Keep your Omi nearby and powered on."))
                             .font(.subheadline).foregroundStyle(.secondary)
                     }.fixedSize(horizontal: false, vertical: true)
                 }.padding(.vertical, 6)
@@ -30,8 +30,11 @@ struct CaptureView: View {
                         LabeledContent(L10n.text("Battery"), value: model.bluetooth.battery.map { "\($0)%" } ?? L10n.text("Reading…"))
                         LabeledContent(L10n.text("Format"), value: codecName)
                     }
-                    Button { model.setPaused(!model.paused) } label: {
-                        Label(model.paused ? L10n.text("Resume capture") : L10n.text("Pause capture"), systemImage: model.paused ? "record.circle" : "pause.circle")
+                    Button {
+                        if model.bluetooth.captureEnabled { model.disableMicrophone() }
+                        else { model.startManualPendant() }
+                    } label: {
+                        Label(!model.bluetooth.captureEnabled ? L10n.text("Resume capture") : L10n.text("Pause capture"), systemImage: !model.bluetooth.captureEnabled ? "record.circle" : "pause.circle")
                     }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("capture.toggle")
                 } else {
                     Button { model.bluetooth.scan() } label: { Label(L10n.text("Find Omi"), systemImage: "dot.radiowaves.left.and.right") }
@@ -108,6 +111,7 @@ struct CaptureView: View {
                 }
             }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Capture")).navigationBarTitleDisplayMode(.inline)
+            .onDisappear { model.bluetooth.stopScan() }
             .refreshable { await model.refreshStatus() }
             .task(id: model.archiveIdentity) { model.microphone.selectArchive(model.archiveIdentity) }
     }

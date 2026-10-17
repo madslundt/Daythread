@@ -26,6 +26,7 @@ struct CompletionNotificationsView: View {
 struct CompletionResultView: View {
     let event: CompletionNotification
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var job: JSONValue = .null
     @State private var source: JSONValue = .null
@@ -51,8 +52,10 @@ struct CompletionResultView: View {
             }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Done")) { dismiss() } } }
         }
-        .task(id: model.archiveIdentity + event.id.uuidString) { await load() }
-        .onDisappear { if playing { model.player?.stop(); model.playbackStatus = "" } }
+        .task(id: model.archiveIdentity + event.id.uuidString + String(describing: scenePhase)) {
+            if scenePhase == .active { await load() }
+        }
+        .onDisappear { if playing { model.stopPlayback() } }
     }
 
     private var savedResult: some View {
@@ -89,7 +92,7 @@ struct CompletionResultView: View {
                         Section(L10n.text("Rewind window")) {
                             Text(L10n.text("Last \(parameters["minutes"].integer) minutes · ending \(parameters["end"].text)")).font(.caption).foregroundStyle(.secondary)
                             Button(playing ? L10n.text("Stop audio") : L10n.text("Play saved window"), systemImage: playing ? "stop.circle" : "play.circle") {
-                                if playing { model.player?.stop(); playing = false }
+                                if playing { model.stopPlayback(); playing = false }
                                 else { Task { await playRewind() } }
                             }
                             CompletenessView(value: result["completeness"])

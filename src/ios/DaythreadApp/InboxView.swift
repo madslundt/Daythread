@@ -111,7 +111,13 @@ struct InboxView: View {
             }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Inbox")).navigationBarTitleDisplayMode(.inline)
             .task(id: queryKey) { await load() }
-            .task { while !Task.isCancelled { try? await Task.sleep(for: .seconds(10)); if !Task.isCancelled { await load() } } }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                    await load()
+                }
+            }
             .refreshable { await load() }
             .onChange(of: status) { _, _ in offset = 0 }
             .onChange(of: kind) { _, _ in offset = 0 }

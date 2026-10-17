@@ -85,6 +85,9 @@
     "X-Daythread-Destination": "HTTP authorization or upload ownership identifier; must remain untranslated.",
     "X-Daythread-Session": "HTTP authorization or upload ownership identifier; must remain untranslated.",
     "Authorization": "HTTP authorization or upload ownership identifier; must remain untranslated.",
-    "Bearer ": "HTTP authorization or upload ownership identifier; must remain untranslated."
+    "Bearer ": "HTTP authorization or upload ownership identifier; must remain untranslated.",
+    ".poll.": "Internal SwiftUI task identity suffix; not interface copy",
+    ".automatic-decisions.": "Internal SwiftUI task identity suffix; not interface copy",
+    ".diary-poll.": "Internal SwiftUI task identity suffix; not interface copy"
   }
 }

@@ -1,5 +1,5 @@
 "CFBundleDisplayName" = "Daythread";
-"NSMicrophoneUsageDescription" = "Daythread bruger mikrofonen til at optage lyd, når du trykker på Start optagelse. Du vælger selv, hvornår hver optagelse skal uploades eller fjernes.";
+"NSMicrophoneUsageDescription" = "Daythread optager lyd, når du starter manuelt eller aktiverer en optagelsesplan. Du vælger, hvornår optagelser uploades eller fjernes.";
 "NSBluetoothAlwaysUsageDescription" = "Daythread forbinder til din pendant for at gemme lyd og knapmarkeringer på din iPhone og i home-core.";
 "NSLocalNetworkUsageDescription" = "Daythread sender optagelser til din egen home-core på dit lokale netværk.";
 "NSRemindersFullAccessUsageDescription" = "Daythread føjer kun en opfølgning på en beslutning til din standardliste i Påmindelser, når du trykker på Gem i Påmindelser.";

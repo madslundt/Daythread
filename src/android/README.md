@@ -118,3 +118,23 @@ permission denial, calls and microphone contention; Bluetooth disable/reconnect;
 kill; network loss, fallback and unmetered policy; storage exhaustion; and playback after recovery.
 Emulator checks do not establish physical Omi or all-day capture reliability. See the existing
 [device evidence](../../docs/device-research.md) for the shared wire protocol and hardware limits.
+
+## Microphone controls and schedules
+
+Capture includes **Microphone enabled**, a device-local weekday/time schedule, and a choice
+of phone or Omi input. Arming **Recording schedule** / **Follow schedule** starts the foreground
+service with the normal permissions. During scheduled hours it records automatically; outside
+those hours it releases the phone microphone or closes the pendant connection, keeping the
+service notification available for the next window. Android may delay a start while the device
+is idle; the waiting service uses alarms instead of keeping the CPU awake between windows. Stop times are exclusive. An overnight
+window belongs to its starting weekday, in the phone's current time zone. Equal times or no
+selected days allow no scheduled capture.
+
+**Record with phone**, **Connect Omi pendant**, and enabling the microphone explicitly override
+the schedule, including outside its hours. Manual off / the notification's Stop action prevents
+further capture. These choices persist until **Follow schedule** restores automatic control.
+Previously saved audio stays queued for upload; off does not delete it. Stop the current service
+before changing its scheduled input. Device shutdown, force-stop, service termination, or a
+permission/capture error requires reopening the app and following the schedule again. No reboot
+receiver or hidden microphone restart is installed. Schedules and overrides stay on this phone;
+they do not change the backend's settings or another device's capture policy.

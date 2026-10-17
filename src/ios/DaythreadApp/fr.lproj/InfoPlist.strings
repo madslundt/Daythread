@@ -1,6 +1,6 @@
 /* Daythread interface translations. Preserve source keys and placeholders. */
 "CFBundleDisplayName" = "Daythread";
-"NSMicrophoneUsageDescription" = "Daythread utilise votre microphone pour enregistrer de l’audio lorsque vous appuyez sur « Démarrer l’enregistrement ». Vous choisissez quand envoyer ou supprimer chaque enregistrement.";
+"NSMicrophoneUsageDescription" = "Daythread enregistre le son lorsque vous démarrez manuellement ou activez un programme d’enregistrement. Vous choisissez quand envoyer ou supprimer les enregistrements.";
 "NSBluetoothAlwaysUsageDescription" = "Daythread se connecte à votre pendentif pour enregistrer l’audio et les indications des boutons sur votre iPhone et sur home-core.";
 "NSLocalNetworkUsageDescription" = "Daythread envoie les enregistrements à votre propre home-core sur votre réseau local.";
 "NSRemindersFullAccessUsageDescription" = "Daythread ajoute un suivi de décision à votre liste Rappels par défaut uniquement lorsque vous appuyez sur « Enregistrer dans Rappels ».";

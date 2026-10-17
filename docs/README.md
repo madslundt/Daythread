@@ -563,3 +563,32 @@ See [completeness and feedback](completeness-feedback.md) for API contracts, sem
 The repository-prescribed `@Codex-flow/cli` security scanner is unavailable from npm (invalid/unpublished package); it could not run. Local AI connectivity and hardware endurance remain the material integration limits.
 
 [Reviewed plan](implementation-plan.md) · [Architecture](architecture.md) · [Open-source inspiration](open-source-inspiration.md)
+
+## Native microphone schedules
+
+On iPhone, **Capture → Microphone & schedule** controls live phone and pendant capture.
+On Android the same controls are on **Capture**. The enabled switch stops live capture when
+off; already saved recordings and upload queues are preserved. Select weekdays, an enable
+and disable time, and phone or Omi as the scheduled source. Times use the device's current
+time zone; overnight windows belong to the starting weekday. No selected days or identical
+times means no automatic capture. Schedules and manual overrides are device-local and persist
+across launches, independently of the selected archive/profile.
+
+Scheduled capture begins automatically when the app can run. **Start recording** / **Record
+with phone**, pendant Resume/Connect, or manually enabling the microphone always overrides
+the schedule. Manual off stays off. Choose **Follow schedule** to return to automatic control.
+Existing microphone and Bluetooth permissions and profile/connection requirements still apply.
+
+On iPhone, the app must be available in the foreground to start the phone microphone.
+iOS cannot reliably wake a suspended or closed app for a scheduled start; reopen it to resume.
+A running phone recording receives its scheduled stop deadline directly, including while the
+screen is locked, and automatic sessions rotate at the existing two-hour recording limit.
+Recording edits finish the current local recording before applying its replacement policy.
+Pendant data is gated before decoding/storage and its audio subscription is disabled outside
+the window. Pair the pendant first. The switch controls Daythread capture; it cannot guarantee
+that a pendant's firmware stops sampling or saving its own hardware audio.
+
+Android keeps its foreground capture service and notification active while waiting, releasing
+the input between windows. Restart, force-stop, OS service termination, or capture failure
+requires reopening and following the schedule again. Background scheduling, permission changes,
+phone calls and physical pendant behavior still need verification on real devices.

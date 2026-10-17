@@ -34,20 +34,26 @@ public final class MainActivity extends Activity {
     private int endpointIndex;
     private boolean offline;
     private boolean previousActive;
+    private boolean resumed;
+    private boolean refreshingQueue;
+    private Switch microphoneEnabled;
+    private boolean updatingPolicyUI;
     private Runnable permissionAction;
     private ValueCallback<Uri[]> chooser;
     private BluetoothLeScanner scanner;
     private ScanCallback scanCallback;
     private AlertDialog scanDialog;
+    private Runnable scanTimeout;
     private byte[] exportBytes;
     private android.media.MediaPlayer player;
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
-            if (screen.equals("capture")) {
+            if (resumed && screen.equals("capture")) {
                 if (previousActive != CaptureService.active) showCapture();
                 updateCapture();
+                ui.removeCallbacks(this);
+                ui.postDelayed(this, 5000);
             }
-            ui.postDelayed(this, 1500);
         }
     };
     @Override public void onCreate(Bundle saved) {
@@ -79,13 +85,21 @@ public final class MainActivity extends Activity {
         if (getIntent().getBooleanExtra("capture", false) || CaptureService.active || initial.equals("capture")) showCapture();
         else if (configured() && !initial.equals("connection")) showArchive(); else showConnection();
     }
-    @Override protected void onResume() { super.onResume(); ui.post(ticker); }
-    @Override protected void onPause() { ui.removeCallbacks(ticker); stopScan(); stopPlayback(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; refreshVisibleWork(); }
+    @Override protected void onPause() { resumed = false; refreshVisibleWork(); stopScan(); stopPlayback(); super.onPause(); }
+    private void refreshVisibleWork() {
+        ui.removeCallbacks(ticker);
+        if (resumed && screen.equals("capture")) ui.post(ticker);
+        if (web == null) return;
+        if (resumed && screen.equals("archive")) { web.onResume(); web.resumeTimers(); }
+        else { web.onPause(); web.pauseTimers(); }
+    }
     @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); if (intent.getBooleanExtra("capture", false)) showCapture(); }
     @Override protected void onSaveInstanceState(Bundle out) { out.putString("screen", screen); super.onSaveInstanceState(out); }
     private boolean configured() { try { AppState.destination(this); return true; } catch (RuntimeException e) { return false; } }
     private void selectScreen(String selected) {
         screen = selected; content.removeAllViews(); navigation.removeAllViews();
+        refreshVisibleWork();
         int[] labels = {R.string.archive, R.string.capture, R.string.connection}; String[] names = {"archive", "capture", "connection"};
         for (int i = 0; i < labels.length; i++) {
             String name = names[i]; Button button = button(getString(labels[i]), () -> {
@@ -168,16 +182,93 @@ public final class MainActivity extends Activity {
             page.addView(button(getString(R.string.stop_capture), () -> startService(new Intent(this, CaptureService.class).setAction("stop")), true));
             page.addView(button(getString(R.string.important), () -> hint("mark"), false));
             page.addView(button(getString(R.string.meeting), () -> hint("meeting_toggle"), false));
-        } else {
-            page.addView(button(getString(R.string.record_phone), () -> permission(false, () -> startCapture("microphone", null)), true));
-            page.addView(button(getString(R.string.connect_omi), () -> permission(true, this::scan), false));
         }
+        page.addView(button(getString(R.string.record_phone), () -> permission(false, () -> {
+            CapturePolicy.manual(this, true, "microphone"); startCapture("microphone", null);
+        }), true));
+        page.addView(button(getString(R.string.connect_omi), () -> permission(true, () -> { CapturePolicy.manual(this, true, "omi"); scan(); }), false));
+        scheduleControls(page);
         space(page, 12); paragraph(page, R.string.capture_background); paragraph(page, R.string.capture_uploads); paragraph(page, R.string.gesture_help);
         section(page, R.string.queue_title); queueStatus = text("", 16, INK); page.addView(queueStatus); space(page, 12);
         captureError = text("", 14, ACCENT); captureError.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); page.addView(captureError);
-        page.addView(button(getString(R.string.sync_now), () -> { UploadJob.schedule(this); UploadJob.pump(this); toast(R.string.sync_scheduled); }, true));
+        page.addView(button(getString(R.string.sync_now), () -> { UploadJob.schedule(this); UploadJob.pump(this, true); toast(R.string.sync_scheduled); }, true));
         page.addView(button(getString(R.string.listen_saved), this::listenSaved, false));
         space(page, 12); paragraph(page, R.string.queue_help); updateCapture();
+    }
+    private void scheduleControls(LinearLayout page) {
+        android.content.SharedPreferences prefs = AppState.preferences(this);
+        Switch enabled = new Switch(this); enabled.setText(R.string.microphone_enabled); enabled.setMinHeight(dp(48));
+        microphoneEnabled = enabled;
+        enabled.setChecked(CapturePolicy.allowed(this));
+        enabled.setOnCheckedChangeListener((view, checked) -> {
+            if (updatingPolicyUI) return;
+            if (checked) permission(CapturePolicy.source(this).equals("omi"), () -> {
+                CapturePolicy.manual(this, true, CapturePolicy.source(this)); startSelectedCapture();
+            });
+            else {
+                CapturePolicy.manual(this, false, CapturePolicy.source(this));
+                if (CaptureService.active) startService(new Intent(this, CaptureService.class).setAction("stop"));
+                showCapture();
+            }
+        }); page.addView(enabled); paragraph(page, R.string.microphone_off_help);
+        Switch scheduled = new Switch(this); scheduled.setText(R.string.recording_schedule); scheduled.setMinHeight(dp(48));
+        scheduled.setChecked(prefs.getBoolean("recording_scheduled", false));
+        scheduled.setOnCheckedChangeListener((view, checked) -> {
+            prefs.edit().putBoolean("recording_scheduled", checked).commit();
+            if (checked) armSchedule();
+            else {
+                // Disarming an automatic session stops capture rather than recording indefinitely.
+                CapturePolicy.manual(this, false, CapturePolicy.source(this));
+                if (CaptureService.active) startService(new Intent(this, CaptureService.class).setAction("stop"));
+                showCapture();
+            }
+        }); page.addView(scheduled);
+        if (!scheduled.isChecked()) return;
+        page.addView(button(getString(R.string.schedule_source) + ": " + getString(CapturePolicy.source(this).equals("omi") ? R.string.connect_omi : R.string.record_phone), () -> {
+            if (CaptureService.active) { toast(R.string.capture_running); return; }
+            new AlertDialog.Builder(this).setTitle(R.string.schedule_source)
+                .setSingleChoiceItems(new String[] {getString(R.string.record_phone), getString(R.string.connect_omi)}, CapturePolicy.source(this).equals("omi") ? 1 : 0,
+                    (dialog, which) -> { prefs.edit().putString("recording_source", which == 0 ? "microphone" : "omi").commit(); dialog.dismiss(); showCapture(); })
+                .setNegativeButton(R.string.cancel, null).show();
+        }, false));
+        String[] weekdays = new java.text.DateFormatSymbols(Locale.getDefault()).getWeekdays();
+        for (int day = 0; day < 7; day++) {
+            final int bit = 1 << day;
+            CheckBox selected = new CheckBox(this); selected.setText(weekdays[(day + 1) % 7 + 1]);
+            selected.setMinHeight(dp(48)); selected.setChecked((prefs.getInt("recording_days", 31) & bit) != 0);
+            selected.setOnCheckedChangeListener((view, checked) -> {
+                int days = prefs.getInt("recording_days", 31);
+                prefs.edit().putInt("recording_days", checked ? days | bit : days & ~bit).commit(); notifyPolicy();
+            }); page.addView(selected);
+        }
+        scheduleTime(page, "recording_start", 540, R.string.schedule_enable_at);
+        scheduleTime(page, "recording_end", 1020, R.string.schedule_disable_at);
+        if (prefs.getInt("recording_days", 31) == 0 || prefs.getInt("recording_start", 540) == prefs.getInt("recording_end", 1020)) paragraph(page, R.string.schedule_invalid);
+        if (!prefs.getBoolean("microphone_enabled", true) || prefs.getBoolean("recording_override", false)) paragraph(page, R.string.schedule_override);
+        page.addView(button(getString(R.string.follow_schedule), this::armSchedule, false));
+        paragraph(page, R.string.schedule_time_help); paragraph(page, R.string.schedule_background_help);
+    }
+    private void scheduleTime(LinearLayout page, String key, int fallback, int label) {
+        int minute = AppState.preferences(this).getInt(key, fallback);
+        java.util.Calendar calendar = java.util.Calendar.getInstance(); calendar.set(java.util.Calendar.HOUR_OF_DAY, minute / 60); calendar.set(java.util.Calendar.MINUTE, minute % 60);
+        page.addView(button(getString(label) + ": " + android.text.format.DateFormat.getTimeFormat(this).format(calendar.getTime()), () ->
+            new TimePickerDialog(this, (picker, hour, minutes) -> {
+                AppState.preferences(this).edit().putInt(key, hour * 60 + minutes).commit(); notifyPolicy(); showCapture();
+            }, minute / 60, minute % 60, android.text.format.DateFormat.is24HourFormat(this)).show(), false));
+    }
+    private void armSchedule() {
+        permission(CapturePolicy.source(this).equals("omi"), () -> {
+            CapturePolicy.follow(this); startSelectedCapture();
+        });
+    }
+    private void startSelectedCapture() {
+        String source = CapturePolicy.activeSource(this);
+        String address = AppState.preferences(this).getString("recording_omi_address", "");
+        if (source.equals("omi") && address.isEmpty()) { scan(); return; }
+        startCapture(source, address);
+    }
+    private void notifyPolicy() {
+        if (CaptureService.active) startService(new Intent(this, CaptureService.class).setAction("policy"));
     }
     private void listenSaved() {
         io.execute(() -> {
@@ -210,21 +301,34 @@ public final class MainActivity extends Activity {
     private void stopPlayback() { if (player != null) { player.release(); player = null; } }
     private void updateCapture() {
         if (captureStatus == null || !screen.equals("capture")) return;
+        if (microphoneEnabled != null) {
+            updatingPolicyUI = true;
+            microphoneEnabled.setChecked(CapturePolicy.allowed(this));
+            updatingPolicyUI = false;
+        }
         captureStatus.setText(CaptureService.active ? CaptureService.status : getString(R.string.capture_ready));
+        if (refreshingQueue) return;
+        refreshingQueue = true;
         io.execute(() -> {
             String summary;
             try {
-                Outbox outbox = AppState.outbox(this); int count = outbox.pending().size();
+                Outbox outbox = AppState.outbox(this); int count = outbox.pendingCount();
                 summary = count == 0 ? getString(R.string.queue_empty) : getString(R.string.queue_summary, count, String.format(Locale.getDefault(), "%.1f", outbox.bytes() / 1_000_000.0));
             } catch (Exception e) { summary = e.getMessage(); }
             String result = summary;
-            runOnUiThread(() -> { if (screen.equals("capture")) { queueStatus.setText(result); captureError.setText(AppState.preferences(this).getString("error", "")); } });
+            runOnUiThread(() -> { refreshingQueue = false; if (screen.equals("capture")) { queueStatus.setText(result); captureError.setText(AppState.preferences(this).getString("error", "")); } });
         });
     }
     private void hint(String action) { startService(new Intent(this, CaptureService.class).setAction(action)); toast(R.string.hint_saved); }
     private void startCapture(String action, String address) {
         if (!configured()) { toast(R.string.connect_first); showConnection(); return; }
         AppState.error(this, "");
+        if (action.equals("omi") && address != null) AppState.preferences(this).edit().putString("recording_omi_address", address).commit();
+        if (CaptureService.active) {
+            if (CaptureService.source.equals(action)) { notifyPolicy(); showCapture(); return; }
+            startService(new Intent(this, CaptureService.class).setAction("replace"));
+            ui.postDelayed(() -> startCapture(action, address), 300); return;
+        }
         try { startForegroundService(new Intent(this, CaptureService.class).setAction(action).putExtra("address", address)); }
         catch (RuntimeException e) { AppState.error(this, getString(R.string.capture_start_failed)); }
         ui.postDelayed(this::showCapture, 300);
@@ -249,6 +353,7 @@ public final class MainActivity extends Activity {
     }
     @SuppressLint("MissingPermission")
     private void scan() {
+        stopScan();
         BluetoothManager manager = getSystemService(BluetoothManager.class);
         BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
         if (adapter == null) { toast(R.string.bluetooth_unavailable); return; }
@@ -270,13 +375,15 @@ public final class MainActivity extends Activity {
                 String address = result.getDevice().getAddress(); String label = (name == null ? "Omi" : name) + "\n" + address;
                 runOnUiThread(() -> { if (scanCallback != this || addresses.contains(address)) return; addresses.add(address); devices.add(label); });
             }
-            @Override public void onScanFailed(int error) { runOnUiThread(() -> { stopScan(); toast(R.string.scan_failed); }); }
+            @Override public void onScanFailed(int error) { runOnUiThread(() -> { if (scanCallback == this) { stopScan(); toast(R.string.scan_failed); } }); }
         };
-        try { scanner.startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback); }
+        try { scanner.startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback); }
         catch (RuntimeException e) { stopScan(); toast(R.string.scan_failed); }
-        ui.postDelayed(() -> { if (scanCallback != null) { boolean empty = addresses.isEmpty(); stopScan(); if (empty) toast(R.string.no_omi); } }, 15000);
+        scanTimeout = () -> { if (scanCallback != null) { boolean empty = addresses.isEmpty(); stopScan(); if (empty) toast(R.string.no_omi); } };
+        ui.postDelayed(scanTimeout, 15000);
     }
     @SuppressLint("MissingPermission") private void stopScan() {
+        if (scanTimeout != null) { ui.removeCallbacks(scanTimeout); scanTimeout = null; }
         if (scanner != null && scanCallback != null) { try { scanner.stopScan(scanCallback); } catch (RuntimeException ignored) {} }
         scanCallback = null; scanner = null;
         if (scanDialog != null) { scanDialog.dismiss(); scanDialog = null; }

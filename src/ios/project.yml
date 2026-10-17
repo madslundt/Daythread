@@ -42,7 +42,7 @@ targets:
         NSBluetoothAlwaysUsageDescription: Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.
         NSLocationWhenInUseUsageDescription: Daythread uses your location to tag conversations when enabled and to choose a place for nearby reminders.
         NSLocalNetworkUsageDescription: Daythread sends recordings to your own home-core on your local network.
-        NSMicrophoneUsageDescription: Daythread uses your microphone to record audio when you tap Start recording. You choose when to upload or remove each recording.
+        NSMicrophoneUsageDescription: Daythread records audio when you start manually or enable a recording schedule. You choose when to upload or remove recordings.
         NSRemindersFullAccessUsageDescription: Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

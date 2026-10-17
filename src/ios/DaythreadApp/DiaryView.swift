@@ -3,6 +3,7 @@ import OmiCore
 
 struct DiaryView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.goToToday) private var goToToday
     @State private var month = Date()
     @State private var selected = Date()
@@ -87,7 +88,8 @@ struct DiaryView: View {
         }
         .task(id: model.archiveIdentity + model.archiveRevision) { await load() }
         .task(id: calendarKey) { await loadCalendar() }
-        .task(id: model.archiveIdentity + ".diary-poll") {
+        .task(id: model.archiveIdentity + ".diary-poll." + String(describing: scenePhase)) {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 async let entries: Void = load()

@@ -13,6 +13,14 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
     var decisionID: UUID?
     var error: String?
     var importer: RecordingImporter?
+    var captureAllowed = true {
+        didSet {
+            if !captureAllowed && oldValue { permissionGeneration = UUID(); stop() }
+        }
+    }
+    var captureDeadline: Date?
+    @ObservationIgnored var onRecordingLimit: (() -> Void)?
+    @ObservationIgnored private var permissionGeneration = UUID()
     @ObservationIgnored private var store: LocalRecordingStore?
     @ObservationIgnored private var recorder: AVAudioRecorder?
     @ObservationIgnored private var uploadTask: Task<Void, Never>?
@@ -50,14 +58,15 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func start(archiveIdentity: String) async {
-        guard active == nil, !requestingPermission else { return }
+        guard captureAllowed, active == nil, !requestingPermission else { return }
         selectArchive(archiveIdentity)
         let generation = archiveGeneration
+        let permission = permissionGeneration
         error = nil
         requestingPermission = true
         defer { requestingPermission = false }
         let granted = await AVAudioApplication.requestRecordPermission()
-        guard archiveGeneration == generation, !Task.isCancelled else { return }
+        guard archiveGeneration == generation, permissionGeneration == permission, captureAllowed, !Task.isCancelled else { return }
         guard granted else {
             error = L10n.source("Allow microphone access in iPhone Settings to record audio."); return
         }
@@ -65,7 +74,8 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
         var draft: LocalRecordingDraft?
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setCategory(.record, mode: .default)
+            try? session.setPreferredSampleRate(16_000)
             try session.setActive(true)
             if let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
                 try session.setPreferredInput(microphone)
@@ -78,11 +88,15 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
                 AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
             ])
             audio.delegate = self
-            guard audio.record(forDuration: 7200) else {
+            guard audio.prepareToRecord() else {
                 throw RecordingImportError(L10n.source("The microphone could not start recording. Try again."))
             }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
                                                   ofItemAtPath: store.fileURL(for: item).path)
+            let duration = min(7200, captureDeadline.map { $0.timeIntervalSinceNow } ?? 7200)
+            guard duration > 0, audio.record(forDuration: duration) else {
+                throw RecordingImportError(L10n.source("The microphone could not start recording. Try again."))
+            }
             recorder = audio; active = item
             reload()
         } catch {
@@ -173,7 +187,12 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor [weak self] in
             guard let self, self.recorder === recorder else { return }
+            let id = self.active?.id
             self.stop()
+            if flag, let saved = self.recordings.first(where: { $0.id == id }),
+               let end = saved.endedAt, end.timeIntervalSince(saved.startedAt) >= 7198 {
+                self.onRecordingLimit?()
+            }
             if !flag { self.error = L10n.source("Recording ended unexpectedly. Review the saved audio before uploading.") }
         }
     }
@@ -184,5 +203,19 @@ final class PhoneRecorder: NSObject, AVAudioRecorderDelegate {
             self.stop()
             self.error = L10n.source("Recording ended unexpectedly. Review the saved audio before uploading.")
         }
+    }
+}
+
+/// Releases the shared audio session when playback finishes or decoding fails.
+@MainActor
+final class AudioPlaybackDelegate: NSObject, AVAudioPlayerDelegate {
+    var onFinished: ((AVAudioPlayer) -> Void)?
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in self?.onFinished?(player) }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor [weak self] in self?.onFinished?(player) }
     }
 }

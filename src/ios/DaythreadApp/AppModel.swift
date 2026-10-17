@@ -2,10 +2,105 @@ import Foundation
 import Observation
 import OmiCore
 import AVFoundation
+import UIKit
 
 @MainActor @Observable
 final class AppModel {
     let microphone = PhoneRecorder()
+    private(set) var recordingSchedule: RecordingSchedule = {
+        guard let data = UserDefaults.standard.data(forKey: "recordingSchedule.v1") else { return RecordingSchedule() }
+        // A corrupt policy must not start capture.
+        if let policy = try? JSONDecoder().decode(RecordingSchedule.self, from: data) { return policy }
+        var disabled = RecordingSchedule(); disabled.enabled = false; return disabled
+    }()
+    @ObservationIgnored private var scheduleAttempted = false
+    @ObservationIgnored private var scheduleTimer: Timer?
+    @ObservationIgnored private var scheduledTransition: Date?
+    @ObservationIgnored private var clockObserver: NSObjectProtocol?
+    private var liveCaptureAllowed: Bool { recordingSchedule.allows(Date()) && !paused && captureFailure == nil }
+    private var pendantCaptureAllowed: Bool {
+        liveCaptureAllowed && (!recordingSchedule.scheduled || recordingSchedule.activeSource == "omi")
+    }
+    func setRecordingSchedule(_ policy: RecordingSchedule) {
+        let changed = recordingSchedule != policy
+        if changed { microphone.captureAllowed = false }
+        recordingSchedule = policy
+        if let data = try? JSONEncoder().encode(policy) { UserDefaults.standard.set(data, forKey: "recordingSchedule.v1") }
+        scheduleAttempted = false
+        scheduleTimer?.invalidate(); scheduledTransition = nil
+        applyRecordingSchedule()
+    }
+    func disableMicrophone() {
+        var policy = recordingSchedule; policy.enabled = false; policy.manualOverride = false
+        setRecordingSchedule(policy)
+    }
+    func followRecordingSchedule() {
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = false
+        setRecordingSchedule(policy)
+    }
+    func startManualRecording() {
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled; policy.manualSource = "phone"
+        // Explicit manual recording also clears the existing shared capture pause.
+        if paused || captureFailure != nil { setPaused(false) }
+        setRecordingSchedule(policy)
+        stopPlayback()
+        Task { await microphone.start(archiveIdentity: archiveIdentity) }
+    }
+    func startManualPendant() {
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled; policy.manualSource = "omi"
+        if paused || captureFailure != nil { setPaused(false) }
+        setRecordingSchedule(policy)
+    }
+    func enableMicrophone() {
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled
+        policy.manualSource = policy.source
+        if paused || captureFailure != nil { setPaused(false) }
+        setRecordingSchedule(policy)
+        if policy.source == "phone" {
+            stopPlayback()
+            Task { await microphone.start(archiveIdentity: archiveIdentity) }
+        }
+    }
+    func applyRecordingSchedule() {
+        armScheduleTimer()
+        let allowed = liveCaptureAllowed && hasSelectedProfile
+        let pendant = pendantCaptureAllowed && hasSelectedProfile && store != nil
+        if bluetooth.captureEnabled && !pendant {
+            // Only fully received pre-disable frames may finish. Drop the pending fragment.
+            reassembler.reset(); pendingClock = nil
+            flush(); nextAudioDate = nil; disconnectedAt = nil
+            recordCaptureState("paused", cause: "user_pause")
+        }
+        if bluetooth.captureEnabled != pendant { bluetooth.captureEnabled = pendant }
+        updateLocationCapture()
+        microphone.captureDeadline = allowed && recordingSchedule.scheduled && !recordingSchedule.manualOverride ? scheduledTransition : nil
+        microphone.captureAllowed = allowed && (!recordingSchedule.scheduled || recordingSchedule.activeSource == "phone")
+        if !allowed { scheduleAttempted = false; return }
+        guard recordingSchedule.scheduled, !recordingSchedule.manualOverride, recordingSchedule.source == "phone",
+              microphone.active == nil, !microphone.requestingPermission, !scheduleAttempted,
+              UIApplication.shared.applicationState == .active else { return }
+        scheduleAttempted = true
+        stopPlayback()
+        Task { await microphone.start(archiveIdentity: archiveIdentity) }
+    }
+    private func armScheduleTimer() {
+        // Keep the existing timer across foreground UI ticks; recompute only at a boundary or policy change.
+        if let scheduledTransition, scheduledTransition > Date(), scheduleTimer?.isValid == true { return }
+        if let scheduledTransition, scheduledTransition <= Date() { scheduleAttempted = false }
+        scheduleTimer?.invalidate(); scheduleTimer = nil; scheduledTransition = nil
+        guard let transition = recordingSchedule.nextTransition(after: Date()) else { return }
+        scheduledTransition = transition
+        let timer = Timer(fire: transition, interval: 0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.scheduledTransition = nil
+                self?.scheduleAttempted = false
+                self?.applyRecordingSchedule()
+            }
+        }
+        timer.tolerance = 0.1
+        scheduleTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
     let managedAccount = ManagedAccountSession()
     private(set) var usesManagedHosting = false
     @ObservationIgnored private var appliedManagedSessionID: UUID?
@@ -26,7 +121,7 @@ final class AppModel {
         }
     }
     private func updateLocationCapture() {
-        locations.setCaptureActive(recordingLocationsEnabled && hasSelectedProfile && !paused && bluetooth.connected && store != nil)
+        locations.setCaptureActive(recordingLocationsEnabled && hasSelectedProfile && pendantCaptureAllowed && bluetooth.connected && store != nil)
     }
     private(set) var backendConfiguration: BackendEndpointConfiguration
     var backendAddress: String { usesManagedHosting ? managedAccount.origin?.url.absoluteString ?? "" : backendConfiguration.activeEndpoint?.address ?? "" }
@@ -55,8 +150,9 @@ final class AppModel {
 
     private func resetArchive() {
         microphone.selectArchive(archiveIdentity)
+        scheduleAttempted = false
         backendGeneration = UUID()
-        player?.stop(); player = nil; playbackStatus = ""
+        stopPlayback()
         serverTimeZoneIdentifier = UserDefaults.standard.string(forKey: (usesManagedHosting ? archiveIdentity : backendAddress) + ".timezone")
         serverTimeline = LocalCache.load(archiveIdentity + ".timeline") ?? .null
         importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
@@ -76,7 +172,7 @@ final class AppModel {
         locations.setCaptureActive(false)
         UserDefaults.standard.set(id, forKey: profilePreferenceKey)
         store?.profileID = id
-        bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+        bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         nextAudioDate = nil; disconnectedAt = nil
         lastDecodedAt = nil; lastPersistedAt = nil
         resetArchive()
@@ -152,8 +248,9 @@ final class AppModel {
     var serverStatus = L10n.source("Not connected")
     var serverTimeline: JSONValue = .null
     var completenessStatus: JSONValue = .null
-    var lastDecodedAt: Date?
-    var lastPersistedAt: Date?
+    // Diagnostics refresh with the foreground clock rather than on every BLE frame.
+    @ObservationIgnored var lastDecodedAt: Date?
+    @ObservationIgnored var lastPersistedAt: Date?
     var captureFailure: String? = UserDefaults.standard.string(forKey: "captureFailure")
     private(set) var observedCaptureState = "unknown"
     @ObservationIgnored private var phoneID: UUID = {
@@ -162,6 +259,7 @@ final class AppModel {
     }()
     var now = Date()
     var player: AVAudioPlayer?
+    @ObservationIgnored private let playbackDelegate = AudioPlaybackDelegate()
     var playbackStatus = ""
     @ObservationIgnored var store: DurableStore?
     @ObservationIgnored private var uploader: BackgroundUploader?
@@ -174,6 +272,7 @@ final class AppModel {
     @ObservationIgnored private var disconnectedCause = "unknown"
     @ObservationIgnored private let clock = CaptureClock()
     @ObservationIgnored private var lastStatusCheck = Date.distantPast
+    @ObservationIgnored private var lastLocalCheck = Date.distantPast
     @ObservationIgnored private var backendGeneration = UUID()
     @ObservationIgnored private var pauseRevision = UUID()
     @ObservationIgnored private var refreshingStatus = false
@@ -233,7 +332,7 @@ final class AppModel {
             uploader?.onProgress = { [weak self] in self?.refreshLocal() }
             refreshLocal()
         } catch { self.error = L10n.error(error) }
-        bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+        bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         bluetooth.onCodec = { [weak self] codec in
             do { self?.decoder = try FrameDecoder(codec: codec) }
             catch { self?.failCapture(error) }
@@ -259,6 +358,22 @@ final class AppModel {
         if defaults.bool(forKey: "managedArchiveSelected") || managedAccount.signedIn {
             do { try setManagedMode(true) } catch { self.error = L10n.error(error) }
         }
+        applyRecordingSchedule()
+        playbackDelegate.onFinished = { [weak self] player in
+            guard let self, self.player === player else { return }
+            self.stopPlayback()
+        }
+        microphone.onRecordingLimit = { [weak self] in
+            self?.scheduleAttempted = false
+            self?.applyRecordingSchedule()
+        }
+        clockObserver = NotificationCenter.default.addObserver(forName: UIApplication.significantTimeChangeNotification,
+                                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.scheduleTimer?.invalidate(); self?.scheduledTransition = nil
+                self?.applyRecordingSchedule()
+            }
+        }
         reconnectBackend()
         if managedAccount.signedIn { Task { await managedAccount.refresh() } }
     }
@@ -282,7 +397,7 @@ final class AppModel {
             if !usesManagedHosting || appliedManagedSessionID != managedAccount.sessionID {
                 do { try setManagedMode(true) } catch { self.error = L10n.error(error); bluetooth.captureEnabled = false; locations.setCaptureActive(false); uploader?.client = nil; profiles = []; resetArchive(); return }
             }
-            bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+            bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
             if !hasSelectedProfile { flush() }
             updateLocationCapture(); reconnectBackend()
         } else if usesManagedHosting {
@@ -312,7 +427,7 @@ final class AppModel {
         selectedProfileID = UserDefaults.standard.string(forKey: profilePreferenceKey) ?? (managed && managedAccount.signedIn ? "default" : "")
         store?.destinationID = destinationIdentity; store?.profileID = selectedProfileID
         profiles = []; nextAudioDate = nil; disconnectedAt = nil; lastDecodedAt = nil; lastPersistedAt = nil
-        resetArchive(); bluetooth.captureEnabled = hasSelectedProfile && !paused && store != nil
+        resetArchive(); bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         updateLocationCapture(); reconnectBackend()
     }
     func useOwnBackend() async throws {
@@ -403,10 +518,12 @@ final class AppModel {
         UserDefaults.standard.set(backendAddress, forKey: "backendURL")
     }
     func tick() async {
-        now = Date(); updateLocationCapture(); refreshLocal(); uploader?.pump()
+        now = Date(); applyRecordingSchedule(); uploader?.pump()
+        if now.timeIntervalSince(lastLocalCheck) >= 5 { lastLocalCheck = now; refreshLocal() }
         let processing = completenessStatus["processing"]
         let busy = queueCount > 0 || processing["queued"].integer > 0 || processing["transcribing"].integer > 0
-        if now.timeIntervalSince(lastStatusCheck) >= (busy ? 2 : 15) { await refreshStatus() }
+        let interval: TimeInterval = ProcessInfo.processInfo.isLowPowerModeEnabled ? (busy ? 15 : 120) : (busy ? 5 : 60)
+        if now.timeIntervalSince(lastStatusCheck) >= interval { await refreshStatus() }
     }
     func refreshStatus() async {
         guard !refreshingStatus else { refreshStatusPending = true; return }
@@ -494,14 +611,15 @@ final class AppModel {
         if value { importanceMarks.insert(target) } else { importanceMarks.remove(target) }
     }
     func setPaused(_ value: Bool, synchronize: Bool = true) {
-        if value { flush() }
+        if value { microphone.captureAllowed = false; flush() }
         else {
             // A failed finalization keeps the previous segment recoverable. Close it before accepting new frames.
             do { try store?.finish() } catch { failCapture(error); return }
         }
         captureFailure = nil; UserDefaults.standard.removeObject(forKey: "captureFailure")
         recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
-        paused = value; bluetooth.captureEnabled = hasSelectedProfile && !value && store != nil
+        paused = value; bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
+        applyRecordingSchedule()
         notice = value ? L10n.source("Capture paused") : L10n.source("Capture resumed")
         if value {
             disconnectedAt = nil
@@ -515,7 +633,9 @@ final class AppModel {
         }
     }
     private func audio(_ data: Data, date suppliedDate: Date, uptime: TimeInterval) {
-        guard hasSelectedProfile, !paused, decoder != nil, store != nil else { return }
+        // A BLE callback can wake the app after a suspended timer's deadline.
+        if let scheduledTransition, suppliedDate >= scheduledTransition { applyRecordingSchedule() }
+        guard hasSelectedProfile, bluetooth.captureEnabled, decoder != nil, store != nil else { return }
         let date = clock.date(at: uptime)
         if let lastNotification, date.timeIntervalSince(lastNotification) > 1 {
             flush(); addGap(start: nextAudioDate ?? lastNotification, end: date, reason: L10n.source("BLE audio delivery interrupted"), cause: "delivery_interrupted")
@@ -550,8 +670,8 @@ final class AppModel {
     }
     private func append(_ frame: Data, pcm: Data, clock: CaptureClock, store: DurableStore, codec: Int) {
         do {
-            updateLocationCapture()
             if !store.isRecording {
+                updateLocationCapture()
                 try store.begin(deviceID: bluetooth.identifier, codec: codec, clock: clock,
                                 location: recordingLocationsEnabled ? locations.latest : nil)
             }
@@ -671,7 +791,7 @@ final class AppModel {
         let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
         UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
         let pending = store.items.filter { $0.destinationID == backend.destinationIdentity && $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }
-        let state = captureFailure != nil ? "blocked" : paused ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
+        let state = captureFailure != nil ? "blocked" : !liveCaptureAllowed ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
         var body: [String: Any] = [
             "sequence": sequence, "observed_at": DurableStore.stamp(Date()),
             "device_id": bluetooth.identifier, "capture_state": state,
@@ -690,16 +810,32 @@ final class AppModel {
         _ = try await backend.request("v1/phones/\(phoneID.uuidString)/status", method: "PUT", body: body)
     }
     func retryUploads() { uploader?.retry() }
+    func stopPlayback() {
+        let hadPlayer = player != nil
+        player?.stop(); player = nil; playbackStatus = ""
+        if hadPlayer, microphone.active == nil {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
     func play(_ url: URL) {
         guard microphone.active == nil else {
             error = L10n.source("Stop recording before playing audio."); return
         }
+        stopPlayback()
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
-            player?.stop(); player = try AVAudioPlayer(contentsOf: url)
-            player?.prepareToPlay(); player?.play(); playbackStatus = L10n.source("Playing recorded audio")
-        } catch { self.error = L10n.error(error) }
+            let audio = try AVAudioPlayer(contentsOf: url)
+            audio.delegate = playbackDelegate; player = audio
+            guard audio.prepareToPlay(), audio.play() else {
+                stopPlayback(); return
+            }
+            playbackStatus = L10n.source("Playing recorded audio")
+        } catch {
+            stopPlayback()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            self.error = L10n.error(error)
+        }
     }
     func localRewind(minutes: Int, end: Date) throws -> Int {
         checkpoint(); guard let store else { throw BackendFailure(message: L10n.source("Capture storage unavailable")) }

@@ -164,7 +164,8 @@ private struct AudioForwardingSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.omiScreen().navigationTitle(L10n.text("Audio forwarding")).navigationBarTitleDisplayMode(.inline)
-            .task(id: model.archiveIdentity) {
+            .task(id: model.archiveIdentity + String(describing: scenePhase)) {
+                guard scenePhase == .active else { return }
                 status = .null; origin = model.backendAddress
                 await load()
                 while !Task.isCancelled {

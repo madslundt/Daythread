@@ -1,9 +1,14 @@
 package com.daythread.app;
 
 import android.annotation.SuppressLint;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.bluetooth.*;
-import android.content.Context;
+import android.content.*;
+import android.os.Build;
 import android.os.Handler;
+import android.os.SystemClock;
+import com.daythread.app.core.RetryBackoff;
 import java.util.*;
 
 /** All GATT operations and callbacks run on the capture handler; Android permits one operation at a time. */
@@ -31,18 +36,39 @@ final class OmiConnection {
     private BluetoothGatt gatt;
     private boolean closed;
     private Runnable timeout;
+    private boolean reconnecting;
+    private final RetryBackoff retries = new RetryBackoff(10000, 300000);
+    private final Runnable reconnect = this::reconnect;
+    private final AlarmManager alarms;
+    private final PendingIntent reconnectIntent;
+    private final BroadcastReceiver bluetoothState = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR) == BluetoothAdapter.STATE_ON)
+                handler.post(() -> { if (!closed && gatt == null) connect(); });
+        }
+    };
 
     OmiConnection(Context context, String address, Handler handler, Listener listener) {
         this.context = context; this.handler = handler; this.listener = listener;
         device = context.getSystemService(BluetoothManager.class).getAdapter().getRemoteDevice(address);
+        alarms = context.getSystemService(AlarmManager.class);
+        reconnectIntent = PendingIntent.getService(context, 1704, new Intent(context, CaptureService.class).setAction("reconnect"), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        IntentFilter states = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+        // Bluetooth broadcasts can originate in the privileged Bluetooth app rather than the system UID.
+        if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(bluetoothState, states, Context.RECEIVER_EXPORTED);
+        else context.registerReceiver(bluetoothState, states);
         connect();
     }
     private void connect() {
         if (closed) return;
+        handler.removeCallbacks(reconnect); alarms.cancel(reconnectIntent);
+        if (timeout != null) handler.removeCallbacks(timeout);
         listener.status(context.getString(R.string.connecting_omi));
         try {
-            gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE, BluetoothDevice.PHY_LE_1M_MASK, handler);
-            deadline(30000);
+            // After the initial direct attempt, let Android keep a passive pending connection.
+            // It reconnects with the screen locked without a wake lock or repeated scan timers.
+            gatt = device.connectGatt(context, reconnecting, callback, BluetoothDevice.TRANSPORT_LE, BluetoothDevice.PHY_LE_1M_MASK, handler);
+            if (!reconnecting || gatt == null) deadline(30000);
         } catch (RuntimeException e) { reject(context.getString(R.string.scan_failed)); }
     }
     private void deadline(long millis) {
@@ -58,11 +84,17 @@ final class OmiConnection {
     private void retry(String reason) {
         if (closed) return;
         listener.status(reason); listener.disconnected(); operations.clear();
+        if (closed) return;
         if (timeout != null) handler.removeCallbacks(timeout);
         if (gatt != null) { BluetoothGatt old = gatt; gatt = null; try { old.disconnect(); } catch (RuntimeException ignored) {}
             try { old.close(); } catch (RuntimeException ignored) {} }
-        handler.postDelayed(this::connect, 10000);
+        if (!reconnecting) { reconnecting = true; connect(); return; }
+        long delay = retries.fail(SystemClock.elapsedRealtime());
+        handler.removeCallbacks(reconnect); handler.postDelayed(reconnect, delay);
+        // Error recovery must also run when the CPU sleeps during the delay; Doze can defer it.
+        alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + delay, reconnectIntent);
     }
+    void reconnect() { if (!closed && gatt == null && retries.ready(SystemClock.elapsedRealtime())) connect(); }
     private void read(BluetoothGattCharacteristic characteristic) {
         if (characteristic == null) return;
         operations.add(() -> { if (!gatt.readCharacteristic(characteristic)) retry(context.getString(R.string.bluetooth_read_failed)); });
@@ -83,7 +115,10 @@ final class OmiConnection {
     }
     private void reject(String message) { listener.status(message); close(); listener.failure(new java.io.IOException(message)); }
     void close() {
+        if (closed) return;
         closed = true;
+        context.unregisterReceiver(bluetoothState);
+        handler.removeCallbacks(reconnect); alarms.cancel(reconnectIntent);
         if (timeout != null) handler.removeCallbacks(timeout);
         if (gatt != null) { BluetoothGatt old = gatt; gatt = null; try { old.disconnect(); } catch (RuntimeException ignored) {}
             try { old.close(); } catch (RuntimeException ignored) {} }
@@ -95,6 +130,10 @@ final class OmiConnection {
             if (status == BluetoothGatt.GATT_SUCCESS && state == BluetoothProfile.STATE_CONNECTED) {
                 deadline(15000);
                 if (!current.requestMtu(185) && !current.discoverServices()) retry(context.getString(R.string.bluetooth_read_failed));
+            } else if (state == BluetoothProfile.STATE_DISCONNECTED && status == BluetoothGatt.GATT_SUCCESS && reconnecting) {
+                // Keep the registered autoConnect GATT: Android owns normal link recovery.
+                if (timeout != null) handler.removeCallbacks(timeout);
+                operations.clear(); listener.status(context.getString(R.string.omi_reconnecting)); listener.disconnected();
             } else if (state == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) retry(context.getString(R.string.omi_reconnecting));
         }
         @Override public void onMtuChanged(BluetoothGatt current, int mtu, int status) {
@@ -129,7 +168,7 @@ final class OmiConnection {
         @Override public void onDescriptorWrite(BluetoothGatt current, BluetoothGattDescriptor descriptor, int status) {
             if (current != gatt || closed) return;
             if (status != BluetoothGatt.GATT_SUCCESS) { retry(context.getString(R.string.bluetooth_subscription_failed)); return; }
-            if (descriptor.getCharacteristic().getUuid().equals(AUDIO)) listener.status(context.getString(R.string.receiving_omi));
+            if (descriptor.getCharacteristic().getUuid().equals(AUDIO)) { retries.reset(); listener.status(context.getString(R.string.receiving_omi)); }
             next();
         }
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic) {

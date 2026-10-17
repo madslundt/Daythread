@@ -2261,3 +2261,16 @@
 "Sony" = "Sony";
 "Automatic retention deletion is disabled for hosted archives" = "Automatisk radering efter lagringstiden är inaktiverad för driftade arkiv.";
 "Deployment policy cannot be changed through settings" = "Distributionspolicyn kan inte ändras i inställningarna.";
+"Microphone enabled" = "Mikrofon aktiverad";
+"Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available." = "Avstängning stoppar inspelningen direkt. Sparade inspelningar behålls. Manuell inspelning är alltid möjlig.";
+"Recording schedule" = "Inspelningsschema";
+"Scheduled source" = "Schemalagd ljudkälla";
+"Omi pendant" = "Omi-hänge";
+"Enable at" = "Aktivera kl.";
+"Disable at" = "Inaktivera kl.";
+"Choose at least one day and different start and stop times." = "Välj minst en dag och olika start- och stopptider.";
+"Manual override is active. Follow schedule to resume automatic recording." = "Manuell styrning är aktiv. Följ schemat för att återuppta automatisk inspelning.";
+"Follow schedule" = "Följ schemat";
+"Times follow this device’s time zone. Overnight windows belong to the day they start." = "Tiderna följer enhetens tidszon. Perioder över midnatt hör till startdagen.";
+"Recording starts automatically during scheduled hours while the app is available. iOS cannot wake a suspended or closed app to start the microphone. Open the app to resume. Pair Omi first for pendant capture." = "Inspelningen startar enligt schemat när appen är tillgänglig. iOS kan inte väcka en pausad eller stängd app för att starta mikrofonen. Öppna appen för att fortsätta. Parkoppla Omi först för inspelning från hänget.";
+"Microphone & schedule" = "Mikrofon och schema";

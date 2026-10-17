@@ -95,7 +95,7 @@ struct RewindView: View {
             .onDisappear { requestID = UUID(); operation?.cancel(); operation = nil; loading = false; stopPlayback() }
     }
     private func stopPlayback() {
-        if playing { model.player?.stop(); model.playbackStatus = L10n.text("Stopped"); playing = false }
+        if playing { model.stopPlayback(); model.playbackStatus = L10n.text("Stopped"); playing = false }
     }
     private func clear() {
         requestID = UUID(); operation?.cancel(); operation = nil; loading = false

@@ -2261,3 +2261,16 @@
 "Sony" = "Sony";
 "Automatic retention deletion is disabled for hosted archives" = "La eliminación automática por retención está desactivada para los archivos alojados.";
 "Deployment policy cannot be changed through settings" = "La política de despliegue no se puede cambiar desde los ajustes.";
+"Microphone enabled" = "Micrófono activado";
+"Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available." = "Al desactivar, la grabación se detiene de inmediato. Las grabaciones guardadas se conservan. Siempre puedes grabar manualmente.";
+"Recording schedule" = "Horario de grabación";
+"Scheduled source" = "Fuente programada";
+"Omi pendant" = "Colgante Omi";
+"Enable at" = "Activar a las";
+"Disable at" = "Desactivar a las";
+"Choose at least one day and different start and stop times." = "Elige al menos un día y horas de inicio y fin diferentes.";
+"Manual override is active. Follow schedule to resume automatic recording." = "El control manual está activo. Sigue el horario para reanudar la grabación automática.";
+"Follow schedule" = "Seguir horario";
+"Times follow this device’s time zone. Overnight windows belong to the day they start." = "Las horas siguen la zona horaria del dispositivo. Los periodos nocturnos pertenecen al día de inicio.";
+"Recording starts automatically during scheduled hours while the app is available. iOS cannot wake a suspended or closed app to start the microphone. Open the app to resume. Pair Omi first for pendant capture." = "La grabación empieza según el horario si la app está disponible. iOS no puede activar una app suspendida o cerrada para iniciar el micrófono. Abre la app para continuar. Vincula Omi primero para grabar desde el colgante.";
+"Microphone & schedule" = "Micrófono y horario";

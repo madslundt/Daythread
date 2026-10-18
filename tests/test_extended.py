@@ -357,7 +357,8 @@ async def test_silence_gate_preserves_recording_without_calling_stt(config):
 @pytest.mark.anyio
 async def test_stt_auto_language_segments_and_timeout_contract(config):
     config = config.model_copy(
-        update={"stt_segment_timestamps": True, "inference_timeout_seconds": 17}
+        update={"stt_segment_timestamps": True, "inference_timeout_seconds": 17,
+                "stt_filter_speech": False}
     )
 
     def handler(request):

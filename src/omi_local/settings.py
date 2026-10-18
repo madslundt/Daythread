@@ -132,6 +132,7 @@ class Settings(BaseSettings):
         return value
 
     managed_hosting: bool = False
+    background_processing_enabled: bool = True
     timezone: str = "Europe/Copenhagen"
     stt_base_url: str = "http://127.0.0.1:4000/v1"
     llm_base_url: str = "http://127.0.0.1:4000/v1"
@@ -148,6 +149,7 @@ class Settings(BaseSettings):
     apns_topic: str = Field(default="", max_length=200, pattern=r"^[A-Za-z0-9.-]*$")
     stt_model: str = "stt-danish"
     stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
+    stt_filter_speech: bool = True
     stt_preserve_quiet: bool = True
     stt_max_gain_db: float = Field(default=12, ge=0, le=24)
     stt_boundary_search_seconds: float = Field(default=0.5, ge=0, le=0.5)
@@ -350,7 +352,7 @@ RUNTIME_FIELDS = (
 )
 
 DEPLOYMENT_FIELDS = {
-    "managed_hosting", "database_url", "database_schema",
+    "managed_hosting", "background_processing_enabled", "database_url", "database_schema",
     "storage_bucket", "storage_region", "storage_prefix",
 }
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}

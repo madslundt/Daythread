@@ -36,10 +36,13 @@ describe("optional web account entry", () => {
   });
 
   it("describes hosted profile access through the signed-in account", () => {
-    const html = renderToStaticMarkup(<ProfileManagement profiles={[]} selected={null} onSelect={() => {}}
+    const html = renderToStaticMarkup(<ProfileManagement profiles={[{ id: "default", name: "Personal archive" }]} selected="default" onSelect={() => {}}
       onCreate={() => {}} onUpdate={() => {}} managed />);
     expect(html).toContain("Only your signed-in account can access these profiles.");
     expect(html).not.toContain("Anyone using this server");
+    expect(html).not.toContain("Create profile");
+    expect(html).toContain("Personal archive");
+    expect(html).toContain("Edit Personal archive");
   });
 
   it("waits for account validation before rendering hosted archive content", () => {

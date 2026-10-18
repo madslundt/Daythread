@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MANAGED_SERVICE_ORIGIN, ManagedSession, isManagedOrigin,
-  loadManagedAccount, managedMutationHeaders, managedServiceUrl,
+  loadManagedAccount, managedArchiveAvailable, managedMutationHeaders, managedServiceUrl,
 } from "./managedService";
 import { request, uploadRecording } from "./api";
 import { streamChat } from "./chatStream";
@@ -62,6 +62,21 @@ describe("fixed managed service boundary", () => {
   it("validates account balances before displaying them", async () => {
     browser();
     provider({ ...account, credits: { available_units: -1, reserved_units: 0 } });
+    await expect(loadManagedAccount()).rejects.toThrow();
+  });
+
+  it("opens former members' private archives without allowing a new account through the gate", async () => {
+    browser();
+    const former = { ...account, hosted_until: 0, hosting_active: false, archive_access: true };
+    provider(former);
+    const loaded = await loadManagedAccount();
+    expect(loaded?.archive_access).toBe(true);
+    expect(managedArchiveAvailable(loaded)).toBe(true);
+    expect(managedArchiveAvailable({ ...former, archive_access: false })).toBe(false);
+    expect(managedArchiveAvailable(undefined)).toBe(false);
+    // Older service responses still preserve historical personal subscriptions.
+    expect(managedArchiveAvailable({ ...account, hosting_active: false })).toBe(true);
+    provider({ ...former, archive_access: "yes" });
     await expect(loadManagedAccount()).rejects.toThrow();
   });
 

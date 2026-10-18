@@ -18,6 +18,7 @@ export type IconName =
   | "clock"
   | "phone"
   | "location"
+  | "tag"
   | "close"
   | "send"
   | "download"
@@ -47,6 +48,7 @@ const paths: Record<IconName, string> = {
   clock: "M12 8v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
   phone: "M7 2h10v20H7V2Zm4 17h2",
   location: "M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0ZM15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  tag: "M3 3h8l10 10-8 8L3 11V3Zm4 4h.01",
   close: "m6 6 12 12M6 18 18 6",
   send: "m21 3-7 18-4-8-8-4L21 3Zm0 0L10 13",
   download: "M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4",

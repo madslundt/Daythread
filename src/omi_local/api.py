@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, ValidationError
 
 from . import conversation_prep
+from .archive_export import install_archive_export
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .blob_storage import storage_from_settings
@@ -156,6 +157,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def runtime():
         return app.state.profiles.runtimes[selected_profile.get()]
 
+    install_archive_export(app, lambda: app.state.profiles)
+
     @app.get("/v1/profiles")
     def profiles() -> dict:
         return {"profiles": app.state.profiles.list(), "default_profile_id": DEFAULT_PROFILE}
@@ -238,7 +241,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "label_revision": memory().store.label_revision(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
-            "weekly_worker_running": not runtime().weekly_worker.done(),
+            "weekly_worker_running": bool(
+                runtime().weekly_worker and not runtime().weekly_worker.done()
+            ),
             "worker_running": bool(runtime().worker and not runtime().worker.done()),
             "meeting_max_minutes": config.meeting_max_minutes,
             "hint_policy": config.hint_policy.model_dump(),
@@ -319,6 +324,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/settings")
     def get_settings() -> dict:
         return public_settings(config)
+
+    @app.get("/v1/usage")
+    def get_usage() -> dict:
+        active = memory()
+        return active.usage.report(active.settings.timezone)
 
     def activate_settings(revised: Settings, changes: dict) -> None:
         nonlocal config

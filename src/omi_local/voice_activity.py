@@ -1,4 +1,4 @@
-"""Advisory speech activity for recap boundaries; never filters STT or saved audio."""
+"""Local speech observations for recap boundaries and optional STT request filtering."""
 
 import io
 import wave

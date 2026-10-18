@@ -54,12 +54,12 @@ class ProfileRuntime:
     memory: Memory
     weekly: WeeklyReviews
     omi: OmiAPI
-    weekly_worker: asyncio.Task
+    weekly_worker: asyncio.Task | None
     worker: asyncio.Task | None
     embedding_worker: asyncio.Task | None
     jobs: GenerationJobs
-    generation_worker: asyncio.Task
-    notification_worker: asyncio.Task
+    generation_worker: asyncio.Task | None
+    notification_worker: asyncio.Task | None
     vendors: dict[str, TranscriptAdapter]
 
 
@@ -143,7 +143,7 @@ class Profiles:
                 database_schema=schema,
                 storage=storage_from_settings(settings, directory / "audio", profile_id),
             )
-        if profile_id != DEFAULT_PROFILE:
+        if profile_id != DEFAULT_PROFILE and settings.background_processing_enabled:
             store.save_settings(self.runtimes[DEFAULT_PROFILE].memory.store.runtime_settings())
         memory = Memory(store, settings, Inference(settings, self.client))
         memory.notifications = NotificationService(store, settings, profile_id)
@@ -151,7 +151,7 @@ class Profiles:
         memory.retriever.embeddings = Embeddings(settings, self.client)
         weekly = WeeklyReviews(memory)
         worker = embedding_worker = None
-        if settings.worker_enabled:
+        if settings.worker_enabled and settings.background_processing_enabled:
             store.recover()
             worker = asyncio.create_task(run_worker(memory))
             if memory.retriever.set_id:
@@ -164,12 +164,13 @@ class Profiles:
             memory,
             weekly,
             OmiAPI(settings, self.client, store),
-            asyncio.create_task(weekly.run()),
+            asyncio.create_task(weekly.run()) if settings.background_processing_enabled else None,
             worker,
             embedding_worker,
             jobs,
-            asyncio.create_task(jobs.run()),
-            asyncio.create_task(memory.notifications.run()),
+            asyncio.create_task(jobs.run()) if settings.background_processing_enabled else None,
+            asyncio.create_task(memory.notifications.run())
+            if settings.background_processing_enabled else None,
             {},
         )
         runtime.vendors = {"omi": runtime.omi, "pocket": PocketAPI(settings, self.client, store)}

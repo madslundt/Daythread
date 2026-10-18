@@ -2331,3 +2331,10 @@
 "Enter coordinates" = "Saisir des coordonnées";
 "Zone location map" = "Carte du lieu de la zone";
 "Tap the map to choose the zone center." = "Touchez la carte pour choisir le centre de la zone.";
+
+"Only your signed-in account can access these profiles." = "Seul votre compte connecté peut accéder à ces profils.";
+
+"Hosting is inactive. Your saved archive is still available." = "L'hébergement est inactif. Votre archive sauvegardée est toujours disponible.";
+"STT filter speech" = "Filtrage de la parole STT";
+"Skip locally detected silence and non-speech before transcription. Speech receives surrounding context; original audio and playback stay unchanged. Detection can miss quiet speech; disable to transcribe full recordings. If detection is unavailable, full audio is sent instead. Applies to new processing only." = "Ignore le silence et les sons sans parole détectés localement avant la transcription. Le contexte autour de la parole est conservé ; l’audio original et la lecture restent inchangés. La détection peut manquer les voix faibles ; désactivez-la pour transcrire les enregistrements entiers. Si elle est indisponible, tout l’audio est envoyé. S’applique uniquement aux nouveaux traitements.";
+"Avoid the legacy volume threshold for faint or overlapping voices. Speech filtering is controlled separately by STT filter speech. Disable only to opt into the legacy silence threshold, which may miss quiet voices." = "Évitez l’ancien seuil de volume pour les voix faibles ou superposées. Le filtrage de la parole est contrôlé séparément par Filtrage de la parole STT. Désactivez uniquement pour utiliser l’ancien seuil de silence, qui peut manquer les voix faibles.";

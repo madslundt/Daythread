@@ -33,7 +33,10 @@ struct ManagedAccountView: View {
                         if account.credits.reserved_units > 0 {
                             Text(L10n.text("Some credits are reserved for processing.")).font(.caption).foregroundStyle(.secondary)
                         }
-                        if !account.hosting_active {
+                        if !account.hosting_active && account.canAccessArchive {
+                            Text(L10n.text("Hosting is inactive. Your saved archive is still available."))
+                                .font(.callout).foregroundStyle(.secondary)
+                        } else if !account.hosting_active {
                             Text(L10n.text("Your credits can be used with your own backend. Activate hosting on your account page to use your hosted archive in this app."))
                                 .font(.callout).foregroundStyle(.secondary)
                         }

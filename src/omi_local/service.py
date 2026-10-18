@@ -21,6 +21,8 @@ from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
 from .speakers import Speakers
 from .store import Store
+from .summary_filter import NO_CONTENT
+from .usage import UsageLedger
 from .vendor_catalog import vendor_definition
 from .vendor_imports import transcript_import
 from .voices import Voices
@@ -80,9 +82,13 @@ def public_source(row: dict) -> dict:
 class Memory:
     def __init__(self, store: Store, settings: Settings, inference: Inference):
         self.store = store
-        store.save_decision_timezone(settings.timezone)
+        if settings.background_processing_enabled:
+            store.save_decision_timezone(settings.timezone)
         self.settings = settings
         self.inference = inference
+        self.usage = UsageLedger(store)
+        if isinstance(inference, Inference):
+            inference.usage_recorder = self.usage.record
         self.recap_lock = asyncio.Lock()
         self.recaps = Recaps(self)
         self.translation_lock = asyncio.Lock()
@@ -172,6 +178,8 @@ class Memory:
                 summary, trace = await self.inference.summarize_traced(done, purpose)
             else:
                 summary = await self.inference.summarize(done, purpose)
+            if summary == NO_CONTENT:
+                return result | {"no_recap_content": True}
             result["summary"] = validate_citations(summary, done)
             output_id = str(uuid4())
             evidence = self.evidence_metadata(

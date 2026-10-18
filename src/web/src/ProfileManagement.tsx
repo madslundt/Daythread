@@ -28,8 +28,8 @@ export function ProfileManagement({ profiles, selected, onSelect, onCreate, onUp
     {!selected ? <p className="notice" role="status">{t("Choose a profile to open your recordings, diary, and other pages. You can browse all settings without a profile.")}</p> : null}
     {error ? <ErrorState message={error} retry={onRetry} /> : null}
     <ProfileSelector profiles={profiles} selected={selected} onSelect={onSelect} />
-    <button type="button" className="button accent" onClick={() => setAction({ kind: "create" })}>
-      <Icon name="plus" size={18} /> {t("Create profile")}{" "}</button>
+    {!managed ? <button type="button" className="button accent" onClick={() => setAction({ kind: "create" })}>
+      <Icon name="plus" size={18} /> {t("Create profile")}{" "}</button> : null}
     {notice ? <p className="caption" role="status">{notice}</p> : null}
     <ul className="settings-profile-list" aria-label={t("Profiles")}>
       {profiles.map((profile) => <li key={profile.id}>

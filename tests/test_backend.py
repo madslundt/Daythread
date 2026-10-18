@@ -328,6 +328,7 @@ async def test_diary_uses_local_calendar_boundaries_and_refreshes_after_late_aud
 
 @pytest.mark.anyio
 async def test_local_stt_wire_contract(settings):
+    settings.stt_filter_speech = False  # Synthetic wire fixture is not speech.
     def handler(request):
         assert str(request.url) == "http://127.0.0.1:4000/v1/audio/transcriptions"
         assert b"stt-danish" in request.content
@@ -352,6 +353,7 @@ def test_empty_rewind_and_chat_do_not_invent_content(client):
 
 @pytest.mark.anyio
 async def test_complete_audio_to_local_diary_and_chat_flow(store, settings):
+    settings.stt_filter_speech = False  # Synthetic transport fixture is not speech.
     requests = []
 
     def handler(request):

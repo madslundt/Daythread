@@ -406,58 +406,6 @@
   .messages > .empty-state { padding-top: 24px; }
 }
 
-.conversation-tags { margin: 12px 0; }
-.conversation-tags label { display: grid; gap: 6px; }
-.conversation-tags .button-row { align-items: center; margin: 10px 0; }
-.recording-location { margin: 12px 0; }
-.recording-location .button-row { align-items: center; margin: 10px 0; }
-.recording-location label { display: grid; gap: 6px; }
-.recording-location-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
-.recording-place-summary { display: flex; align-items: center; gap: 12px; padding: 13px 14px; background: var(--rail); border-radius: 9px; }
-.recording-place-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 34px; height: 38px; color: var(--secondary); }
-.recording-place-details { display: grid; gap: 2px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.recording-place-details strong { font-size: 14px; font-weight: 600; }
-.recording-place-map { flex-shrink: 0; min-height: 32px; }
-.recording-location-provenance { margin: 8px 0 12px; }
-.recording-location-empty { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
-.saved-place-picker { margin-top: 10px; padding: 16px; border: 1px solid var(--control-line); border-radius: 10px; background: var(--surface); }
-.saved-place-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px -6px 0 0; }
-.saved-place-picker-heading h4 { font-size: 15px; font-weight: 600; margin: 0; }
-.saved-place-picker-heading h4:focus { outline: none; }
-.saved-place-guidance { margin: 0 0 14px; }
-.recording-location .saved-place-search { position: relative; display: block; margin-bottom: 14px; }
-.saved-place-search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
-.saved-place-search input { width: 100%; padding-left: 38px; min-height: 44px; background: var(--canvas); }
-.saved-place-list { display: grid; gap: 16px; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 4px; margin: -4px; }
-.saved-place-zone h4 { margin: 0 10px 6px; font-size: 12px; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
-.saved-place-choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 11px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
-.saved-place-name { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 500; }
-.saved-place-current { display: flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--accent); font-size: 12px; font-weight: 600; }
-.saved-place-check { flex: 0 0 18px; height: 18px; margin: 0 1px; border: 1px solid var(--control-line); border-radius: 50%; }
-.saved-place-choice:hover:not(:disabled) { background: var(--hover); }
-.saved-place-choice[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.saved-place-choice:disabled { cursor: default; opacity: .6; }
-.saved-place-empty { display: grid; justify-items: center; gap: 10px; padding: 24px 10px; text-align: center; }
-.saved-place-empty > svg { color: var(--muted); margin-bottom: 2px; }
-.saved-place-empty strong { font-size: 14px; font-weight: 600; }
-.saved-place-empty .caption { max-width: 300px; margin: 0; }
-.saved-place-empty .text-button { min-height: 36px; }
-.saved-place-picker-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 18px; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 16px; }
-.saved-place-picker-footer .text-button { min-height: 40px; text-align: left; }
-.saved-place-preservation { margin: 6px 0 0; font-size: 12px; }
-.saved-place-manager { border: 1px solid var(--control-line); border-radius: 10px; padding: 16px; margin-top: 10px; }
-.saved-place-back { min-height: 44px; margin-bottom: 10px; }
-.saved-place-manager .location-zones h2 { font-size: 23px; margin-bottom: 12px; }
-.saved-place-manager .location-zones > p { font-size: 13px; }
-.saved-place-manager fieldset { min-width: 0; }
-@media (max-width: 600px) {
-  .recording-place-summary { flex-wrap: wrap; column-gap: 8px; padding: 12px; }
-  .recording-place-summary .recording-place-map { flex-basis: 100%; padding-left: 42px; min-height: 44px; }
-  .saved-place-picker, .saved-place-manager { padding: 12px; }
-  .saved-place-search input { font-size: 16px; }
-  .saved-place-list { max-height: 280px; }
-  .saved-place-picker-footer { flex-direction: column; align-items: flex-start; }
-}
 
 .browser-recorder { margin: 0 0 24px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .browser-recorder[hidden] { display: none; }

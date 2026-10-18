@@ -22,6 +22,7 @@ export function RecordingLocation({ source, timezone, onChanged }: { source: Sou
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<LocationSelection>();
   const trigger = useRef<HTMLButtonElement>(null);
+  const editorID = useId();
   const wasOpen = useRef(false);
   // Unrelated source refreshes (for example tags) must not undo the visible save.
   const sourceLocation = JSON.stringify([source.manual_location, source.source_metadata?.location]);
@@ -36,35 +37,33 @@ export function RecordingLocation({ source, timezone, onChanged }: { source: Sou
   const savedPlace = location && "zone_id" in location && Boolean(location.zone_id);
   function close() { setOpen(false); }
   return <section className="recording-location" aria-label={t("Conversation location")}>
-    <div className="recording-location-heading">
-      <strong>{t("Conversation location")}</strong>
-      {!open ? <button ref={trigger} type="button" className="button small"
-        disabled={source.state === "expired"} onClick={() => setOpen(true)}>
-        {location ? t("Edit location") : t("Add location")}
-      </button> : null}
-    </div>
-    {location ? <>
-      <div className="recording-place-summary">
-        <span className="recording-place-icon"><Icon name="location" size={20} /></span>
+    <div className="recording-metadata-row">
+      <strong className="recording-metadata-label"><Icon name="location" size={17} />{t("Location")}</strong>
+      {location ? <div className="recording-place-summary">
         <div className="recording-place-details">
           <strong>{"label" in location ? location.label : t("Captured location")}</strong>
           <span className="caption">{"zone_name" in location && location.zone_name ? `${location.zone_name} · ` : ""}
             {manual ? (savedPlace ? t("Saved place") : t("Manually set location")) : `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`}
           </span>
-          {"horizontal_accuracy" in location ? <span className="caption">±{Math.round(location.horizontal_accuracy)} {t("m")}
-            {"captured_at" in location ? ` · ${timeLabel(location.captured_at, timezone)}` : ""}</span> : null}
         </div>
         <a className="text-link recording-place-map" href={`https://maps.apple.com/?ll=${location.latitude},${location.longitude}`}
           target="_blank" rel="noreferrer">{t("Open in Maps")}</a>
-      </div>
-      {!manual ? <p className="caption recording-location-provenance">
+      </div> : <span className="caption recording-location-empty">{t("No location")}</span>}
+      <button ref={trigger} type="button" className="text-button recording-metadata-action"
+        disabled={source.state === "expired" || open} aria-expanded={open} aria-controls={editorID} onClick={() => setOpen(true)}>
+        {location ? t("Edit location") : t("Add location")}
+      </button>
+    </div>
+    {location && !manual ? <details className="recording-location-info"><summary>{t("Location details")}</summary>
+      {"horizontal_accuracy" in location ? <p className="caption">±{Math.round(location.horizontal_accuracy)} {t("m")}
+        {"captured_at" in location ? ` · ${timeLabel(location.captured_at, timezone)}` : ""}</p> : null}
+      <p className="caption recording-location-provenance">
         {t("Phone location near the start of this recording. It does not identify places mentioned in the conversation.")}{" "}
         <a href={`/settings/locations?latitude=${location.latitude}&longitude=${location.longitude}`}>{t("Save as zone location")}</a>
-      </p> : null}
-    </> : <p className="caption recording-location-empty"><Icon name="location" size={16} />{t("No location")}</p>}
-    {open ? <RecordingLocationEditor sourceID={source.id} onCancel={close} onSaved={(result) => {
+      </p></details> : null}
+    {open ? <div id={editorID}><RecordingLocationEditor sourceID={source.id} onCancel={close} onSaved={(result) => {
       setSaved(result); close(); onChanged?.();
-    }} /> : null}
+    }} /></div> : null}
   </section>;
 }
 

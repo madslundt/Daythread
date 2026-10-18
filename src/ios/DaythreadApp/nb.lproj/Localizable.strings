@@ -2331,3 +2331,10 @@
 "Enter coordinates" = "Skriv inn koordinater";
 "Zone location map" = "Kart over soneplassering";
 "Tap the map to choose the zone center." = "Trykk på kartet for å velge sonens sentrum.";
+
+"Only your signed-in account can access these profiles." = "Bare din logget- konto kan få tilgang til disse profilene.";
+
+"Hosting is inactive. Your saved archive is still available." = "Vert er inaktivt. Arkivet som er lagret er fremdeles tilgjengelig.";
+"STT filter speech" = "STT-talefiltrering";
+"Skip locally detected silence and non-speech before transcription. Speech receives surrounding context; original audio and playback stay unchanged. Detection can miss quiet speech; disable to transcribe full recordings. If detection is unavailable, full audio is sent instead. Applies to new processing only." = "Hopp over lokalt registrert stillhet og lyd uten tale før transkripsjon. Tale får omkringliggende kontekst; original lyd og avspilling forblir uendret. Registreringen kan overse lav tale; slå av for å transkribere hele opptak. Hvis registrering er utilgjengelig, sendes hele lyden i stedet. Gjelder kun ny behandling.";
+"Avoid the legacy volume threshold for faint or overlapping voices. Speech filtering is controlled separately by STT filter speech. Disable only to opt into the legacy silence threshold, which may miss quiet voices." = "Unngå den gamle volumgrensen for svake eller overlappende stemmer. Talefiltrering styres separat av STT-talefiltrering. Slå kun av for å bruke den gamle stillhetsgrensen, som kan overse lave stemmer.";

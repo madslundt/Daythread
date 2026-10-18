@@ -271,8 +271,10 @@ function SourceRow({
         </button>
       ) : null}
       <div className="source-detail">
-        <ConversationTags sourceID={source.id} tags={currentSource.tags} onChanged={onCorrect} />
-        <RecordingLocation source={currentSource} timezone={timezone} onChanged={onCorrect} />
+        <div className="recording-organization">
+          <RecordingLocation source={currentSource} timezone={timezone} onChanged={onCorrect} />
+          <ConversationTags sourceID={source.id} tags={currentSource.tags} disabled={source.state === "expired"} onChanged={onCorrect} />
+        </div>
         {source.alternate_sources?.length ? <details className="recording-alternatives">
           <summary>{t("Other uploads of this recording (")}{source.alternate_sources.length})</summary>
           <p className="caption">{t("Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript.")}</p>

@@ -407,11 +407,15 @@ struct ProfilesSettingsView: View {
                             .accessibilityLabel(L10n.text("Edit ") + profile.name)
                     }.padding(.vertical, 4)
                 }
-                Button { editor = ProfileEditor(profile: nil) } label: {
-                    Label(L10n.text("Create profile"), systemImage: "person.badge.plus")
-                }.accessibilityIdentifier("profiles.create")
+                if !model.usesManagedHosting {
+                    Button { editor = ProfileEditor(profile: nil) } label: {
+                        Label(L10n.text("Create profile"), systemImage: "person.badge.plus")
+                    }.accessibilityIdentifier("profiles.create")
+                }
             } footer: {
-                Text(L10n.text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this server can select any profile."))
+                Text(model.usesManagedHosting
+                    ? L10n.text("Only your signed-in account can access these profiles.")
+                    : L10n.text("Each profile has its own recordings, diary and chat. Settings apply to every profile. Anyone using this server can select any profile."))
             }
             if loading { ProgressView(L10n.text("Loading profiles…")) }
             if let error {

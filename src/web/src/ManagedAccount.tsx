@@ -1,6 +1,6 @@
 import { createContext, Fragment, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { displayLocale, t } from "./i18n";
-import { isManagedOrigin, managedServiceUrl, ManagedSession, type ManagedSnapshot } from "./managedService";
+import { isManagedOrigin, managedArchiveAvailable, managedServiceUrl, ManagedSession, type ManagedSnapshot } from "./managedService";
 import { Loading } from "./UI";
 import { Icon } from "./Icon";
 import "./managedAccount.css";
@@ -90,7 +90,7 @@ export function ManagedConnections() {
 
 export function ManagedArchiveGate({ children }: { children: ReactNode }) {
   const session = useManagedAccount();
-  return session.managed && (session.status !== "signed-in" || !session.account?.hosted_until)
+  return session.managed && (session.status !== "signed-in" || !managedArchiveAvailable(session.account))
     ? <main className="managed-session-screen"><a className="managed-session-brand" href={managedServiceUrl("/account")}>{t("Daythread")}</a>
       <ManagedAccountPanel /></main> : <Fragment key={session.account?.id ?? "self-hosted"}>{children}</Fragment>;
 }

@@ -22,7 +22,9 @@ def anyio_backend():
 async def test_generation_sends_thinking_control_only_when_configured(
     tmp_path, thinking, generation
 ):
-    settings = Settings(data_dir=tmp_path, llm_enable_thinking=thinking, _env_file=None)
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=thinking, _env_file=None, stt_filter_speech=False,
+    )
     requests = []
 
     def handler(request):
@@ -74,7 +76,9 @@ def test_thinking_control_loads_from_environment(tmp_path, monkeypatch, value, e
 @pytest.mark.anyio
 @pytest.mark.parametrize("thinking", [False, True])
 async def test_thinking_control_never_changes_transcription_requests(tmp_path, thinking):
-    settings = Settings(data_dir=tmp_path, llm_enable_thinking=thinking, _env_file=None)
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=thinking, _env_file=None, stt_filter_speech=False,
+    )
     audio = io.BytesIO()
     with wave.open(audio, "wb") as wav:
         wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))

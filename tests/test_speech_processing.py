@@ -171,10 +171,10 @@ async def test_cleanup_disagreement_is_review_only_and_never_indexed(
     async def fake_enhance(data):
         return data
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", fake_enhance)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", fake_enhance)
     settings = Settings(
         data_dir=tmp_path, _env_file=None, worker_enabled=False,
-        stt_enhancement_mode="compare", stt_segment_timestamps=True,
+        stt_enhancement_mode="compare", stt_segment_timestamps=True, stt_filter_speech=False,
     )
     store = Store(tmp_path)
     key = str(uuid4())
@@ -223,7 +223,7 @@ async def test_optional_failure_never_discards_completed_original(tmp_path, monk
             await asyncio.sleep(60)
         return data
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", fake_enhance)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", fake_enhance)
     settings = Settings(
         data_dir=tmp_path, _env_file=None, stt_enhancement_mode="compare",
         stt_enhancement_timeout_seconds=0.05,
@@ -259,7 +259,7 @@ async def test_cleanup_policy_controls_optional_requests(
     async def unchanged(data):
         return data
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", unchanged)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", unchanged)
     settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode=mode)
     calls, progress = [], []
 
@@ -288,10 +288,11 @@ async def test_all_originals_precede_cleanup_with_one_shared_optional_budget(tmp
         await asyncio.sleep(0.04)
         return data
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", slow_enhance)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", slow_enhance)
     settings = Settings(
         data_dir=tmp_path, _env_file=None, stt_chunk_seconds=1,
         stt_enhancement_mode="compare", stt_enhancement_timeout_seconds=0.06,
+        stt_filter_speech=False,
     )
 
     def handler(request):
@@ -312,7 +313,10 @@ def test_settings_are_validated_described_and_persisted(tmp_path):
     with TestClient(create_app(settings)) as client:
         config = client.get("/v1/configuration").json()
         assert config["values"]["stt_preserve_quiet"] is True
-        changes = {"stt_enhancement_mode": "compare", "stt_max_gain_db": 6}
+        assert config["values"]["stt_filter_speech"] is True
+        changes = {
+            "stt_enhancement_mode": "compare", "stt_max_gain_db": 6, "stt_filter_speech": False,
+        }
         saved = client.patch("/v1/configuration", json={
             "revision": config["revision"], "changes": changes,
         })
@@ -389,7 +393,7 @@ async def test_correction_during_cleanup_cannot_be_overwritten(tmp_path, monkeyp
         store.correct_transcript(key, "Owner correction")
         return data
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", corrected_while_enhancing)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", corrected_while_enhancing)
     def handler(request):
         return httpx.Response(200, json={"text": "Automatic words"})
 

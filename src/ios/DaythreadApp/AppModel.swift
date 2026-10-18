@@ -17,7 +17,10 @@ final class AppModel {
     @ObservationIgnored private var scheduleTimer: Timer?
     @ObservationIgnored private var scheduledTransition: Date?
     @ObservationIgnored private var clockObserver: NSObjectProtocol?
-    private var liveCaptureAllowed: Bool { recordingSchedule.allows(Date()) && !paused && captureFailure == nil }
+    private var liveCaptureAllowed: Bool {
+        recordingSchedule.allows(Date()) && !paused && captureFailure == nil
+            && (!usesManagedHosting || managedAccount.account?.hosting_active == true)
+    }
     private var pendantCaptureAllowed: Bool {
         liveCaptureAllowed && (!recordingSchedule.scheduled || recordingSchedule.activeSource == "omi")
     }
@@ -139,7 +142,7 @@ final class AppModel {
     }
     var hasSelectedProfile: Bool {
         !selectedProfileID.isEmpty && ((!usesManagedHosting && !managedAccount.signedIn)
-            || (managedConnectionMatches && managedAccount.account?.hosting_active != false))
+            || (managedConnectionMatches && managedAccount.account?.canAccessArchive == true))
     }
     var selectedProfileName: String { profiles.first { $0.id == selectedProfileID }?.name ?? selectedProfileID }
     // Preserve legacy default caches while isolating every additional profile.
@@ -385,7 +388,7 @@ final class AppModel {
             guard managedAccount.hostingVerified else {
                 throw BackendFailure(message: L10n.source("Refresh your account to connect to managed hosting."))
             }
-            guard managedAccount.account?.hosting_active == true else {
+            guard managedAccount.account?.canAccessArchive == true else {
                 throw BackendFailure(message: L10n.source("Managed hosting is not active for this account."), status: 402)
             }
             return try BackendClient(router: managedRouter, profileID: selectedProfileID, authorization: authorization)
@@ -437,7 +440,7 @@ final class AppModel {
         try setManagedMode(false)
     }
     func reconnectBackend() {
-        guard hasSelectedProfile, !usesManagedHosting || managedAccount.hostingVerified else { uploader?.client = nil; return }
+        guard hasSelectedProfile, !usesManagedHosting || (managedAccount.hostingVerified && managedAccount.account?.hosting_active == true) else { uploader?.client = nil; return }
         do { uploader?.client = try client(); uploader?.retry() }
         catch { self.error = L10n.error(error) }
     }

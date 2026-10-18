@@ -3,6 +3,7 @@ import { Icon, type IconName } from "./Icon";
 
 const categories: { id: SettingsSection; label: string; detail: string; icon: IconName }[] = [
   { id: "account", label: source("Daythread account"), detail: source("Optional hosting, credits & AI providers"), icon: "people" },
+  { id: "usage", label: source("Audio & credit usage"), detail: source("Processed minutes & measured credits"), icon: "clock" },
   { id: "locations", label: source("Location zones"), detail: source("Home, work, gym & other places"), icon: "home" },
   { id: "profiles", label: source("Profiles"), detail: source("Choose, create & edit profiles"), icon: "people" },
   { id: "general", label: source("Daily preferences"), detail: source("Appearance, recording & recaps"), icon: "home" },
@@ -11,7 +12,7 @@ const categories: { id: SettingsSection; label: string; detail: string; icon: Ic
   { id: "connections", label: source("Connections"), detail: source("iPhone, devices & imports"), icon: "phone" },
   { id: "server", label: source("Models & server"), detail: source("STT & LLM endpoints, keys & models"), icon: "settings" },
 ];
-export type SettingsSection = "account" | "profiles" | "general" | "gestures" | "storage" | "connections" | "server" | "locations";
+export type SettingsSection = "account" | "profiles" | "general" | "gestures" | "storage" | "connections" | "server" | "locations" | "usage";
 
 export function sectionFromPath(managed = false): SettingsSection {
   const value = window.location.pathname.split("/")[2];
@@ -20,6 +21,7 @@ export function sectionFromPath(managed = false): SettingsSection {
 }
 
 const searchTerms: Record<string, string> = {
+  usage: source("usage audio speech silence filter processed captured retained submitted minutes transcription summary recap credits costs billing measurement"),
   account: source("account sign in managed hosting subscription credits billing ai providers"),
   locations: source("location zones home work gym places coordinates radius gps"),
   profiles: source("profiles profile archive active select selection choose switch name rename edit create new manage"),

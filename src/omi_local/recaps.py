@@ -13,15 +13,16 @@ from .completion_events import publish_recap
 from .conversation_state import Conversation, activity, conversations, manual_upload
 from .domain import EvidenceChanged, stamp
 from .inference import InferenceError, validate_citations
+from .summary_filter import NO_CONTENT
+from .summary_filter import VERSION as SUMMARY_FILTER_VERSION
 from .vendor_imports import transcript_import
 from .voice_activity import analyze_voice
 
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = "completed-conversations-4-topic-notes"
+PROMPT_VERSION = f"completed-conversations-4-topic-notes-{SUMMARY_FILTER_VERSION}"
 DAY_PROMPT_VERSION = "daily-topics-2-one-summary"
-NO_CONTENT = "[[NO_RECAP_CONTENT]]"
 BOUNDARY_NOTE = (
     "Includes completed conversations and finished uploads. Ongoing or uncertain conversations "
     "stay pending. Speech detection and silence-based boundaries are approximate; uploaded "

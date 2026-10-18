@@ -12,6 +12,8 @@ struct ManagedAccount: Codable {
     let name: String
     let hosted_until: TimeInterval
     let hosting_active: Bool
+    let archive_access: Bool?
+    var canAccessArchive: Bool { archive_access ?? (hosted_until > 0) }
     let credits: Credits
 }
 

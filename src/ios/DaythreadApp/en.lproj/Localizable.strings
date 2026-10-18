@@ -2333,3 +2333,10 @@
 "Enter coordinates" = "Enter coordinates";
 "Zone location map" = "Zone location map";
 "Tap the map to choose the zone center." = "Tap the map to choose the zone center.";
+
+"Only your signed-in account can access these profiles." = "Only your signed-in account can access these profiles.";
+
+"Hosting is inactive. Your saved archive is still available." = "Hosting is inactive. Your saved archive is still available.";
+"STT filter speech" = "STT filter speech";
+"Skip locally detected silence and non-speech before transcription. Speech receives surrounding context; original audio and playback stay unchanged. Detection can miss quiet speech; disable to transcribe full recordings. If detection is unavailable, full audio is sent instead. Applies to new processing only." = "Skip locally detected silence and non-speech before transcription. Speech receives surrounding context; original audio and playback stay unchanged. Detection can miss quiet speech; disable to transcribe full recordings. If detection is unavailable, full audio is sent instead. Applies to new processing only.";
+"Avoid the legacy volume threshold for faint or overlapping voices. Speech filtering is controlled separately by STT filter speech. Disable only to opt into the legacy silence threshold, which may miss quiet voices." = "Avoid the legacy volume threshold for faint or overlapping voices. Speech filtering is controlled separately by STT filter speech. Disable only to opt into the legacy silence threshold, which may miss quiet voices.";

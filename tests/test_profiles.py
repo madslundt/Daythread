@@ -237,7 +237,7 @@ def test_streaming_chat_history_stays_with_its_profile(client):
 
 
 def test_workers_process_unselected_profiles_and_stop_cleanly(settings, monkeypatch):
-    async def transcribe(self, data, on_progress=None):
+    async def transcribe(self, data, on_progress=None, *, recording_id=None, voice_activity=None):
         return {"text": "Captured speech", "segments": []}
 
     monkeypatch.setattr(Inference, "transcribe_result", transcribe)

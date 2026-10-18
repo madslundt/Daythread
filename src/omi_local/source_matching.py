@@ -9,6 +9,7 @@ from datetime import datetime
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
 from .locations import CaptureLocation
+from .transcription_filter import FILTER_VERSION
 from .vendor_catalog import file_vendor
 from .vendor_imports import transcript_import
 
@@ -102,6 +103,7 @@ def recognition_contract(settings) -> str:
     fields = {key: value for key, value in settings.model_dump(mode="json").items()
               if key.startswith("stt_") and key != "stt_routes"}
     fields["silence_threshold"] = settings.silence_threshold
+    fields["speech_filter_version"] = FILTER_VERSION
     fields["routes"] = {
         language: settings.stt_route(language).model_dump(mode="json", exclude={"token"})
         for language in {"auto", *settings.stt_routes}

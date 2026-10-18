@@ -100,6 +100,7 @@ async def evaluate(manifest: Path) -> dict:
                 raw_config = config.model_copy(update={
                     "stt_max_gain_db": 0, "stt_enhancement_mode": "off",
                     "stt_boundary_search_seconds": 0, "stt_preserve_quiet": False,
+                    "stt_filter_speech": False,
                 })
                 started = perf_counter()
                 baseline = await Inference(raw_config, client).transcribe_result(data)

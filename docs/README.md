@@ -285,21 +285,77 @@ Streams send `Cache-Control: no-store` and `X-Accel-Buffering: no`; a private re
 
 Adapters use HTTP `/audio/transcriptions` and `/chat/completions`; the existing home-core Wyoming service on port 10300 needs an HTTP bridge before it can be used here. The configured gateway and previous `192.168.30.122:18080` address were unreachable from this Mac during validation, so real STT/LLM quality and latency have not been verified. When models are unreachable, audio remains queued and summary/chat errors remain visible.
 
-Optional **STT segment timestamps** in Settings requests verbose segment timestamps from compatible providers. Recall-first processing skips only exact digital silence by default; faint audio and noise remain eligible. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
+Optional **STT segment timestamps** in Settings requests verbose segment timestamps from compatible providers. Local speech filtering skips detected silence and non-speech in transcription copies by default; original playback remains complete. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
 
 ### Speech processing and cleanup review
 
-Transcription preserves original archive files, hashes, capture times and playback. By default,
-**STT preserve quiet**, enabled by default in Settings, skips only recordings made entirely of digital zero samples.
-This avoids rejecting faint voices using a volume threshold. Noise-only recordings may reach
-STT too; model output still needs checking. To restore the old RMS gate explicitly, disable
-preserve quiet and set `OMI_SILENCE_THRESHOLD` (35 by default; 0 disables that legacy gate).
+Transcription preserves original archive files, hashes, capture times and playback.
+**STT filter speech** is enabled by default in Models & server. Local WebRTC VAD checks both
+original and amplified audio and sends detected speech with 300 ms of context on each side.
+Nearby spans merge; discarded gaps are not concatenated or retimed. Transcripts and cleanup
+candidates retain offsets into the original recording. Entirely non-speech recordings make no
+transcription request. If detection is unavailable or inconsistent, the full original audio is
+sent instead. Short unobserved tails are retained conservatively. This needs no cloud detector.
+Speech detection is approximate: quiet or overlapping speech may be missed, and background
+speech or noise may be retained. Disable **STT filter speech** to transcribe full recordings.
+The setting affects subsequent processing, not completed transcripts.
+
+Summary requests also use a local text copy with unquoted hesitation sounds such as
+`ummm`, `uhm`, `ehm`, `øhhh` and `øhm` removed. Whole annotation lines such as `[silence]`
+or `[background noise]` are omitted. Cleanup runs before batching, so filler-only input
+needs no summary request and long filler runs do not create extra reduction calls.
+Original transcripts, search evidence, translations and chat input remain unchanged.
+Quotes, code, URLs, ordinary words, repetitions and short meaningful answers are kept;
+there is no generic stop-word removal or extra AI cleanup call. Summary pipeline traces and the persistent usage report record original/retained
+character counts, removed fillers and omitted sources. Token counts are measured only
+from provider responses; there is no estimated token-saving claim. The versioned policy invalidates prepared
+conversation notes and daily recaps. Weekly reviews and structured extraction continue
+to use original text because their exact evidence quotes must match the archive.
+
+**STT preserve quiet** separately avoids the old volume gate and remains enabled by default.
+To opt into that older gate, disable preserve quiet and set `OMI_SILENCE_THRESHOLD` (35 by
+default; 0 disables that legacy gate). Keep it enabled when evaluating quiet speech.
+
+**Settings → Audio & credit usage** reports captured minutes (recordings that have started
+processing), retained minutes including speech context, total submitted minutes including
+language-specialist/cleanup passes and retries, and known transcription, summary and other
+AI credits. It refreshes every 30 seconds and groups daily totals by processing date in the
+archive timezone. These measurements start after upgrade; queued audio and earlier requests
+are not reconstructed. Per-profile metadata persists across restarts, recording deletion and
+archive backups without storing audio, prompts, response text or provider keys in the ledger.
+
+The same report includes summary source characters before/after filtering, removed fillers,
+omitted sources, skipped no-content summary passes, submitted request characters, request
+counts and known provider input/output tokens. Original/retained text is counted once per
+logical summary pass, not once per unique recording. Actual submitted request text includes
+instructions, source references, reduction passes and retries, so it can exceed retained source
+text. Repeated attempts count submitted text each time; token and credit receipts for the same
+managed operation count once. Translation requests remain separate from summaries. Older
+requests without these measurements remain marked unknown rather than inferred from text size.
+Summary run IDs connect local filtering with all of its downstream model requests; no text is
+saved to the usage ledger.
+
+Summary source minutes measure the original recording intervals considered before text
+filtering, including skipped content. Overlaps count once within each logical summary pass;
+later summaries of the same recordings count their source minutes again. Reduction requests
+and HTTP retries within a pass do not multiply these minutes. Cached conversation notes retain
+the scope of their original recordings. Missing/invalid timing and older measurements remain
+explicitly incomplete. These are recording minutes, not billable summary minutes or a conversion
+from credits: summary cost depends on the actual text and tokens submitted.
+
+Provider attempts are saved before sending and finalized afterward. Pending/interrupted
+requests remain visible with unknown charges and token measurements. Actual Daythread credits come from confirmed
+managed-gateway settlement headers, not estimated model prices or reserved credits. A gateway
+using your own provider reports zero Daythread credits; that provider's charges are separate.
+Endpoints without billing metadata leave charges unknown. `GET /v1/usage` exposes the same
+profile-scoped report for analysis. For a wearable trial, compare captured/retained/submitted
+minutes and separate credit categories across workdays and weekends.
 
 Quiet transcription copies receive uniform amplification toward -25 dBFS RMS, with peak
 headroom and at most **STT max gain dB** (default 12 dB in Settings). Set 0 to disable. This changes amplitude,
 not signal-to-noise ratio, and cannot uncover a quieter voice masked by a louder one. For
 internal STT request splits, **STT boundary search seconds** (default 0.5 in Settings) searches for a 100 ms quiet
-gap near the boundary; 0 restores fixed cuts. Every sample is retained exactly once. Phone
+gap near the boundary; 0 restores fixed cuts. Every sample within each retained speech span is retained exactly once. Phone
 chunk boundaries and existing captured gaps are unchanged; there is no cross-source context
 or word deduplication.
 
@@ -327,8 +383,9 @@ Old recordings are not automatically reprocessed. Retained empty/silence-gated r
 offer **Retry empty transcription with current settings** in the web source details; corrected
 or nonempty completed transcripts cannot be overwritten through this retry action.
 
-No speech detector discards nonzero audio, no denoiser removes a presumed background speaker
-from the canonical pass, and no speaker names are invented. Optional diarization is available
+Speech filtering changes only transcription request copies; it does not delete archive audio.
+No denoiser separates a presumed background speaker from the canonical pass, and no speaker
+names are invented. Optional diarization is available
 through [speaker detection](#speaker-detection-and-names); reliable simultaneous-speaker
 separation is not implemented. See the [research](audio-processing-research.md)
 and [reviewed implementation plan](audio-processing-plan.md) for the model-service acceptance
@@ -391,7 +448,7 @@ The initial **keyword-only fictional baseline** retrieved 71.7% of labeled sourc
 
 The default `data/` directory holds SQLite WAL, WAV recordings, and generated `diary/YYYY-MM-DD.md` files. Weekly review versions and durable jobs live in SQLite; backups also render immutable `weekly/<version-uuid>.md` projections. Keep one backend worker. Transcription retries survive restart; daily generation uses the configured local calendar, including DST boundaries, and catches up after downtime. Late evidence and corrections invalidate derived recaps. Transcript corrections and generated diary versions are auditable; chat sessions persist locally.
 
-Daily recaps and decision proposals update automatically when new or corrected transcripts become available, including late recordings added to earlier days. The worker checks every five seconds and reuses unchanged evidence without new inference. Decision extraction continues through bounded batches automatically; proposals still require review before confirmation. Recaps use a small number of subject-based sections, group related discussions across recordings, and consolidate repeated points. Each topic has one coherent summary with a copy-to-clipboard control; collapsed cards show a shortened preview of the same summary, not a second short-summary version. Original transcript passages stay behind an optional disclosure and favor the selected topic when matching. Unmatched recordings remain available through an explicit full-recording control instead of displaying unrelated transcript text inline. Decisions and real unresolved questions stay with their topic; recaps omit repeated date titles, empty categories and absence-of-information boilerplate. Later evidence can rewrite or merge sections to keep the whole day readable. Format changes invalidate saved recaps so the worker can rewrite them automatically. The legacy `OMI_RECAP_HOUR` and `OMI_RECAP_INTERVAL_MINUTES` settings no longer delay updates. Live conversations stay pending until five minutes of contiguous observed non-speech (`OMI_RECAP_QUIET_MINUTES`), followed by a 30-second settling buffer. Local WebRTC speech detection is advisory: it never filters transcription or deletes original audio. Empty transcripts, missing uploads, failed detection and capture gaps do not prove silence. A manually open meeting defers its stream; meeting hints cannot force closure. Boundaries remain approximate, and TV/radio speech can count as activity. Imported finished Omi conversations and manually uploaded files provide explicit file boundaries; an uploaded file may contain only part of a real conversation.
+Daily recaps and decision proposals update automatically when new or corrected transcripts become available, including late recordings added to earlier days. The worker checks every five seconds and reuses unchanged evidence without new inference. Decision extraction continues through bounded batches automatically; proposals still require review before confirmation. Recaps use a small number of subject-based sections, group related discussions across recordings, and consolidate repeated points. Each topic has one coherent summary with a copy-to-clipboard control; collapsed cards show a shortened preview of the same summary, not a second short-summary version. Original transcript passages stay behind an optional disclosure and favor the selected topic when matching. Unmatched recordings remain available through an explicit full-recording control instead of displaying unrelated transcript text inline. Decisions and real unresolved questions stay with their topic; recaps omit repeated date titles, empty categories and absence-of-information boilerplate. Later evidence can rewrite or merge sections to keep the whole day readable. Format changes invalidate saved recaps so the worker can rewrite them automatically. The legacy `OMI_RECAP_HOUR` and `OMI_RECAP_INTERVAL_MINUTES` settings no longer delay updates. Live conversations stay pending until five minutes of contiguous observed non-speech (`OMI_RECAP_QUIET_MINUTES`), followed by a 30-second settling buffer. Local WebRTC speech detection informs conversation boundaries and, when STT filter speech is enabled, filters transcription copies; it never deletes original audio. Empty transcripts, missing uploads, failed detection and capture gaps do not prove silence. A manually open meeting defers its stream; meeting hints cannot force closure. Boundaries remain approximate, and TV/radio speech can count as activity. Imported finished Omi conversations and manually uploaded files provide explicit file boundaries; an uploaded file may contain only part of a real conversation.
 
 Older web file uploads recorded with `device_id=web` and no source kind are also treated as finished uploads for recaps. Their original metadata and retry identity stay unchanged.
 

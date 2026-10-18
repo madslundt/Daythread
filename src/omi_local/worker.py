@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from .audio import contains_speech_energy
 from .decision_service import extract
 from .decisions import ExtractionRequest
-from .domain import utc_now
+from .domain import utc_now, wav_duration
 from .inbox_jobs import InboxJobs
 from .inference import Inference
 from .recording_topics import run_topics
@@ -42,13 +42,27 @@ async def process_one(memory: Memory) -> bool:
             None if memory.settings.stt_preserve_quiet else memory.settings.silence_threshold
         )
         if not contains_speech_energy(data, threshold):
-            memory.store.complete(row["id"], "", claimed=True, outcome="silence_gate",
-                                  details={"recognition_contract": contract})
+            filtering = {
+                "original_seconds": wav_duration(data), "retained_seconds": 0,
+                "detected_speech_seconds": 0 if threshold is None else None,
+                "status": "filtered" if threshold is None else "legacy_gate",
+            }
+            if isinstance(memory.inference, Inference):
+                memory.inference.record_usage({
+                    "kind": "filter", "recording_id": row["id"],
+                    "filter_status": filtering["status"], **filtering,
+                })
+            memory.store.complete(
+                row["id"], "", claimed=True, outcome="silence_gate",
+                details={"recognition_contract": contract, "filtering": filtering},
+            )
         elif hasattr(memory.inference, "transcribe_result"):
             if isinstance(memory.inference, Inference):
                 result = await memory.inference.transcribe_result(
                     data, on_progress=lambda stage, completed, total:
                     memory.store.update_processing(row["id"], stage, completed, total),
+                    recording_id=row["id"],
+                    voice_activity=voice,
                 )
             else:
                 memory.store.update_processing(row["id"], "transcribing")
@@ -57,6 +71,8 @@ async def process_one(memory: Memory) -> bool:
             memory.store.complete(
                 row["id"], result["text"], result["segments"], claimed=True,
                 details={**(result.get("processing") or {}), "recognition_contract": contract},
+                outcome="silence_gate" if not result.get("processing", {}).get("chunks", [True])
+                else None,
             )
             memory.store.finish_processing(row["id"])
         else:

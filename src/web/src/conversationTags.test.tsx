@@ -7,7 +7,8 @@ afterEach(() => setLanguagePreference("system"));
 describe("manual conversation tags", () => {
   it("offers a visible add action on an untagged recording", () => {
     const html = renderToStaticMarkup(<ConversationTags sourceID="source-1" />);
-    expect(html).toContain('aria-expanded="false">Add tag</button>');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('Add tag</button>');
     expect(html).toContain("No tags yet");
   });
 
@@ -24,7 +25,8 @@ describe("manual conversation tags", () => {
   it("explains full conversation scope and keeps edits disabled until state is loaded", () => {
     const html = renderToStaticMarkup(<TagEditor path="/v1/recording-groups/group/tags?day=2026-10-17" group />);
     expect(html).toContain("including those hidden by filters");
-    expect(html).toContain("keeps the recorded location and transcript intact");
+    expect(html).toContain("Search or create a tag");
+    expect(html).not.toContain("<select");
     expect(html).toContain("<fieldset disabled");
   });
 

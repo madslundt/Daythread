@@ -82,8 +82,12 @@ DESCRIPTIONS = {
     "Longer recordings are split and their transcripts joined. Default: 30. "
     "Use a duration accepted by every configured STT route; gateway model lists may not "
     "advertise audio limits. Applies to subsequent recordings without a restart.",
-    "stt_preserve_quiet": "Keep every nonzero recording eligible for speech recognition, "
-    "including faint or overlapping voices. Only exact digital silence is skipped. "
+    "stt_filter_speech": "Skip locally detected silence and non-speech before transcription. "
+    "Speech receives surrounding context; original audio and playback stay unchanged. "
+    "Detection can miss quiet speech; disable to transcribe full recordings. "
+    "If detection is unavailable, full audio is sent instead. Applies to new processing only.",
+    "stt_preserve_quiet": "Avoid the legacy volume threshold for faint or overlapping voices. "
+    "Speech filtering is controlled separately by STT filter speech. "
     "Disable only to opt into the legacy silence threshold, which may miss quiet voices.",
     "silence_threshold": "Legacy PCM16 RMS floor. Used only when STT preserve quiet is disabled; "
     "0 disables that gate. A positive floor can skip quiet speech. This is not speech detection.",

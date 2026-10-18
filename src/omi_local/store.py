@@ -44,6 +44,7 @@ from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
+from .usage import SCHEMA as USAGE_SCHEMA
 from .vendor_imports import SCHEMA as VENDOR_IMPORT_SCHEMA
 from .voice_schema import SCHEMA as VOICE_SCHEMA
 from .weekly_store import SCHEMA as WEEKLY_SCHEMA
@@ -113,6 +114,7 @@ class Store(
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
             db.executescript(PROCESSING_PROGRESS_SCHEMA)
+            db.executescript(USAGE_SCHEMA)
             db.executescript(WEEKLY_SCHEMA)
             db.executescript(DECISION_SCHEMA)
             # Preserve existing event history when upgrading an already-used starter.

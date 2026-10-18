@@ -50,7 +50,7 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
-      <ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} />
+      <div className="recording-organization"><ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} /></div>
       {open ? <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
     </div>
   </details>;

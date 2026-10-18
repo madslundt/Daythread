@@ -53,7 +53,7 @@ def test_pieces_preserve_every_sample_and_short_requests(seconds):
 async def test_pieces_share_one_deadline(tmp_path):
     settings = Settings(
         data_dir=tmp_path, _env_file=None, inference_timeout_seconds=1,
-        stt_max_gain_db=0, stt_boundary_search_seconds=0,
+        stt_max_gain_db=0, stt_boundary_search_seconds=0, stt_filter_speech=False,
     )
     calls = []
 
@@ -72,7 +72,9 @@ async def test_pieces_share_one_deadline(tmp_path):
 
 @pytest.mark.anyio
 async def test_configured_request_duration_is_used(tmp_path):
-    settings = Settings(data_dir=tmp_path, _env_file=None, stt_chunk_seconds=12)
+    settings = Settings(
+        data_dir=tmp_path, _env_file=None, stt_chunk_seconds=12, stt_filter_speech=False,
+    )
     durations = []
 
     def handler(request):
@@ -98,7 +100,8 @@ async def test_configured_request_duration_is_used(tmp_path):
 @pytest.mark.parametrize("fail_part", [None, 3])
 async def test_worker_transcribes_105_second_upload_atomically(tmp_path, fail_part):
     settings = Settings(
-        data_dir=tmp_path, _env_file=None, stt_segment_timestamps=True, stt_max_gain_db=0
+        data_dir=tmp_path, _env_file=None, stt_segment_timestamps=True, stt_max_gain_db=0,
+        stt_filter_speech=False,
     )
     store = Store(tmp_path)
     key = str(uuid4())

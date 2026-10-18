@@ -129,7 +129,10 @@ def bound_sources(
 class HybridRetriever:
     def __init__(self, store: Store, settings: Settings, embeddings: Embeddings | None = None):
         self.store, self.settings, self.embeddings = store, settings, embeddings
-        self.set_id = store.configure_embeddings(settings.embedding_manifest)
+        self.set_id = (
+            store.configure_embeddings(settings.embedding_manifest)
+            if settings.background_processing_enabled else None
+        )
 
     def status(self, start: datetime | None = None, end: datetime | None = None) -> dict:
         if not self.set_id:

@@ -16,6 +16,7 @@ import { ErrorState, Loading } from "./UI";
 import { parseThemePreference, setThemePreference, useThemePreference } from "./theme";
 import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLanguagePreference, type LanguagePreference } from "./i18n";
 import { ManagedAccountPanel, ManagedConnections, useManagedAccount } from "./ManagedAccount";
+import { Usage } from "./Usage";
 
 type NumberKey = {
   [K in keyof SettingsData]-?: SettingsData[K] extends number ? K : never;
@@ -183,7 +184,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
     || show("gestures", "gestures") || show("storage", "storage");
-  const noMatches = query && !["account", "profiles", "appearance", "daily", "gestures", "storage", "connections", "locations"].some((group) => matchesSettings(group, query))
+  const noMatches = query && !["account", "profiles", "appearance", "daily", "gestures", "storage", "connections", "locations", "usage"].some((group) => matchesSettings(group, query))
     && (managed || serverMatches?.query === search && serverMatches.count === 0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
@@ -239,6 +240,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
         preferencesDirty={dirty} serverDirty={serverDirty} managed={managed} />
       <div className="settings-panels">
       {show("account", "account") ? <ManagedAccountPanel /> : null}
+      {show("usage", "usage") ? <Usage key={selectedProfile} /> : null}
       {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {dirty && !preferencesVisible ? <div className="notice">
         <span>{t("You have unsaved preferences in another category.")}</span>

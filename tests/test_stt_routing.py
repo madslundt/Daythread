@@ -26,7 +26,8 @@ def anyio_backend():
 
 def config(tmp_path, **kwargs):
     return Settings(
-        data_dir=tmp_path, worker_enabled=False, _env_file=None, stt_max_gain_db=0, **kwargs
+        data_dir=tmp_path, worker_enabled=False, _env_file=None, stt_max_gain_db=0,
+        stt_filter_speech=False, **kwargs,
     )
 
 

@@ -2331,3 +2331,10 @@
 "Enter coordinates" = "Ange koordinater";
 "Zone location map" = "Karta över zonplats";
 "Tap the map to choose the zone center." = "Tryck på kartan för att välja zonens mittpunkt.";
+
+"Only your signed-in account can access these profiles." = "Endast ditt registrerade konto kan komma åt dessa profiler.";
+
+"Hosting is inactive. Your saved archive is still available." = "Hostningen är inaktiv. Ditt sparade arkiv är fortfarande tillgängligt.";
+"STT filter speech" = "STT-talfiltrering";
+"Skip locally detected silence and non-speech before transcription. Speech receives surrounding context; original audio and playback stay unchanged. Detection can miss quiet speech; disable to transcribe full recordings. If detection is unavailable, full audio is sent instead. Applies to new processing only." = "Hoppa över lokalt upptäckt tystnad och ljud utan tal före transkribering. Tal får omgivande sammanhang; originalljud och uppspelning förblir oförändrade. Detekteringen kan missa lågmält tal; inaktivera för att transkribera hela inspelningar. Om detekteringen är otillgänglig skickas hela ljudet i stället. Gäller endast ny bearbetning.";
+"Avoid the legacy volume threshold for faint or overlapping voices. Speech filtering is controlled separately by STT filter speech. Disable only to opt into the legacy silence threshold, which may miss quiet voices." = "Undvik den gamla volymgränsen för svaga eller överlappande röster. Talfiltrering styrs separat av STT-talfiltrering. Inaktivera endast för att använda den gamla tystnadsgränsen, som kan missa lågmälda röster.";

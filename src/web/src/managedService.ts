@@ -7,8 +7,12 @@ export type ManagedAccount = {
   name: string;
   hosted_until: number;
   hosting_active: boolean;
+  archive_access?: boolean;
   credits: { available_units: number; reserved_units: number };
 };
+export function managedArchiveAvailable(account?: ManagedAccount): boolean {
+  return Boolean(account && (account.archive_access ?? account.hosted_until > 0));
+}
 export type ManagedSnapshot = {
   managed: boolean;
   status: "local" | "loading" | "signed-in" | "signed-out" | "unavailable";
@@ -82,11 +86,13 @@ export async function loadManagedAccount(signal?: AbortSignal): Promise<ManagedA
       || client.authentication !== "cookie" || client.account_url !== "/account"
       || ![account.id, account.email, account.name].every((value) => typeof value === "string" && value.length > 0)
       || typeof account.hosting_active !== "boolean" || !integer(account.hosted_until)
+      || (account.archive_access !== undefined && typeof account.archive_access !== "boolean")
       || !integer(credits.available_units) || !integer(credits.reserved_units))
     throw new ManagedServiceError("unavailable");
   return {
     id: account.id as string, email: account.email as string, name: account.name as string,
     hosted_until: account.hosted_until, hosting_active: account.hosting_active,
+    archive_access: account.archive_access as boolean | undefined,
     credits: { available_units: credits.available_units, reserved_units: credits.reserved_units },
   };
 }

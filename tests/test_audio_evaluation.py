@@ -52,14 +52,14 @@ async def test_evaluation_uses_temporary_archive_and_reports_candidate_failure(
     def fake_settings(**kwargs):
         archive_paths.append(kwargs["data_dir"])
         assert kwargs["_env_file"] is None
-        return Settings(**kwargs)
+        return Settings(**kwargs, stt_filter_speech=False)
 
     monkeypatch.setattr("scripts.evaluate_audio.Settings", fake_settings)
 
     async def unavailable(data):
         raise FileNotFoundError
 
-    monkeypatch.setattr("omi_local.inference.enhance_audio", unavailable)
+    monkeypatch.setattr("omi_local.transcription.enhance_audio", unavailable)
     client_type = httpx.AsyncClient
 
     def mock_client(**kwargs):

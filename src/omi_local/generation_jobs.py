@@ -97,7 +97,8 @@ class GenerationJobs:
         self.store = memory.store
         with self.store.connect() as db:
             db.executescript(SCHEMA)
-            db.execute("UPDATE generation_jobs SET state='queued' WHERE state='running'")
+            if memory.settings.background_processing_enabled:
+                db.execute("UPDATE generation_jobs SET state='queued' WHERE state='running'")
 
     def get(self, job_id: str) -> dict:
         with self.store.connect() as db:

@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omi_local.api import create_app
-from omi_local.configuration import RETIRED_FIELDS
+from omi_local.configuration import RETIRED_FIELDS, Configuration
 from omi_local.settings import DEPLOYMENT_FIELDS, Settings
 
 
@@ -25,6 +25,53 @@ def settings(tmp_path):
         omi_api_key="omi-secret",
         stt_routes={"da": {"model": "danish", "token": "route-secret"}},
     )
+
+
+def test_hosted_startup_ignores_restored_model_and_worker_overrides(settings):
+    settings.data_dir.mkdir()
+    (settings.data_dir / ".private-settings.json").write_text(json.dumps({"overrides": {
+        "stt_base_url": "https://external.example.com/v1",
+        "stt_routes": {"da": {"model": "unauthorized"}},
+        "llm_routes": {"chat": {"model": "unauthorized"}},
+        "inference_token": "imported-key",
+        "embedding_enabled": False,
+        "embedding_model": "unauthorized",
+        "embedding_revision": "other-revision",
+        "embedding_dimension": 2,
+        "embedding_token": "imported-key",
+        "chat_query_expansion": False,
+        "worker_enabled": False,
+        "diarization_enabled": True,
+        "voice_recognition_enabled": True,
+        "audio_forwarding_enabled": True,
+        "data_dir": "/another-archive",
+        "summary_language": "da",
+        "translation_languages": ["da", "en"],
+    }}))
+    initial = Settings.model_validate(settings.model_dump() | {
+        "managed_hosting": True,
+        "worker_enabled": True,
+        "embedding_enabled": True,
+        "embedding_model": "operator-embeddings",
+        "embedding_revision": "operator-revision",
+        "embedding_dimension": 1536,
+        "embedding_token": "operator-key",
+    })
+    configuration = Configuration(initial)
+    active = configuration.startup(initial)
+    for key in (
+        "stt_base_url", "stt_routes", "llm_routes", "inference_token", "embedding_enabled",
+        "embedding_model", "embedding_revision", "embedding_dimension", "embedding_token",
+        "chat_query_expansion", "worker_enabled", "diarization_enabled",
+        "voice_recognition_enabled", "audio_forwarding_enabled", "data_dir",
+    ):
+        assert getattr(active, key) == getattr(initial, key)
+    assert active.summary_language == "da"
+    assert active.translation_languages == ["da", "en"]
+    assert configuration.desired(active) == active
+    assert configuration.overrides == {
+        "summary_language": "da", "translation_languages": ["da", "en"]
+    }
 
 
 def save(client, changes, revision=None):

@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from omi_local.inference import Inference
+from omi_local.inference_errors import InferenceDisabled, InferenceError
 from omi_local.settings import Settings
 
 
@@ -102,3 +103,50 @@ async def test_actual_inference_sends_separate_provider_keys(tmp_path):
         ("speech.example.com", "Bearer speech-secret"),
         ("chat.example.com", "Bearer language-secret"),
     ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["stt", "llm"])
+@pytest.mark.parametrize("managed,detail,disabled", [
+    (True, "This task is turned off.", True),
+    (False, "This task is turned off.", False),
+    (True, "Ordinary provider conflict", False),
+])
+async def test_only_trusted_managed_gateway_off_response_pauses_task(
+    tmp_path, provider, managed, detail, disabled,
+):
+    settings = Settings(data_dir=tmp_path, _env_file=None, managed_hosting=managed)
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(409, json={"detail": detail})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        inference = Inference(settings, http)
+        with pytest.raises(InferenceDisabled if disabled else httpx.HTTPStatusError):
+            await inference.post(provider, "http://gateway/v1")
+        assert getattr(settings, provider + "_enabled") is not disabled
+        if disabled:
+            assert inference.health[provider] == {"state": "disabled"}
+            with pytest.raises(InferenceDisabled):
+                await inference.post(provider, "http://gateway/v1")
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("managed", [True, False])
+async def test_streaming_gateway_off_preserves_policy_exception(tmp_path, managed):
+    settings = Settings(data_dir=tmp_path, _env_file=None, managed_hosting=managed)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(409, json={"detail": "This task is turned off."})
+    )) as http:
+        inference = Inference(settings, http)
+
+        async def delta(_):
+            pytest.fail("A disabled model cannot send answer text")
+
+        error = InferenceDisabled if managed else InferenceError
+        with pytest.raises(error):
+            await inference.generate_stream("task", "evidence", delta)
+        assert settings.llm_enabled is not managed

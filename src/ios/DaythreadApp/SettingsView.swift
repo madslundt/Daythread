@@ -11,7 +11,6 @@ struct SettingsView: View {
     @State private var summaryLanguage = "auto"
     @State private var translationLanguages: [String] = []
     @State private var translationLanguagesLoaded = false
-    @State private var meetingQuietMinutes = 10
     @State private var timezone = TimeZone.current.identifier
     @State private var audioRetentionDays = 7
     @State private var transcriptRetentionDays = 30
@@ -35,6 +34,9 @@ struct SettingsView: View {
                 NavigationLink { storageSettings } label: {
                     DestinationLabel(title: L10n.text("Storage & privacy"), subtitle: L10n.text("Recordings, retention & location"), symbol: "archivebox", color: Theme.sage)
                 }.accessibilityIdentifier("settings.storage")
+                NavigationLink { LocationZonesView() } label: {
+                    DestinationLabel(title: L10n.text("Location zones"), subtitle: L10n.text("Home, work, gym & other places"), symbol: "map", color: Theme.sage)
+                }.accessibilityIdentifier("settings.locationZones")
                 NavigationLink { accountSettings } label: {
                     DestinationLabel(title: L10n.text("Account & profiles"), subtitle: model.hasSelectedProfile ? model.selectedProfileName : L10n.text("Choose an archive to get started"), symbol: "person.crop.circle", color: Theme.sage)
                 }.accessibilityIdentifier("settings.connections")
@@ -105,17 +107,6 @@ struct SettingsView: View {
                 Text(L10n.text("Recordings wait on this iPhone until a permitted connection is available. Recording continues while uploads wait."))
             }
             Section {
-                Picker(L10n.text("End meeting after this much quiet"), selection: $meetingQuietMinutes) {
-                    ForEach(Array(Set([1, 2, 5, 10, 15, 30, meetingQuietMinutes])).sorted(), id: \.self) { minutes in
-                        Text(L10n.text("\(minutes) min")).tag(minutes)
-                    }
-                }.accessibilityIdentifier("settings.meetingQuietMinutes")
-                Button(L10n.text("Save preferences")) { Task { await saveMeetingQuiet() } }
-                    .disabled(loading || !settingsLoaded).accessibilityIdentifier("settings.saveMeetingQuiet")
-            } footer: {
-                Text(L10n.text("Applies to new meetings after the first hour. Only recorded quiet counts; missing uploads do not end a meeting."))
-            }
-            Section {
                 NavigationLink(L10n.text("Pendant details")) { pendantSettings }
                 NavigationLink { OmiConnectionsView() } label: {
                     DestinationLabel(title: L10n.text("Omi import & audio forwarding"), subtitle: L10n.text("Optional cloud transcripts & audio receiver"), symbol: "arrow.triangle.2.circlepath", color: Theme.accent)
@@ -168,8 +159,6 @@ struct SettingsView: View {
                 if model.recordingLocationsEnabled, let message = model.locations.error {
                     Text(L10n.key(message)).font(.caption).foregroundStyle(.secondary)
                 }
-                NavigationLink(L10n.text("Location zones")) { LocationZonesView() }
-                    .accessibilityIdentifier("settings.locationZones")
             } header: { Text(L10n.text("Location")) } footer: {
                 Text(L10n.text("Off by default. While pendant capture is active, save a recent phone location and its accuracy with each recording, including offline. Locations sync to your private archive and expire with transcripts. iOS may show a location indicator. Turning this off stops new observations; existing locations stay until their recordings expire or are deleted."))
             }
@@ -237,7 +226,6 @@ struct SettingsView: View {
         do {
             let settings = try await model.client().request("v1/settings")
             guard !Task.isCancelled else { return }
-            if case .number(let quiet) = settings["meeting_quiet_minutes"] { meetingQuietMinutes = Int(quiet) }
             if !settings["summary_language"].text.isEmpty { summaryLanguage = settings["summary_language"].text }
             if case .array = settings["translation_languages"] {
                 translationLanguages = settings["translation_languages"].array.map(\.text)
@@ -259,15 +247,6 @@ struct SettingsView: View {
             audioRetentionDays = settings["audio_retention_days"].integer
             transcriptRetentionDays = settings["transcript_retention_days"].integer
             status = L10n.text("Archive retention saved")
-        } catch { self.error = L10n.error(error) }
-    }
-    private func saveMeetingQuiet() async {
-        guard settingsLoaded else { return }
-        loading = true; error = nil; status = nil; defer { loading = false }
-        do {
-            let settings = try await model.client().request("v1/settings", method: "PATCH", body: ["meeting_quiet_minutes": meetingQuietMinutes])
-            meetingQuietMinutes = settings["meeting_quiet_minutes"].integer
-            status = L10n.text("Preferences saved")
         } catch { self.error = L10n.error(error) }
     }
     private func saveTranslationLanguages() async {

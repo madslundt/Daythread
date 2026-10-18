@@ -2456,3 +2456,9 @@
 "Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually." = "Das automatische Beenden eines Meetings erfordert eine durchgehende, von Omi synchronisierte Aufnahme. Beende Meetings mit dem Telefon manuell.";
 "End the meeting anytime. Recording continues after the meeting marker ends." = "Du kannst das Meeting jederzeit beenden. Die Aufnahme läuft nach dem Ende der Meeting-Markierung weiter.";
 "Capture device association requires a meeting start" = "Die Zuordnung eines Aufnahmegeräts erfordert einen Meeting-Start";
+"LLM enabled" = "Sprachmodell aktiviert";
+"STT enabled" = "Transkription aktiviert";
+"Restart the archive to enable a paused task" = "Starte das Archiv neu, um eine pausierte Aufgabe zu aktivieren";
+"Supply task policy flags as booleans" = "Gib Aufgabenrichtlinien als boolesche Werte an";
+"This policy is only available for managed archives" = "Diese Richtlinie ist nur für verwaltete Archive verfügbar";
+"{value0} is off." = "{value0} ist ausgeschaltet.";

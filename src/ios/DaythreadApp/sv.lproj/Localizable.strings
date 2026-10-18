@@ -2456,3 +2456,9 @@
 "Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually." = "Automatisk mötesavslutning kräver en sammanhängande inspelning synkroniserad från Omi. Avsluta telefonmöten manuellt.";
 "End the meeting anytime. Recording continues after the meeting marker ends." = "Du kan avsluta mötet när som helst. Inspelningen fortsätter efter att mötesmarkören avslutas.";
 "Capture device association requires a meeting start" = "Koppling till inspelningsenhet kräver en mötesstart";
+"LLM enabled" = "Språkmodell aktiverad";
+"STT enabled" = "Transkription aktiverad";
+"Restart the archive to enable a paused task" = "Starta om arkivet för att aktivera en pausad uppgift";
+"Supply task policy flags as booleans" = "Ange uppgiftsflaggor som booleska värden";
+"This policy is only available for managed archives" = "Denna policy är endast tillgänglig för hanterade arkiv";
+"{value0} is off." = "{value0} är avstängd.";

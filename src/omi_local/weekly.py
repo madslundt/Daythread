@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .completion_events import publish_weekly
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference import InferenceError, for_task
+from .inference_errors import InferenceDisabled
 from .service import public_source
 from .weekly_inference import generate_items
 from .weekly_models import PROMPT_VERSION, ReviewVersion, default_week, week_bounds
@@ -192,12 +193,15 @@ class WeeklyReviews:
         }
 
     def enqueue(self, day: date, request_id: str, force: bool) -> dict:
+        self.memory.settings.require_inference("llm")
         snapshot = self.snapshot(day)
         if not snapshot["coverage"]["speech_sources"]:
             return {"job": None, "version_id": None, "state": "empty"}
         return self.store.enqueue(day.isoformat(), snapshot, request_id, force)
 
     async def process_one(self) -> bool:
+        if not self.memory.settings.llm_enabled:
+            return False
         job = self.store.claim()
         if job is None:
             return False
@@ -234,6 +238,12 @@ class WeeklyReviews:
             publish_weekly(self.memory, version, guard=notification_guard)
         except EvidenceChanged:
             self.store.fail(job["id"], "Recorded evidence changed; generate again")
+        except InferenceDisabled:
+            with self.memory.store.connect() as db:
+                db.execute(
+                    "UPDATE weekly_jobs SET state='queued',attempts=max(0,attempts-1) "
+                    "WHERE id=? AND state='running'", (job["id"],),
+                )
         except InferenceError:
             self.store.fail(
                 job["id"],
@@ -248,9 +258,14 @@ class WeeklyReviews:
         return True
 
     async def run(self) -> None:
+        if not self.memory.settings.llm_enabled:
+            return
         recovered = False
         while True:
             try:
+                if not self.memory.settings.llm_enabled:
+                    await asyncio.sleep(1)
+                    continue
                 if not recovered:
                     self.store.recover()
                     recovered = True

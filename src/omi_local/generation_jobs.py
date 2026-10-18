@@ -12,6 +12,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
+from .inference_errors import InferenceDisabled
 from .recording_topics import topic_fingerprint
 from .summary_translation import generate_summary_translation
 from .translation import generate_translation
@@ -97,6 +98,9 @@ PARAMETERS = {
     "translation": TranslationParameters, "summary_translation": SummaryTranslationParameters,
     "meeting_recap": MeetingParameters,
 }
+RAW_REWIND = (
+    "(kind='rewind' AND CAST(json_extract(parameters,'$.summarize') AS TEXT) IN ('0','false'))"
+)
 
 
 class GenerationJobs:
@@ -121,11 +125,12 @@ class GenerationJobs:
     def observation(self) -> dict:
         """Counts of generation tasks, separate from audio chunks awaiting STT."""
         stages: dict[str, int] = {}
-        queued = running = 0
+        queued = running = paused = 0
         with self.store.connect() as db:
             rows = db.execute(
-                "SELECT kind,state,count(*) AS n FROM generation_jobs "
-                "WHERE state IN ('queued','running') GROUP BY kind,state"
+                f"SELECT kind,state,CASE WHEN {RAW_REWIND} THEN 0 ELSE 1 END AS uses_llm,"
+                "count(*) AS n FROM generation_jobs WHERE state IN ('queued','running') "
+                "GROUP BY kind,state,uses_llm"
             ).fetchall()
             topics = db.execute(
                 "SELECT count(*) FROM audio WHERE state='done' "
@@ -135,25 +140,40 @@ class GenerationJobs:
                 (topic_fingerprint(self.memory),),
             ).fetchone()[0]
         for row in rows:
+            if row["uses_llm"] and not self.memory.settings.llm_enabled:
+                paused += row["n"]
+                continue
             if row["state"] == "queued":
                 queued += row["n"]
             else:
                 running += row["n"]
+                if not row["uses_llm"]:
+                    continue
                 stage = ("translating" if row["kind"] in {"translation", "summary_translation"}
                          else "summarizing")
                 stages[stage] = stages.get(stage, 0) + row["n"]
         for stage, count in self.memory.background_activity.copy().items():
             if count:
+                if not self.memory.settings.llm_enabled:
+                    paused += count
+                    continue
                 stages[stage] = stages.get(stage, 0) + count
                 running += count
-        queued += max(0, topics - stages.get("organizing", 0))
-        return {"queued": queued, "running": running, "stages": stages}
+        topics = max(0, topics - stages.get("organizing", 0))
+        if not self.memory.settings.llm_enabled:
+            paused += topics
+        else:
+            queued += topics
+        result = {"queued": queued, "running": running, "stages": stages}
+        return result | {"paused": paused} if not self.memory.settings.llm_enabled else result
 
     def enqueue(self, body: GenerationRequest) -> dict:
         try:
             params = PARAMETERS[body.kind].model_validate(body.parameters).model_dump(mode="json")
         except ValidationError as exc:
             raise HTTPException(422, "Invalid generation parameters") from exc
+        if body.kind != "rewind" or params["summarize"]:
+            self.memory.settings.require_inference("llm")
         job_id = str(body.id)
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -274,10 +294,12 @@ class GenerationJobs:
             db.execute("UPDATE generation_jobs SET notified=1 WHERE id=?", (job["id"],))
 
     async def process_one(self) -> bool:
+        policy = "" if self.memory.settings.llm_enabled else f" AND {RAW_REWIND}"
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT id FROM generation_jobs WHERE state='queued' ORDER BY created_at LIMIT 1"
+                "SELECT id FROM generation_jobs WHERE state='queued'" + policy
+                + " ORDER BY created_at LIMIT 1"
             ).fetchone()
             if row is None:
                 return False
@@ -288,6 +310,12 @@ class GenerationJobs:
             async with asyncio.timeout(self.memory.settings.inference_timeout_seconds):
                 result = await self.execute(job)
             self.complete(job, result)
+        except InferenceDisabled:
+            with self.store.connect() as db:
+                db.execute(
+                    "UPDATE generation_jobs SET state='queued',error=NULL WHERE id=?",
+                    (job["id"],),
+                )
         except asyncio.CancelledError:
             with self.store.connect() as db:
                 db.execute("UPDATE generation_jobs SET state='queued' WHERE id=?", (job["id"],))

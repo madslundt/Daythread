@@ -143,12 +143,17 @@ class Embeddings:
 
 
 async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
+    if not embeddings.settings.embedding_enabled:
+        return False
     job = await asyncio.to_thread(
         store.claim_embedding_batch,
         set_id,
         embeddings.settings.embedding_passage_chars,
     )
     if not job:
+        return False
+    if not embeddings.settings.embedding_enabled:
+        await asyncio.to_thread(store.retry_embedding, job, paused=True)
         return False
     try:
         texts = [
@@ -161,8 +166,11 @@ async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
         await asyncio.to_thread(store.retry_embedding, job)
         raise
     except Exception as exc:
-        logger.warning("Embedding indexing will retry (%s)", type(exc).__name__)
-        await asyncio.to_thread(store.retry_embedding, job)
+        if not embeddings.settings.embedding_enabled:
+            await asyncio.to_thread(store.retry_embedding, job, paused=True)
+        else:
+            logger.warning("Embedding indexing will retry (%s)", type(exc).__name__)
+            await asyncio.to_thread(store.retry_embedding, job)
     return True
 
 

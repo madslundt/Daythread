@@ -164,7 +164,8 @@ class Profiles:
             memory,
             weekly,
             OmiAPI(settings, self.client, store),
-            asyncio.create_task(weekly.run()) if settings.background_processing_enabled else None,
+            asyncio.create_task(weekly.run())
+            if settings.background_processing_enabled and settings.llm_enabled else None,
             worker,
             embedding_worker,
             jobs,

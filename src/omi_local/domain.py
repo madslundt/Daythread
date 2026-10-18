@@ -153,7 +153,7 @@ def project_events(
             active["meeting_capture_device_id"], [],
         ):
             finish = max(datetime.fromisoformat(start), eligible) + timedelta(
-                minutes=active["meeting_quiet_minutes"],
+                minutes=policy.meeting_quiet_minutes,
             )
             if finish <= min(datetime.fromisoformat(end), before):
                 active.update(ended_at=stamp(finish), end_reason="observed_non_speech")
@@ -166,7 +166,7 @@ def project_events(
             continue
         close_after_quiet(at)
         # Legacy timing overrides remain stored for retry identity only.
-        # Only the new quiet threshold varies, captured when a meeting starts.
+        # All flag and meeting timing rules are fixed product policy.
         metadata = json.loads(event.get("hint_policy", "{}"))
         if event["action"] == "mark":
             if next_marker_at is not None and at < next_marker_at:
@@ -198,7 +198,7 @@ def project_events(
                 ),
                 "started_at": stamp(at),
                 "auto_stop_at": None,
-                "meeting_quiet_minutes": metadata.get("meeting_quiet_minutes", 10),
+                "meeting_quiet_minutes": policy.meeting_quiet_minutes,
                 "ended_at": None,
                 "end_reason": None,
                 "qualifies_at": stamp(at + timedelta(seconds=policy.meeting_min_seconds)),

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -254,3 +255,54 @@ def test_translation_job_reuses_real_generation_and_survives_disconnected_client
     notice = jobs.store.notifications_after(0)["notifications"][0]
     assert "Danish" in notice["title"]
     assert "17 Oct" in notice["body"]
+
+
+def test_raw_rewind_runs_while_llm_jobs_stay_paused(jobs):
+    summary = request("recap", day="2026-10-17")
+    jobs.enqueue(summary)
+    jobs.memory.settings.llm_enabled = False
+    raw = request(summarize=False)
+    jobs.enqueue(raw)
+    assert jobs.observation() == {"queued": 1, "running": 0, "stages": {}, "paused": 1}
+    assert asyncio.run(jobs.process_one())
+    assert jobs.get(str(raw.id))["state"] == "completed"
+    assert not jobs.get(str(raw.id))["result"]["summary"]
+    assert jobs.get(str(summary.id))["state"] == "queued"
+    assert not asyncio.run(jobs.process_one())
+
+
+def test_gateway_off_before_local_quiesce_does_not_fail_generation(jobs):
+    from omi_local.inference import Inference
+
+    jobs.memory.settings.managed_hosting = True
+    body = request("recap", day="2026-10-17")
+    jobs.enqueue(body)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(409, json={"detail": "This task is turned off."})
+        )) as http:
+            inference = Inference(jobs.memory.settings, http)
+
+            async def recap(day):
+                await inference.generate("recap", "original transcript")
+
+            jobs.memory.recap = recap
+            assert await jobs.process_one()
+            assert not await jobs.process_one()
+
+    asyncio.run(run())
+    assert jobs.get(str(body.id))["state"] == "queued"
+    assert jobs.get(str(body.id))["error"] is None
+    assert not jobs.memory.settings.llm_enabled
+
+
+def test_raw_rewind_api_worker_remains_available_when_all_models_are_off(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, _env_file=None, worker_enabled=False,
+        stt_enabled=False, llm_enabled=False, embedding_enabled=False,
+    )
+    with TestClient(create_app(settings)) as client:
+        assert client.app.state.profiles.runtimes["default"].generation_worker is not None
+        body = {"id": str(uuid4()), "kind": "rewind", "parameters": {"summarize": False}}
+        assert client.post("/v1/jobs", json=body).status_code == 202

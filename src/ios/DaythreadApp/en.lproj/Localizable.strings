@@ -2458,3 +2458,9 @@
 "Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually." = "Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually.";
 "End the meeting anytime. Recording continues after the meeting marker ends." = "End the meeting anytime. Recording continues after the meeting marker ends.";
 "Capture device association requires a meeting start" = "Capture device association requires a meeting start";
+"LLM enabled" = "LLM enabled";
+"STT enabled" = "STT enabled";
+"Restart the archive to enable a paused task" = "Restart the archive to enable a paused task";
+"Supply task policy flags as booleans" = "Supply task policy flags as booleans";
+"This policy is only available for managed archives" = "This policy is only available for managed archives";
+"{value0} is off." = "{value0} is off.";

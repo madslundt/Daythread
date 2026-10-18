@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MeetingQuietSetting, preferenceChanges } from "./Settings";
+import { preferenceChanges } from "./Settings";
 import type { Settings } from "./types";
-import { SettingsNavigation, sectionFromPath } from "./SettingsNavigation";
+import { SettingsNavigation, sectionFromPath, matchesSettings } from "./SettingsNavigation";
 import { advancedConfigurationFields, type ConfigurationField } from "./configurationModel";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -11,17 +11,17 @@ const navigation = (managed = false) => renderToStaticMarkup(<SettingsNavigation
   onSelect={() => {}} preferencesDirty={false} serverDirty={false} managed={managed} />);
 
 describe("simplified settings", () => {
-  it("offers five everyday destinations and keeps server administration out of hosted accounts", () => {
+  it("offers six destinations and keeps server administration out of hosted accounts", () => {
     const html = navigation();
-    expect(html.match(/href="\/settings\//g)).toHaveLength(5);
-    for (const label of ["General", "Recording &amp; devices", "Storage &amp; privacy", "Account &amp; profiles", "Advanced"])
+    expect(html.match(/href="\/settings\//g)).toHaveLength(6);
+    for (const label of ["General", "Recording &amp; devices", "Storage &amp; privacy", "Location zones", "Account &amp; profiles", "Advanced"])
       expect(html).toContain(label);
     expect(html).not.toContain("Flags &amp; meetings");
-    expect(navigation(true).match(/href="\/settings\//g)).toHaveLength(4);
+    expect(navigation(true).match(/href="\/settings\//g)).toHaveLength(5);
     expect(navigation(true)).not.toContain('href="/settings/server"');
   });
 
-  it.each([["profiles", "account"], ["usage", "account"], ["locations", "storage"], ["gestures", "connections"]])(
+  it.each([["profiles", "account"], ["usage", "account"], ["locations", "locations"], ["gestures", "connections"]])(
     "keeps old %s links working in %s", (path, expected) => {
       vi.stubGlobal("window", { location: { pathname: `/settings/${path}` } });
       expect(sectionFromPath()).toBe(expected);
@@ -29,7 +29,7 @@ describe("simplified settings", () => {
 
   const field = (key: string): ConfigurationField => ({ key, label: key, group: "Test", kind: "string", description: "", nullable: false, restart_required: false });
   it("curates advanced controls instead of exposing new backend, retired or fixed-policy fields", () => {
-    const keys = ["stt_model", "llm_model", "meeting_max_minutes", "meeting_context_seconds", "marker_cooldown_seconds",
+    const keys = ["stt_model", "llm_model", "meeting_max_minutes", "meeting_quiet_minutes", "meeting_context_seconds", "marker_cooldown_seconds",
       "translation_languages", "capture_paused", "recap_hour", "recap_quiet_minutes", "silence_threshold", "data_dir", "new_backend_option"];
     expect(advancedConfigurationFields(keys.map(field), {}).map(({ key }) => key)).toEqual(["stt_model", "llm_model"]);
   });
@@ -45,11 +45,8 @@ describe("simplified settings", () => {
 });
 
 
-it("offers the meeting quiet-period control with its evidence rule and saves only supported preferences", () => {
-  const html = renderToStaticMarkup(<MeetingQuietSetting value={15} onChange={() => {}} />);
-  expect(html).toContain("End meeting after this much quiet");
-  expect(html).toContain('<option value="15" selected="">15 minutes</option>');
-  expect(html).toContain("Applies to new meetings after the first hour. Only recorded quiet counts; missing uploads do not end a meeting.");
+it("excludes all meeting policy fields from preferences even when a legacy draft contains them", () => {
+  expect(matchesSettings("meetings", "quiet")).toBe(false);
   const draft: Settings = {
     timezone: "Europe/Copenhagen", summary_language: "auto", meeting_quiet_minutes: 15,
     audio_retention_days: 7, transcript_retention_days: 30,
@@ -58,6 +55,6 @@ it("offers the meeting quiet-period control with its evidence rule and saves onl
     marker_context_seconds: 60, marker_after_seconds: 60, marker_cooldown_seconds: 60, recap_hour: 22,
   };
   expect(preferenceChanges(draft, false)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto",
-    meeting_quiet_minutes: 15, translation_languages: ["da"], audio_retention_days: 7, transcript_retention_days: 30 });
-  expect(preferenceChanges(draft, true)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto", translation_languages: ["da"], meeting_quiet_minutes: 15 });
+    translation_languages: ["da"], audio_retention_days: 7, transcript_retention_days: 30 });
+  expect(preferenceChanges(draft, true)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto", translation_languages: ["da"] });
 });

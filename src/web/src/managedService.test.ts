@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MANAGED_SERVICE_ORIGIN, ManagedSession, isManagedOrigin,
   loadManagedAccount, managedArchiveAvailable, managedMutationHeaders, managedServiceUrl,
+  managedKinds, type ManagedAccount,
 } from "./managedService";
 import { request, uploadRecording } from "./api";
 import { streamChat } from "./chatStream";
@@ -121,6 +122,35 @@ describe("fixed managed service boundary", () => {
 });
 
 describe("managed account lifecycle", () => {
+  it("adopts independent model choices immediately and preserves saved own details while off", async () => {
+    browser();
+    const modeled: ManagedAccount = { ...account,
+      inference: Object.fromEntries(managedKinds.map((kind) => [kind, {
+        mode: "managed", provider: "personal", model: "my-model", has_key: true, options: {},
+      }])) as NonNullable<ManagedAccount["inference"]>,
+      providers: [{ id: "personal", label: "My provider", kinds: [...managedKinds] }],
+      rates: { models: { stt: { model: "speech" }, llm: { model: "language" }, embedding: { model: "vectors" } } },
+    };
+    provider(modeled);
+    const session = new ManagedSession();
+    await session.refresh();
+    const updated = { ...modeled, inference: { ...modeled.inference!, stt: { ...modeled.inference!.stt, mode: "off" as const } } };
+    const fetch = provider(updated);
+    await session.updateConnection("stt", { mode: "off" });
+    expect(fetch).toHaveBeenCalledWith("/service/v1/inference/stt", expect.objectContaining({
+      method: "PUT", body: JSON.stringify({ mode: "off" }), credentials: "same-origin",
+    }));
+    expect(new Headers(fetch.mock.calls[0][1]?.headers).get("X-CSRF-Token")).toBe("csrf-test");
+    expect(session.getSnapshot().account?.inference?.stt).toEqual({
+      mode: "off", provider: "personal", model: "my-model", has_key: true, options: {},
+    });
+    expect(session.getSnapshot().account?.inference?.llm.mode).toBe("managed");
+    expect(session.getSnapshot().updatingModels).toBeFalsy();
+    provider({}, 422);
+    await expect(session.updateConnection("llm", { mode: "own" })).rejects.toThrow();
+    expect(session.getSnapshot().account?.inference?.llm.mode).toBe("managed");
+  });
+
   it("clears a previously loaded account when its cookie expires", async () => {
     browser();
     provider();

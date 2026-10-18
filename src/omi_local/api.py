@@ -45,6 +45,7 @@ from .generation_jobs import generation_routes
 from .importance import router as importance_router
 from .inbox_api import inbox_router
 from .inference import InferenceError
+from .inference_errors import InferenceDisabled
 from .label_api import router as label_router
 from .label_models import LabelError
 from .location_zones import location_zone_routes
@@ -224,6 +225,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(httpx.HTTPError)
     @app.exception_handler(InferenceError)
     async def upstream_error(request: Request, exc: Exception) -> Response:
+        if isinstance(exc, InferenceDisabled):
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
         return JSONResponse(status_code=502, content={"detail": "Local inference is unavailable"})
 
     @app.exception_handler(EvidenceChanged)
@@ -244,6 +247,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "label_revision": memory().store.label_revision(),
             "timezone": config.timezone,
             "worker_enabled": config.worker_enabled,
+            "processing_enabled": {
+                "stt": config.stt_enabled, "llm": config.llm_enabled,
+                "embedding": config.embedding_enabled,
+            },
             "weekly_worker_running": bool(
                 runtime().weekly_worker and not runtime().weekly_worker.done()
             ),
@@ -363,6 +370,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 profile.memory.store.apply_retention(
                     config.audio_retention_days, config.transcript_retention_days
                 )
+
+    @app.post("/v1/managed-model-policy")
+    def quiesce_models(changes: dict) -> dict:
+        if not config.managed_hosting:
+            raise HTTPException(403, "This policy is only available for managed archives")
+        allowed = {"stt_enabled", "llm_enabled", "embedding_enabled"}
+        if not changes or changes.keys() - allowed or any(
+            type(value) is not bool for value in changes.values()
+        ):
+            raise HTTPException(422, "Supply task policy flags as booleans")
+        with settings_lock:
+            if any(value and not getattr(config, key) for key, value in changes.items()):
+                raise HTTPException(409, "Restart the archive to enable a paused task")
+            # Update existing objects too: in-flight tasks may hold a settings reference
+            # or a task-bound inference adapter while another HTTP lease prevents restart.
+            targets = [config]
+            for profile in app.state.profiles.runtimes.values():
+                current = profile.memory
+                targets.extend([
+                    current.settings, current.inference.settings, current.retriever.settings,
+                    current.retriever.embeddings.settings, current.notifications.settings,
+                ])
+                for kind in ("stt", "llm"):
+                    if changes.get(kind + "_enabled") is False:
+                        current.inference.health[kind] = {"state": "disabled"}
+                if changes.get("embedding_enabled") is False:
+                    current.retriever.set_id = None
+                    current.retriever.embeddings.health = {"state": "disabled"}
+            for target in targets:
+                for key, value in changes.items():
+                    if not value:
+                        setattr(target, key, False)
+            return {key: getattr(config, key) for key in sorted(allowed)}
 
     @app.get("/v1/configuration")
     def get_configuration() -> dict:
@@ -844,6 +884,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         status, message = 409, "Recorded evidence changed; reload and retry"
                     elif isinstance(exc, DateScopeError):
                         status, message = 422, "Use valid ISO calendar dates"
+                    elif isinstance(exc, InferenceDisabled):
+                        status, message = 409, str(exc)
                     elif isinstance(exc, (InferenceError, httpx.HTTPError, TimeoutError)):
                         status, message = 502, "Local inference is unavailable"
                     else:

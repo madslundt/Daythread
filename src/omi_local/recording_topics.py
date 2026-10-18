@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import stamp, utc_now
 from .inference import summary_language_instruction
+from .inference_errors import InferenceDisabled
 
 if TYPE_CHECKING:
     from .service import Memory
@@ -117,6 +118,8 @@ def topic_fingerprint(memory: Memory) -> str:
 
 async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
     """One consumer per archive; retries survive restart and never requeue successful STT."""
+    if not memory.settings.llm_enabled:
+        return False
     now = now or utc_now()
     fingerprint = topic_fingerprint(memory)
     with memory.store.connect() as db:
@@ -133,6 +136,8 @@ async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
     try:
         with memory.processing_activity("organizing"):
             result = await analyze(memory, row)
+    except InferenceDisabled:
+        return False
     except Exception as exc:
         logger.warning("Recording topic analysis will retry (%s)", type(exc).__name__)
         result = {"retry_at": stamp(now + timedelta(minutes=1))}

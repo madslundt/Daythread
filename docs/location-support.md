@@ -1,6 +1,6 @@
 # Conversation locations and nearby reminders
 
-On iPhone, open **Settings → Capture & uploads → Save conversation locations** to opt in.
+On iPhone, open **Settings → Storage & privacy → Save conversation locations** to opt in.
 Grant location access when asked. This preference is saved on that phone and defaults to off.
 
 While a pendant is connected and capture is enabled, Daythread requests phone locations at

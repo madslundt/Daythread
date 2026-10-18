@@ -131,7 +131,7 @@ class HybridRetriever:
         self.store, self.settings, self.embeddings = store, settings, embeddings
         self.set_id = (
             store.configure_embeddings(settings.embedding_manifest)
-            if settings.background_processing_enabled else None
+            if settings.background_processing_enabled and settings.embedding_enabled else None
         )
 
     def status(self, start: datetime | None = None, end: datetime | None = None) -> dict:
@@ -158,7 +158,7 @@ class HybridRetriever:
         async def lexical_candidates():
             return (
                 await asyncio.to_thread(self.store.search, query, 50, start, end)
-                if mode != "semantic"
+                if mode != "semantic" or not self.set_id
                 else []
             )
 
@@ -188,6 +188,8 @@ class HybridRetriever:
             lexical_task = group.create_task(lexical_candidates())
             semantic_task = group.create_task(semantic_candidates())
         lexical, semantic = lexical_task.result(), semantic_task.result()
+        if mode == "semantic" and details["fallback_reason"]:
+            lexical = await asyncio.to_thread(self.store.search, query, 50, start, end)
         status = await asyncio.to_thread(self.status, start, end)
         details["embedding"] = status
         if self.set_id and status["indexed"] < status["total"]:

@@ -183,6 +183,7 @@ class Memory:
         result = self.window_data(start, end)
         done = [row for row in result["sources"] if row["state"] == "done" and row["text"]]
         if summarize and done:
+            self.settings.require_inference("llm")
             counts = {
                 "eligible_transcripts": len(done),
                 "pending_chunks": result["pending_chunks"],
@@ -283,6 +284,7 @@ class Memory:
         return [self.recaps.cached(day, now, groups) for day in days]
 
     async def recap(self, day: date) -> dict:
+        self.settings.require_inference("llm")
         async with self.recap_lock:
             with self.processing_activity("summarizing"):
                 return await self.recaps.generate(day, utc_now())
@@ -575,6 +577,7 @@ class Memory:
         end_day: date | None = None,
         on_event: Callable[[dict], Awaitable[None]] | None = None,
     ) -> dict:
+        self.settings.require_inference("llm")
         began = perf_counter()
         first_token = None
         if on_event:

@@ -141,23 +141,25 @@ def test_remote_associated_open_meeting_keeps_speaker_conversation_together():
 
 def test_retired_preferences_are_absent_from_configuration():
     keys = {field["key"] for field in descriptors()}
-    assert {key for key in keys if key.startswith(("meeting_", "marker_"))} == {
-        "meeting_quiet_minutes",
-    }
+    assert not {key for key in keys if key.startswith(("meeting_", "marker_"))}
     assert not {"capture_paused", "recap_quiet_minutes", "recap_hour",
                 "recap_interval_minutes"} & keys
 
 
-def test_meeting_quiet_preference_changes_threshold_but_keeps_first_hour_gate():
-    snapshot = {"events": [event(hint_policy=json.dumps({"meeting_quiet_minutes": 3}))],
+@pytest.mark.parametrize("legacy_minutes", [1, 3, 15, 30])
+def test_legacy_quiet_preferences_cannot_change_fixed_ten_minute_rule(legacy_minutes):
+    snapshot = {"events": [event(hint_policy=json.dumps({
+        "meeting_quiet_minutes": legacy_minutes,
+    }))],
                 "rows": [row(AT, AT + timedelta(minutes=75))], "gaps": []}
-    assert meeting_timeline(snapshot, AT + timedelta(minutes=63))["active_meeting"]
-    short = meeting_timeline(snapshot, AT + timedelta(minutes=64))
-    assert short["meetings"][0]["ended_at"] == stamp(AT + timedelta(minutes=63))
-    snapshot["events"][0]["hint_policy"] = json.dumps({"meeting_quiet_minutes": 15})
-    assert meeting_timeline(snapshot, AT + timedelta(minutes=74))["active_meeting"]
-    long = meeting_timeline(snapshot, AT + timedelta(minutes=76))
-    assert long["meetings"][0]["ended_at"] == stamp(AT + timedelta(minutes=75))
+    assert meeting_timeline(snapshot, AT + timedelta(minutes=70))["active_meeting"]
+    closed = meeting_timeline(snapshot, AT + timedelta(minutes=71))
+    assert closed["meetings"][0]["ended_at"] == stamp(AT + timedelta(minutes=70))
+    assert Settings(meeting_quiet_minutes=legacy_minutes, _env_file=None).hint_policy == (
+        Settings(_env_file=None).hint_policy
+    )
+    settings = Settings(meeting_quiet_minutes=legacy_minutes, _env_file=None)
+    assert settings.meeting_quiet_minutes == 10
 
 
 def test_api_projects_quiet_and_preserves_offline_intent_receipts(tmp_path, monkeypatch):
@@ -187,14 +189,14 @@ def test_api_projects_quiet_and_preserves_offline_intent_receipts(tmp_path, monk
         assert state["active_meeting"] is None
         assert state["meetings"][0]["end_reason"] == "observed_non_speech"
         assert client.patch("/v1/settings", json={"meeting_quiet_minutes": 15}).status_code == 200
-        assert client.get("/v1/settings").json()["meeting_quiet_minutes"] == 15
-        # A preference edit cannot reopen a previously closed meeting.
+        assert client.get("/v1/settings").json()["meeting_quiet_minutes"] == 10
+        # Old clients' preference edits cannot change the rule or reopen a meeting.
         assert client.get("/v1/timeline").json()["active_meeting"] is None
         newer = start | {"event_id": str(uuid4()),
                          "occurred_at": stamp(AT + timedelta(minutes=71))}
         assert client.post("/v1/events", json=newer).json()["active_meeting"][
             "meeting_quiet_minutes"
-        ] == 15
+        ] == 10
         new_end = newer | {"event_id": str(uuid4()), "meeting_intent": "end",
                            "meeting_id": newer["event_id"],
                            "occurred_at": stamp(AT + timedelta(minutes=73))}

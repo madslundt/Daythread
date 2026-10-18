@@ -16,29 +16,21 @@ import { useResource } from "./useResource";
 import { ErrorState, Loading } from "./UI";
 import { parseThemePreference, setThemePreference, useThemePreference } from "./theme";
 import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLanguagePreference, type LanguagePreference } from "./i18n";
+import { ManagedModels } from "./ManagedModels";
 import { ManagedAccountPanel, ManagedConnections, useManagedAccount } from "./ManagedAccount";
 import { Usage } from "./Usage";
 
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
 export const editableSettings: (keyof SettingsData)[] = [
-  "timezone", "summary_language", "translation_languages", "meeting_quiet_minutes", "audio_retention_days", "transcript_retention_days",
+  "timezone", "summary_language", "translation_languages", "audio_retention_days", "transcript_retention_days",
 ];
 const serverHiddenFields = [...editableSettings, "language", "translation_languages", "capture_paused",
-  "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds", "marker_context_seconds",
+  "meeting_quiet_minutes", "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds", "marker_context_seconds",
   "marker_after_seconds", "marker_cooldown_seconds", "recap_hour", "recap_interval_minutes", "recap_quiet_minutes", "audio_forwarding_enabled"];
 export function preferenceChanges(draft: SettingsData, managed: boolean): Partial<SettingsData> {
   return Object.fromEntries(editableSettings
     .filter((key) => !managed || !["audio_retention_days", "transcript_retention_days"].includes(key))
     .map((key) => [key, draft[key]]));
-}
-
-export function MeetingQuietSetting({ value, onChange }: { value: number; onChange: (value: number) => void }) {
-  return <label className="setting-field" htmlFor="meeting-quiet">
-    <span id="meeting-quiet-label">{t("End meeting after this much quiet")}</span>
-    <NumberSelect id="meeting-quiet" value={value} options={[1, 2, 5, 10, 15, 30]} onChange={onChange}
-      label={(minutes) => new Intl.NumberFormat(displayLocale(), { style: "unit", unit: "minute", unitDisplay: "long" }).format(minutes)} />
-    <small id="meeting-quiet-hint">{t("Applies to new meetings after the first hour. Only recorded quiet counts; missing uploads do not end a meeting.")}</small>
-  </label>;
 }
 
 function languageLabel(code: string) {
@@ -130,8 +122,8 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
     ? matchesSettings(group, query) : section === category;
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
-    || show("storage", "storage") || show("meetings", "connections");
-  const noMatches = query && !["account", "profiles", "appearance", "daily", "storage", "connections", "meetings", "locations", "usage"].some((group) => matchesSettings(group, query))
+    || show("storage", "storage");
+  const noMatches = query && !["account", "profiles", "appearance", "daily", "storage", "connections", "locations", "usage"].some((group) => matchesSettings(group, query))
     && (managed || serverMatches?.query === search && serverMatches.count === 0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
@@ -186,8 +178,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       <div className="settings-panels">
       {dirty && !preferencesVisible ? <div className="notice">
         <span>{t("You have unsaved preferences in another category.")}</span>
-        <button type="button" className="text-button" onClick={() => selectSection(draft?.meeting_quiet_minutes !== resource.data?.meeting_quiet_minutes ? "connections"
-          : draft?.audio_retention_days !== resource.data?.audio_retention_days || draft?.transcript_retention_days !== resource.data?.transcript_retention_days ? "storage" : "general")}>{t("Review preferences")}</button>
+        <button type="button" className="text-button" onClick={() => selectSection(draft?.audio_retention_days !== resource.data?.audio_retention_days || draft?.transcript_retention_days !== resource.data?.transcript_retention_days ? "storage" : "general")}>{t("Review preferences")}</button>
       </div> : null}
       {query ? <div className="settings-section-heading"><h2>{t("Search results")}</h2>
         <p>{t("Settings matching “")}{query}{t("” across all categories.")}</p></div> : null}
@@ -202,6 +193,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       {show("account", "account") ? <details className="settings-disclosure" open={query ? true : undefined}>
         <summary>{t("Hosting & account")}</summary><div className="settings-disclosure-body"><ManagedAccountPanel /></div>
       </details> : null}
+      {managed ? <div hidden={!show("account", "account")}><ManagedModels /></div> : null}
       {show("usage", "account") ? <details className="settings-disclosure" open={query ? true : undefined}>
         <summary>{t("Audio & credit usage")}</summary><div className="settings-disclosure-body"><Usage key={selectedProfile} /></div>
       </details> : null}
@@ -317,10 +309,6 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
               <p className="caption">{t("Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
             </div>
           </fieldset>
-          <fieldset disabled={busy} hidden={!show("meetings", "connections")}>
-            <legend>{t("Meetings")}</legend>
-            <MeetingQuietSetting value={draft.meeting_quiet_minutes ?? 10} onChange={(value) => update("meeting_quiet_minutes", value)} />
-          </fieldset>
           <fieldset disabled={busy} hidden={!show("storage", "storage")}>
             <legend>{t("Storage & privacy")}</legend>
             <p className="settings-description muted">{managed ? t("Audio and transcripts are kept until you delete them.") : t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
@@ -356,9 +344,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
           </fieldset>
         </form>
       )}
-      {show("locations", "storage") ? <details className="settings-disclosure" open={query ? true : undefined}>
-        <summary>{t("Location zones")}</summary><div className="settings-disclosure-body"><LocationZones key={selectedProfile} /></div>
-      </details> : null}
+      {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {!managed ? <div hidden={!showServer}>
         <Configuration search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
           onSearchResults={onSearchResults}

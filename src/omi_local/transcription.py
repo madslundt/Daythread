@@ -22,6 +22,7 @@ class Transcription:
         *, recording_id: str | None = None,
         voice_activity: dict | None = None,
     ) -> dict:
+        self.settings.require_inference("stt")
         with recording_usage(recording_id or str(uuid4())):
             return await self._transcribe_filtered(data, on_progress, voice_activity)
 

@@ -10,6 +10,7 @@ from .inbox_domain import validate_candidates
 from .inbox_split import split_job
 from .inbox_store import InboxStore
 from .inference import InferenceTruncated, for_task
+from .inference_errors import InferenceDisabled
 from .settings import Settings
 
 PROMPT_VERSION = "inbox-1"
@@ -195,6 +196,8 @@ class InboxJobs:
         return sources
 
     async def process_one(self, inference) -> bool:
+        if not getattr(getattr(inference, "settings", None), "llm_enabled", True):
+            return False
         job = self.claim()
         if not job:
             return False
@@ -257,6 +260,13 @@ class InboxJobs:
                         "UPDATE inbox_jobs SET state='superseded',claim=NULL WHERE id=?",
                         (job["id"],),
                     )
+        except InferenceDisabled:
+            with self.archive.connect() as db:
+                db.execute(
+                    "UPDATE inbox_jobs SET state='queued',claim=NULL,attempts=max(0,attempts-1),"
+                    "retry_at='',error=NULL WHERE id=? AND claim=? AND state='running'",
+                    (job["id"], job["claim"]),
+                )
         except InferenceTruncated:
             with self.archive.connect() as db:
                 db.execute("BEGIN IMMEDIATE")

@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from .domain import stamp, utc_now, wav_duration
-from .inference_errors import InferenceError, InferenceTruncated
+from .inference_errors import InferenceError, InferenceTruncated, check_inference_response
 from .inference_usage import InferenceUsage, reported_tokens, submitted_characters, summary_usage
 from .settings import LLMTask, Settings
 from .summary_filter import NO_CONTENT, filter_summary_sources
@@ -103,7 +103,10 @@ class Inference(Transcription, InferenceUsage):
         self.settings = settings
         self.client = client
         self.task = task
-        self.health = {"stt": {"state": "unknown"}, "llm": {"state": "unknown"}}
+        self.health = {
+            kind: {"state": "unknown" if getattr(settings, kind + "_enabled") else "disabled"}
+            for kind in ("stt", "llm")
+        }
 
     def for_task(self, task: LLMTask) -> Inference:
         if task == self.task:
@@ -114,6 +117,7 @@ class Inference(Transcription, InferenceUsage):
         return bound
 
     async def post(self, provider: str, url: str, **kwargs) -> httpx.Response:
+        self.settings.require_inference(provider)
         usage_task = kwargs.pop("_usage_task", None)
         seconds = 0
         if provider == "stt":
@@ -133,7 +137,7 @@ class Inference(Transcription, InferenceUsage):
                 response = await self.client.post(
                     url, timeout=self.settings.inference_timeout_seconds, **kwargs
                 )
-                response.raise_for_status()
+                await check_inference_response(self, provider, response)
         except (httpx.HTTPError, TimeoutError) as exc:
             self.finish_usage(attempt, response, "failed" if response is not None else "unknown")
             self.health[provider] = {"state": "unavailable", "checked_at": stamp(utc_now())}
@@ -208,6 +212,7 @@ class Inference(Transcription, InferenceUsage):
         return text.strip()
 
     async def generate_stream(self, task: str, evidence: str, on_delta: Delta) -> str:
+        self.settings.require_inference("llm")
         route = self.settings.llm_route("chat")
         token = route.token.get_secret_value()
         text, finished = "", False
@@ -236,7 +241,7 @@ class Inference(Transcription, InferenceUsage):
                     timeout=self.settings.inference_timeout_seconds,
                     follow_redirects=False,
                 ) as response:
-                    response.raise_for_status()
+                    await check_inference_response(self, "llm", response)
                     if "application/json" in response.headers.get("content-type", ""):
                         # Some local compatibility gateways ignore stream=True.
                         body = bytearray()

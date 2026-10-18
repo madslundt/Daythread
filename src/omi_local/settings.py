@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .domain import HintPolicy
+from .inference_errors import InferenceDisabled
 
 LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
 
@@ -133,6 +134,8 @@ class Settings(BaseSettings):
 
     managed_hosting: bool = False
     background_processing_enabled: bool = True
+    stt_enabled: bool = True
+    llm_enabled: bool = True
     timezone: str = "Europe/Copenhagen"
     stt_base_url: str = "http://127.0.0.1:4000/v1"
     llm_base_url: str = "http://127.0.0.1:4000/v1"
@@ -219,6 +222,13 @@ class Settings(BaseSettings):
     def valid_translation_languages(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(translation_language(value) for value in values))
 
+    @field_validator("meeting_quiet_minutes")
+    @classmethod
+    def fixed_meeting_quiet(cls, value: int) -> int:
+        # Accept legacy saved preferences and old clients without making the
+        # product's ten-minute rule configurable.
+        return 10
+
     @field_validator("voice_recognition_report", mode="before")
     @classmethod
     def optional_voice_report(cls, value):
@@ -264,6 +274,11 @@ class Settings(BaseSettings):
         key = self.stt_api_key if provider == "stt" else self.llm_api_key
         return key if key is not None else self.inference_token
 
+    def require_inference(self, provider: Literal["stt", "llm"]) -> None:
+        if not getattr(self, provider + "_enabled"):
+            label = "Transcription" if provider == "stt" else "Language model processing"
+            raise InferenceDisabled(f"{label} is off.")
+
     @field_validator("audio_forwarding_token")
     @classmethod
     def forwarding_secret(cls, value: SecretStr) -> SecretStr:
@@ -306,8 +321,8 @@ class Settings(BaseSettings):
     @property
     def hint_policy(self) -> HintPolicy:
         # Legacy fields remain readable for old clients and queued receipts;
-        # flag context and accidental-gesture rules are fixed product policy.
-        return HintPolicy(meeting_quiet_minutes=self.meeting_quiet_minutes)
+        # all flag and meeting timing rules are fixed product policy.
+        return HintPolicy()
 
     @field_validator("timezone")
     @classmethod
@@ -351,7 +366,7 @@ RUNTIME_FIELDS = (
 
 DEPLOYMENT_FIELDS = {
     "managed_hosting", "background_processing_enabled", "database_url", "database_schema",
-    "storage_bucket", "storage_region", "storage_prefix",
+    "storage_bucket", "storage_region", "storage_prefix", "stt_enabled", "llm_enabled",
 }
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
 

@@ -14,6 +14,7 @@ from .decisions import ExtractionRequest
 from .domain import utc_now, wav_duration
 from .inbox_jobs import InboxJobs
 from .inference import Inference
+from .inference_errors import InferenceDisabled
 from .recaps import digest
 from .recording_topics import run_topics
 from .service import Memory
@@ -54,6 +55,8 @@ class RecapBatcher:
 
 
 async def process_one(memory: Memory) -> bool:
+    if not memory.settings.stt_enabled:
+        return False
     row = memory.store.claim()
     if row is None:
         return False
@@ -115,6 +118,13 @@ async def process_one(memory: Memory) -> bool:
             memory.store.complete(row["id"], text, claimed=True,
                                   details={"recognition_contract": contract})
             memory.store.finish_processing(row["id"])
+    except InferenceDisabled:
+        with memory.store.connect() as db:
+            db.execute(
+                "UPDATE audio SET state='queued',attempts=?,retry_at=? "
+                "WHERE id=? AND state='transcribing'",
+                (row["attempts"], row["retry_at"], row["id"]),
+            )
     except Exception as exc:
         # Avoid putting transcripts, credentials, URLs or provider bodies into logs.
         memory.store.retry(
@@ -140,9 +150,13 @@ def recorded_days(memory: Memory, now: datetime) -> list[date]:
 
 
 async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) -> None:
+    if not memory.settings.llm_enabled:
+        return
     now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
     groups = memory.recaps.groups(now)
     for day in recorded_days(memory, now):
+        if not memory.settings.llm_enabled:
+            return
         try:
             key = day.isoformat()
             current = memory.recaps.for_day(groups, day)
@@ -173,8 +187,12 @@ async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) 
 
 
 async def scheduled_decisions(memory: Memory) -> None:
+    if not memory.settings.llm_enabled:
+        return
     now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
     for day in recorded_days(memory, now):
+        if not memory.settings.llm_enabled:
+            return
         try:
             # Reuses the current snapshot and advances one bounded batch each pass.
             # Completed snapshots cost no inference; changed transcripts start a new one.
@@ -186,8 +204,9 @@ async def scheduled_decisions(memory: Memory) -> None:
 async def run_insights(memory: Memory) -> None:
     while True:
         try:
-            await memory.recaps.observe()
-            await scheduled_decisions(memory)
+            if memory.settings.llm_enabled:
+                await memory.recaps.observe()
+                await scheduled_decisions(memory)
         except Exception as exc:
             logger.warning("Automatic insights will retry (%s)", type(exc).__name__)
         await asyncio.sleep(5)
@@ -224,11 +243,11 @@ async def maintenance(memory: Memory) -> None:
 
 
 async def run_worker(memory: Memory) -> None:
-    upkeep = asyncio.create_task(maintenance(memory))
-    inbox = asyncio.create_task(run_inbox(memory))
-    topics = asyncio.create_task(run_topics(memory))
-    insights = asyncio.create_task(run_insights(memory))
-    recaps = asyncio.create_task(run_recaps(memory))
+    tasks = [asyncio.create_task(maintenance(memory))]
+    if memory.settings.llm_enabled:
+        tasks.extend(asyncio.create_task(work(memory)) for work in (
+            run_inbox, run_topics, run_insights, run_recaps,
+        ))
     try:
         while True:
             try:
@@ -238,29 +257,24 @@ async def run_worker(memory: Memory) -> None:
                 worked = False
             await asyncio.sleep(0.1 if worked else 2)
     finally:
-        recaps.cancel()
-        with suppress(asyncio.CancelledError):
-            await recaps
-        insights.cancel()
-        with suppress(asyncio.CancelledError):
-            await insights
-        topics.cancel()
-        with suppress(asyncio.CancelledError):
-            await topics
-        inbox.cancel()
-        with suppress(asyncio.CancelledError):
-            await inbox
-        upkeep.cancel()
-        with suppress(asyncio.CancelledError):
-            await upkeep
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 async def run_inbox(memory: Memory) -> None:
+    if not memory.settings.llm_enabled:
+        return
     jobs = InboxJobs(memory.store)
     with memory.store.connect() as db:
         db.execute("UPDATE inbox_jobs SET state='queued',claim=NULL WHERE state='running'")
     while True:
         try:
+            if not memory.settings.llm_enabled:
+                await asyncio.sleep(3)
+                continue
             jobs.discover(
                 memory.settings.timezone,
                 model=memory.settings.llm_route("extraction").cache_key,

@@ -1,4 +1,4 @@
-"""Rebuildable SQLite passage index. Source text and versions remain authoritative."""
+"""Rebuildable passage index. Source text and versions remain authoritative."""
 
 import hashlib
 import heapq
@@ -110,6 +110,16 @@ class SemanticStore:
                     "WHERE state='done' AND length(trim(text))>0",
                     (key,),
                 )
+            # Replaced model contracts are derived data, never archive history. Remove
+            # their vectors and jobs atomically so provider changes cannot accumulate
+            # unbounded storage or let an old worker restore an inactive index.
+            if db.execute("SELECT 1 FROM embedding_sets WHERE active=0 LIMIT 1").fetchone():
+                for table in ("retrieval_passages", "embedding_jobs"):
+                    db.execute(
+                        f"DELETE FROM {table} WHERE set_id IN "
+                        "(SELECT id FROM embedding_sets WHERE active=0)"
+                    )
+                db.execute("DELETE FROM embedding_sets WHERE active=0")
         return key
 
     def embedding_coverage(
@@ -145,7 +155,11 @@ class SemanticStore:
                     "DELETE FROM retrieval_passages WHERE audio_id=? AND set_id=?",
                     (job["audio_id"], set_id),
                 )
-                for ordinal, (start, end) in enumerate(passages(job["text"], size)):
+                spans = (
+                    (start, end) for start, end in passages(job["text"], size)
+                    if job["text"][start:end].strip()
+                )
+                for ordinal, (start, end) in enumerate(spans):
                     key = hashlib.sha256(
                         f"{job['audio_id']}:{set_id}:{job['version']}:{ordinal}".encode()
                     ).hexdigest()
@@ -209,15 +223,17 @@ class SemanticStore:
             )
             return True
 
-    def retry_embedding(self, job: dict) -> None:
+    def retry_embedding(self, job: dict, *, paused: bool = False) -> None:
         with self.connect() as db:
             db.execute(
-                "UPDATE embedding_jobs SET state='pending',retry_at=? "
+                "UPDATE embedding_jobs SET state='pending',retry_at=?,attempts=? "
                 "WHERE audio_id=? AND set_id=? AND version=? AND state='working'",
                 (
+                    job["retry_at"] if paused else
                     stamp(
                         utc_now() + timedelta(seconds=min(300, 2 ** min(job["attempts"] + 1, 8)))
                     ),
+                    job["attempts"] + (0 if paused else 1),
                     job["audio_id"],
                     job["set_id"],
                     job["version"],

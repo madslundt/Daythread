@@ -17,6 +17,7 @@ RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
 ROUTE_FIELDS = {"stt_routes", "llm_routes"}
 RETIRED_FIELDS = {
     "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds",
+    "meeting_quiet_minutes",
     "marker_context_seconds", "marker_after_seconds", "marker_cooldown_seconds",
     "recap_hour", "recap_interval_minutes", "recap_quiet_minutes",
     "capture_paused",
@@ -63,9 +64,6 @@ def group(key: str) -> str:
 
 
 DESCRIPTIONS = {
-    "meeting_quiet_minutes": "After the first hour, end the meeting marker after this many "
-    "minutes of continuously recorded quiet. Recording continues. "
-    "Missing uploads and connection gaps do not count as silence. Applies to new meetings.",
     "voice_recognition_enabled": "Remember explicitly confirmed voices across conversations in "
     "this archive. Suggestions require a passing evaluation on separate recordings; names are "
     "never applied automatically. Original audio retention also removes learned examples.",
@@ -226,6 +224,16 @@ class Configuration:
                 raise ValueError("Invalid private settings file") from exc
 
     def startup(self, initial: Settings) -> Settings:
+        if initial.managed_hosting:
+            # Imported private preferences must not replace the operator's model
+            # contract, credentials, worker policy or archive location on restart.
+            self.overrides = {
+                key: value for key, value in self.overrides.items()
+                if not key.startswith((
+                    "stt_", "llm_", "embedding_", "chat_", "inference_", "diarization_",
+                    "voice_recognition_", "audio_forwarding_",
+                )) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
+            }
         try:
             return Settings.model_validate(initial.model_dump() | self.overrides)
         except ValidationError:

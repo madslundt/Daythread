@@ -1,12 +1,12 @@
 import { createContext, Fragment, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { displayLocale, t } from "./i18n";
-import { isManagedOrigin, managedArchiveAvailable, managedServiceUrl, ManagedSession, type ManagedSnapshot } from "./managedService";
+import { isManagedOrigin, managedArchiveAvailable, managedServiceUrl, ManagedSession, type ManagedSnapshot, type ManagedKind, type ManagedConnectionUpdate } from "./managedService";
 import { Loading } from "./UI";
 import { Icon } from "./Icon";
 import "./managedAccount.css";
 
-type AccountContext = ManagedSnapshot & { refresh: () => void; signOut: () => void };
-const Context = createContext<AccountContext>({ managed: false, status: "local", refresh: () => {}, signOut: () => {} });
+type AccountContext = ManagedSnapshot & { refresh: () => void; signOut: () => void; updateConnection: (kind: ManagedKind, update: ManagedConnectionUpdate) => Promise<void> };
+const Context = createContext<AccountContext>({ managed: false, status: "local", refresh: () => {}, signOut: () => {}, updateConnection: async () => {} });
 
 export function ManagedAccountProvider({ children }: { children: ReactNode }) {
   const [session] = useState(() => new ManagedSession());
@@ -27,7 +27,7 @@ export function ManagedAccountProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("daythread:session-expired", session.expire);
     };
   }, [session]);
-  return <Context.Provider value={{ ...snapshot, refresh: session.refresh, signOut: session.signOut }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ ...snapshot, refresh: session.refresh, signOut: session.signOut, updateConnection: session.updateConnection }}>{children}</Context.Provider>;
 }
 
 export const useManagedAccount = () => useContext(Context);
@@ -67,7 +67,7 @@ export function ManagedAccountPanel() {
           <div><dt>{t("Hosting")}</dt><dd>{account.hosting_active ? t("Active") : t("Not active")}</dd></div>
         </dl>
         {account.hosted_until ? <p className="caption">{t("Hosting paid through {value0}", { value0: new Intl.DateTimeFormat(displayLocale(), { dateStyle: "medium" }).format(account.hosted_until * 1000) })}</p> : null}
-        <p>{t("Manage your subscription, buy credits, or choose your own AI provider in your account.")}</p>
+        <p>{t("Manage your subscription and buy credits in your account. Choose AI models below in Settings.")}</p>
         <div className="button-row"><a className="button accent" href={managedServiceUrl("/account")}>{t("Manage account")}</a>
           <button className="button" type="button" onClick={session.signOut}>{t("Sign out")}</button></div>
       </> : <>

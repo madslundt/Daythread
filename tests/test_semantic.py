@@ -176,6 +176,28 @@ async def test_outage_and_partial_index_keep_keyword_search(config):
         await http.aclose()
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_semantic_request_falls_back_to_keywords_when_unavailable(config, enabled):
+    memory, http = await indexed_memory(config.model_copy(update={"embedding_enabled": enabled}))
+    try:
+        expected = insert(memory.store)
+
+        async def unavailable(*args, **kwargs):
+            raise EmbeddingError()
+
+        memory.retriever.embeddings.embed = unavailable
+        rows, details = await memory.retriever.retrieve(
+            "invoice", "invoice", 5, None, None, mode="semantic"
+        )
+        assert [row["id"] for row in rows] == [expected]
+        assert details["mode"] == "keyword"
+        if enabled:
+            assert details["fallback_reason"] == "embedding_unavailable"
+    finally:
+        await http.aclose()
+
+
 @pytest.mark.parametrize("mutation", ["correction", "delete", "expiry", "recreate"])
 def test_stale_index_write_cannot_restore_corrected_or_deleted_text(config, mutation):
     store = Store(config.data_dir)
@@ -218,6 +240,45 @@ def test_model_revision_dimensions_and_restart_are_isolated(config):
     assert restarted.finish_embedding_batch(current, [[1, 0, 0]])
     assert restarted.semantic_candidates(first, [1, 0], 0.5, 50, None, None) == []
     assert len(restarted.semantic_candidates(second, [1, 0, 0], 0.5, 50, None, None)) == 1
+    with store.connect() as db:
+        assert [row[0] for row in db.execute("SELECT id FROM embedding_sets")] == [second]
+        assert [row[0] for row in db.execute("SELECT set_id FROM embedding_jobs")] == [second]
+        assert [row[0] for row in db.execute("SELECT set_id FROM retrieval_passages")] == [second]
+    assert restarted.configure_embeddings(None) is None
+    with store.connect() as db:
+        for table in ("embedding_sets", "embedding_jobs", "retrieval_passages"):
+            assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_embedding_credentials_do_not_change_index_contract(config):
+    store = Store(config.data_dir)
+    first = store.configure_embeddings(config.embedding_manifest)
+    insert(store)
+    job = store.claim_embedding_batch(first, 1000)
+    assert store.finish_embedding_batch(job, [[1, 0]])
+    rotated = config.model_copy(update={"embedding_token": "replacement-key"})
+    assert store.configure_embeddings(rotated.embedding_manifest) == first
+    assert store.claim_embedding_batch(first, 1000) is None
+    assert store.embedding_coverage(first) == {"total": 1, "indexed": 1}
+
+
+def test_whitespace_only_passages_are_skipped_without_breaking_batch_cursors(config):
+    store = Store(config.data_dir)
+    set_id = store.configure_embeddings(config.embedding_manifest)
+    text = "\n" * 3000 + "Søren handles the invoice. " * 1000 + " " * 3000
+    key = insert(store, text)
+    batches = 0
+    while job := store.claim_embedding_batch(set_id, 1000):
+        assert all(text[row["start_offset"]:row["end_offset"]].strip() for row in job["passages"])
+        assert [row["ordinal"] for row in job["passages"]] == list(range(
+            job["cursor"], job["cursor"] + len(job["passages"])
+        ))
+        assert store.finish_embedding_batch(job, [[1, 0]] * len(job["passages"]))
+        batches += 1
+        assert batches < 5
+    assert batches > 1
+    assert store.embedding_coverage(set_id) == {"total": 1, "indexed": 1}
+    assert store.semantic_candidates(set_id, [1, 0], 0.5, 10, None, None)[0]["audio_id"] == key
 
 
 def test_audio_expiry_preserves_vectors_and_snapshot(config, tmp_path):

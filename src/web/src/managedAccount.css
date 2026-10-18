@@ -11,3 +11,19 @@
 .managed-session-screen { max-width: 660px; margin: 10vh auto; padding: 24px; }
 .managed-session-brand { display: block; margin-bottom: 36px; font: 32px var(--serif); text-decoration: none; }
 @media (max-width: 760px) { .managed-account-header { display: flex; margin-left: auto; } }
+
+.managed-models { margin: 28px 0; }
+.managed-model-cards { display: grid; gap: 16px; }
+.managed-model-card { border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.managed-model-card h3 { margin: 0 0 14px; }
+.managed-model-modes { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+.managed-model-modes label { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.managed-model-modes label:has(input:checked) { border-color: var(--accent); background: var(--panel); }
+.managed-model-modes input { width: auto; margin: 0; }
+.managed-model-card form fieldset { display: grid; gap: 14px; padding: 0; border: 0; margin: 0; }
+.managed-model-card form label { display: grid; gap: 6px; font-size: 13px; }
+.managed-model-card form input, .managed-model-card form select { width: 100%; min-width: 0; box-sizing: border-box; }
+.managed-model-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.managed-model-card .button { justify-self: start; }
+.managed-model-fixed strong { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .managed-model-options { grid-template-columns: 1fr; } }

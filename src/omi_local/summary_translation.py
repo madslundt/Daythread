@@ -200,6 +200,7 @@ async def generate_summary_translation(
             raise HTTPException(409, "Summary changed; try again")
         if result["already_in_target_language"] or result["translation"]:
             return result
+        memory.settings.require_inference("llm")
         try:
             async with asyncio.timeout(memory.settings.inference_timeout_seconds):
                 parts = []

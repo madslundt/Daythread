@@ -394,6 +394,7 @@ async def generate_translation(
             return result
         if source["state"] != "done" or not (source["text"] or "").strip():
             raise HTTPException(409, "A completed, nonempty transcript is required")
+        memory.settings.require_inference("llm")
         try:
             async with asyncio.timeout(memory.settings.inference_timeout_seconds):
                 parts = []

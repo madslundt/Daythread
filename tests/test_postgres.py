@@ -5,7 +5,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -126,6 +126,90 @@ def test_postgres_sqlite_import_export_preserves_versions_and_order(pg_store, tm
 def test_postgres_rejects_schema_injection():
     with pytest.raises(ValueError, match="identifier"):
         PostgresDatabase(URL, 'bad"; DROP SCHEMA public; --')
+
+
+def test_postgres_embeddings_backfill_resume_replace_and_clear(pg_store, tmp_path):
+    manifest = {"model": "embedding-model", "revision": "v1", "dimension": 2}
+    key = record(pg_store)
+    first = pg_store.configure_embeddings(manifest)
+    assert pg_store.embedding_coverage(first) == {"total": 1, "indexed": 0}
+    job = pg_store.claim_embedding_batch(first, 1000)
+    assert job["audio_id"] == key
+    restarted = Store(tmp_path, database_url=URL, database_schema=pg_store.database.schema)
+    assert restarted.configure_embeddings(manifest) == first
+    job = restarted.claim_embedding_batch(first, 1000)
+    assert restarted.finish_embedding_batch(job, [[3, 0]])
+    assert restarted.embedding_coverage(first) == {"total": 1, "indexed": 1}
+    candidates = restarted.semantic_candidates(first, [1, 0], 0.5, 10, None, None)
+    assert [row["audio_id"] for row in candidates] == [key]
+    assert candidates[0]["score"] == 1
+    with restarted.connect() as db:
+        assert isinstance(db.execute("SELECT vector FROM retrieval_passages").fetchone()[0], bytes)
+    assert restarted.semantic_candidates(
+        first, [1, 0], 0.5, 10, AT + timedelta(days=1), AT + timedelta(days=2)
+    ) == []
+    restarted.correct_transcript(key, "Corrected invoice")
+    assert restarted.semantic_candidates(first, [1, 0], 0.5, 10, None, None) == []
+    stale = restarted.claim_embedding_batch(first, 1000)
+    second = restarted.configure_embeddings(manifest | {"revision": "v2", "dimension": 3})
+    assert not restarted.finish_embedding_batch(stale, [[1, 0]])
+    current = restarted.claim_embedding_batch(second, 1000)
+    assert restarted.finish_embedding_batch(current, [[0, 1, 0]])
+    with restarted.connect() as db:
+        assert [row[0] for row in db.execute("SELECT id FROM embedding_sets")] == [second]
+        assert [row[0] for row in db.execute("SELECT set_id FROM embedding_jobs")] == [second]
+        assert [row[0] for row in db.execute("SELECT set_id FROM retrieval_passages")] == [second]
+    restarted.configure_embeddings(None)
+    with restarted.connect() as db:
+        for table in ("embedding_sets", "embedding_jobs", "retrieval_passages"):
+            assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+    assert restarted.get_audio(key)["text"] == "Corrected invoice"
+
+
+def test_postgres_raw_rewind_jobs_remain_available_while_models_are_off(pg_store, tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from omi_local.generation_jobs import GenerationJobs, GenerationRequest
+    from omi_local.service import Memory
+    from omi_local.settings import Settings
+
+    record(pg_store)
+    settings = Settings(
+        data_dir=tmp_path, _env_file=None, stt_enabled=False, llm_enabled=False,
+    )
+    jobs = GenerationJobs(Memory(pg_store, settings, SimpleNamespace()))
+    body = GenerationRequest(id=uuid4(), kind="rewind", parameters={"summarize": False})
+    jobs.enqueue(body)
+    assert jobs.observation()["queued"] == 1
+    assert asyncio.run(jobs.process_one())
+    assert jobs.get(str(body.id))["state"] == "completed"
+    assert jobs.observation()["queued"] == 0
+
+
+def test_postgres_embeddings_isolate_account_schemas_and_purge_deleted_sources(pg_store, tmp_path):
+    manifest = {"model": "embedding-model", "revision": "v1", "dimension": 2}
+    schema = "test_archive_" + uuid4().hex
+    try:
+        other = Store(tmp_path / "other", database_url=URL, database_schema=schema)
+        set_id = pg_store.configure_embeddings(manifest)
+        assert other.configure_embeddings(manifest) == set_id
+        key = record(pg_store)
+        record(other, "Other account's recording", key=UUID(key))
+        for store, vector in ((pg_store, [1, 0]), (other, [0, 1])):
+            job = store.claim_embedding_batch(set_id, 1000)
+            assert store.finish_embedding_batch(job, [vector])
+        assert len(pg_store.semantic_candidates(set_id, [1, 0], 0.5, 10, None, None)) == 1
+        assert other.semantic_candidates(set_id, [1, 0], 0.5, 10, None, None) == []
+        pg_store.delete_audio(key)
+        assert pg_store.semantic_candidates(set_id, [1, 0], 0.5, 10, None, None) == []
+        with pg_store.connect() as db:
+            for table in ("embedding_jobs", "retrieval_passages"):
+                assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+        assert len(other.semantic_candidates(set_id, [0, 1], 0.5, 10, None, None)) == 1
+    finally:
+        with pg_store.database.pool.connection() as db:
+            db.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_postgres_summary_chat_and_weekly_outputs_survive_restart(pg_store, tmp_path):

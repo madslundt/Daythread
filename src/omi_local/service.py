@@ -41,6 +41,8 @@ def public_source(row: dict) -> dict:
     if row.get("tags"):
         result["tags"] = row["tags"]
     result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
+    if row.get("manual_location"):
+        result["manual_location"] = row["manual_location"]
     vendor_id = result["source_metadata"].get("vendor_id")
     if not vendor_id and transcript_import(result["source_kind"]):
         vendor_id = result["source_kind"].rsplit("_", 1)[0]

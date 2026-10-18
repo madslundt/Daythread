@@ -5,6 +5,12 @@ import { setLanguagePreference } from "./i18n";
 
 afterEach(() => setLanguagePreference("system"));
 describe("manual conversation tags", () => {
+  it("offers a visible add action on an untagged recording", () => {
+    const html = renderToStaticMarkup(<ConversationTags sourceID="source-1" />);
+    expect(html).toContain('aria-expanded="false">Add tag</button>');
+    expect(html).toContain("No tags yet");
+  });
+
   it("keeps user-authored tag names literal and escapes markup", () => {
     setLanguagePreference("da");
     const html = renderToStaticMarkup(<ConversationTags sourceID="source-1" tags={[

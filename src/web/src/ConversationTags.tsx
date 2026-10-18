@@ -9,6 +9,7 @@ export type ConversationTag = { id: string; name: string; source_count?: number 
 export type TagDirectory = { revision: string; items: ConversationTag[] };
 export type TagSelection = { revision: string; membership: string; source_count: number; tags: (ConversationTag & { source_count: number })[] };
 type TagAction = { action: "add" | "remove"; tag_id?: string; name?: string };
+const noTags: ConversationTag[] = [];
 
 export function TagFilter({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const directory = useResource<TagDirectory>(`/v1/tags?profile_id=${encodeURIComponent(profileScope().id)}`, 15_000);
@@ -17,7 +18,7 @@ export function TagFilter({ value, onChange }: { value: string; onChange: (id: s
     return () => window.removeEventListener("omi:tags-changed", directory.refresh);
   }, [directory.refresh]);
   return <div className="zone-filter">
-    <label>{t("Tag")}<select value={value} onChange={(event) => onChange(event.target.value)}>
+    <label><span>{t("Tag")}</span><select value={value} onChange={(event) => onChange(event.target.value)}>
       <option value="">{t("All tags")}</option>
       {value && !directory.data?.items.some((tag) => tag.id === value) ? <option value={value}>{t("Tag unavailable")}</option> : null}
       {directory.data?.items.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
@@ -27,22 +28,31 @@ export function TagFilter({ value, onChange }: { value: string; onChange: (id: s
   </div>;
 }
 
-export function ConversationTags({ sourceID, groupID, day, tags = [], onChanged }: {
+export function ConversationTags({ sourceID, groupID, day, tags = noTags, onChanged }: {
   sourceID?: string; groupID?: string; day?: string; tags?: ConversationTag[]; onChanged?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [savedTags, setSavedTags] = useState<ConversationTag[]>();
+  useEffect(() => setSavedTags(undefined), [tags]);
+  const currentTags = savedTags ?? tags;
   const scopeID = profileScope().id;
   const params = new URLSearchParams({ profile_id: scopeID, ...(groupID && day ? { day } : {}) });
   const path = groupID ? `/v1/recording-groups/${encodeURIComponent(groupID)}/tags?${params}` : `/v1/sources/${encodeURIComponent(sourceID || "")}/tags?${params}`;
-  return <details className="conversation-tags" onToggle={(event) => {
-    if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
-  }}>
-    <summary>{t("Tags")}{tags.length ? ` · ${tags.map((tag) => tag.name).join(", ")}` : ""}</summary>
-    {open ? <TagEditor key={path} path={path} group={Boolean(groupID)} onChanged={onChanged} /> : null}
-  </details>;
+  return <section className="conversation-tags" aria-label={t("Tags")}>
+    <div className="button-row">
+      <strong>{t("Tags")}</strong>
+      <span>{currentTags.map((tag) => tag.name).join(", ") || t("No tags yet")}</span>
+      <button type="button" className="button small" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {currentTags.length ? t("Edit tags") : t("Add tag")}
+      </button>
+    </div>
+    {open ? <TagEditor key={path} path={path} group={Boolean(groupID)} onChanged={(result) => {
+      setSavedTags(result.tags); onChanged?.();
+    }} /> : null}
+  </section>;
 }
 
-export function TagEditor({ path, group, onChanged }: { path: string; group: boolean; onChanged?: () => void }) {
+export function TagEditor({ path, group, onChanged }: { path: string; group: boolean; onChanged?: (result: TagSelection) => void }) {
   const state = useResource<TagSelection>(path);
   const directory = useResource<TagDirectory>(`/v1/tags?profile_id=${encodeURIComponent(profileScope().id)}`);
   const [name, setName] = useState("");
@@ -62,7 +72,7 @@ export function TagEditor({ path, group, onChanged }: { path: string; group: boo
       }) }, scope);
       if (lifetime.signal.aborted || scope.signal.aborted) return;
       state.setData(result); setName(""); setSelected(""); directory.refresh();
-      onChanged?.(); window.dispatchEvent(new Event("omi:tags-changed"));
+      onChanged?.(result); window.dispatchEvent(new Event("omi:tags-changed"));
     } catch (error) {
       if (!lifetime.signal.aborted && !scope.signal.aborted) setError(errorMessage(error));
     } finally { if (!lifetime.signal.aborted && !scope.signal.aborted) setBusy(false); }

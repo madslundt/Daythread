@@ -24,6 +24,18 @@ are included in archive backups, disappear on recording deletion, and are remove
 archive when transcript retention expires, even if the audio had already expired. Earlier backups
 retain their own copies. Disabling capture locations affects subsequent observations.
 
+## Add or correct a recording location
+
+Open a recording on web or iPhone and choose **Add location** or **Edit location** near its tags.
+Choose a saved place from your location zones; selecting it applies it immediately. Search appears
+when the web picker has more than five places, and iPhone supports search in its native list.
+The current choice has a checkmark. Location assignment accepts saved places only; create and edit
+places under **Settings → Location zones**, linked directly from the picker. If no places exist,
+the picker explains where to add one. This also works for recordings and imports without captured GPS.
+The selected zone and place names appear on the recording, and filters use the location immediately.
+The original phone observation stays intact. Use **Restore captured location** to return to it,
+or **Remove location** when there was no captured observation. Concurrent edits require a reload.
+
 ## Remind me near a discussed place
 
 For an active decision with current transcript evidence, follow-up extraction can suggest a
@@ -66,6 +78,16 @@ Partial, out-of-range, non-finite, stale, inaccurate, and manual-import observat
 The source response exposes the normalized observation in `source_metadata.location` with keys
 `latitude`, `longitude`, `horizontal_accuracy`, and `captured_at`.
 
+`GET /v1/sources/{id}/location` returns `version`, the effective `location`, `original_location`
+and a `manual` flag. `PUT` accepts `expected_version` and `location` containing `zone_id` and
+`location_id` UUIDs. The server resolves the selected place within the same profile, preserving
+its IDs, zone name, place label and coordinate snapshot. Arbitrary names/coordinates, unknown,
+deleted and other-profile places cannot be assigned. `location: null` restores the captured
+location or clears a manual-only place. Later saved-place edits/deletion do not rewrite an existing
+recording's historical snapshot; a deleted place cannot be selected for a new assignment.
+Source/list responses expose edits as `manual_location`, separate from `source_metadata.location`.
+Edits are profile-scoped, version-checked, included in backups, and removed on source deletion/expiry.
+
 Decision follow-up responses add optional `location_trigger`: `arrive`, `leave`, or `null`.
 A non-null trigger requires a reminder and a nonempty location; generated proposals additionally
 require the exact cited place phrase. Existing clients may ignore the optional field; update clients
@@ -96,22 +118,34 @@ its own center and radius (10–100,000 metres). For example, Work can contain a
 with up to 30 locations per zone. Definitions are saved in that profile's archive and included in
 archive backups.
 
-On iPhone, add a location by searching Apple Maps, using current GPS, entering coordinates, or
-choosing **Save as zone location** from a recording's location details. Check the map and set the
-radius before saving. On web, use current GPS, enter coordinates, or reuse a recording's location
-with the same action. Browser GPS depends on browser permission and secure-context availability;
-manual coordinates and recording locations work without granting browser location access.
-Apple Maps is used for native place searches and map previews. No server geocoder is contacted.
+On web and iPhone, search for a place or address and select a result to position the zone on a
+map. Click or tap the map to adjust the center; on web, you can also drag the pin. The circle previews
+the radius in metres before saving. Each location keeps its own center, name, and radius. Coordinates
+are optional under **Enter coordinates**. Current GPS and **Save as zone location** from a recording
+remain available. Browser GPS requires browser permission and a secure context; address search and
+map selection do not require location permission.
+
+The iPhone uses Apple Maps. Web maps use OpenStreetMap tiles and explicit address searches use
+[Photon](https://github.com/komoot/photon), directly from the browser, without an API key. The map
+provider receives map-area requests and Photon receives the submitted address; transcripts and zone
+names are not sent. Both require internet access. Search errors leave the selected point intact and
+coordinates remain available if the providers cannot be reached. Public Photon usage must stay within
+reasonable limits and has no availability guarantee; searches run only when submitted, never on each
+keystroke. For a private Photon instance, set `VITE_ZONE_GEOCODER_URL` to its full `/api/` URL when
+building the web app (the endpoint must allow browser CORS). OpenStreetMap attribution remains visible;
+see its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). No backend geocoder
+or change to saved-zone API data is required.
 
 Today and historical day views offer a **Location zone** filter for recordings and their transcripts.
 Expanded recording groups and later pages retain that filter. Select **All locations** to include
-recordings without GPS. The filter applies to recording evidence; the day recap remains a recap
+recordings without a location. The filter applies to recording evidence; the day recap remains a recap
 of the whole day and is labeled accordingly when a filter is selected.
 
-Membership is derived from whether a recording's original GPS point falls within *any* of a zone's
-circles. Overlapping zones can both match. Accuracy is retained on the source and is not added to
+Membership is derived from whether a recording's manually set point, or its original GPS point
+when no edit is set, falls within *any* of a zone's circles. Overlapping zones can both match.
+Accuracy is retained on the source and is not added to
 the radius; a GPS reading is approximate, particularly near a boundary. No place is inferred for
-recordings without GPS. Moving a center or changing a radius immediately changes how historical
+recordings without a location. Moving a center or changing a radius immediately changes how historical
 recordings match on their next query, while original observations remain untouched. Deleting a
 zone removes only its definition, preserving recordings, transcripts, and their GPS observations.
 Saved zones are independent of transcript retention and remain until explicitly removed. Already

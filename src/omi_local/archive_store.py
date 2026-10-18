@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -18,10 +19,16 @@ from .conversation_tags import decorate_tags, tag_filter
 from .decision_export import diary_markdown, export_days
 from .domain import ChatScopeConflict, EvidenceChanged, stamp, utc_now
 from .location_zones import zone_filter
+from .recording_locations import decorate_locations
 from .source_matching import MANUAL_UPLOAD_SQL
 from .weekly_models import markdown as weekly_markdown
 
+logger = logging.getLogger(__name__)
+
 EXTENDED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audio_deletions (
+ audio_id TEXT PRIMARY KEY, attempted_at TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS runtime_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS transcript_revisions (
  id TEXT PRIMARY KEY, audio_id TEXT NOT NULL, previous_text TEXT, text TEXT NOT NULL,
@@ -166,13 +173,13 @@ class ArchiveStore:
                         alternatives.setdefault(row["upload_key"], []).append(dict(row))
                     for row in rows:
                         row["alternate_sources"] = alternatives.get(row["upload_key"], [])
-                return decorate_tags(db, rows), total
+                return decorate_locations(db, decorate_tags(db, rows)), total
             total = db.execute(f"SELECT count(*) FROM audio WHERE {where}", args).fetchone()[0]
             rows = db.execute(
                 f"SELECT * FROM audio WHERE {where} ORDER BY started_at DESC,id LIMIT ? OFFSET ?",
                 (*args, limit, offset),
             ).fetchall()
-            return decorate_tags(db, [dict(row) for row in rows]), total
+            return decorate_locations(db, decorate_tags(db, [dict(row) for row in rows])), total
 
     def correct_transcript(self, audio_id: str, text: str) -> dict | None:
         with self.connect() as db:
@@ -222,10 +229,28 @@ class ArchiveStore:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             for path in audio_paths:
+                db.execute("INSERT OR IGNORE INTO audio_deletions(audio_id) VALUES(?)",
+                           (Path(path).stem,))
+            for row in db.execute(
+                "SELECT audio_id FROM audio_deletions ORDER BY attempted_at,audio_id LIMIT 64"
+            ).fetchall():
+                audio_id = row["audio_id"]
+                # Keep this check and object deletion under the same archive write lock
+                # as ingestion. A replay may have recreated this ID since logical removal.
                 if not db.execute(
-                    "SELECT 1 FROM audio WHERE path=? AND audio_available=1", (path,)
+                    "SELECT 1 FROM audio WHERE id=? AND audio_available=1", (audio_id,)
                 ).fetchone():
-                    self.audio_storage.delete(Path(path).stem)
+                    try:
+                        self.audio_storage.delete(audio_id)
+                    except Exception as exc:
+                        logger.warning("Recording deletion will retry (%s)", type(exc).__name__)
+                        db.execute("UPDATE audio_deletions SET attempted_at=? WHERE audio_id=?",
+                                   (stamp(utc_now()), audio_id))
+                        # A shared storage outage must not incur a timeout for
+                        # every queued recording. Rotate failures behind untried
+                        # objects so one denied object cannot starve other deletes.
+                        break
+                db.execute("DELETE FROM audio_deletions WHERE audio_id=?", (audio_id,))
             # Restored backup projections must obey the same purge as the SQLite records.
             for path in (self.root / "weekly").glob("*.md"):
                 if not db.execute(
@@ -412,6 +437,7 @@ class ArchiveStore:
             if not row:
                 return False
             self.invalidate_decision_sources(db, [key], purge=True)
+            db.execute("INSERT OR IGNORE INTO audio_deletions(audio_id) VALUES(?)", (key,))
             db.execute("DELETE FROM audio WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_revisions WHERE audio_id=?", (key,))
@@ -436,6 +462,8 @@ class ArchiveStore:
                     (stamp(now - timedelta(days=audio_days)),),
                 ).fetchall()
                 for row in rows:
+                    db.execute("INSERT OR IGNORE INTO audio_deletions(audio_id) VALUES(?)",
+                               (row["id"],))
                     db.execute(
                         "UPDATE audio SET audio_available=0, "
                         "state=CASE WHEN state IN ('queued','transcribing','blocked') "
@@ -474,8 +502,8 @@ class ArchiveStore:
                 self.purge_diagnostics(db)
             if removed_audio or removed_transcripts:
                 self._invalidate_diaries(db, purge_history=True)
-        if removed_audio or removed_transcripts:
-            self._prune_files(removed_audio)
+        # Also retry removals whose object store was unavailable on an earlier pass.
+        self._prune_files(removed_audio)
         return {
             "audio_files_removed": len(removed_audio),
             "transcripts_removed": len(removed_transcripts),
@@ -483,7 +511,11 @@ class ArchiveStore:
 
     def export_archive(self) -> Path:
         """Create a recoverable SQLite snapshot plus audio and Markdown in a local ZIP."""
-        work = Path(tempfile.mkdtemp(prefix="omi-export-"))
+        # Docker's system /tmp is a small tmpfs. Keep exports on the configured
+        # archive volume, allowing local audio to be pinned with hard links.
+        exports = self.root / ".exports"
+        exports.mkdir(mode=0o700, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="omi-export-", dir=exports))
         try:
             snapshot = work / "omi.sqlite3"
             # Pin immutable recordings while writers are excluded. Compression can then run
@@ -497,6 +529,9 @@ class ArchiveStore:
                     # must not send old or future completions to its original phones.
                     target.execute("DELETE FROM notification_deliveries")
                     target.execute("DELETE FROM notification_devices")
+                    # Pending deletes refer to objects in this deployment, none of
+                    # which are included in the portable archive.
+                    target.execute("DELETE FROM audio_deletions")
                     target.commit()
                     # Remove token bytes from freed SQLite pages as well as live rows.
                     target.execute("VACUUM")

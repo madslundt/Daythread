@@ -7,6 +7,7 @@ from datetime import datetime
 from .conversation_tags import decorate_tags, tag_filter
 from .domain import stamp
 from .location_zones import zone_filter
+from .recording_locations import decorate_locations
 from .service import public_source
 from .source_matching import MANUAL_UPLOAD_SQL
 
@@ -89,6 +90,7 @@ def recording_groups(
                 (json.dumps(ids),),
             )}
             decorate_tags(db, list(loaded.values()))
+            decorate_locations(db, list(loaded.values()))
             result = []
             for row in members:
                 source = loaded[row["id"]]

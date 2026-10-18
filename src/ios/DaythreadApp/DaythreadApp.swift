@@ -358,6 +358,20 @@ struct SourceDetail: View {
         let _ = interfaceLocale
         NavigationStack {
             List {
+                Section(L10n.text("Tags")) {
+                    if evidence["tags"].array.isEmpty { Text(L10n.text("No tags yet")).foregroundStyle(.secondary) }
+                    else { Text(evidence["tags"].array.map { $0["name"].text }.joined(separator: ", ")) }
+                    NavigationLink(evidence["tags"].array.isEmpty ? L10n.text("Add tag") : L10n.text("Edit tags")) {
+                        ConversationTagsView(sourceID: evidence["id"].text, onChanged: {
+                            onCorrect?(); Task { await refreshMetadata() }
+                        })
+                    }.disabled(evidence == .null || evidence["state"].text == "expired")
+                }
+                ConversationLocationView(location: evidence["source_metadata"]["location"],
+                    manualLocation: evidence["manual_location"], sourceID: evidence["id"].text,
+                    editable: evidence != .null && evidence["state"].text != "expired", onChanged: {
+                        onCorrect?(); Task { await refreshMetadata() }
+                    })
                 Section(L10n.text("Recorded evidence")) {
                     NavigationLink(L10n.text("Report incorrect or missing information")) { FeedbackEditor(sourceID: evidence["id"].text) }
                     Text(sourceDate).font(.caption).textSelection(.enabled)
@@ -365,10 +379,6 @@ struct SourceDetail: View {
                     SourceTranscriptTopicsView(source: evidence, editing: editing)
                     Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                NavigationLink(L10n.text("Conversation tags")) {
-                    ConversationTagsView(sourceID: evidence["id"].text, onChanged: onCorrect)
-                }.disabled(evidence == .null || evidence["state"].text == "expired")
-                ConversationLocationView(location: evidence["source_metadata"]["location"])
                 if !source["alternate_sources"].array.isEmpty && evidence != .null {
                     Section(L10n.text("Other uploads of this recording")) {
                         SourceList(sources: source["alternate_sources"].array)
@@ -450,6 +460,14 @@ struct SourceDetail: View {
             }.omiScreen().navigationTitle(L10n.text("Recording")).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Done")) { dismiss() } } }
         }
+    }
+    private func refreshMetadata() async {
+        let identity = model.archiveIdentity
+        do {
+            let result = try await model.client().request("v1/sources/\(source["id"].text)")
+            guard !Task.isCancelled, identity == model.archiveIdentity else { return }
+            fresh = result
+        } catch { if identity == model.archiveIdentity { self.error = L10n.error(error) } }
     }
     private var sourceDate: String {
         guard let date = AppModel.date(evidence["started_at"].text) else { return evidence["started_at"].text }

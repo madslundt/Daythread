@@ -84,8 +84,11 @@ def zone_filter(db, zone_id: str | None) -> tuple[str, list]:
     if row is None:
         raise HTTPException(404, "Location zone unavailable; choose another zone")
     return (
-        "location_zone_contains(json_extract(source_metadata,'$.location.latitude'),"
-        "json_extract(source_metadata,'$.location.longitude'),?)=1",
+        "location_zone_contains("
+        "coalesce((SELECT json_extract(location,'$.latitude') FROM source_locations "
+        "WHERE source_id=audio.id),json_extract(source_metadata,'$.location.latitude')),"
+        "coalesce((SELECT json_extract(location,'$.longitude') FROM source_locations "
+        "WHERE source_id=audio.id),json_extract(source_metadata,'$.location.longitude')),?)=1",
         [row["locations"]],
     )
 

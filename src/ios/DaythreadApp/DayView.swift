@@ -83,7 +83,7 @@ struct DayView: View {
                 NavigationLink(L10n.text("Manage zones")) { LocationZonesView() }
                 if let zoneError { Text(zoneError).font(.caption).foregroundStyle(.secondary) }
                 if !zoneID.isEmpty {
-                    Text(L10n.text("Filters recordings with GPS inside this zone. The day recap still covers the whole day."))
+                    Text(L10n.text("Filters recordings located inside this zone. The day recap still covers the whole day."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {

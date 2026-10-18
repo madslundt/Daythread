@@ -286,3 +286,11 @@ For frontend development, run `npm --prefix src/web run dev` alongside the backe
 Source: `src/omi_local/` (backend), `src/ios/` (iPhone), `src/android/` (Android companion), `src/web/` (React/TypeScript). Deployment, tooling, and backend tests live in `config/`, `scripts/`, and `tests/`.
 
 [Operations and API guide](docs/README.md) · [Architecture](docs/architecture.md) · [Hardware and acceptance plan](docs/device-research.md) · [Implementation plan](docs/implementation-plan.md)
+
+## License
+
+Daythread is source available under the [PolyForm Noncommercial License 1.0.0](config/LICENSE.txt). You may use, modify, and distribute it for the purposes permitted by that license. Commercial use requires separate permission from ELC Consulting ApS; contact [contact@elcc.dk](mailto:contact@elcc.dk).
+
+This is a noncommercial source-available license, not an open-source license. Dependencies retain their own licenses and notices.
+
+Required Notice: Copyright 2026 ELC Consulting ApS (https://elcc.dk)

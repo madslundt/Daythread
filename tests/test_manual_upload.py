@@ -5,6 +5,7 @@ import wave
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -59,6 +60,35 @@ def test_manual_upload_preserves_provenance_audio_and_retry_identity(client):
     assert upload(client, key).json() == receipt
     assert client.get(f"/v1/sources/{key}").json()["source_id"] == receipt["source_id"]
     assert client.get("/v1/status").json()["audio"] == {"queued": 1}
+
+
+def test_slow_ingest_does_not_block_status_and_preserves_profile(client, monkeypatch):
+    from omi_local.profiles import selected_profile
+
+    profile_id = client.post("/v1/profiles", json={"name": "Other"}).json()["id"]
+    store = client.app.state.profiles.runtimes[profile_id].memory.store
+    ingest = store.ingest
+    entered, release = Event(), Event()
+    selected = []
+
+    def slow_ingest(*args, **kwargs):
+        selected.append(selected_profile.get())
+        entered.set()
+        assert release.wait(5)
+        return ingest(*args, **kwargs)
+
+    monkeypatch.setattr(store, "ingest", slow_ingest)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pending = pool.submit(upload, client, uuid4(), profile_id=profile_id)
+        assert entered.wait(3)
+        status = pool.submit(client.get, "/v1/status")
+        try:
+            assert status.result(timeout=0.5).status_code == 200
+        finally:
+            release.set()
+        assert pending.result(timeout=3).status_code == 200
+    assert selected == [profile_id]
+    assert client.get("/v1/status").json()["audio"] == {}
 
 
 @pytest.mark.parametrize("metadata", [

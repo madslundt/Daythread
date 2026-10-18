@@ -1,5 +1,6 @@
 import { isVendorTranscript, sourceVendor, sourceVendorLabel } from "./vendors";
 import { ConversationTags } from "./ConversationTags";
+import { RecordingLocation } from "./RecordingLocation";
 import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { ImportanceButton } from "./Importance";
@@ -151,14 +152,6 @@ function SourceRow({
       </span>
       <span>{source.state === "done" ? t("Transcribed") : statusLabel(source.state)}</span>
     </div>
-    {currentSource.source_metadata?.location ? <p className="caption">
-      {t("Conversation location")}: {currentSource.source_metadata.location.latitude.toFixed(5)}, {currentSource.source_metadata.location.longitude.toFixed(5)}
-      {" · ±"}{Math.round(currentSource.source_metadata.location.horizontal_accuracy)} {t("m")}
-      {" · "}{timeLabel(currentSource.source_metadata.location.captured_at, timezone)}{" · "}
-      <a href={`https://maps.apple.com/?ll=${currentSource.source_metadata.location.latitude},${currentSource.source_metadata.location.longitude}`} target="_blank" rel="noreferrer">{t("Open in Maps")}</a>
-      <br /><a href={`/settings/locations?latitude=${currentSource.source_metadata.location.latitude}&longitude=${currentSource.source_metadata.location.longitude}`}>{t("Save as zone location")}</a>
-      <br />{t("Phone location near the start of this recording. It does not identify places mentioned in the conversation.")}
-    </p> : null}
     {source.source_kind === "manual_upload" ? <p className="caption">
       {sourceVendor(source) && sourceVendor(source) !== "manual"
         ? t("Uploaded recording from {vendor}", { vendor: sourceVendorLabel(source) })
@@ -279,6 +272,7 @@ function SourceRow({
       ) : null}
       <div className="source-detail">
         <ConversationTags sourceID={source.id} tags={currentSource.tags} onChanged={onCorrect} />
+        <RecordingLocation source={currentSource} timezone={timezone} onChanged={onCorrect} />
         {source.alternate_sources?.length ? <details className="recording-alternatives">
           <summary>{t("Other uploads of this recording (")}{source.alternate_sources.length})</summary>
           <p className="caption">{t("Identical audio is shown once in the timeline. Each upload keeps its supplied time and transcript.")}</p>

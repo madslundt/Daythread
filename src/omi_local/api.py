@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import httpx
+from anyio import CancelScope
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, ValidationError
@@ -52,6 +53,7 @@ from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
 from .recording_groups import recording_groups
+from .recording_locations import recording_location_routes
 from .recording_uploads import recording_upload_routes
 from .retrieval import DateScopeError
 from .service import Memory, public_source
@@ -187,6 +189,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
     app.include_router(location_zone_routes(memory))
+    app.include_router(recording_location_routes(memory))
     app.include_router(conversation_tag_routes(memory))
     app.include_router(vendor_routes(lambda: config, runtime))
 
@@ -462,11 +465,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         try:
-            row = memory().store.ingest(
-                audio_id, device_id, started_at, data, duration,
+            ingest = asyncio.create_task(asyncio.to_thread(
+                memory().store.ingest, audio_id, device_id, started_at, data, duration,
                 source_kind=source_kind, source_id=source_id,
                 source_metadata=grouping,
-            )
+            ))
+            try:
+                row = await asyncio.shield(ingest)
+            except asyncio.CancelledError:
+                # SQLite/S3 work keeps running after cancellation of to_thread.
+                # Join it before request/profile cleanup can close the archive.
+                with CancelScope(shield=True):
+                    while not ingest.done():
+                        try:
+                            await asyncio.shield(ingest)
+                        except asyncio.CancelledError:
+                            continue
+                        except Exception:
+                            break
+                    with suppress(Exception):
+                        ingest.result()
+                raise
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         return public_source(row)

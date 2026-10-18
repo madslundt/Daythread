@@ -13,6 +13,7 @@ services:
       - omi-data:/data
     restart: unless-stopped
     read_only: true
+    # Archive exports stage on /data/.exports, not this small scratch tmpfs.
     tmpfs:
       - /tmp:size=16m
     security_opt:

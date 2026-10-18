@@ -3,9 +3,10 @@ import hashlib
 import io
 import os
 import shutil
+import sqlite3
 import wave
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -101,6 +102,64 @@ def test_s3_failure_never_acknowledges_an_unstored_recording(tmp_path):
         store.ingest(key, "device", datetime.now(UTC), audio(), 1)
     assert store.get_audio(str(key)) is None
     assert not list(store.audio_dir.glob("*.wav"))
+
+
+@pytest.mark.parametrize("operation", ["delete", "retention"])
+def test_s3_delete_outage_retries_after_restart_without_restoring_audio(tmp_path, operation):
+    objects, key = Objects(), uuid4()
+    storage = S3AudioStorage("private-recordings", "accounts/example", client=objects)
+    store = Store(tmp_path, storage=storage)
+    at = datetime.now(UTC) - timedelta(days=3)
+    store.ingest(key, "device", at, audio(), 1)
+    objects.failure = "AccessDenied"
+    if operation == "delete":
+        assert store.delete_audio(str(key))
+    else:
+        store.apply_retention(1, 0)
+    assert objects.objects
+    with store.connect() as db:
+        assert db.execute("SELECT audio_id FROM audio_deletions").fetchone()[0] == str(key)
+    objects.failure = None
+    restarted = Store(tmp_path, storage=storage)
+    assert not objects.objects
+    row = restarted.get_audio(str(key))
+    assert row is None or not row["audio_available"]
+
+
+def test_pending_s3_delete_cannot_remove_reuploaded_id(tmp_path):
+    objects, key = Objects(), uuid4()
+    storage = S3AudioStorage("private-recordings", "accounts/example", client=objects)
+    store = Store(tmp_path, storage=storage)
+    at = datetime.now(UTC)
+    store.ingest(key, "device", at, audio(), 1)
+    objects.failure = "AccessDenied"
+    assert store.delete_audio(str(key))
+    objects.failure = None
+    replacement = audio() + b"replacement"
+    store.ingest(key, "device", at, replacement, 1)
+    store.apply_retention(0, 0)
+    assert store.read_audio(str(key)) == replacement
+    with store.connect() as db:
+        assert not db.execute("SELECT 1 FROM audio_deletions").fetchone()
+
+
+def test_backup_excludes_pending_deployment_object_deletions(tmp_path):
+    objects, key = Objects(), uuid4()
+    storage = S3AudioStorage("private-recordings", "accounts/example", client=objects)
+    store = Store(tmp_path, storage=storage)
+    store.ingest(key, "device", datetime.now(UTC), audio(), 1)
+    objects.failure = "AccessDenied"
+    store.delete_audio(str(key))
+    output = store.export_archive()
+    try:
+        with zipfile.ZipFile(output) as archive:
+            assert not any(name.startswith("audio/") for name in archive.namelist())
+            snapshot = tmp_path / "export.sqlite3"
+            snapshot.write_bytes(archive.read("omi.sqlite3"))
+        with sqlite3.connect(snapshot) as db:
+            assert not db.execute("SELECT 1 FROM audio_deletions").fetchone()
+    finally:
+        shutil.rmtree(output.parent)
 
 
 def test_s3_recording_playback_processing_export_and_deletion(tmp_path, monkeypatch):

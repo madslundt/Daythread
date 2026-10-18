@@ -90,11 +90,22 @@ Calendar events keep their location in the native editor; portable exports rejec
 See [location behavior, API and physical acceptance](location-support.md).
 
 Zone definitions are per-profile archive records with stable UUIDs and versioned edits. Each zone
-contains multiple labeled circles with independent radii. Query-time spatial matching uses original
-recording GPS observations; zone edits reclassify existing recordings without changing evidence or
-retry receipts. Filters run before counting, grouping and paging and retain their scope through
+contains multiple labeled circles with independent radii. Query-time spatial matching uses recording
+locations (a manual edit takes precedence over captured GPS); zone edits reclassify existing
+recordings without changing evidence or retry receipts. Filters run before counting, grouping and paging and retain their scope through
 expanded recording groups. Full-day summaries remain unfiltered and are explicitly distinguished
 from the selected recording filter. Zone definitions are included in archive backups.
+
+`GET/PUT /v1/sources/{id}/location` lets the owner add or correct a recording's place, including
+imported recordings without GPS. Assignments accept only saved zone/place UUIDs. The server resolves
+them in the current profile under the write transaction and rejects arbitrary names/coordinates.
+A separate versioned `source_locations` row stores the selected IDs and a historical name/coordinate
+snapshot; `source_metadata.location` and capture/retry identity remain unchanged.
+Reads expose `manual_location` separately. Writes check `expected_version`; writing `location: null`
+restores captured GPS (or no location). Source deletion and expiry remove manual places, and archive
+backups include them. Web and iPhone recording details expose tag and location actions directly.
+Transcript and recap source views reuse these controls. A searchable picker applies a saved place
+on selection and links to saved-place management, with an explicit empty state.
 
 Conversation tags are separate user-owned categories attached to stable source UUIDs. A group edit
 resolves its complete unfiltered day membership under one transaction and checks a membership

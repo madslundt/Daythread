@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
 import { errorMessage, newId, request } from "./api";
 import { profileScope } from "./profiles";
 import { useResource } from "./useResource";
 import { ErrorState, Loading } from "./UI";
+import { Icon } from "./Icon";
+import { ZoneLocationPicker } from "./ZoneLocationPicker";
 
 export type ZoneLocation = { id: string; label: string; latitude: number; longitude: number; radius_m: number };
 export type LocationZone = { id: string; name: string; version: number; locations: ZoneLocation[] };
@@ -16,22 +18,24 @@ export function ZoneFilter({ value, onChange }: { value: string; onChange: (valu
     return () => window.removeEventListener("omi:zones-changed", zones.refresh);
   }, [zones.refresh]);
   return <div className="zone-filter">
-    <label>{t("Location zone")}{" "}<select value={value} onChange={(event) => onChange(event.target.value)}>
+    <label><span>{t("Location zone")}</span><select value={value} onChange={(event) => onChange(event.target.value)}>
       <option value="">{t("All locations")}</option>
       {value && !zones.data?.items.some((zone) => zone.id === value) ? <option value={value}>{t("Zone unavailable")}</option> : null}
       {zones.data?.items.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
     </select></label>{" "}<a href="/settings/locations">{t("Manage zones")}</a>
     {zones.error ? <ErrorState message={zones.error} retry={zones.refresh} /> : null}
-    {value ? <p className="caption">{t("Filters recordings with GPS inside this zone. The day recap still covers the whole day.")}</p> : null}
+    {value ? <p className="caption">{t("Filters recordings located inside this zone. The day recap still covers the whole day.")}</p> : null}
   </div>;
 }
 
-export function LocationZones() {
+export function LocationZones({ onBack }: { onBack?: () => void } = {}) {
   const resource = useResource<ZoneDirectory>(`/v1/location-zones?profile_id=${encodeURIComponent(profileScope().id)}`);
   const [editor, setEditor] = useState<LocationZone>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [scope] = useState(profileScope);
+  const backButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (!editor) backButton.current?.focus({ preventScroll: true }); }, [editor]);
   function point(): ZoneLocation {
     const params = new URLSearchParams(window.location.search);
     const lat = params.has("latitude") ? Number(params.get("latitude")) : NaN;
@@ -49,10 +53,15 @@ export function LocationZones() {
     } catch (error) { if (!scope.signal.aborted) setError(errorMessage(error)); }
     finally { if (!scope.signal.aborted) setBusy(false); }
   }
-  return <section className="location-zones">
+  return <section className="location-zones" onKeyDown={(event) => {
+    if (event.key === "Escape" && onBack && !editor && !busy) { event.stopPropagation(); onBack(); }
+  }}>
+    {onBack && !editor ? <button ref={backButton} type="button" className="text-button saved-place-back" disabled={busy} onClick={onBack}>
+      <Icon name="chevron-left" size={16} />{t("Back to saved places")}
+    </button> : null}
     <h2>{t("Location zones")}</h2>
     <p>{t("Group places as Home, Work, Gym, or any name you choose. Each zone can contain several locations, each with its own radius.")}</p>
-    <p className="caption">{t("Zones belong to this profile. Changes apply to past recordings without changing their original GPS observations. Overlapping zones can both match. Recordings without GPS stay unclassified.")}</p>
+    <p className="caption">{t("Zones belong to this profile. Matching uses the edited location when set, otherwise the captured GPS. Recordings without a location stay unclassified.")}</p>
     {error ? <ErrorState message={error} retry={resource.refresh} /> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading /> : null}
@@ -82,18 +91,20 @@ export function ZoneEditor({ zone, onCancel, onSaved }: { zone: LocationZone; on
     setDraft((value) => ({ ...value, locations: value.locations.map((point) => point.id === id ? { ...point, ...changes } : point) }));
   }
   async function locate(id: string) {
-    if (!navigator.geolocation) { setError(t("GPS is unavailable here. Enter coordinates or open a recording location.")); return; }
+    if (!navigator.geolocation) { setError(t("GPS is unavailable here. Search for an address or choose a point on the map.")); return; }
     setBusy(true); setError("");
     navigator.geolocation.getCurrentPosition((position) => {
       if (scope.signal.aborted || lifetime.signal.aborted) return;
       change(id, { latitude: position.coords.latitude, longitude: position.coords.longitude }); setBusy(false);
     }, () => {
       if (scope.signal.aborted || lifetime.signal.aborted) return;
-      setError(t("GPS is unavailable here. Enter coordinates or open a recording location.")); setBusy(false);
+      setError(t("GPS is unavailable here. Search for an address or choose a point on the map.")); setBusy(false);
     }, { maximumAge: 0, timeout: 15000, enableHighAccuracy: false });
   }
   async function save(event: React.SubmitEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    if (!canSave || busy) return;
+    setBusy(true); setError("");
     try {
       await request(`/v1/location-zones/${draft.id}`, { method: "PUT", body: JSON.stringify({
         name: draft.name, locations: draft.locations, expected_version: draft.version,
@@ -113,10 +124,13 @@ export function ZoneEditor({ zone, onCancel, onSaved }: { zone: LocationZone; on
         <legend>{t("Zone location")}</legend>
         <div className="settings-grid">
           <label className="setting-field">{t("Location name")}<input required maxLength={100} value={point.label} onChange={(event) => change(point.id, { label: event.target.value })} /></label>
-          <label className="setting-field">{t("Latitude")}<input type="number" required min={-90} max={90} step="any" value={Number.isFinite(point.latitude) ? point.latitude : ""} onChange={(event) => change(point.id, { latitude: event.target.valueAsNumber })} /></label>
-          <label className="setting-field">{t("Longitude")}<input type="number" required min={-180} max={180} step="any" value={Number.isFinite(point.longitude) ? point.longitude : ""} onChange={(event) => change(point.id, { longitude: event.target.valueAsNumber })} /></label>
-          <label className="setting-field">{t("Radius in metres")}<input type="number" required min={10} max={100000} step="any" value={point.radius_m} onChange={(event) => change(point.id, { radius_m: event.target.valueAsNumber })} /></label>
+          <label className="setting-field">{t("Radius in metres")}<input type="number" required min={10} max={100000} step="any" value={Number.isFinite(point.radius_m) ? point.radius_m : ""} onChange={(event) => change(point.id, { radius_m: event.target.valueAsNumber })} /></label>
         </div>
+        <ZoneLocationPicker point={point} disabled={busy} onChange={(changes) => change(point.id, changes)} />
+        <details className="zone-coordinates"><summary>{t("Enter coordinates")}</summary><div className="settings-grid">
+          <label className="setting-field">{t("Latitude")}<input type="number" min={-90} max={90} step="any" value={Number.isFinite(point.latitude) ? point.latitude : ""} onChange={(event) => change(point.id, { latitude: event.target.valueAsNumber })} /></label>
+          <label className="setting-field">{t("Longitude")}<input type="number" min={-180} max={180} step="any" value={Number.isFinite(point.longitude) ? point.longitude : ""} onChange={(event) => change(point.id, { longitude: event.target.valueAsNumber })} /></label>
+        </div></details>
         <div className="button-row"><button type="button" className="button" onClick={() => void locate(point.id)}>{t("Use current location")}</button>
           {Number.isFinite(point.latitude) && Number.isFinite(point.longitude) ? <a href={`https://maps.apple.com/?ll=${point.latitude},${point.longitude}`} target="_blank" rel="noreferrer">{t("Open in Maps")}</a> : null}
           <button type="button" className="text-button" disabled={draft.locations.length === 1} onClick={() => setDraft({ ...draft, locations: draft.locations.filter((p) => p.id !== point.id) })}>{t("Remove location")}</button></div>

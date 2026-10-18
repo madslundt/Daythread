@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D7A000000000000000000001 /* DaythreadLicense.txt in Resources */ = {isa = PBXBuildFile; fileRef = D7A000000000000000000002 /* DaythreadLicense.txt */; };
 		02341B5F191F35D69EE5BA68 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 38F938352BFD5D3D1451DC01 /* Assets.xcassets */; };
 		0531F8509E0E4DF0AB46A0FC /* OmiBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75EEBB6559DA06DCF7FF29D3 /* OmiBluetooth.swift */; };
 		0761E9B771D3BC7EA81FAD34 /* LabelModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597AAA8B98EAC89C79A8F6F0 /* LabelModels.swift */; };
@@ -68,6 +69,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D7A000000000000000000002 /* DaythreadLicense.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = DaythreadLicense.txt; sourceTree = "<group>"; };
 		0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDetail.swift; sourceTree = "<group>"; };
 		08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionFollowUpsView.swift; sourceTree = "<group>"; };
 		096573541F1197E4105E64B8 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				7666F0FAF1233BBAA2B88E41 /* ConversationTagsView.swift */,
 				792E366AA23A45C59C8180A6 /* Daythread.entitlements */,
 				2721B9908BFBD82A5D7663D7 /* DaythreadApp.swift */,
+				D7A000000000000000000002 /* DaythreadLicense.txt */,
 				18BD1FFD6D04485108E8C274 /* DayView.swift */,
 				2971E2A1230492061E3C7FBA /* DecisionEditor.swift */,
 				08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */,
@@ -318,6 +321,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				02341B5F191F35D69EE5BA68 /* Assets.xcassets in Resources */,
+				D7A000000000000000000001 /* DaythreadLicense.txt in Resources */,
 				96F4142BCB00848B61BB6DBA /* InfoPlist.strings in Resources */,
 				375BA13553AE3A8813DDACEE /* Localizable.strings in Resources */,
 			);

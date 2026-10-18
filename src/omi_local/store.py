@@ -32,6 +32,8 @@ from .processing_progress import SCHEMA as PROCESSING_PROGRESS_SCHEMA
 from .processing_progress import ProcessingProgressStore
 from .recap_store import SCHEMA as RECAP_SCHEMA
 from .recap_store import RecapStore
+from .recording_locations import SCHEMA as RECORDING_LOCATIONS_SCHEMA
+from .recording_locations import RecordingLocationStore, decorate_locations
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
 from .recording_uploads import SCHEMA as RECORDING_UPLOADS_SCHEMA
 from .recording_uploads import RecordingUploadStore
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS diary (
 
 
 class Store(
+    RecordingLocationStore,
     ConversationTagStore,
     LocationZoneStore,
     NotificationStore,
@@ -101,9 +104,11 @@ class Store(
 
         self.audio_storage = storage or LocalAudioStorage(self.audio_dir)
         with self.connect() as db:
+            had_deletion_outbox = bool(db.execute("PRAGMA table_info(audio_deletions)").fetchall())
             db.executescript(SCHEMA)
             db.executescript(CONVERSATION_TAGS_SCHEMA)
             db.executescript(LOCATION_ZONES_SCHEMA)
+            db.executescript(RECORDING_LOCATIONS_SCHEMA)
             db.executescript(FORWARDING_SCHEMA)
             db.executescript(EXTENDED_SCHEMA)
             db.executescript(COMPLETENESS_SCHEMA)
@@ -128,6 +133,13 @@ class Store(
             if "audio_available" not in audio_columns:
                 db.execute(
                     "ALTER TABLE audio ADD COLUMN audio_available INTEGER NOT NULL DEFAULT 1"
+                )
+            if not had_deletion_outbox:
+                # Upgrade archives whose old retention pass committed before an
+                # unsuccessful file deletion. Deleted rows cannot be recovered here.
+                db.execute(
+                    "INSERT OR IGNORE INTO audio_deletions(audio_id) SELECT id FROM audio "
+                    "WHERE audio_available=0"
                 )
             if "source_metadata" not in audio_columns:
                 db.execute(
@@ -220,6 +232,7 @@ class Store(
                     "UPDATE audio SET path=? WHERE id=?",
                     (str(self.audio_dir / f"{row['id']}.wav"), row["id"]),
                 )
+        self._prune_files()
 
     def read_audio(self, audio_id: str) -> bytes:
         return self.audio_storage.read(audio_id)
@@ -333,6 +346,14 @@ class Store(
                                 (digest, at, end))):
                         raise ValueError("Recording part conflicts with previously uploaded parts")
             # Each ID is a validated UUID, never a client-supplied filename.
+            # A deleted ID can be uploaded again before its asynchronous cleanup.
+            # Remove the old immutable object before writing the new incarnation;
+            # an outage rejects this upload while preserving the durable retry.
+            if db.execute(
+                "SELECT 1 FROM audio_deletions WHERE audio_id=?", (key,)
+            ).fetchone():
+                self.audio_storage.delete(key)
+                db.execute("DELETE FROM audio_deletions WHERE audio_id=?", (key,))
             path = self.audio_storage.location(key)
             self.audio_storage.write(key, data)
             db.execute(
@@ -430,19 +451,21 @@ class Store(
         with self.connect() as db:
             db.execute("BEGIN")
             row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
-            return decorate_tags(db, [dict(row)])[0] if row else None
+            return decorate_locations(db, decorate_tags(db, [dict(row)]))[0] if row else None
 
     def get_audio_many(self, audio_ids: list[str]) -> dict[str, dict]:
         if not audio_ids:
             return {}
         with self.connect() as db:
-            return {
-                row["id"]: dict(row)
+            db.execute("BEGIN")
+            rows = [
+                dict(row)
                 for row in db.execute(
                     "SELECT * FROM audio WHERE id IN (" + ",".join("?" for _ in audio_ids) + ")",
                     audio_ids,
                 )
-            }
+            ]
+            return {row["id"]: row for row in decorate_locations(db, decorate_tags(db, rows))}
 
     def has_recordings(self, start: datetime, end: datetime) -> bool:
         with self.connect() as db:

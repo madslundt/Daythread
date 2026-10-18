@@ -216,9 +216,9 @@ export function Today({
   return (
     <div className="day-layout">
       <div className="day-main">
-        <RecapSection key={day} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} compact />
+        <RecapSection key={`recap-${day}`} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} compact />
         <TranscriptTimeline
-          key={day}
+          key={`timeline-${day}`}
           day={day}
           timezone={timezone}
           timeline={timeline}
@@ -371,8 +371,10 @@ function TranscriptTimeline({
             {t("Hints guide interpretation of nearby speech; these are approximate times.")}{" "}</p>
         </div>
       ) : null}
-      <TagFilter value={tagID} onChange={(value) => { setTagID(value); setPage(0); }} />
-      <ZoneFilter value={zoneID} onChange={(value) => { setZoneID(value); setPage(0); }} />
+      <div className="timeline-filters">
+        <TagFilter value={tagID} onChange={(value) => { setTagID(value); setPage(0); }} />
+        <ZoneFilter value={zoneID} onChange={(value) => { setZoneID(value); setPage(0); }} />
+      </div>
       {resource.data?.total || submitted || zoneID || tagID ? (
         <form
           className="search-form"

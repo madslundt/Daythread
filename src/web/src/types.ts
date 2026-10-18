@@ -1,4 +1,5 @@
 export type Source = {
+  manual_location?: { label: string; latitude: number; longitude: number; zone_id?: string; location_id?: string; zone_name?: string };
   tags?: { id: string; name: string }[];
   alternate_sources?: Source[];
   id: string;

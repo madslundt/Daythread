@@ -130,9 +130,18 @@ async def run_insights(memory: Memory) -> None:
 async def maintenance(memory: Memory) -> None:
     while True:
         try:
-            memory.store.apply_retention(
-                memory.settings.audio_retention_days, memory.settings.transcript_retention_days
-            )
+            cleanup = asyncio.create_task(asyncio.to_thread(
+                memory.store.apply_retention,
+                memory.settings.audio_retention_days, memory.settings.transcript_retention_days,
+            ))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                # Join in-flight storage work before Profiles closes database pools.
+                # Cancelling to_thread itself would leave its mutations running.
+                with suppress(Exception):
+                    await cleanup
+                raise
         except Exception as exc:
             logger.warning("Diary maintenance will retry (%s)", type(exc).__name__)
         await asyncio.sleep(60)

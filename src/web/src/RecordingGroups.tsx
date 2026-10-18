@@ -27,10 +27,12 @@ export type RecordingGroupList = {
 export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
   groups: RecordingGroup[]; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
-  return <div className="source-list source-list-compact">
-    {groups.map((group) => group.recording_count === 1 ? (
-      <SourceList key={group.id} compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
-    ) : <RecordingSession key={group.id} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />)}
+  return <div className="source-list source-list-compact recording-groups">
+    {groups.map((group) => <div className="recording-group" key={group.id}>
+      {group.recording_count === 1 ? (
+        <SourceList compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
+      ) : <RecordingSession group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />}
+    </div>)}
   </div>;
 }
 
@@ -42,7 +44,7 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
     <summary>
-      <span className="source-time">{timeLabel(group.started_at, timezone)}<br />–{timeLabel(group.ended_at, timezone)}</span>
+      <span className="source-time"><span>{timeLabel(group.started_at, timezone)}</span><span className="source-time-end">–{timeLabel(group.ended_at, timezone)}</span></span>
       <span className="source-overview"><span className="source-preview">{group.title}</span>
         <span className="source-glance">{group.recording_count} {t("recordings")}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />

@@ -35,7 +35,8 @@
     "Australia/Sydney": "IANA timezone identifier",
     "Pacific/Auckland": "IANA timezone identifier",
     "X-CSRF-Token": "HTTP CSRF header identifier; must remain untranslated.",
-    "src/web/src/managedService.ts::Invalid service destination": "Internal assertion for a forbidden programmer-supplied route; never shown as interface copy."
+    "src/web/src/managedService.ts::Invalid service destination": "Internal assertion for a forbidden programmer-supplied route; never shown as interface copy.",
+    "src/web/src/ZoneLocationPicker.tsx::&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>": "Required map data attribution with a provider name and copyright link."
   },
   "ios": {
     "Daythread": "Product or language self-name",

@@ -40,7 +40,7 @@ struct LocationZonesView: View {
         List {
             Section {
                 Text(L10n.text("Group places as Home, Work, Gym, or any name you choose. Each zone can contain several locations, each with its own radius."))
-                Text(L10n.text("Zones belong to this profile. Changes apply to past recordings without changing their original GPS observations. Overlapping zones can both match. Recordings without GPS stay unclassified."))
+                Text(L10n.text("Zones belong to this profile. Matching uses the edited location when set, otherwise the captured GPS. Recordings without a location stay unclassified."))
                     .font(.caption).foregroundStyle(.secondary)
                 Button(L10n.text("Create zone")) { editor = LocationZone(name: "", locations: seed.map { [$0] } ?? []) }
             }
@@ -179,6 +179,13 @@ private struct ZonePointEditor: View {
     @State private var active = true
     @State private var latitude = ""
     @State private var longitude = ""
+    @State private var position: MapCameraPosition = .automatic
+    @State private var showCoordinates = false
+    private var center: CLLocationCoordinate2D? {
+        guard let lat = coordinate(latitude), let lon = coordinate(longitude),
+              lat.isFinite, lon.isFinite, (-90...90).contains(lat), (-180...180).contains(lon) else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
     private var valid: Bool {
         guard let lat = coordinate(latitude), let lon = coordinate(longitude) else { return false }
         var candidate = point; candidate.latitude = lat; candidate.longitude = lon
@@ -192,29 +199,48 @@ private struct ZonePointEditor: View {
                 Section {
                     TextField(L10n.text("Location name"), text: $point.label)
                     TextField(L10n.text("Place or address"), text: $query).submitLabel(.search)
+                        .onChange(of: query) { _, _ in results = [] }
                         .onSubmit { Task { await find() } }
-                    Button(L10n.text("Search places")) { Task { await find() } }.disabled(busy || query.isEmpty)
+                    Button(L10n.text("Search places")) { Task { await find() } }.disabled(busy || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button(L10n.text("Use current location")) { Task { await locate() } }.disabled(busy)
                     ForEach(Array(results.enumerated()), id: \.offset) { _, item in
                         Button {
-                            point.label = item.name ?? query
-                            latitude = String(item.placemark.coordinate.latitude); longitude = String(item.placemark.coordinate.longitude)
-                            results = []
+                            if point.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { point.label = String((item.name ?? query).prefix(100)) }
+                            select(item.placemark.coordinate)
+                            results = []; query = item.placemark.title ?? item.name ?? query
                         } label: { VStack(alignment: .leading) {
                             Text(item.name ?? query)
                             Text(item.placemark.title ?? "").font(.caption).foregroundStyle(.secondary)
                         } }
                     }
-                    TextField(L10n.text("Latitude"), text: $latitude).keyboardType(.numbersAndPunctuation)
-                    TextField(L10n.text("Longitude"), text: $longitude).keyboardType(.numbersAndPunctuation)
                     TextField(L10n.text("Radius in metres"), value: $point.radius_m, format: .number).keyboardType(.decimalPad)
                 } footer: { Text(L10n.text("Searches and map previews use Apple Maps. Coordinates can also come from a recording or current GPS.")) }
-                if valid, let lat = coordinate(latitude), let lon = coordinate(longitude) {
-                    let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-                    Map(initialPosition: .region(MKCoordinateRegion(center: center, latitudinalMeters: point.radius_m * 5, longitudinalMeters: point.radius_m * 5))) {
-                        Marker(point.label, coordinate: center)
-                        MapCircle(center: center, radius: point.radius_m).foregroundStyle(.blue.opacity(0.2))
-                    }.frame(height: 200).id("\(lat):\(lon):\(point.radius_m)")
+                Section {
+                    Text(L10n.text("Tap the map to choose the zone center."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    MapReader { proxy in
+                        Map(position: $position) {
+                            if let center {
+                                Marker(point.label.isEmpty ? L10n.text("Zone location") : point.label, coordinate: center)
+                                if point.radius_m.isFinite, (10...100000).contains(point.radius_m) {
+                                    MapCircle(center: center, radius: point.radius_m).foregroundStyle(.blue.opacity(0.2))
+                                }
+                            }
+                        }
+                        .onTapGesture { location in
+                            guard !busy, let coordinate = proxy.convert(location, from: .local) else { return }
+                            select(coordinate, recenter: false)
+                        }
+                        .frame(height: 280)
+                        .accessibilityLabel(L10n.text("Zone location map"))
+                    }
+                    if center == nil {
+                        Text(L10n.text("Choose a location to continue.")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    DisclosureGroup(L10n.text("Enter coordinates"), isExpanded: $showCoordinates) {
+                        TextField(L10n.text("Latitude"), text: $latitude).keyboardType(.numbersAndPunctuation)
+                        TextField(L10n.text("Longitude"), text: $longitude).keyboardType(.numbersAndPunctuation)
+                    }
                 }
                 if busy { ProgressView() }
                 if let error { Text(error).foregroundStyle(.red) }
@@ -230,28 +256,48 @@ private struct ZonePointEditor: View {
                 }
             }
         }
-        .onAppear { if !point.label.isEmpty { latitude = String(point.latitude); longitude = String(point.longitude) } }
+        .onAppear {
+            if !point.label.isEmpty { select(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)) }
+            else { position = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 25, longitude: 0), span: MKCoordinateSpan(latitudeDelta: 100, longitudeDelta: 160))) }
+        }
+        .onChange(of: point.radius_m) { _, _ in focusCenter() }
+        .onChange(of: latitude) { _, _ in if showCoordinates { focusCenter() } }
+        .onChange(of: longitude) { _, _ in if showCoordinates { focusCenter() } }
         .onDisappear { active = false; search?.cancel(); locations.cancelRequest() }
     }
+    private func select(_ coordinate: CLLocationCoordinate2D, recenter: Bool = true) {
+        latitude = String(coordinate.latitude); longitude = String(coordinate.longitude)
+        if recenter { focusCenter() }
+    }
+    private func focusCenter() {
+        guard let center else { return }
+        let distance = point.radius_m.isFinite ? min(500000, max(200, point.radius_m * 5)) : 1000
+        position = .region(MKCoordinateRegion(center: center, latitudinalMeters: distance, longitudinalMeters: distance))
+    }
     private func find() async {
+        guard !busy, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let submittedQuery = query
         busy = true; error = nil; results = []
         defer { busy = false }
-        let request = MKLocalSearch.Request(); request.naturalLanguageQuery = query
+        let request = MKLocalSearch.Request(); request.naturalLanguageQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let center { request.region = MKCoordinateRegion(center: center, latitudinalMeters: 50000, longitudinalMeters: 50000) }
         let operation = MKLocalSearch(request: request); search = operation
         do {
             let response = try await operation.start()
             guard active, !Task.isCancelled else { return }
+            guard query == submittedQuery else { return }
             results = Array(response.mapItems.prefix(10))
             if results.isEmpty { error = L10n.text("No places found. Try a more specific address.") }
         } catch { if active { self.error = L10n.text("Place search failed. Try again.") } }
     }
     private func locate() async {
-        busy = true; error = nil
+        guard !busy else { return }
+        busy = true; error = nil; results = []
         defer { busy = false }
         do {
             let fix = try await locations.currentLocation()
             guard active, !Task.isCancelled else { return }
-            latitude = String(fix.latitude); longitude = String(fix.longitude)
+            select(CLLocationCoordinate2D(latitude: fix.latitude, longitude: fix.longitude))
             if point.label.isEmpty { point.label = L10n.text("Current location") }
         } catch { if active { self.error = L10n.error(error) } }
     }

@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY pyproject.toml uv.lock ./
+COPY config/LICENSE.txt ./config/LICENSE.txt
 COPY src/omi_local ./src/omi_local
 COPY --from=web /web/dist ./src/omi_local/web
 RUN pip install --no-cache-dir uv==0.13.1 && uv sync --frozen --no-dev --no-editable

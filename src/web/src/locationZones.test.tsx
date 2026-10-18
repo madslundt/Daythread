@@ -20,7 +20,7 @@ describe("zone editing", () => {
     expect(html).toContain('max="100000"');
     expect(html).toContain('Place or address');
     expect(html).toContain('Zone location map');
-    expect(html).toContain('<summary>Enter coordinates</summary>');
+    expect(html).toContain('Advanced settings');
     expect(html).not.toContain('<details class="zone-coordinates" open');
   });
 

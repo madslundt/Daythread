@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Circle, Map as LeafletMap, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { t } from "./i18n";
+import { Icon } from "./Icon";
 import type { ZoneLocation } from "./LocationZones";
 
 type Place = { label: string; address: string; latitude: number; longitude: number };
@@ -27,8 +28,8 @@ export function validCoordinates(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Math.abs(latitude) <= 90 && Number.isFinite(longitude) && Math.abs(longitude) <= 180;
 }
 
-export function ZoneLocationPicker({ point, disabled, onChange }: {
-  point: ZoneLocation; disabled: boolean; onChange: (changes: Partial<ZoneLocation>) => void;
+export function ZoneLocationPicker({ point, disabled, onChange, onLocate }: {
+  point: ZoneLocation; disabled: boolean; onChange: (changes: Partial<ZoneLocation>) => void; onLocate: () => void;
 }) {
   const id = useId();
   const [query, setQuery] = useState("");
@@ -112,10 +113,13 @@ export function ZoneLocationPicker({ point, disabled, onChange }: {
 
   return <div className="zone-location-picker">
     <div className="zone-address-search">
-      <label className="setting-field" htmlFor={id}>{t("Place or address")}<input id={id} type="search" value={query} disabled={disabled} onChange={(event) => {
+      <div className="setting-field"><label className="zone-search-label" htmlFor={id}>{t("Place or address")}</label><div className="zone-search-input"><Icon name="search" size={18} /><input id={id} type="search" value={query} placeholder={t("Search for a place or address")} disabled={disabled} onChange={(event) => {
         search.current?.abort(); setSearching(false); setResults([]); setMessage(""); setQuery(event.target.value);
-      }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void find(); } }} /></label>
+      }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void find(); } }} /></div></div>
       <button type="button" className="button" disabled={disabled || searching || !query.trim()} onClick={() => void find()}>{searching ? t("Searching…") : t("Search places")}</button>
+    </div>
+    <div className="zone-location-tools"><button type="button" className="text-button" disabled={disabled} onClick={onLocate}><Icon name="location" size={15} />{t("Use current location")}</button>
+      <span className={`zone-location-status${validCoordinates(point.latitude, point.longitude) ? " is-selected" : ""}`} role="status">{validCoordinates(point.latitude, point.longitude) ? <><Icon name="check" size={14} />{t("Location selected")}</> : t("Choose a location to continue.")}</span>
     </div>
     {message ? <p role="status" className="caption">{message}</p> : null}
     {results.length ? <ul className="zone-search-results" aria-label={t("Search places")}>{results.map((place, index) => <li key={index}>
@@ -125,10 +129,9 @@ export function ZoneLocationPicker({ point, disabled, onChange }: {
         setResults([]); setQuery([place.label, place.address].filter(Boolean).join(", "));
       }}><strong>{place.label}</strong><span>{place.address}</span></button>
     </li>)}</ul> : null}
-    <p id={`${id}-hint`} className="caption">{t("Search for an address, click the map, or drag the pin to choose the zone center.")}</p>
     <div ref={container} className="zone-map" role="region" aria-label={t("Zone location map")} aria-describedby={`${id}-hint`} />
+    <p id={`${id}-hint`} className="caption zone-map-hint">{t("Search for an address, click the map, or drag the pin to choose the zone center.")}</p>
     {mapError ? <p className="caption" role="status">{mapError}</p> : null}
-    {!validCoordinates(point.latitude, point.longitude) ? <p className="caption" role="status">{t("Choose a location to continue.")}</p> : null}
     <p className="caption zone-map-provider">{t("Address searches use Photon; maps use OpenStreetMap.")} {" "}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{t("Attribution")}</a></p>
   </div>;
 }

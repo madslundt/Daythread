@@ -2363,5 +2363,13 @@
   "Search for an address, click the map, or drag the pin to choose the zone center.": "Søg efter en adresse, klik på kortet, eller træk markøren for at vælge zonens centrum.",
   "Search places": "Søg efter steder",
   "Searching…": "Søger…",
-  "Zone location map": "Kort over zoneplacering"
+  "Zone location map": "Kort over zoneplacering",
+  "Give your zone a name, then choose the places it covers.": "Giv din zone et navn, og vælg derefter de steder, den dækker.",
+  "Location {number}": "Placering {number}",
+  "Remove location {number}": "Fjern placering {number}",
+  "The circle on the map shows the area included in this location.": "Cirklen på kortet viser det område, der er omfattet af denne placering.",
+  "Advanced settings": "Avancerede indstillinger",
+  "Enter coordinates to position the pin precisely.": "Indtast koordinater for at placere markøren præcist.",
+  "Search for a place or address": "Søg efter et sted eller en adresse",
+  "Location selected": "Placering valgt"
 }

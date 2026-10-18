@@ -5,7 +5,7 @@ import { profileScope } from "./profiles";
 import { useResource } from "./useResource";
 import { ErrorState, Loading } from "./UI";
 import { Icon } from "./Icon";
-import { ZoneLocationPicker } from "./ZoneLocationPicker";
+import { validCoordinates, ZoneLocationPicker } from "./ZoneLocationPicker";
 
 export type ZoneLocation = { id: string; label: string; latitude: number; longitude: number; radius_m: number };
 export type LocationZone = { id: string; name: string; version: number; locations: ZoneLocation[] };
@@ -59,9 +59,9 @@ export function LocationZones({ onBack }: { onBack?: () => void } = {}) {
     {onBack && !editor ? <button ref={backButton} type="button" className="text-button saved-place-back" disabled={busy} onClick={onBack}>
       <Icon name="chevron-left" size={16} />{t("Back to saved places")}
     </button> : null}
-    <h2>{t("Location zones")}</h2>
+    {!editor ? <><h2>{t("Location zones")}</h2>
     <p>{t("Group places as Home, Work, Gym, or any name you choose. Each zone can contain several locations, each with its own radius.")}</p>
-    <p className="caption">{t("Zones belong to this profile. Matching uses the edited location when set, otherwise the captured GPS. Recordings without a location stay unclassified.")}</p>
+    <p className="caption">{t("Zones belong to this profile. Matching uses the edited location when set, otherwise the captured GPS. Recordings without a location stay unclassified.")}</p></> : null}
     {error ? <ErrorState message={error} retry={resource.refresh} /> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading /> : null}
@@ -116,30 +116,40 @@ export function ZoneEditor({ zone, onCancel, onSaved }: { zone: LocationZone; on
   const canSave = draft.name.trim().length > 0 && draft.name.length <= 100 && draft.locations.length > 0 && draft.locations.every((point) =>
     point.label.trim().length > 0 && point.label.length <= 100 && Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90 &&
     Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180 && Number.isFinite(point.radius_m) && point.radius_m >= 10 && point.radius_m <= 100000);
-  return <form onSubmit={save}>
-    <fieldset disabled={busy}>
-      <legend>{t("Edit zone")}</legend>
-      <label className="setting-field">{t("Zone name")}<input required maxLength={100} value={draft.name} placeholder={t("Home, Work, Gym…")} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-      {draft.locations.map((point) => <fieldset key={point.id}>
-        <legend>{t("Zone location")}</legend>
-        <div className="settings-grid">
-          <label className="setting-field">{t("Location name")}<input required maxLength={100} value={point.label} onChange={(event) => change(point.id, { label: event.target.value })} /></label>
-          <label className="setting-field">{t("Radius in metres")}<input type="number" required min={10} max={100000} step="any" value={Number.isFinite(point.radius_m) ? point.radius_m : ""} onChange={(event) => change(point.id, { radius_m: event.target.valueAsNumber })} /></label>
+  return <form className="zone-editor" onSubmit={save}>
+    <header className="zone-editor-heading">
+      <h2>{zone.version === 0 ? t("Create zone") : t("Edit zone")}</h2>
+      <p className="caption">{t("Give your zone a name, then choose the places it covers.")}</p>
+    </header>
+    <fieldset className="zone-editor-fields" disabled={busy} aria-label={zone.version === 0 ? t("Create zone") : t("Edit zone")}>
+      <label className="setting-field zone-name-field"><span>{t("Zone name")}</span><input autoFocus required maxLength={100} value={draft.name} placeholder={t("Home, Work, Gym…")} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+      {draft.locations.map((point, index) => <section className="zone-place-card" key={point.id} aria-label={t("Location {number}", { number: index + 1 })}>
+        <header className="zone-place-heading">
+          <div><span className="zone-place-icon"><Icon name="location" size={19} /></span><h3>{t("Location {number}", { number: index + 1 })}</h3></div>
+          {draft.locations.length > 1 ? <button type="button" className="text-button" aria-label={t("Remove location {number}", { number: index + 1 })} onClick={() => setDraft({ ...draft, locations: draft.locations.filter((p) => p.id !== point.id) })}>{t("Remove location")}</button> : null}
+        </header>
+        <ZoneLocationPicker point={point} disabled={busy} onLocate={() => void locate(point.id)} onChange={(changes) => change(point.id, changes)} />
+        <div className="zone-place-details">
+          <div className="zone-place-fields">
+            <label className="setting-field"><span>{t("Location name")}</span><input required maxLength={100} value={point.label} onChange={(event) => change(point.id, { label: event.target.value })} /></label>
+            <label className="setting-field"><span>{t("Radius in metres")}</span><input type="number" required min={10} max={100000} step="any" value={Number.isFinite(point.radius_m) ? point.radius_m : ""} onChange={(event) => change(point.id, { radius_m: event.target.valueAsNumber })} /></label>
+          </div>
+          <p className="caption zone-radius-hint">{t("The circle on the map shows the area included in this location.")}</p>
+          <details className="zone-coordinates"><summary><Icon name="settings" size={16} />{t("Advanced settings")}<Icon name="chevron-right" size={16} /></summary>
+            <p className="caption">{t("Enter coordinates to position the pin precisely.")}</p>
+            <div className="zone-place-fields">
+              <label className="setting-field"><span>{t("Latitude")}</span><input type="number" min={-90} max={90} step="any" value={Number.isFinite(point.latitude) ? point.latitude : ""} placeholder="55.67610" onChange={(event) => change(point.id, { latitude: event.target.valueAsNumber })} /></label>
+              <label className="setting-field"><span>{t("Longitude")}</span><input type="number" min={-180} max={180} step="any" value={Number.isFinite(point.longitude) ? point.longitude : ""} placeholder="12.56830" onChange={(event) => change(point.id, { longitude: event.target.valueAsNumber })} /></label>
+            </div>
+            {validCoordinates(point.latitude, point.longitude) ? <a className="zone-maps-link" href={`https://maps.apple.com/?ll=${point.latitude},${point.longitude}`} target="_blank" rel="noreferrer">{t("Open in Maps")}</a> : null}
+          </details>
         </div>
-        <ZoneLocationPicker point={point} disabled={busy} onChange={(changes) => change(point.id, changes)} />
-        <details className="zone-coordinates"><summary>{t("Enter coordinates")}</summary><div className="settings-grid">
-          <label className="setting-field">{t("Latitude")}<input type="number" min={-90} max={90} step="any" value={Number.isFinite(point.latitude) ? point.latitude : ""} onChange={(event) => change(point.id, { latitude: event.target.valueAsNumber })} /></label>
-          <label className="setting-field">{t("Longitude")}<input type="number" min={-180} max={180} step="any" value={Number.isFinite(point.longitude) ? point.longitude : ""} onChange={(event) => change(point.id, { longitude: event.target.valueAsNumber })} /></label>
-        </div></details>
-        <div className="button-row"><button type="button" className="button" onClick={() => void locate(point.id)}>{t("Use current location")}</button>
-          {Number.isFinite(point.latitude) && Number.isFinite(point.longitude) ? <a href={`https://maps.apple.com/?ll=${point.latitude},${point.longitude}`} target="_blank" rel="noreferrer">{t("Open in Maps")}</a> : null}
-          <button type="button" className="text-button" disabled={draft.locations.length === 1} onClick={() => setDraft({ ...draft, locations: draft.locations.filter((p) => p.id !== point.id) })}>{t("Remove location")}</button></div>
-      </fieldset>)}
-      <button type="button" className="button" disabled={draft.locations.length >= 30} onClick={() => setDraft({ ...draft, locations: [...draft.locations, { id: newId(), label: t("Location"), latitude: NaN, longitude: NaN, radius_m: 200 }] })}>{t("Add location")}</button>
-      <p className="caption">{t("Matching uses the recorded GPS point and is approximate. Check its accuracy when choosing a small radius.")}</p>
+      </section>)}
+      <button type="button" className="button zone-add-location" disabled={draft.locations.length >= 30} onClick={() => setDraft({ ...draft, locations: [...draft.locations, { id: newId(), label: t("Location"), latitude: NaN, longitude: NaN, radius_m: 200 }] })}><Icon name="plus" size={16} />{t("Add location")}</button>
+      <p className="caption zone-accuracy-note">{t("Matching uses the recorded GPS point and is approximate. Check its accuracy when choosing a small radius.")}</p>
       {error ? <p role="alert">{error}</p> : null}
-      <div className="button-row"><button type="submit" className="button accent" disabled={!canSave}>{busy ? t("Saving…") : t("Save zone")}</button>
-        <button type="button" className="button" onClick={onCancel}>{t("Cancel")}</button></div>
+      <div className="zone-editor-actions"><button type="button" className="button" onClick={onCancel}>{t("Cancel")}</button>
+        <button type="submit" className="button accent" disabled={!canSave}>{busy ? t("Saving…") : t("Save zone")}</button></div>
     </fieldset>
   </form>;
 }

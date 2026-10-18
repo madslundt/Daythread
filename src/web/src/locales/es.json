@@ -2363,5 +2363,13 @@
   "Search for an address, click the map, or drag the pin to choose the zone center.": "Busca una dirección, haz clic en el mapa o arrastra el marcador para elegir el centro de la zona.",
   "Search places": "Buscar lugares",
   "Searching…": "Buscando…",
-  "Zone location map": "Mapa de ubicación de la zona"
+  "Zone location map": "Mapa de ubicación de la zona",
+  "Give your zone a name, then choose the places it covers.": "Dale un nombre a tu zona y elige los lugares que abarca.",
+  "Location {number}": "Ubicación {number}",
+  "Remove location {number}": "Eliminar ubicación {number}",
+  "The circle on the map shows the area included in this location.": "El círculo del mapa muestra el área incluida en esta ubicación.",
+  "Advanced settings": "Ajustes avanzados",
+  "Enter coordinates to position the pin precisely.": "Introduce las coordenadas para colocar el marcador con precisión.",
+  "Search for a place or address": "Buscar un lugar o una dirección",
+  "Location selected": "Ubicación seleccionada"
 }

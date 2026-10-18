@@ -2363,5 +2363,13 @@
   "Search for an address, click the map, or drag the pin to choose the zone center.": "Search for an address, click the map, or drag the pin to choose the zone center.",
   "Search places": "Search places",
   "Searching…": "Searching…",
-  "Zone location map": "Zone location map"
+  "Zone location map": "Zone location map",
+  "Give your zone a name, then choose the places it covers.": "Give your zone a name, then choose the places it covers.",
+  "Location {number}": "Location {number}",
+  "Remove location {number}": "Remove location {number}",
+  "The circle on the map shows the area included in this location.": "The circle on the map shows the area included in this location.",
+  "Advanced settings": "Advanced settings",
+  "Enter coordinates to position the pin precisely.": "Enter coordinates to position the pin precisely.",
+  "Search for a place or address": "Search for a place or address",
+  "Location selected": "Location selected"
 }

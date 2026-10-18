@@ -148,5 +148,6 @@
   "wifi": "Waiting for Wi-Fi",
   "offline": "Offline",
   "unvalidated": "Not validated",
-  "active": "Active"
+  "active": "Active",
+  "transcribed_recordings": "Transcribed recordings"
 }

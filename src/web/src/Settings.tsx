@@ -365,11 +365,11 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
               </div>
               <p className="caption">{t("Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
               <label className="setting-field" htmlFor="recap-quiet">
-                <span id="recap-quiet-label">{t("Wait after speech before including a conversation")}</span>
+                <span id="recap-quiet-label">{t("Pause before summarizing live conversations")}</span>
                 <NumberSelect id="recap-quiet" value={draft.recap_quiet_minutes ?? 5}
                   options={[1, 2, 5, 10, 15, 30]} onChange={(value) => update("recap_quiet_minutes", value)}
                   label={(minutes) => durationLabel(minutes * 60)} />
-                <small id="recap-quiet-hint">{t("Keep the whole current conversation out until it finishes. A pause can end a conversation; missing uploads are not treated as observed silence. Original audio, including silence and noise, follows your retention settings.")}</small>
+                <small id="recap-quiet-hint">{t("Live conversations wait for this many minutes of recorded quiet. Default: 5 minutes. Uploaded files are summarized after transcription. Missing uploads do not count as silence.")}</small>
               </label>
               <label className="capture-toggle">
                 <input

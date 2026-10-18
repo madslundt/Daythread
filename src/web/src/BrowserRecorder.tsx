@@ -11,8 +11,9 @@ import { Notice } from "./UI";
 
 // Retain a failed browser write across profile switches during this visit.
 const pendingSaves = new Map<string, CapturedRecording>();
+const unloadWarnings = new Set<symbol>();
 if (typeof window !== "undefined") window.addEventListener("beforeunload", (event) => {
-  if (pendingSaves.size) { event.preventDefault(); event.returnValue = ""; }
+  if (pendingSaves.size || unloadWarnings.size) { event.preventDefault(); event.returnValue = ""; }
 });
 
 export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
@@ -21,6 +22,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
   const scope = useRef(profileScope()).current;
   const store = useRef<BrowserRecordingStore | undefined>(undefined);
   const capture = useRef<MicrophoneCapture | undefined>(undefined);
+  const unloadWarning = useRef(Symbol("browser-recording"));
   const alive = useRef(true);
   const transfer = useRef(new AbortController());
   const [recordings, setRecordings] = useState<BrowserRecording[]>([]);
@@ -44,6 +46,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
     scope.signal.addEventListener("abort", stop);
     return () => {
       alive.current = false;
+      unloadWarnings.delete(unloadWarning.current);
       scope.signal.removeEventListener("abort", stop);
       capture.current?.stop();
       transfer.current.abort();
@@ -56,19 +59,13 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [active]);
-  useEffect(() => {
-    if (!active && !starting && !saving && !unsaved) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [active, starting, saving, unsaved]);
-
   async function save(value: CapturedRecording) {
     pendingSaves.set(owner, value);
     if (alive.current) setSaving(true);
     try {
       await database().save(value);
       if (pendingSaves.get(owner) === value) pendingSaves.delete(owner);
+      unloadWarnings.delete(unloadWarning.current);
       if (alive.current) {
         setUnsaved(undefined);
         setRecordings((items) => [value.recording, ...items.filter((item) => item.id !== value.recording.id)]);
@@ -77,16 +74,20 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
     } catch {
       if (alive.current) {
         setUnsaved(value);
+        unloadWarnings.delete(unloadWarning.current);
         setError(t("This recording could not be saved in this browser. Retry saving or download it before leaving this page."));
       }
     } finally { if (alive.current) setSaving(false); }
   }
   async function start() {
     if (starting || capture.current || saving || unsaved || busy) return;
+    // Install the guard synchronously with the click, before awaiting the microphone prompt.
+    unloadWarnings.add(unloadWarning.current);
     setStarting(true); setError(""); setNotice("");
     try {
       const value = await startMicrophoneCapture(owner, (value) => {
         capture.current = undefined;
+        unloadWarnings.delete(unloadWarning.current);
         if (alive.current) setActive("");
         if (value) void save(value);
       }, (message) => { if (alive.current) setError(message); });
@@ -94,6 +95,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
       if (!alive.current || scope.signal.aborted) value.stop();
       else setActive(value.startedAt);
     } catch (error) {
+      unloadWarnings.delete(unloadWarning.current);
       if (alive.current) setError(error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)
         ? t("Allow microphone access in your browser to start recording.") : errorMessage(error));
     } finally { if (alive.current) setStarting(false); }
@@ -152,7 +154,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
     <p className="caption">{microphoneAvailable()
       ? t("Record with this device’s microphone. After stopping, choose Upload now, Remove, or Upload later.")
       : t("Microphone recording requires HTTPS or localhost and a supported browser.")}</p>
-    {active ? <p className="caption">{t("Keep this page open while recording. Recording stops automatically before two hours.")}</p> : null}
+    {active ? <p className="caption">{t("Keep this page open while recording. Your browser will ask before you refresh or leave this site. Recording stops automatically before two hours.")}</p> : null}
     {error ? <Notice tone="error" onDismiss={() => setError("")}>{error}</Notice> : null}
     {notice ? <Notice onDismiss={() => setNotice("")}>{notice}</Notice> : null}
     {saving ? <p role="status">{t("Saving recording on this device…")}</p> : null}

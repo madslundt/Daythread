@@ -463,9 +463,12 @@ def test_resend_repairs_missing_file_without_refreshing_ingestion_or_reversing_r
     assert not Path(retained["path"]).exists()
 
 
-def test_pending_completion_during_generation_obeys_stronger_archive_version_guards(client):
+@pytest.mark.parametrize("pending_kind,regrouped", [("manual_upload", True), ("omi_api", False)])
+def test_pending_completion_during_generation_preserves_snapshot_evidence(
+    client, pending_kind, regrouped,
+):
     key = insert(client, source_kind="manual_upload")
-    pending = insert(client, AT + timedelta(minutes=2), text=None, source_kind="manual_upload")
+    pending = insert(client, AT + timedelta(minutes=2), text=None, source_kind=pending_kind)
     memory = client.app.state.memory
 
     class CompleteDuringSummary(FakeInference):
@@ -478,9 +481,18 @@ def test_pending_completion_during_generation_obeys_stronger_archive_version_gua
             return "Recap " + " ".join(f"[{source['id']}]" for source in sources)
 
     memory.inference = CompleteDuringSummary()
-    assert client.post("/v1/recaps/2026-10-15").status_code == 409
-    with memory.store.connect() as db:
-        assert db.execute("SELECT count(*) FROM output_evidence").fetchone()[0] == 0
+    response = client.post("/v1/recaps/2026-10-15")
+    if regrouped:
+        # Identical uploaded audio is linked when transcription completes. The
+        # old selection is no longer a whole group and must not be published.
+        assert response.status_code == 409
+        with memory.store.connect() as db:
+            assert db.execute("SELECT count(*) FROM output_evidence").fetchone()[0] == 0
+    else:
+        initial = response.json()
+        assert initial["summary"] and initial["stale"]
+        assert initial["evidence"]["pending_chunks"] == 1
+        assert {r["id"] for r in initial["evidence"]["selected"]} == {key}
     result = client.post("/v1/recaps/2026-10-15").json()
     assert result["evidence"]["eligible_transcripts"] == 2
     assert result["evidence"]["pending_chunks"] == 0

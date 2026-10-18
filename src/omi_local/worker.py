@@ -2,22 +2,55 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .audio import contains_speech_energy
+from .conversation_state import finished_file
 from .decision_service import extract
 from .decisions import ExtractionRequest
 from .domain import utc_now, wav_duration
 from .inbox_jobs import InboxJobs
 from .inference import Inference
+from .recaps import digest
 from .recording_topics import run_topics
 from .service import Memory
 from .source_matching import recognition_contract
 from .voice_activity import analyze_voice
 
 logger = logging.getLogger(__name__)
+
+RECAP_BATCH_IDLE_SECONDS = 15
+RECAP_BATCH_MAX_SECONDS = 60
+
+
+@dataclass
+class RecapBatch:
+    fingerprint: str
+    first_seen: datetime
+    last_changed: datetime
+
+
+class RecapBatcher:
+    """Coalesce eligible recordings without overriding live conversation boundaries."""
+
+    def __init__(self):
+        self.pending: dict[str, RecapBatch] = {}
+
+    def ready(self, day: str, fingerprint: str, now: datetime, busy: bool) -> bool:
+        now = now.astimezone(UTC)
+        batch = self.pending.get(day)
+        if batch is None:
+            self.pending[day] = batch = RecapBatch(fingerprint, now, now)
+        elif batch.fingerprint != fingerprint:
+            batch.fingerprint, batch.last_changed = fingerprint, now
+        return (
+            (now - batch.first_seen).total_seconds() >= RECAP_BATCH_MAX_SECONDS
+            or (not busy and
+                (now - batch.last_changed).total_seconds() >= RECAP_BATCH_IDLE_SECONDS)
+        )
 
 
 async def process_one(memory: Memory) -> bool:
@@ -106,18 +139,35 @@ def recorded_days(memory: Memory, now: datetime) -> list[date]:
     return sorted(days)
 
 
-async def scheduled_recaps(memory: Memory) -> None:
+async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) -> None:
     now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
-    await memory.recaps.observe()
     groups = memory.recaps.groups(now)
     for day in recorded_days(memory, now):
         try:
-            saved = memory.store.diary(day.isoformat())
-            if saved and saved["fingerprint"] == memory.recaps.day_key(
-                memory.recaps.for_day(groups, day)
-            ):
+            key = day.isoformat()
+            current = memory.recaps.for_day(groups, day)
+            saved = memory.store.diary(key)
+            if not saved and not any(group.ready for group in current):
+                if batcher:
+                    batcher.pending.pop(key, None)
                 continue
+            if saved and saved["fingerprint"] == memory.recaps.day_key(current):
+                if batcher:
+                    batcher.pending.pop(key, None)
+                continue
+            if batcher:
+                # Ongoing live speech cannot enter a timed batch or delay an upload.
+                candidates = [group for group in current if group.ready or all(
+                    finished_file(row) for row in group.sources
+                )]
+                fingerprint = digest([memory.recaps.group_key(group) for group in candidates])
+                if not batcher.ready(key, fingerprint, now, busy=any(
+                    not group.ready for group in candidates
+                )):
+                    continue
             await memory.recap(day)
+            if batcher:
+                batcher.pending.pop(key, None)
         except Exception as exc:
             logger.warning("Automatic recap will retry (%s)", type(exc).__name__)
 
@@ -135,11 +185,21 @@ async def scheduled_decisions(memory: Memory) -> None:
 
 async def run_insights(memory: Memory) -> None:
     while True:
-        for update in (scheduled_recaps, scheduled_decisions):
-            try:
-                await update(memory)
-            except Exception as exc:
-                logger.warning("Automatic insights will retry (%s)", type(exc).__name__)
+        try:
+            await memory.recaps.observe()
+            await scheduled_decisions(memory)
+        except Exception as exc:
+            logger.warning("Automatic insights will retry (%s)", type(exc).__name__)
+        await asyncio.sleep(5)
+
+
+async def run_recaps(memory: Memory) -> None:
+    batcher = RecapBatcher()
+    while True:
+        try:
+            await scheduled_recaps(memory, batcher)
+        except Exception as exc:
+            logger.warning("Automatic recap will retry (%s)", type(exc).__name__)
         await asyncio.sleep(5)
 
 
@@ -168,6 +228,7 @@ async def run_worker(memory: Memory) -> None:
     inbox = asyncio.create_task(run_inbox(memory))
     topics = asyncio.create_task(run_topics(memory))
     insights = asyncio.create_task(run_insights(memory))
+    recaps = asyncio.create_task(run_recaps(memory))
     try:
         while True:
             try:
@@ -177,6 +238,9 @@ async def run_worker(memory: Memory) -> None:
                 worked = False
             await asyncio.sleep(0.1 if worked else 2)
     finally:
+        recaps.cancel()
+        with suppress(asyncio.CancelledError):
+            await recaps
         insights.cancel()
         with suppress(asyncio.CancelledError):
             await insights

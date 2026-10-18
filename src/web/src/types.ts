@@ -69,6 +69,7 @@ export type Timeline = {
   active_meeting: Meeting | null;
 };
 export type Status = {
+  generation?: { queued: number; running: number; stages: Record<string, number> };
   as_of?: string;
   ingestion?: {
     last_received_at: string | null;
@@ -103,6 +104,7 @@ export type Status = {
     fresh: boolean;
     observed_at: string;
     capture_state: string;
+    capture_source?: "omi" | "phone" | "unknown";
     cause: string;
     pending_recordings: number;
     recovery_items: number;
@@ -142,6 +144,8 @@ export type Recap = Partial<MemoryWindow> & {
   included_through?: string | null;
   deferred_conversations?: number;
   deferred_sources?: number;
+  waiting_for_pause?: number;
+  pending_upload_sources?: number;
   boundary_note?: string;
   no_recap_content?: boolean;
 };

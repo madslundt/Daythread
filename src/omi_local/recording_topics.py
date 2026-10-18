@@ -107,14 +107,18 @@ async def analyze(memory: Memory, row: dict) -> dict:
     return {"title": title, "sections": sections}
 
 
-async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
-    """One consumer per archive; retries survive restart and never requeue successful STT."""
-    now = now or utc_now()
+def topic_fingerprint(memory: Memory) -> str:
     identity = {
         "version": VERSION, "model": memory.settings.llm_route("summary").identity,
         "language": memory.settings.summary_language,
     }
-    fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
+
+async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
+    """One consumer per archive; retries survive restart and never requeue successful STT."""
+    now = now or utc_now()
+    fingerprint = topic_fingerprint(memory)
     with memory.store.connect() as db:
         found = db.execute(
             "SELECT * FROM audio WHERE state='done' AND length(trim(coalesce(text,'')))>0 "
@@ -127,7 +131,8 @@ async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
         return False
     row = dict(found)
     try:
-        result = await analyze(memory, row)
+        with memory.processing_activity("organizing"):
+            result = await analyze(memory, row)
     except Exception as exc:
         logger.warning("Recording topic analysis will retry (%s)", type(exc).__name__)
         result = {"retry_at": stamp(now + timedelta(minutes=1))}

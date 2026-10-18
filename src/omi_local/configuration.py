@@ -70,13 +70,13 @@ DESCRIPTIONS = {
     "Start scripts/diarization_server.py in its isolated Python runtime; default port 8790.",
     "diarization_timeout_seconds": "Maximum time for one conversation's speaker detection. "
     "Runs separately from transcription and preserves original recordings and transcripts.",
-    "recap_hour": "Evening recap update in your home timezone. Ongoing conversations stay pending.",
-    "recap_interval_minutes": "Refresh the day-so-far recap when completed conversations change. "
-    "Default: 60 minutes; 0 disables daytime updates. Conversation summaries are prepared earlier.",
-    "recap_quiet_minutes": "Observed non-speech needed to close a conversation. "
-    "Default: 5 minutes. "
-    "Missing uploads, empty transcripts and capture interruptions do not prove silence. "
-    "Speech detection is approximate; originals keep their normal retention.",
+    "recap_hour": "Legacy scheduling setting. Uploaded recordings are summarized after "
+    "transcription; live conversations wait for the configured pause.",
+    "recap_interval_minutes": "Legacy scheduling setting. Uploaded recordings are summarized "
+    "after transcription; live conversations wait for the configured pause.",
+    "recap_quiet_minutes": "Live conversations wait for this many minutes of recorded quiet. "
+    "Default: 5 minutes. Uploaded files are summarized after transcription. "
+    "Missing uploads do not count as silence.",
     "stt_model": "Default transcription model served by your configured provider.",
     "stt_chunk_seconds": "Maximum audio duration per transcription request, in seconds. "
     "Longer recordings are split and their transcripts joined. Default: 30. "

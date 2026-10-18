@@ -74,8 +74,11 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
   const recordingOwner = JSON.stringify([account?.id ?? "local", selected]);
   const [statusInterval, setStatusInterval] = useState(30_000);
   const status = useResource<Status>(selected ? "/v1/status" : null, selected ? statusInterval : 0);
-  const processingBusy = !!status.data?.processing &&
-    (status.data.processing.queued > 0 || status.data.processing.transcribing > 0);
+  const processingBusy = Boolean(status.data && (
+    (status.data.processing?.queued || 0) + (status.data.processing?.transcribing || 0) +
+    (status.data.generation?.queued || 0) + (status.data.generation?.running || 0) > 0 ||
+    status.data.phones?.some((phone) => phone.fresh && phone.capture_state === "capturing")
+  ));
   useEffect(() => setStatusInterval(processingBusy ? 2_000 : 30_000), [processingBusy]);
   const timeline = useResource<Timeline>(selected ? "/v1/timeline" : null, selected ? 15_000 : 0);
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -33,6 +33,47 @@ def request(kind="rewind", **params):
     return GenerationRequest(id=uuid4(), kind=kind, parameters=params)
 
 
+def test_activity_counts_are_separate_from_recordings_and_clear_after_completion(jobs):
+    jobs.enqueue(request(minutes=10))
+    jobs.enqueue(request("translation", source_id=str(uuid4())))
+    assert jobs.observation() == {"queued": 2, "running": 0, "stages": {}}
+
+    async def window(*args, **kwargs):
+        assert jobs.observation() == {
+            "queued": 1, "running": 1, "stages": {"summarizing": 1},
+        }
+        return {"summary": "Ready", "sources": []}
+
+    jobs.memory.window = window
+    asyncio.run(jobs.process_one())
+    assert jobs.observation() == {"queued": 1, "running": 0, "stages": {}}
+
+
+def test_background_activity_counts_concurrent_work_and_clears_after_failure(jobs):
+    with pytest.raises(RuntimeError), jobs.memory.processing_activity("summarizing"):
+        with jobs.memory.processing_activity("organizing"):
+            assert jobs.observation() == {
+                "queued": 0, "running": 2, "stages": {"summarizing": 1, "organizing": 1},
+            }
+        raise RuntimeError("Model unavailable")
+    assert jobs.observation() == {"queued": 0, "running": 0, "stages": {}}
+
+
+def test_direct_and_durable_recaps_both_report_a_single_summary_task(jobs):
+    async def generate(day, now):
+        assert jobs.observation() == {
+            "queued": 0, "running": 1, "stages": {"summarizing": 1},
+        }
+        return {"summary": "Ready", "sources": []}
+
+    jobs.memory.recaps.generate = generate
+    asyncio.run(jobs.memory.recap(datetime(2026, 10, 17).date()))
+    assert jobs.observation()["running"] == 0
+    jobs.enqueue(request("recap", day="2026-10-17"))
+    asyncio.run(jobs.process_one())
+    assert jobs.observation() == {"queued": 0, "running": 0, "stages": {}}
+
+
 def test_retry_identity_freezes_window_and_rejects_conflicting_reuse(jobs):
     body = request(minutes=17)
     first = jobs.enqueue(body)

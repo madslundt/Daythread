@@ -251,6 +251,11 @@ final class AppModel {
     var serverStatus = L10n.source("Not connected")
     var serverTimeline: JSONValue = .null
     var completenessStatus: JSONValue = .null
+    var queuedRecordings = 0
+    var omiRecording: Bool {
+        pendantCaptureAllowed && bluetooth.connected && bluetooth.captureEnabled &&
+        lastDecodedAt.map { abs(now.timeIntervalSince($0)) < 2 } == true
+    }
     // Diagnostics refresh with the foreground clock rather than on every BLE frame.
     @ObservationIgnored var lastDecodedAt: Date?
     @ObservationIgnored var lastPersistedAt: Date?
@@ -524,7 +529,8 @@ final class AppModel {
         now = Date(); applyRecordingSchedule(); uploader?.pump()
         if now.timeIntervalSince(lastLocalCheck) >= 5 { lastLocalCheck = now; refreshLocal() }
         let processing = completenessStatus["processing"]
-        let busy = queueCount > 0 || processing["queued"].integer > 0 || processing["transcribing"].integer > 0
+        let generation = completenessStatus["generation"]
+        let busy = queueCount > 0 || omiRecording || microphone.active != nil || processing["queued"].integer > 0 || processing["transcribing"].integer > 0 || generation["queued"].integer > 0 || generation["running"].integer > 0
         let interval: TimeInterval = ProcessInfo.processInfo.isLowPowerModeEnabled ? (busy ? 15 : 120) : (busy ? 5 : 60)
         if now.timeIntervalSince(lastStatusCheck) >= interval { await refreshStatus() }
     }
@@ -754,6 +760,7 @@ final class AppModel {
         let items = store.items.filter { $0.destinationID == destinationIdentity && $0.resolvedProfileID == selectedProfileID }
         let pending = items.filter { !$0.acknowledged && $0.ready }
         queueCount = pending.count
+        queuedRecordings = pending.filter { $0.kind == .audio }.count
         uploadFeedback = uploader?.feedback(profileID: selectedProfileID)
         unsyncedMinutes = items.filter { $0.kind == .audio && !$0.acknowledged }.reduce(0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) } / 60
         storageMB = Double(store.storageBytes) / 1_000_000
@@ -794,22 +801,28 @@ final class AppModel {
         let sequence = (UserDefaults.standard.object(forKey: "phoneObservationSequence") as? Int ?? 0) + 1
         UserDefaults.standard.set(sequence, forKey: "phoneObservationSequence")
         let pending = store.items.filter { $0.destinationID == backend.destinationIdentity && $0.resolvedProfileID == backend.profileID && $0.kind == .audio && !$0.acknowledged }
-        let state = captureFailure != nil ? "blocked" : !liveCaptureAllowed ? "paused" : !bluetooth.connected ? "disconnected" : lastDecodedAt.map { Date().timeIntervalSince($0) < 2 } == true ? "capturing" : "unknown"
+        let drafts = microphone.recordings.filter { $0.id != microphone.active?.id }
+        let observedAt = Date()
+        let microphoneActive = microphone.active != nil
+        let pendantActive = pendantCaptureAllowed && bluetooth.captureEnabled && bluetooth.connected && lastDecodedAt.map { abs(observedAt.timeIntervalSince($0)) < 2 } == true
+        let state = microphoneActive || pendantActive ? "capturing" : captureFailure != nil ? "blocked" : !liveCaptureAllowed ? "paused" : !bluetooth.connected ? "disconnected" : "unknown"
         var body: [String: Any] = [
-            "sequence": sequence, "observed_at": DurableStore.stamp(Date()),
+            "sequence": sequence, "observed_at": DurableStore.stamp(observedAt),
             "device_id": bluetooth.identifier, "capture_state": state,
+            "capture_source": microphoneActive ? "phone" : "omi",
             "cause": captureFailure ?? (paused ? "user_pause" : !bluetooth.connected ? "connection" : "unknown"),
             "requested_pause": paused && captureFailure == nil,
-            "pending_recordings": pending.filter(\.ready).count,
+            "pending_recordings": pending.filter(\.ready).count + drafts.count,
             "recovery_items": pending.filter { !$0.ready }.count,
-            "pending_seconds": pending.reduce(0.0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) },
+            "pending_seconds": pending.reduce(0.0) { $0 + max(0, ($1.endedAt ?? $1.capturedAt).timeIntervalSince($1.capturedAt)) } + drafts.reduce(0.0) { $0 + max(0, ($1.endedAt ?? $1.startedAt).timeIntervalSince($1.startedAt)) },
             "upload_policy": uploadWiFiOnly ? "wifi_only" : "any_network",
             "upload_state": uploader?.observedState ?? "unknown",
             "storage_bytes": store.storageBytes, "storage_budget_bytes": Int64(storageBudgetMB) * 1_000_000,
         ]
-        if let lastDecodedAt { body["last_decoded_at"] = DurableStore.stamp(lastDecodedAt) }
+        if microphoneActive { body["last_decoded_at"] = DurableStore.stamp(observedAt) }
+        else if let lastDecodedAt { body["last_decoded_at"] = DurableStore.stamp(lastDecodedAt) }
         if let lastPersistedAt { body["last_persisted_at"] = DurableStore.stamp(lastPersistedAt) }
-        if let oldest = pending.map(\.capturedAt).min() { body["oldest_capture_at"] = DurableStore.stamp(oldest) }
+        if let oldest = (pending.map(\.capturedAt) + drafts.map(\.startedAt)).min() { body["oldest_capture_at"] = DurableStore.stamp(oldest) }
         _ = try await backend.request("v1/phones/\(phoneID.uuidString)/status", method: "PUT", body: body)
     }
     func retryUploads() { uploader?.retry() }

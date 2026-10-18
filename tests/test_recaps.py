@@ -393,3 +393,107 @@ def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(c
     assert "Rewrite, rename, merge or reorganize" in purpose
     asyncio.run(scheduled_recaps(memory))
     assert len(memory.inference.calls) == 3
+
+
+@pytest.mark.parametrize("elapsed,ready", [(329, False), (330, True)])
+def test_live_recap_waits_for_five_minutes_of_observed_quiet_and_settling(
+    client, monkeypatch, elapsed, ready,
+):
+    first = insert(client)
+    close_after(client, AT + timedelta(minutes=1))
+    now = AT + timedelta(minutes=1, seconds=elapsed)
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: now)
+    result = client.post("/v1/recaps/2026-10-16").json()
+    if ready:
+        assert result["summary"] and first in result["summary"]
+    else:
+        assert result["summary"] is None
+        assert client.app.state.memory.inference.calls == []
+        assert result["waiting_for_pause"] == 1
+
+
+def test_open_meeting_transcripts_wait_for_a_pause(client):
+    meeting = str(uuid4())
+    assert client.post("/v1/events", json={
+        "event_id": meeting, "device_id": "omi", "occurred_at": stamp(AT),
+        "action": "meeting_toggle",
+    }).status_code == 200
+    key = insert(client, AT + timedelta(minutes=1), "Send the proposal on Friday.")
+    assert client.post("/v1/recaps/2026-10-16").json()["summary"] is None
+    close_after(client, AT + timedelta(minutes=2))
+    result = client.post("/v1/recaps/2026-10-16").json()
+    assert result["summary"] and key in result["summary"]
+    assert result["deferred_sources"] == 0
+    assert client.get("/v1/timeline").json()["active_meeting"]["id"] == meeting
+    assert result["sources"][0]["meeting_hint_ids"] == [meeting]
+
+
+def test_new_upload_arrivals_during_generation_publish_a_snapshot_then_refresh(client):
+    first = insert(client, kind="manual_upload")
+    memory = client.app.state.memory
+    added = []
+
+    class LateSpeech(FakeInference):
+        async def summarize(self, sources, purpose):
+            if not added:
+                added.append(insert(
+                    client, AT + timedelta(minutes=3), "Actually, let us reconsider",
+                    duration=120, kind="manual_upload",
+                ))
+            return await super().summarize(sources, purpose)
+
+    memory.inference = LateSpeech()
+    initial = client.post("/v1/recaps/2026-10-16").json()
+    assert initial["summary"] and first in initial["summary"]
+    assert added[0] not in initial["summary"] and initial["stale"]
+    refreshed = client.post("/v1/recaps/2026-10-16").json()
+    assert first in refreshed["summary"] and added[0] in refreshed["summary"]
+    assert not refreshed["stale"]
+
+
+def test_late_live_transcript_keeps_the_recap_visible_until_it_updates(client):
+    first = insert(client)
+    close_after(client, AT + timedelta(minutes=1))
+    original = client.post("/v1/recaps/2026-10-16").json()
+    second = insert(client, AT + timedelta(minutes=15), "Reconsider the plan", duration=120)
+    current = client.get("/v1/recaps/2026-10-16").json()
+    assert current["summary"] == original["summary"] and not current["stale"]
+    assert client.get("/v1/diary").json()["items"][0]["summary"]
+    assert first in client.get("/v1/diary/2026-10-16.md").text
+    close_after(client, AT + timedelta(minutes=17))
+    assert client.get("/v1/recaps/2026-10-16").json()["stale"]
+    updated = client.post("/v1/recaps/2026-10-16").json()
+    assert first in updated["summary"] and second in updated["summary"]
+    assert not client.get("/v1/recaps/2026-10-16").json()["stale"]
+
+
+
+def test_live_pause_setting_applies_without_delaying_uploaded_files(client, monkeypatch):
+    now = AT + timedelta(minutes=2, seconds=30)
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: now)
+    uploaded = insert(client, AT - timedelta(hours=1), kind="manual_upload")
+    live = insert(client)
+    quiet(client, AT + timedelta(minutes=1), duration=60)
+    initial = client.post("/v1/recaps/2026-10-16").json()
+    assert {source["id"] for source in initial["sources"]} == {uploaded}
+    assert initial["waiting_for_pause"] == 1
+    assert client.patch("/v1/settings", json={"recap_quiet_minutes": 1}).status_code == 200
+    refreshed = client.post("/v1/recaps/2026-10-16").json()
+    assert {source["id"] for source in refreshed["sources"]} == {uploaded, live}
+    assert refreshed["waiting_for_pause"] == 0
+    assert len(client.app.state.memory.inference.calls) == 4  # Reuse the uploaded file's notes.
+
+
+def test_resumed_speech_restarts_the_live_pause_requirement(client, monkeypatch):
+    first = insert(client)
+    close_after(client, AT + timedelta(minutes=1))
+    second = insert(client, AT + timedelta(minutes=3), "There is another point to discuss")
+    now = AT + timedelta(minutes=8, seconds=30)
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: now)
+    pending = client.post("/v1/recaps/2026-10-16").json()
+    assert pending["summary"] is None
+    assert client.app.state.memory.inference.calls == []
+    quiet(client, AT + timedelta(minutes=7), duration=120)
+    now = AT + timedelta(minutes=9, seconds=30)
+    ready = client.post("/v1/recaps/2026-10-16").json()
+    assert {source["id"] for source in ready["sources"]} == {first, second}

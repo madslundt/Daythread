@@ -161,7 +161,8 @@ def test_invalid_durations_are_rejected(tmp_path, value):
         UsageLedger(Store(tmp_path)).record(attempt(submitted_seconds=value))
 
 
-def test_usage_endpoint_is_selected_profile_scoped_and_empty_until_measured(tmp_path):
+def test_usage_endpoint_is_selected_profile_scoped_and_empty_until_measured(tmp_path, monkeypatch):
+    monkeypatch.setattr("omi_local.api.utc_now", lambda: datetime(2026, 10, 18, tzinfo=UTC))
     settings = Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None)
     with TestClient(create_app(settings)) as client:
         initial = client.get("/v1/usage")
@@ -301,3 +302,73 @@ def test_invalid_summary_source_duration_metadata_is_rejected(tmp_path, changes)
 def test_invalid_summary_measurements_are_rejected(tmp_path, field, value):
     with pytest.raises(ValueError):
         UsageLedger(Store(tmp_path)).record(summary_filter(**{field: value}))
+
+
+def test_usage_month_filters_all_measurements_and_recalculates_percentages(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+    ledger.record(filtering("october"))
+    ledger.record(attempt())
+    ledger.record(summary_filter(source_seconds=120, source_duration_complete=True))
+    ledger.record(summary_attempt())
+    november = "2026-11-02T12:00:00Z"
+    ledger.record(filtering("november", retained_seconds=480, created_at=november))
+    ledger.record(attempt(created_at=november, billing="unknown", credit_units=None))
+    ledger.record(summary_attempt(created_at=november, input_tokens=None, output_tokens=None))
+    report = ledger.report("Europe/Copenhagen", month="2026-10")
+    totals = report["totals"]
+    assert report["month"] == "2026-10"
+    assert report["credits_complete"]
+    assert totals["recordings"] == 1
+    assert totals["captured_minutes"] == 16
+    assert totals["retained_minutes"] == 4
+    assert totals["filtered_percent"] == 75
+    assert totals["transcription_credits"] == 12
+    assert totals["summary_credits"] == 1.2
+    assert totals["summary_source_minutes"] == 2
+    assert totals["summary_filter_runs"] == totals["summary_requests"] == 1
+    assert totals["summary_input_tokens"] == 250
+    assert totals["summary_unknown_token_requests"] == 0
+    assert [day["date"] for day in report["days"]] == ["2026-10-19"]
+    assert ledger.report(month="2026-11")["totals"]["filtered_percent"] == 50
+    empty = ledger.report(month="2026-12")
+    assert empty["days"] == [] and empty["credits_complete"]
+    assert empty["totals"]["captured_minutes"] == 0
+    assert empty["totals"]["filtered_percent"] is None
+
+
+def test_usage_month_keeps_cross_month_operation_receipts_deduplicated(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+    ledger.record(summary_attempt(operation_id="same", created_at="2026-09-30T21:00:00Z"))
+    ledger.record(summary_attempt(operation_id="same", created_at="2026-10-01T12:00:00Z"))
+    september = ledger.report("Europe/Copenhagen", month="2026-09")["totals"]
+    october = ledger.report("Europe/Copenhagen", month="2026-10")["totals"]
+    assert september["summary_credits"] == 1.2
+    assert september["summary_input_tokens"] == 250
+    assert october["summary_credits"] == october["summary_input_tokens"] == 0
+    assert october["summary_requests"] == 1
+    assert october["summary_submitted_characters"] == 900
+
+
+def test_usage_endpoint_defaults_to_current_archive_month_at_utc_boundary(tmp_path, monkeypatch):
+    monkeypatch.setattr("omi_local.api.utc_now",
+                        lambda: datetime(2026, 9, 30, 22, 30, tzinfo=UTC))
+    settings = Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None,
+                        timezone="Europe/Copenhagen")
+    with TestClient(create_app(settings)) as client:
+        ledger = client.app.state.memory.usage
+        ledger.record(filtering("september", created_at="2026-09-30T21:59:59Z"))
+        ledger.record(filtering("october", created_at="2026-09-30T22:00:00Z"))
+        current = client.get("/v1/usage").json()
+        assert current["month"] == "2026-10"
+        assert current["totals"]["captured_minutes"] == 16
+        assert [day["date"] for day in current["days"]] == ["2026-10-01"]
+        previous = client.get("/v1/usage?month=2026-09").json()
+        assert previous["totals"]["captured_minutes"] == 16
+        assert [day["date"] for day in previous["days"]] == ["2026-09-30"]
+
+
+@pytest.mark.parametrize("month", ["2026-00", "2026-13", "0000-10", "26-10", "2026-1", "all"])
+def test_usage_endpoint_rejects_invalid_months(tmp_path, month):
+    settings = Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/usage", params={"month": month}).status_code == 422

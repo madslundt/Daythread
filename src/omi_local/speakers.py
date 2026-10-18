@@ -15,6 +15,7 @@ import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .conversation_state import conversations
 from .domain import project_events, stamp, utc_now
 
 if TYPE_CHECKING:
@@ -123,8 +124,10 @@ class Speakers:
             key = rows[0]["id"]
             left, right = rows[0]["started_at"], rows[-1]["ended_at"]
         else:
-            group = next((g for g in self.memory.recaps.groups(utc_now(), db)
-                          if any(r["id"] == key for r in g.sources)), None)
+            groups = conversations(
+                snapshot, utc_now(), self.memory.settings.recap_quiet_minutes * 60,
+            )
+            group = next((g for g in groups if any(r["id"] == key for r in g.sources)), None)
             rows = group.sources if group else [source]
             key = rows[0]["id"]
             left, right = rows[0]["started_at"], rows[-1]["ended_at"]

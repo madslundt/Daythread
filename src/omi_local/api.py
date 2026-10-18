@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 from anyio import CancelScope
@@ -250,6 +251,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "capture_paused": config.capture_paused,
             "inference": getattr(memory().inference, "health", {}),
             **memory().store.observations(),
+            "generation": runtime().jobs.observation(),
             "embeddings": memory().retriever.status()
             | {
                 "worker_running": bool(
@@ -326,9 +328,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return public_settings(config)
 
     @app.get("/v1/usage")
-    def get_usage() -> dict:
+    def get_usage(
+        month: Annotated[str | None, Query(pattern=r"^[0-9]{4}-[0-9]{2}$")] = None,
+    ) -> dict:
         active = memory()
-        return active.usage.report(active.settings.timezone)
+        if month is None:
+            month = utc_now().astimezone(ZoneInfo(active.settings.timezone)).date().isoformat()[:7]
+        try:
+            date.fromisoformat(f"{month}-01")
+        except ValueError as exc:
+            raise HTTPException(422, "Use a valid month in YYYY-MM format") from exc
+        return active.usage.report(active.settings.timezone, month=month)
 
     def activate_settings(revised: Settings, changes: dict) -> None:
         nonlocal config

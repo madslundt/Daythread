@@ -78,6 +78,24 @@ def test_backfill_generates_three_titled_sections_without_changing_original(reco
     assert memory.inference.calls == 1
 
 
+def test_today_reports_waiting_and_active_topic_work_without_counting_it_twice(recording):
+    client, memory, key = recording
+    assert client.get("/v1/status").json()["generation"] == {
+        "queued": 1, "running": 0, "stages": {},
+    }
+
+    def during():
+        assert client.get("/v1/status").json()["generation"] == {
+            "queued": 0, "running": 1, "stages": {"organizing": 1},
+        }
+
+    memory.inference = Model(during=during)
+    assert run(memory)
+    assert client.get("/v1/status").json()["generation"] == {
+        "queued": 0, "running": 0, "stages": {},
+    }
+
+
 @pytest.mark.parametrize("mutation", ["correct", "delete", "expire"])
 def test_changed_evidence_cannot_publish_old_sections(recording, mutation):
     client, memory, key = recording

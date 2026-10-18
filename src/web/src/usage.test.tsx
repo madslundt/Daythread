@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { UsageDetails, type UsageMetrics, type UsageReport } from "./Usage";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Usage, UsageDetails, type UsageMetrics, type UsageReport } from "./Usage";
 import { matchesSettings, sectionFromPath } from "./SettingsNavigation";
+
+const resource = vi.hoisted(() => ({ data: undefined as UsageReport | undefined, useResource: vi.fn() }));
+vi.mock("./useResource", () => ({ useResource: (path: string, interval: number) => {
+  resource.useResource(path, interval);
+  return { data: resource.data, loading: false, error: "", refresh: () => {} };
+} }));
 
 const totals: UsageMetrics = {
   recordings: 4, captured_minutes: 960, retained_minutes: 240,
@@ -17,10 +23,12 @@ const totals: UsageMetrics = {
   summary_source_minutes: 150.25, summary_unknown_duration_runs: 0,
 };
 const report: UsageReport = {
+  month: "2026-10",
   since: "2026-10-18T12:00:00Z", timezone: "Europe/Copenhagen",
   credits_complete: true, totals, days: [{ date: "2026-10-18", ...totals }],
 };
 afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { resource.data = report; resource.useResource.mockClear(); });
 
 describe("trial usage measurements", () => {
   it("distinguishes captured, retained and submitted audio, with measured credits", () => {
@@ -140,7 +148,7 @@ describe("trial usage measurements", () => {
     expect(html).toContain("Speech filtering was unavailable for 2 recordings");
     expect(html).toContain("Their original audio was submitted instead");
     expect(html).toContain("No audio yet");
-    expect(html).toContain("Your usage will appear here");
+    expect(html).toContain("No usage recorded for this month.");
     expect(html).not.toContain("NaN");
   });
 
@@ -150,5 +158,26 @@ describe("trial usage measurements", () => {
     expect(sectionFromPath(true)).toBe("usage");
     expect(matchesSettings("usage", "processed minutes")).toBe(true);
     expect(matchesSettings("usage", "credits")).toBe(true);
+  });
+
+  it("uses the server's current month instead of inferring it from the browser clock", () => {
+    resource.data = { ...report, month: "2027-01", timezone: "Pacific/Auckland" };
+    const html = renderToStaticMarkup(<Usage />);
+    expect(resource.useResource).toHaveBeenCalledWith("/v1/usage", 30_000);
+    expect(html).toContain('type="month"');
+    expect(html).toContain('min="0001-01"');
+    expect(html).toContain('value="2027-01"');
+    expect(html).toContain("Choose month");
+    expect(html).toContain("Grouped by processing date in Pacific/Auckland for the selected month.");
+  });
+
+  it("renders all 31 days of a month without truncating daily usage", () => {
+    const days = Array.from({ length: 31 }, (_, index) => ({ ...totals,
+      date: `2026-10-${String(31 - index).padStart(2, "0")}` }));
+    const html = renderToStaticMarkup(<UsageDetails report={{ ...report, days }} />);
+    expect(html.match(/scope="row"/g)).toHaveLength(31);
+    expect(html).toContain("Oct 1, 2026");
+    expect(html).toContain("Oct 31, 2026");
+    expect(html).not.toContain("Most recent 30 days");
   });
 });

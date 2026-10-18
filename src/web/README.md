@@ -26,6 +26,14 @@ Settings → Connections lists recording brands from the server vendor catalog. 
 
 The UI shows empty, queued, failure, and model-unavailable states from the actual API. Recaps, chats, original audio, and correction history always come from home-core. Rewind audio uses the exact same end timestamp as its summary request. Gesture hints do not crop recordings, and the UI observes the configured flag cooldown.
 
+Today shows recording activity above the recap, including recordings waiting to upload,
+server queue and processing counts, transcription stages and chunk progress, and queued or
+active AI tasks (summaries, recording topics and translations). These counts cover the selected
+profile across days. Live Omi or phone recording requires a fresh companion report with recent
+audio evidence. A connection or an imported recording alone does not establish live capture.
+Stale observations show last known counts and withhold live stages. The iPhone Today screen
+also uses its current local capture state and upload queue while offline.
+
 Today shows identical manually uploaded audio once, even when it was uploaded again with a
 different filename or capture time. The entry uses the earliest supplied capture time within
 the selected day; expand **Other uploads of this recording** to inspect each upload's original
@@ -65,3 +73,13 @@ Keep the page open while capturing; recordings stop before two hours or at the l
 size limit. Closing/crashing the tab during capture can lose the unfinished recording.
 Browser storage limits or clearing site data can remove local recordings. If saving
 fails, keep the page open to retry or download the captured audio.
+
+Day recaps include uploaded files after transcription. Live conversations wait for five minutes
+of continuously recorded quiet by default; change **Pause before summarizing live conversations**
+in Daily preferences. Transcription continues during speech. Missing uploads are not quiet, and
+resumed speech resets the pause. Eligible recordings share a short batching window: 15 seconds
+without changes, or up to 60 seconds when other known file uploads remain unfinished. Ongoing
+live chunks do not delay eligible uploads, and the batching limit cannot include an ongoing
+conversation. Multipart files wait for every part to arrive and finish transcription. The
+recap's status distinguishes live conversations awaiting a pause from uploads/transcriptions
+still in progress. Model processing and the 15-second recap refresh interval add latency.

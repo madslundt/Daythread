@@ -125,29 +125,80 @@ struct DayQuickActions: View {
 struct CaptureGlance: View {
     @Environment(AppModel.self) private var model
     private var title: String {
+        if model.microphone.active != nil { return L10n.text("Recording from phone microphone") }
+        if model.omiRecording { return L10n.text("Recording from Omi") }
         if model.captureFailure != nil { return L10n.text("Capture needs attention") }
         if model.paused { return L10n.text("Capture paused") }
         return model.bluetooth.connected ? L10n.text("Omi connected") : L10n.text("Ready when you are")
     }
-    private var subtitle: String {
-        if model.queueCount > 0 { return L10n.text("\(model.queueCount) items waiting to sync") }
-        return model.bluetooth.connected ? L10n.text("Open capture for live status") : L10n.text("Connect Omi or add an audio recording")
+    private var statusStale: Bool {
+        guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }
+        return model.now.timeIntervalSince(at) > 120 || !model.serverStatus.hasPrefix(L10n.source("Home-core connected"))
+    }
+    private func stageName(_ stage: String) -> String {
+        switch stage {
+        case "analyzing": L10n.text("Analyzing audio")
+        case "transcribing": L10n.text("Transcribing audio")
+        case "enhancing": L10n.text("Improving transcript")
+        case "saving": L10n.text("Saving transcript")
+        case "summarizing": L10n.text("Summarizing")
+        case "organizing": L10n.text("Organizing recording topics")
+        case "translating": L10n.text("Translating")
+        default: L10n.text("Processing audio")
+        }
     }
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        NavigationLink { CaptureView() } label: {
-            HStack(spacing: 12) {
-                Image(systemName: model.paused ? "pause.circle" : "waveform")
-                    .font(.title3).foregroundStyle(Theme.sage)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.sage.opacity(0.10), in: Circle()).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                }.fixedSize(horizontal: false, vertical: true)
-            }.padding(.vertical, 2)
-        }
+        let processing = model.completenessStatus["processing"]
+        let generation = model.completenessStatus["generation"]
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.text("Recording activity")).font(.subheadline.weight(.semibold))
+            NavigationLink { CaptureView() } label: {
+                Label(title, systemImage: model.microphone.active != nil || model.omiRecording ? "record.circle" : model.paused ? "pause.circle" : "waveform")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(Theme.sage)
+            }.accessibilityIdentifier("day.captureStatus")
+            if model.completenessStatus != .null {
+                Text(L10n.text("Recordings: \(processing["queued"].integer) queued · \(processing["transcribing"].integer) processing"))
+                    .font(.subheadline).monospacedDigit()
+            }
+            let waiting = model.queuedRecordings + model.microphone.recordings.filter { $0.id != model.microphone.active?.id }.count
+            if waiting > 0 {
+                Text(L10n.text("\(waiting) recordings waiting to upload")).font(.caption).foregroundStyle(.secondary)
+            }
+            if !statusStale && model.completenessStatus["worker_running"] == .bool(true) {
+                ForEach(Array(processing["active"].array.enumerated()), id: \.offset) { _, item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(stageName(item["stage"].text)).font(.caption)
+                        let total = item["total_chunks"].integer
+                        let complete = max(0, min(total, item["completed_chunks"].integer))
+                        if total > 0 {
+                            ProgressView(value: Double(complete), total: Double(total))
+                                .accessibilityLabel(stageName(item["stage"].text))
+                            Text(L10n.text("\(complete) of \(total) parts complete")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            if generation["queued"].integer > 0 || generation["running"].integer > 0 {
+                Text(L10n.text("AI tasks: \(generation["queued"].integer) queued · \(generation["running"].integer) processing"))
+                    .font(.subheadline).monospacedDigit()
+                if !statusStale {
+                    ForEach(["summarizing", "organizing", "translating"], id: \.self) { stage in
+                        let count = generation["stages"][stage].integer
+                        if count > 0 { Text(stageName(stage) + " · " + String(count)).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+            if statusStale && model.completenessStatus != .null {
+                Text(L10n.text("Last known counts; current activity is unknown.")).font(.caption).foregroundStyle(.secondary)
+            } else if model.completenessStatus["worker_running"] == .bool(false), processing["queued"].integer + processing["transcribing"].integer > 0 {
+                Text(L10n.text("Processing is waiting for the worker to start.")).font(.caption).foregroundStyle(.orange)
+            }
+            if processing["blocked"].integer > 0 {
+                Text(L10n.text("\(processing["blocked"].integer) items need attention.")).font(.caption).foregroundStyle(.orange)
+            }
+        }.padding(.vertical, 4).accessibilityIdentifier("day.recordingActivity")
     }
 }
 

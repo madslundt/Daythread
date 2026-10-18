@@ -1,4 +1,5 @@
 import { displayLocale, t } from "./i18n";
+import { useState } from "react";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
 import "./usage.css";
@@ -32,6 +33,7 @@ export type UsageMetrics = {
   summary_unknown_duration_runs?: number;
 };
 export type UsageReport = {
+  month: string;
   since: string | null;
   timezone: string;
   credits_complete: boolean;
@@ -146,15 +148,15 @@ export function UsageDetails({ report }: { report: UsageReport }) {
     {totals.provider_attempts > 0 ? <p className="caption">{t("Requests using your own provider or local models: {value0}. Their costs are not included in Daythread credits.", { value0: number(totals.provider_attempts) })}</p> : null}
     {totals.filter_unavailable_recordings > 0 ? <p className="notice" role="status">{t("Speech filtering was unavailable for {value0} recordings. Their original audio was submitted instead.", { value0: number(totals.filter_unavailable_recordings) })}</p> : null}
     <h3>{t("Daily usage")}</h3>
-    <p className="caption">{t("Grouped by processing date in {value0}. Most recent 30 days with activity.", { value0: report.timezone })}</p>
-    {report.days.length === 0 ? <p>{t("Your usage will appear here after the first recording or AI request is processed.")}</p> : <div className="usage-table-scroll" tabIndex={0} role="region" aria-label={t("Daily usage")}>
+    <p className="caption">{t("Grouped by processing date in {value0} for the selected month.", { value0: report.timezone })}</p>
+    {report.days.length === 0 ? <p>{t("No usage recorded for this month.")}</p> : <div className="usage-table-scroll" tabIndex={0} role="region" aria-label={t("Daily usage")}>
       <table className="usage-table">
         <thead><tr><th scope="col">{t("Date")}</th><th scope="col">{t("Captured minutes")}</th>
           <th scope="col">{t("Kept minutes")}</th><th scope="col">{t("Submitted minutes")}</th>
           <th scope="col">{t("Summary source minutes")}</th>
           <th scope="col">{t("Summary submitted characters")}</th><th scope="col">{t("Summary requests")}</th>
           <th scope="col">{t("Summary tokens (in / out)")}</th><th scope="col">{t("Known credits")}</th></tr></thead>
-        <tbody>{report.days.slice(0, 30).map((day) => <tr key={day.date}>
+        <tbody>{report.days.map((day) => <tr key={day.date}>
           <th scope="row">{dayLabel(day.date)}</th><td>{number(day.captured_minutes)}</td><td>{number(day.retained_minutes)}</td>
           <td>{number(day.submitted_minutes)}</td><td>{summarySourceMinutes(day)}{(day.summary_unknown_duration_runs ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
           <td>{summaryCharacters(day)}{(day.summary_unknown_character_requests ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
@@ -167,10 +169,21 @@ export function UsageDetails({ report }: { report: UsageReport }) {
 }
 
 export function Usage() {
-  const resource = useResource<UsageReport>("/v1/usage", 30_000);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const resource = useResource<UsageReport>(selectedMonth ? `/v1/usage?month=${selectedMonth}` : "/v1/usage", 30_000);
+  const month = selectedMonth ?? resource.data?.month ?? "";
   return <section className="usage-panel">
     <div className="usage-heading"><div className="settings-section-heading"><h2>{t("Audio & credit usage")}</h2></div>
-      <button type="button" className="button secondary" onClick={resource.refresh} disabled={resource.loading}>{t("Refresh")}</button></div>
+      <div className="usage-controls">
+        <label className="usage-month-picker" htmlFor="usage-month"><span>{t("Choose month")}</span>
+          <input id="usage-month" type="month" min="0001-01" max="9999-12" value={month}
+            disabled={!month} onChange={(event) => {
+              const value = event.target.value;
+              if (/^(?!0000)\d{4}-(?:0[1-9]|1[0-2])$/.test(value)) setSelectedMonth(value);
+            }} />
+        </label>
+        <button type="button" className="button secondary" onClick={resource.refresh} disabled={resource.loading}>{t("Refresh")}</button>
+      </div></div>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading usage…")}</Loading> : null}
     {resource.data ? <UsageDetails report={resource.data} /> : null}

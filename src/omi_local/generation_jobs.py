@@ -12,6 +12,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
+from .recording_topics import topic_fingerprint
 from .translation import generate_translation
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,36 @@ class GenerationJobs:
             "parameters": json.loads(row["parameters"]),
             "result": json.loads(row["result"]) if row["result"] else None,
         }
+
+    def observation(self) -> dict:
+        """Counts of generation tasks, separate from audio chunks awaiting STT."""
+        stages: dict[str, int] = {}
+        queued = running = 0
+        with self.store.connect() as db:
+            rows = db.execute(
+                "SELECT kind,state,count(*) AS n FROM generation_jobs "
+                "WHERE state IN ('queued','running') GROUP BY kind,state"
+            ).fetchall()
+            topics = db.execute(
+                "SELECT count(*) FROM audio WHERE state='done' "
+                "AND length(trim(coalesce(text,'')))>0 "
+                "AND (coalesce(json_extract(topic_details,'$.fingerprint'),'')!=? "
+                "OR json_extract(topic_details,'$.retry_at') IS NOT NULL)",
+                (topic_fingerprint(self.memory),),
+            ).fetchone()[0]
+        for row in rows:
+            if row["state"] == "queued":
+                queued += row["n"]
+            else:
+                running += row["n"]
+                stage = "translating" if row["kind"] == "translation" else "summarizing"
+                stages[stage] = stages.get(stage, 0) + row["n"]
+        for stage, count in self.memory.background_activity.copy().items():
+            if count:
+                stages[stage] = stages.get(stage, 0) + count
+                running += count
+        queued += max(0, topics - stages.get("organizing", 0))
+        return {"queued": queued, "running": running, "stages": stages}
 
     def enqueue(self, body: GenerationRequest) -> dict:
         try:

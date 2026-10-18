@@ -5,6 +5,7 @@ import io
 import wave
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -14,7 +15,7 @@ from omi_local.api import create_app
 from omi_local.domain import stamp
 from omi_local.settings import Settings
 from omi_local.store import Store
-from omi_local.worker import process_one
+from omi_local.worker import RecapBatcher, process_one, scheduled_recaps
 
 AT = datetime(2026, 10, 15, 12, tzinfo=UTC)
 SHARED = (
@@ -71,6 +72,169 @@ def done(client, text=SHARED, *, at=AT, **metadata):
 
 def groups(client):
     return client.app.state.memory.recaps.groups(AT + timedelta(hours=2))
+
+
+@pytest.mark.parametrize("device,kind", [("manual-web", "manual_upload"), ("web", "")])
+def test_finished_upload_is_summarized_as_soon_as_transcription_completes(
+    client, monkeypatch, device, kind,
+):
+    now = AT + timedelta(seconds=1)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    key = upload(client, device_id=device, source_kind=kind).json()["id"]
+
+    asyncio.run(scheduled_recaps(memory))
+    assert client.get("/v1/recaps/2026-10-15").json()["summary"] is None
+    assert memory.inference.summaries == []
+
+    asyncio.run(process_one(memory))
+    assert memory.store.get_audio(key)["state"] == "done"
+    asyncio.run(scheduled_recaps(memory))
+    recap = client.get("/v1/recaps/2026-10-15").json()
+    assert recap["summary"] and key in recap["summary"]
+    assert recap["deferred_sources"] == 0
+    calls = len(memory.inference.summaries)
+    asyncio.run(scheduled_recaps(memory))
+    assert len(memory.inference.summaries) == calls
+
+
+def test_recent_multipart_upload_waits_for_every_transcription(client, monkeypatch):
+    now = AT + timedelta(seconds=2)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    recording = str(uuid4())
+    first = done(client, recording_id=recording, part_index=0, part_count=2)
+    asyncio.run(scheduled_recaps(memory))
+    assert memory.inference.summaries == []  # The second part has not arrived.
+
+    second = upload(client, at=AT + timedelta(seconds=1), level=2000,
+                    recording_id=recording, part_index=1, part_count=2).json()["id"]
+    asyncio.run(scheduled_recaps(memory))
+    assert memory.inference.summaries == []  # It has arrived but is not transcribed.
+
+    memory.store.complete(second, "The closing agreement is to send it on Monday.")
+    asyncio.run(scheduled_recaps(memory))
+    recap = client.get("/v1/recaps/2026-10-15").json()
+    assert {source["id"] for source in recap["sources"]} == {first, second}
+    assert "Monday" in recap["summary"]
+    assert recap["deferred_sources"] == 0
+
+
+def test_nearby_uploads_and_transcriptions_share_one_automatic_recap(client, monkeypatch):
+    now = AT + timedelta(minutes=10)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    batcher = RecapBatcher()
+    first = done(client)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert not memory.inference.summaries
+
+    now += timedelta(seconds=10)
+    second = upload(client, at=AT + timedelta(seconds=1), level=2000).json()["id"]
+    asyncio.run(scheduled_recaps(memory, batcher))
+    now += timedelta(seconds=20)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert not memory.inference.summaries  # Still transcribing the next upload.
+
+    memory.store.complete(second, "Call the supplier on Monday.")
+    asyncio.run(scheduled_recaps(memory, batcher))
+    now += timedelta(seconds=14)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert not memory.inference.summaries
+    now += timedelta(seconds=1)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    recap = client.get("/v1/recaps/2026-10-15").json()
+    assert {source["id"] for source in recap["sources"]} == {first, second}
+    assert len(memory.inference.summaries) == 3  # Two recording notes, one daily recap.
+    assert not batcher.pending
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert len(memory.inference.summaries) == 3
+
+
+def test_upload_batch_limit_cannot_summarize_live_speech_without_a_pause(client, monkeypatch):
+    now = AT + timedelta(minutes=10)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    batcher = RecapBatcher()
+    keys = set()
+    for index in range(7):
+        key = done(client, text=f"Progress update number {index}.",
+                   at=AT + timedelta(seconds=index), level=1000 + index,
+                   device_id="phone", source_kind="")
+        keys.add(key)
+        # Transcription can remain in progress while earlier chunks are already readable.
+        if index == 0:
+            pending = upload(client, at=AT + timedelta(minutes=1), level=3000,
+                             device_id="phone", source_kind="").json()["id"]
+        asyncio.run(scheduled_recaps(memory, batcher))
+        if index < 6:
+            assert not memory.inference.summaries
+            now += timedelta(seconds=10)
+    recap = client.get("/v1/recaps/2026-10-15").json()
+    assert recap["summary"] is None
+    assert not memory.inference.summaries
+    now += timedelta(hours=1)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert not memory.inference.summaries  # Elapsed time without audio is not silence.
+    assert all(memory.store.get_audio(key)["state"] == "done" for key in keys)
+    assert memory.store.get_audio(pending)["state"] == "queued"
+
+
+def test_upload_batch_is_not_delayed_by_continuing_live_speech(client, monkeypatch):
+    now = AT + timedelta(minutes=10)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    batcher = RecapBatcher()
+    uploaded = done(client)
+    for index in range(4):
+        done(client, text=f"Live speech {index}", at=AT + timedelta(seconds=index),
+             device_id="phone", source_kind="", level=2000 + index)
+        asyncio.run(scheduled_recaps(memory, batcher))
+        if index < 3:
+            assert not memory.inference.summaries
+            now += timedelta(seconds=5)
+    recap = client.get("/v1/recaps/2026-10-15").json()
+    assert recap["summary"] and {source["id"] for source in recap["sources"]} == {uploaded}
+    assert len(memory.inference.summaries) == 2
+    assert recap["waiting_for_pause"] == 1
+
+
+def test_batch_window_restarts_after_a_successful_recap(client, monkeypatch):
+    now = AT + timedelta(minutes=10)
+    for module in ("service", "worker", "store"):
+        monkeypatch.setattr(f"omi_local.{module}.utc_now", lambda: now)
+    memory = client.app.state.memory
+    batcher = RecapBatcher()
+    first = done(client)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    now += timedelta(seconds=15)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    original = client.get("/v1/recaps/2026-10-15").json()
+    second = done(client, "Send the final plan.", at=AT + timedelta(seconds=1), level=2000)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    assert client.get("/v1/recaps/2026-10-15").json()["output_id"] == original["output_id"]
+    now += timedelta(seconds=15)
+    asyncio.run(scheduled_recaps(memory, batcher))
+    updated = client.get("/v1/recaps/2026-10-15").json()
+    assert updated["output_id"] != original["output_id"]
+    assert {source["id"] for source in updated["sources"]} == {first, second}
+    assert len(memory.inference.summaries) == 4  # First recording notes were reused.
+
+
+@pytest.mark.parametrize("before,after", [
+    ((2026, 3, 29, 1, 59, 55), (2026, 3, 29, 3, 0, 10)),
+    ((2026, 10, 25, 2, 59, 55), (2026, 10, 25, 2, 0, 10)),
+])
+def test_batching_uses_elapsed_time_across_daylight_saving_changes(before, after):
+    zone = ZoneInfo("Europe/Copenhagen")
+    batcher = RecapBatcher()
+    assert not batcher.ready("day", "evidence", datetime(*before, tzinfo=zone), busy=False)
+    assert batcher.ready("day", "evidence", datetime(*after, tzinfo=zone, fold=1), busy=False)
 
 
 def test_reupload_reuses_recognition_but_preserves_receipts_and_audio(client):
@@ -333,3 +497,12 @@ def test_invalid_group_metadata_does_not_ingest_audio(client):
     assert upload(client, recording_id=str(uuid4()), part_index=2, part_count=2).status_code == 422
     assert upload(client, conversation_source_id=str(uuid4())).status_code == 409
     assert client.get("/v1/status").json()["audio"] == {}
+
+
+def test_finished_file_can_enter_recap_before_its_matching_live_conversation_ends(client):
+    uploaded = done(client)
+    live = done(client, device_id="phone", source_kind="", source_id="")
+    result = client.post("/v1/recaps/2026-10-15").json()
+    assert {source["id"] for source in result["sources"]} == {uploaded}
+    assert live not in result["summary"]
+    assert result["waiting_for_pause"] == 1

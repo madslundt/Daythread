@@ -1,4 +1,4 @@
-"""Prepare completed conversations once, then synthesize versioned daily recaps."""
+"""Prepare transcribed recordings once, then synthesize versioned daily recaps."""
 
 import asyncio
 import hashlib
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from .completion_events import publish_recap
-from .conversation_state import Conversation, activity, conversations, manual_upload
+from .conversation_state import Conversation, activity, finished_file, manual_upload, recordings
 from .domain import EvidenceChanged, stamp
 from .inference import InferenceError, validate_citations
 from .summary_filter import NO_CONTENT
@@ -21,12 +21,12 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = f"completed-conversations-4-topic-notes-{SUMMARY_FILTER_VERSION}"
+PROMPT_VERSION = f"paused-live-conversations-6-topic-notes-{SUMMARY_FILTER_VERSION}"
 DAY_PROMPT_VERSION = "daily-topics-2-one-summary"
 BOUNDARY_NOTE = (
-    "Includes completed conversations and finished uploads. Ongoing or uncertain conversations "
-    "stay pending. Speech detection and silence-based boundaries are approximate; uploaded "
-    "files may cover only part of a conversation. Missing uploads do not prove silence."
+    "Uploaded recordings are included after transcription. Live conversations wait for the "
+    "configured pause in recorded speech. Missing uploads do not count as silence. "
+    "Conversation boundaries are approximate."
 )
 
 
@@ -39,8 +39,8 @@ class Recaps:
         self.memory = memory
 
     def groups(self, now: datetime, db: sqlite3.Connection | None = None) -> list[Conversation]:
-        return conversations(self.memory.store.recap_snapshot(db), now,
-                             self.memory.settings.recap_quiet_minutes * 60)
+        return recordings(self.memory.store.recap_snapshot(db), now,
+                          self.memory.settings.recap_quiet_minutes * 60)
 
     def for_day(self, groups: list[Conversation], day: date) -> list[Conversation]:
         start, end = map(stamp, self.memory.day_window(day))
@@ -54,7 +54,6 @@ class Recaps:
                         for r in group.sources],
             "boundary": (group.closed_at, group.basis, group.proof),
             "hints": group.hints,
-            "quiet_minutes": settings.recap_quiet_minutes,
             "model": settings.llm_route("summary").identity,
             "language": settings.summary_language.lower(), "timezone": settings.timezone,
             "prompt": PROMPT_VERSION,
@@ -67,25 +66,36 @@ class Recaps:
         })
 
     def guard(
-        self, day: date, now: datetime, expected: str,
+        self, day: date, now: datetime, groups: list[Conversation],
     ) -> Callable[[sqlite3.Connection], None]:
+        expected = {self.group_key(group) for group in groups if group.ready}
+
         def check(db):
             current = self.for_day(self.groups(now, db), day)
-            if self.day_key(current) != expected:
-                raise EvidenceChanged("Completed conversation evidence changed; retry the recap")
+            actual = {self.group_key(group) for group in current if group.ready}
+            # New independent recordings can join the next recap. Corrections,
+            # deletion or regrouping of selected evidence must still reject it.
+            if not expected <= actual:
+                raise EvidenceChanged("Transcribed recording evidence changed; retry the recap")
         return check
 
     def status(self, groups: list[Conversation]) -> dict:
         ready = [group for group in groups if group.ready]
         pending = [group for group in groups if not group.ready]
         note = BOUNDARY_NOTE
-        if any(r["source_kind"] == "omi_audio_webhook" for g in pending for r in g.sources):
+        if any(r["source_kind"] == "omi_audio_webhook" for g in groups for r in g.sources):
             note += (" Raw Omi audio forwarding has estimated timestamps; import finished Omi "
                      "conversations to establish reliable conversation boundaries.")
         return {
             "included_through": max((g.end for g in ready), default=None),
             "deferred_conversations": len(pending),
             "deferred_sources": sum(len(g.sources) for g in pending),
+            "waiting_for_pause": sum(
+                not g.closed_at and any(not finished_file(r) for r in g.sources) for g in pending
+            ),
+            "pending_upload_sources": sum(
+                len(g.sources) for g in pending if all(finished_file(r) for r in g.sources)
+            ),
             "boundary_note": note,
         }
 
@@ -99,8 +109,8 @@ class Recaps:
             stale = row["fingerprint"] != self.day_key(groups)
             pending_ids = {r["id"] for g in groups if not g.ready for r in g.sources}
             if any(source["id"] in pending_ids for source in result["sources"]):
-                # Late evidence can reopen a conversation. Never keep its old
-                # interpretation in the current recap while it is still active.
+                # Late speech or a related upload can reopen selected evidence.
+                # Hide its old interpretation while that group is still pending.
                 result.update(summary=None, sources=[], output_id=None, evidence=None,
                               included_through=None, no_recap_content=False)
             # Preserve the generation-time cutoff; live pending counts are separate.
@@ -116,7 +126,7 @@ class Recaps:
         }
 
     async def observe(self) -> None:
-        """Backfill older recordings; new recordings are observed by the STT worker."""
+        """Backfill voice observations used for live pause detection and speaker grouping."""
         store = self.memory.store
         for row in store.recap_snapshot()["rows"]:
             if (manual_upload(row) or transcript_import(row["source_kind"])
@@ -162,9 +172,11 @@ class Recaps:
         else:
             summary = await memory.inference.summarize(
                 sources,
-                "notes for one completed conversation. Assess usefulness across the entire "
-                "conversation: preserve short meaningful answers in context, including dates, "
-                "agreements and decisions. Omit fillers, unintelligible fragments and isolated "
+                "notes from a finished upload or a live conversation followed by a long pause. "
+                "An uploaded file may contain only part of a conversation. "
+                "Preserve short meaningful answers in context, dates, "
+                "agreements and decisions without claiming the conversation has ended. "
+                "Omit fillers, unintelligible fragments and isolated "
                 "words without supported meaning. Do not infer events from background noise. "
                 f"If nothing useful is supported, return exactly {NO_CONTENT} and nothing else. "
                 "Multiple sources can record the same meeting. Describe shared points once, "
@@ -183,7 +195,6 @@ class Recaps:
         return summary
 
     async def prepare(self, now: datetime) -> None:
-        await self.observe()
         groups = self.groups(now)
         for group in groups:
             if not group.ready:
@@ -199,11 +210,10 @@ class Recaps:
 
     async def generate(self, day: date, now: datetime) -> dict:
         memory = self.memory
-        await self.observe()
         start, end = memory.day_window(day)
         groups = self.for_day(self.groups(now), day)
         key = self.day_key(groups)
-        guard = self.guard(day, now, key)
+        guard = self.guard(day, now, groups)
         existing = memory.store.diary(day.isoformat())
         if existing and existing["fingerprint"] == key:
             return self.cached(day, now)
@@ -223,11 +233,11 @@ class Recaps:
                       model=memory.settings.llm_route("summary").model,
                       generated_at=stamp(now), no_recap_content=bool(ready) and not inputs,
                       stale=False)
-        trace = {"conversation_preparation": "cached_completed_conversations",
+        trace = {"conversation_preparation": "cached_transcribed_recordings",
                  "conversation_count": len(ready)}
         if inputs:
             purpose = (
-                f"a readable diary recap for {day.isoformat()} from completed conversation notes. "
+                f"a readable diary recap for {day.isoformat()} from transcribed recording notes. "
                 "Use the fewest meaningful topic sections that keep it easy to read. "
                 "For a recording covering three distinct subjects, use three topic sections "
                 "with one summary each, not extra category sections. "
@@ -265,10 +275,11 @@ class Recaps:
                       "blocked_chunks": blocked,
                       "selection_observed_at": result["completeness"]["as_of"]}
             result["evidence"] = memory.evidence_metadata(
-                sources, result["summary"], "completed_conversations", start, end,
+                sources, result["summary"], "transcribed_recordings", start, end,
                 result["completeness"], trace, counts, kind="recap",
             )
         if ready or existing:
             memory.store.save_diary(day.isoformat(), key, result, guard=guard)
             publish_recap(memory, result, key, guard=guard)
+            return self.cached(day, now)
         return result

@@ -196,9 +196,10 @@ struct DayView: View {
                 DisclosureGroup(L10n.text("About this recap")) {
                     if recap["stale"] == .bool(true) { Text(L10n.text("New or changed evidence is available. This recap will update automatically.")).font(.caption).foregroundStyle(Theme.accent) }
                     if let included = AppModel.date(recap["included_through"].text) {
-                        Text(L10n.text("Includes completed conversations through \(diary.label(included, template: "d MMM HHmm")).")).font(.caption)
+                        Text(L10n.text("Includes transcribed recordings through \(diary.label(included, template: "d MMM HHmm")).")).font(.caption)
                     }
-                    if recap["deferred_conversations"].integer > 0 || recap["deferred_sources"].integer > 0 { Text(L10n.text("Current conversations are waiting to finish before being included.")).font(.caption) }
+                    if recap["waiting_for_pause"].integer > 0 { Text(L10n.text("Live conversations are waiting for a longer pause before being summarized.")).font(.caption) }
+                    if recap["pending_upload_sources"].integer > 0 || recap["pending_chunks"].integer > 0 { Text(L10n.text("Some recordings are awaiting upload or transcription.")).font(.caption) }
                     if !recap["boundary_note"].text.isEmpty { Text(L10n.key(recap["boundary_note"].text)).font(.caption) }
                     CompletenessView(value: recap["completeness"])
                     if !recap["summary"].text.isEmpty {
@@ -210,10 +211,11 @@ struct DayView: View {
     }
 
     private var recapEmptyMessage: String {
-        if recap["no_recap_content"] == .bool(true) { return L10n.text("No useful recap content in completed conversations yet. Your recordings remain available below.") }
-        if recap["deferred_conversations"].integer > 0 || recap["deferred_sources"].integer > 0 { return L10n.text("Your current conversation is waiting to finish. Completed conversations will come together here automatically.") }
-        if recap["pending_chunks"].integer > 0 { return L10n.text("Audio is being transcribed. Your recap will come together as completed conversations are ready.") }
-        return L10n.text("Your recap comes together automatically from completed conversations. Add audio to start remembering.")
+        if recap["no_recap_content"] == .bool(true) { return L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.") }
+        if recap["waiting_for_pause"].integer > 0 { return L10n.text("Live conversations are waiting for a longer pause before being summarized.") }
+        if recap["pending_upload_sources"].integer > 0 { return L10n.text("Some recordings are awaiting upload or transcription.") }
+        if recap["pending_chunks"].integer > 0 { return L10n.text("Some recordings are awaiting upload or transcription.") }
+        return L10n.text("Uploaded recordings are summarized after transcription. Live conversations wait for a longer pause.")
     }
 
     private var dayMarkers: [JSONValue] {

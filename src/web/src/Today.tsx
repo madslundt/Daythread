@@ -5,7 +5,7 @@ import { profileResourceUrl } from "./profiles";
 import { ImportanceButton } from "./Importance";
 import { useEffect, useState, type ReactNode } from "react";
 import { dateTimeLabel, localDay, timeLabel } from "./format";
-import { CaptureStatus } from "./CaptureStatus";
+import { CaptureStatus, RecordingActivity } from "./CaptureStatus";
 export { CaptureStatus } from "./CaptureStatus";
 import { Icon } from "./Icon";
 import {
@@ -139,22 +139,21 @@ export function RecapSection({
 
 function emptyRecapMessage(recap?: Recap): string {
   if (recap?.no_recap_content)
-    return t("No useful recap content in completed conversations yet. Your recordings and transcripts remain in the archive under your retention settings.");
-  if (recap?.deferred_conversations || recap?.deferred_sources)
-    return t("Your current conversation is waiting to finish before it can be included in a recap.");
-  if (recap?.pending_chunks)
-    return t("Audio is still being transcribed. Completed conversations can be included once it is ready.");
-  return t("Completed conversations will bring the important parts of your day together here.");
+    return t("No useful recap content in transcribed recordings yet. Your recordings remain available.");
+  if (recap?.waiting_for_pause)
+    return t("Live conversations are waiting for a longer pause before being summarized.");
+  if (recap?.deferred_sources || recap?.pending_chunks)
+    return t("Some recordings are awaiting upload or transcription.");
+  return t("Uploaded recordings are summarized after transcription. Live conversations wait for a longer pause.");
 }
 
 export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: string }) {
-  const deferred = recap.deferred_conversations || 0;
-  const deferredSources = recap.deferred_sources || 0;
   return <div className="recap-coverage caption" role="status">
-    {recap.included_through ? <p>{t("Includes completed conversations through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
-      : recap.included_through === null ? <p>{t("No completed conversations included yet.")}</p> : null}
-    {deferred || deferredSources ? <p>
-      {deferred ? `${deferred} ${deferred === 1 ? t("conversation is") : t("conversations are")}` : t("Recent recordings are")} {t("waiting to finish before being included. Active conversations stay out of the recap.")}{" "}</p> : null}
+    {recap.included_through ? <p>{t("Includes transcribed recordings through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
+      : recap.included_through === null ? <p>{t("No transcribed recordings included yet.")}</p> : null}
+    {recap.waiting_for_pause ? <p>{t("Live conversations are waiting for a longer pause before being summarized.")}</p> : null}
+    {recap.pending_upload_sources || recap.pending_chunks || (!recap.waiting_for_pause && recap.deferred_sources)
+      ? <p>{t("Some recordings are awaiting upload or transcription.")}</p> : null}
     {recap.boundary_note ? <p>{t(recap.boundary_note)}</p> : null}
   </div>;
 }
@@ -216,6 +215,7 @@ export function Today({
   return (
     <div className="day-layout">
       <div className="day-main">
+        {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
         <RecapSection key={`recap-${day}`} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} compact />
         <TranscriptTimeline
           key={`timeline-${day}`}

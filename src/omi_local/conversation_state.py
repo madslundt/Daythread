@@ -1,4 +1,4 @@
-"""Conservative conversation projection from capture evidence, never upload age."""
+"""Pause-based live conversations and explicit boundaries for finished uploads."""
 
 import json
 from bisect import bisect_left
@@ -80,7 +80,9 @@ def quiet_runs(quiet: list, blockers: list) -> list:
     return result
 
 
-def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Conversation]:
+def conversations(
+    snapshot: dict, now: datetime, quiet_seconds: int, *, respect_open_meeting: bool = True,
+) -> list[Conversation]:
     settled = stamp(now - timedelta(seconds=30))
     streams: dict[str, list[dict]] = {}
     result = []
@@ -137,8 +139,9 @@ def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Con
         current = None
 
         def close(group: Conversation, before: str) -> None:
-            # A manually open meeting can contain long pauses; wait for its stop.
-            if active and device == active_device and group.end > active["started_at"]:
+            # Speaker grouping keeps a manually open meeting together across long pauses.
+            if (respect_open_meeting and active and device == active_device
+                    and group.end > active["started_at"]):
                 return
             index = bisect_left(starts, group.end)
             if index < len(runs):
@@ -163,6 +166,53 @@ def conversations(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Con
     result = merge_groups(
         result, snapshot.get("source_matches", []), snapshot.get("upload_parts", [])
     )
+    for group in result:
+        group.hints = {
+            kind: [{**hint, "context_end": min(hint["context_end"], group.end)}
+                   for hint in timeline[kind]
+                   if hint["context_start"] < group.end and hint["context_end"] > group.start]
+            for kind in ("markers", "meetings")
+        }
+    return sorted(result, key=lambda group: group.start)
+
+
+def finished_file(row: dict) -> bool:
+    return manual_upload(row) or transcript_import(row.get("source_kind", ""))
+
+
+def recordings(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Conversation]:
+    timestamp = stamp(now)
+    result = []
+    timeline = project_events(snapshot["events"], now)
+    for row in snapshot["rows"]:
+        if not finished_file(row):
+            continue
+        if row["started_at"] > timestamp or row["state"] == "expired":
+            continue
+        # Keep silent multipart entries so the file can finish, but standalone
+        # silence adds no evidence and must not invalidate a useful recap.
+        if (row["state"] == "done" and not row["text"]
+                and not json.loads(row.get("source_metadata") or "{}").get("recording_id")):
+            continue
+        result.append(Conversation(
+            [row], row["ended_at"] if row["ended_at"] <= timestamp else None,
+            "finished_import" if transcript_import(row["source_kind"]) else
+            "uploaded_file",
+        ))
+    result = merge_groups(
+        result, snapshot.get("source_matches", []), snapshot.get("upload_parts", [])
+    )
+    live = conversations(
+        snapshot | {"rows": [row for row in snapshot["rows"] if not finished_file(row)]},
+        now, quiet_seconds, respect_open_meeting=False,
+    )
+    all_groups = result + live
+    # An explicitly finished file need not wait for its ongoing live alternative.
+    # Merge matching evidence only once both sides are eligible for the recap.
+    result = merge_groups(
+        [group for group in all_groups if group.ready], snapshot.get("source_matches", []),
+        snapshot.get("upload_parts", []),
+    ) + [group for group in all_groups if not group.ready]
     for group in result:
         group.hints = {
             kind: [{**hint, "context_end": min(hint["context_end"], group.end)}

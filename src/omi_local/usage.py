@@ -5,7 +5,8 @@ ledger. Audio, transcripts, prompts, credentials and responses are never stored 
 """
 
 import json
-from datetime import UTC, datetime
+import re
+from datetime import UTC, date, datetime
 from math import isfinite
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -149,8 +150,12 @@ class UsageLedger:
                  payload.get("outcome", "filtered")),
             )
 
-    def report(self, timezone: str = "UTC") -> dict:
+    def report(self, timezone: str = "UTC", *, month: str | None = None) -> dict:
         zone = ZoneInfo(timezone)
+        if month is not None:
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}", month):
+                raise ValueError("usage_month_invalid")
+            date.fromisoformat(f"{month}-01")
         with self.store.connect() as db:
             rows = db.execute(
                 "SELECT created_at,payload FROM usage_events ORDER BY created_at,event_key"
@@ -181,6 +186,8 @@ class UsageLedger:
         totals, days = _metrics(), {}
         for row, event, _score in observations.values():
             day = datetime.fromisoformat(row["created_at"]).astimezone(zone).date().isoformat()
+            if month is not None and not day.startswith(month + "-"):
+                continue
             daily = days.setdefault(day, _metrics())
             values = _metrics()
             if event["kind"] == "summary_filter":
@@ -232,6 +239,8 @@ class UsageLedger:
         # returning an already-charged operation. Token receipts above count once.
         for row, event in summary_attempts:
             day = datetime.fromisoformat(row["created_at"]).astimezone(zone).date().isoformat()
+            if month is not None and not day.startswith(month + "-"):
+                continue
             daily = days.setdefault(day, _metrics())
             values = {
                 "summary_requests": 1,
@@ -260,6 +269,7 @@ class UsageLedger:
         return {
             "since": rows[0]["created_at"] if rows else None,
             "timezone": timezone,
+            "month": month,
             "totals": totals,
             "credits_complete": totals["unknown_credit_attempts"] == 0,
             "days": [{"date": day, **days[day]} for day in sorted(days, reverse=True)],

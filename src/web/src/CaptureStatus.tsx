@@ -182,3 +182,39 @@ function ProcessingProgress({ processing, compact = false }: {
     <p className="caption">{time}. {estimate != null && estimate > 0 ? t("Based on recent transcription speed; this may change.") : ""}</p>
   </div>;
 }
+
+export function RecordingActivity({ status, error }: { status?: Status; error?: string }) {
+  const stale = Boolean(error || !status?.as_of || !Number.isFinite(Date.parse(status.as_of)) ||
+    Date.now() - Date.parse(status.as_of) > 120_000);
+  const phones = stale ? [] : (status?.phones || []).filter((phone) => phone.fresh &&
+    Date.now() - Date.parse(phone.observed_at) <= 120_000);
+  const recording = phones.filter((phone) => phone.capture_state === "capturing" &&
+    phone.last_decoded_at && Date.parse(phone.observed_at) - Date.parse(phone.last_decoded_at) >= 0 &&
+    Date.parse(phone.observed_at) - Date.parse(phone.last_decoded_at) <= 5_000);
+  const waiting = phones.reduce((count, phone) => count + phone.pending_recordings, 0);
+  const processing = status?.processing;
+  const generation = status?.generation;
+  const labels: Record<string, string> = {
+    summarizing: t("Summarizing"), organizing: t("Organizing recording topics"), translating: t("Translating"),
+  };
+  return <section className="recording-activity" aria-label={t("Recording activity")}>
+    <div role="status" aria-live="polite">
+      <h2>{t("Recording activity")}</h2>
+      {recording.length ? recording.map((phone) => <p className="recording-live" key={phone.phone_id}>
+        <span className="status-dot online" aria-hidden="true" />
+        {phone.capture_source === "omi" ? t("Recording from Omi") : phone.capture_source === "phone" ? t("Recording from phone microphone") : t("Recording in progress")}
+      </p>) : <p className="caption">{stale && status ? t("Status needs a refresh") : phones.some((phone) => phone.capture_state === "paused") ? t("Capture paused") : t("Live capture unknown")}</p>}
+      {processing ? <p className="activity-counts">{t("Recordings: {queued} queued · {processing} processing", { queued: processing.queued, processing: processing.transcribing })}</p> : null}
+      {waiting > 0 ? <p className="caption">{t("{count} recordings waiting to upload", { count: waiting })}</p> : null}
+      {!stale && processing && status?.worker_running ? <ProcessingProgress processing={processing} /> : null}
+      {generation && (generation.queued > 0 || generation.running > 0) ? <>
+        <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p>
+        {!stale ? Object.entries(generation.stages).filter(([, count]) => count > 0).map(([stage, count]) =>
+          <p className="caption" key={stage}>{labels[stage] || t("Processing")} · {count}</p>) : null}
+      </> : null}
+      {status && !status.worker_running && ((processing?.queued || 0) + (processing?.transcribing || 0) > 0) ? <p className="caption status-warning">{t("Processing is waiting for the worker to start.")}</p> : null}
+      {processing?.blocked ? <p className="caption status-warning">{processing.blocked} {t("blocked · needs attention")}</p> : null}
+      {stale && status ? <p className="caption">{t("Last known counts; current activity is unknown.")}</p> : null}
+    </div>
+  </section>;
+}

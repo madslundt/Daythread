@@ -187,6 +187,7 @@ class PhoneObservation(BaseModel):
     sequence: int = Field(ge=0, le=2**53 - 1, strict=True)
     observed_at: AwareDatetime
     device_id: str = Field(default="", max_length=80, pattern=r"^[\w-]*$")
+    capture_source: Literal["omi", "phone", "unknown"] = "unknown"
     capture_state: Literal["capturing", "paused", "disconnected", "blocked", "unknown"]
     cause: CaptureCause = "unknown"
     requested_pause: bool

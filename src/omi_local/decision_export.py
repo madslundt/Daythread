@@ -110,8 +110,8 @@ def diary_markdown(db: sqlite3.Connection, day: str, content: dict) -> str:
     coverage = ""
     if "included_through" in content:
         coverage = (
-            f"Completed conversations through: {content.get('included_through') or 'none'}. "
-            f"Pending conversations: {content.get('deferred_conversations', 0)}.\n\n"
+            f"Transcribed recordings through: {content.get('included_through') or 'none'}. "
+            f"Pending recordings: {content.get('deferred_conversations', 0)}.\n\n"
             f"{content.get('boundary_note', '')}\n\n"
         )
     return (

@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from time import perf_counter
 from typing import Literal
@@ -13,6 +14,7 @@ import httpx
 
 from .audio import coverage_gaps
 from .completeness import audio_availability, revision
+from .completion_events import generating_job
 from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
 from .hybrid import HybridRetriever, bound_sources
 from .inference import Inference, InferenceError, validate_citations
@@ -86,6 +88,7 @@ class Memory:
             store.save_decision_timezone(settings.timezone)
         self.settings = settings
         self.inference = inference
+        self.background_activity: dict[str, int] = {}
         self.usage = UsageLedger(store)
         if isinstance(inference, Inference):
             inference.usage_recorder = self.usage.record
@@ -96,6 +99,18 @@ class Memory:
         self.voices = Voices(self)
         self.decision_lock = asyncio.Lock()
         self.retriever = HybridRetriever(store, settings)
+
+    @contextmanager
+    def processing_activity(self, stage: str):
+        # Durable requests already appear in generation_jobs; count each task once.
+        if generating_job.get():
+            yield
+            return
+        self.background_activity[stage] = self.background_activity.get(stage, 0) + 1
+        try:
+            yield
+        finally:
+            self.background_activity[stage] -= 1
 
     def day_window(self, day: date) -> tuple[datetime, datetime]:
         zone = ZoneInfo(self.settings.timezone)
@@ -174,10 +189,11 @@ class Memory:
                 "selection_observed_at": result["completeness"]["as_of"],
             }
             trace = None
-            if hasattr(self.inference, "summarize_traced"):
-                summary, trace = await self.inference.summarize_traced(done, purpose)
-            else:
-                summary = await self.inference.summarize(done, purpose)
+            with self.processing_activity("summarizing"):
+                if hasattr(self.inference, "summarize_traced"):
+                    summary, trace = await self.inference.summarize_traced(done, purpose)
+                else:
+                    summary = await self.inference.summarize(done, purpose)
             if summary == NO_CONTENT:
                 return result | {"no_recap_content": True}
             result["summary"] = validate_citations(summary, done)
@@ -267,7 +283,8 @@ class Memory:
 
     async def recap(self, day: date) -> dict:
         async with self.recap_lock:
-            return await self.recaps.generate(day, utc_now())
+            with self.processing_activity("summarizing"):
+                return await self.recaps.generate(day, utc_now())
 
     def timeline(self) -> dict:
         return project_events(self.store.events(), utc_now()) | {

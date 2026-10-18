@@ -11,6 +11,11 @@ from omi_local.settings import Settings
 from scripts import migrate_model_settings as migration
 
 
+@pytest.fixture(autouse=True)
+def isolate_archive_environment(monkeypatch):
+    monkeypatch.delenv("OMI_DATA_DIR", raising=False)
+
+
 def test_migration_preserves_saved_values_nested_keys_and_unrelated_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     env = tmp_path / ".env"

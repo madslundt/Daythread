@@ -94,6 +94,8 @@ class VoiceStore:
 
     @staticmethod
     def gallery(db) -> list[dict]:
+        from .blob_storage import audio_is_present
+
         gallery = []
         for row in db.execute("SELECT * FROM voice_examples ORDER BY id"):
             sources = db.execute(
@@ -104,7 +106,7 @@ class VoiceStore:
             source_ids, digests = json.loads(row["source_ids"]), json.loads(row["source_digests"])
             if (len(sources) != len(source_ids) or not sources or any(
                 not r["audio_available"] or r["state"] != "done"
-                or not Path(r["path"]).is_file() for r in sources
+                or not audio_is_present(r) for r in sources
             ) or {r["id"]: r["digest"] for r in sources} != dict(zip(source_ids, digests))):
                 continue
             gallery.append({

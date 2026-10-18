@@ -1,6 +1,7 @@
 """Named local archives and their workers; settings are shared by every profile."""
 
 import asyncio
+import hashlib
 import sqlite3
 from contextlib import closing, suppress
 from contextvars import ContextVar
@@ -26,6 +27,13 @@ from .worker import run_worker
 
 DEFAULT_PROFILE = "default"
 selected_profile: ContextVar[str] = ContextVar("omi_profile", default=DEFAULT_PROFILE)
+
+
+def profile_schema(account_schema: str, profile_id: str) -> str:
+    """Stable schema names fit PostgreSQL's identifier limit for every account."""
+    return "archive_" + hashlib.sha256(
+        f"{account_schema}:{UUID(profile_id)}".encode()
+    ).hexdigest()[:40]
 
 
 class NewProfile(BaseModel):
@@ -56,7 +64,15 @@ class ProfileRuntime:
 
 
 class Profiles:
-    def __init__(self, root: Path, client: httpx.AsyncClient):
+    def __init__(
+        self, root: Path, client: httpx.AsyncClient, *, settings: Settings | None = None,
+    ):
+        from .postgres import PostgresDatabase
+
+        self.database = (
+            PostgresDatabase(settings.database_url.get_secret_value(), settings.database_schema)
+            if settings and settings.database_url else None
+        )
         self.root = root
         self.client = client
         self.runtimes: dict[str, ProfileRuntime] = {}
@@ -74,7 +90,9 @@ class Profiles:
                 INSERT OR IGNORE INTO profiles VALUES ('default', 'Default', 'default');
             """)
 
-    def connect(self) -> sqlite3.Connection:
+    def connect(self):
+        if self.database:
+            return self.database.connect()
         return sqlite3.connect(self.root / "profiles.sqlite3", timeout=30)
 
     def list(self) -> list[dict]:
@@ -112,7 +130,19 @@ class Profiles:
         if profile_id in self.runtimes:
             return self.runtimes[profile_id]
         # Only catalogue IDs reach this method; names never become filesystem paths.
-        store = store or Store(self.root / "profiles" / str(UUID(profile_id)))
+        if store is None:
+            from .blob_storage import storage_from_settings
+
+            directory = self.root / "profiles" / str(UUID(profile_id))
+            schema = profile_schema(settings.database_schema, profile_id)
+            store = Store(
+                directory,
+                database_url=(
+                    settings.database_url.get_secret_value() if settings.database_url else None
+                ),
+                database_schema=schema,
+                storage=storage_from_settings(settings, directory / "audio", profile_id),
+            )
         if profile_id != DEFAULT_PROFILE:
             store.save_settings(self.runtimes[DEFAULT_PROFILE].memory.store.runtime_settings())
         memory = Memory(store, settings, Inference(settings, self.client))

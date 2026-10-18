@@ -3,7 +3,6 @@ import json
 import logging
 from contextlib import suppress
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -36,7 +35,7 @@ async def process_one(memory: Memory) -> bool:
                 details=json.loads(duplicate["transcription_details"]),
             )
             return True
-        data = await asyncio.to_thread(Path(row["path"]).read_bytes)
+        data = await asyncio.to_thread(memory.store.read_audio, row["id"])
         voice = await asyncio.to_thread(analyze_voice, data)
         memory.store.save_recap_activity(row["id"], row["digest"], voice)
         threshold = (

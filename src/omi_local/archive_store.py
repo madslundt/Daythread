@@ -225,7 +225,7 @@ class ArchiveStore:
                 if not db.execute(
                     "SELECT 1 FROM audio WHERE path=? AND audio_available=1", (path,)
                 ).fetchone():
-                    Path(path).unlink(missing_ok=True)
+                    self.audio_storage.delete(Path(path).stem)
             # Restored backup projections must obey the same purge as the SQLite records.
             for path in (self.root / "weekly").glob("*.md"):
                 if not db.execute(
@@ -502,8 +502,11 @@ class ArchiveStore:
                     target.execute("VACUUM")
                     for row in target.execute("SELECT id FROM audio WHERE audio_available=1"):
                         filename = f"{row[0]}.wav"
-                        original = self.audio_dir / filename
                         pinned = work / filename
+                        if self.audio_storage.is_remote:
+                            pinned.write_bytes(self.read_audio(row[0]))
+                            continue
+                        original = self.audio_dir / filename
                         try:
                             os.link(original, pinned)
                         except OSError:

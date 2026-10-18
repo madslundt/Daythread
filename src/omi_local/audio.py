@@ -119,7 +119,9 @@ def coverage_gaps(rows: list[dict], start: datetime, end: datetime) -> list[dict
     return gaps
 
 
-def render_window(rows: list[dict], start: datetime, end: datetime) -> tuple[bytes, list[dict]]:
+def render_window(
+    rows: list[dict], start: datetime, end: datetime, *, read_audio=None,
+) -> tuple[bytes, list[dict]]:
     frames = round((end - start).total_seconds() * 16000)
     if not 0 < frames <= 60 * 60 * 16000:
         raise ValueError("Rewind window must be between zero and 60 minutes")
@@ -133,7 +135,8 @@ def render_window(rows: list[dict], start: datetime, end: datetime) -> tuple[byt
         count = min(round((right - left).total_seconds() * 16000), frames - target)
         if count <= 0:
             continue
-        with wave.open(str(Path(row["path"])), "rb") as source:
+        source_file = io.BytesIO(read_audio(row["id"])) if read_audio else str(Path(row["path"]))
+        with wave.open(source_file, "rb") as source:
             source.setpos(offset)
             data = source.readframes(count)
         if len(data) != count * 2:

@@ -16,6 +16,7 @@ from pydantic import AwareDatetime, ValidationError
 from . import conversation_prep
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
+from .blob_storage import storage_from_settings
 from .configuration import RESTART_FIELDS, Configuration
 from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
@@ -74,7 +75,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal config
-        store = Store(config.data_dir)
+        store = Store(
+            config.data_dir,
+            database_url=config.database_url.get_secret_value() if config.database_url else None,
+            database_schema=config.database_schema,
+            storage=storage_from_settings(config, config.data_dir / "audio"),
+        )
         saved = {
             key: value for key, value in store.runtime_settings().items() if key in RUNTIME_FIELDS
         }
@@ -82,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with httpx.AsyncClient(
             timeout=config.inference_timeout_seconds, follow_redirects=False
         ) as client:
-            app.state.profiles = Profiles(config.data_dir, client)
+            app.state.profiles = Profiles(config.data_dir, client, settings=config)
             try:
                 default = app.state.profiles.start(DEFAULT_PROFILE, config, store)
                 for field in (
@@ -466,11 +472,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return public_source(row)
 
     @app.get("/v1/audio/{audio_id}")
-    def audio(audio_id: UUID) -> FileResponse:
+    def audio(audio_id: UUID) -> Response:
         row = memory().store.get_audio(str(audio_id))
-        if row is None or not row["audio_available"] or not Path(row["path"]).is_file():
+        if row is None or not row["audio_available"]:
+            raise HTTPException(404, "Audio chunk not found")
+        if memory().store.audio_storage.is_remote:
+            try:
+                return Response(
+                    memory().store.read_audio(str(audio_id)), media_type="audio/wav",
+                    headers={"Content-Disposition": f'attachment; filename="{audio_id}.wav"'},
+                )
+            except FileNotFoundError:
+                raise HTTPException(404, "Audio chunk not found") from None
+        if not memory().store.has_audio(str(audio_id)):
             raise HTTPException(404, "Audio chunk not found")
         return FileResponse(row["path"], media_type="audio/wav", filename=f"{audio_id}.wav")
+
+    @app.get("/v1/storage")
+    def storage_usage() -> dict:
+        return {"used_bytes": sum(
+            runtime.memory.store.storage_usage()
+            for runtime in app.state.profiles.runtimes.values()
+        )}
 
     @app.delete("/v1/audio/{audio_id}")
     def delete_audio(audio_id: UUID) -> dict:
@@ -492,7 +515,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 row["state"] not in ("blocked", "queued") and not empty_completed
             ) or not row["audio_available"]:
                 raise HTTPException(409, "Only pending or empty automatic transcripts can retry")
-            if not Path(row["path"]).is_file():
+            if not memory().store.has_audio(str(audio_id)):
                 raise HTTPException(409, "Restore the missing audio file before retrying")
             db.execute(
                 "UPDATE audio SET state='queued',retry_at='',error=NULL,error_code=NULL,"
@@ -635,7 +658,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rows = [row for row in memory().store.window(start, stop) if row["audio_available"]]
         if not rows:
             raise HTTPException(404, "No audio captured in this window")
-        data, gaps = render_window(rows, start, stop)
+        data, gaps = render_window(rows, start, stop, read_audio=memory().store.read_audio)
         return Response(
             data,
             media_type="audio/wav",

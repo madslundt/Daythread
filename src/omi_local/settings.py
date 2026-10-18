@@ -105,6 +105,32 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Path("data")
+    storage_bucket: str = ""
+    storage_region: str = ""
+    storage_prefix: str = ""
+    database_url: SecretStr | None = None
+    database_schema: str = "public"
+
+    @field_validator("database_schema")
+    @classmethod
+    def valid_database_schema(cls, value: str) -> str:
+        from .postgres import identifier
+
+        return identifier(value)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def valid_database_url(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        value = value if isinstance(value, SecretStr) else SecretStr(value)
+        if not value.get_secret_value():
+            return None
+        parsed = urlparse(value.get_secret_value())
+        if parsed.scheme not in {"postgres", "postgresql"} or not parsed.hostname:
+            raise ValueError("Use a PostgreSQL database URL")
+        return value
+
     managed_hosting: bool = False
     timezone: str = "Europe/Copenhagen"
     stt_base_url: str = "http://127.0.0.1:4000/v1"
@@ -323,7 +349,10 @@ RUNTIME_FIELDS = (
     "transcript_retention_days",
 )
 
-DEPLOYMENT_FIELDS = {"managed_hosting"}
+DEPLOYMENT_FIELDS = {
+    "managed_hosting", "database_url", "database_schema",
+    "storage_bucket", "storage_region", "storage_prefix",
+}
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
 
 

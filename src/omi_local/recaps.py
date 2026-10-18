@@ -6,7 +6,6 @@ import json
 import sqlite3
 from collections.abc import Callable
 from datetime import date, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -122,8 +121,8 @@ class Recaps:
             if (manual_upload(row) or transcript_import(row["source_kind"])
                     or row["state"] != "done" or activity(row)):
                 continue
-            if row["audio_available"] and Path(row["path"]).is_file():
-                data = await asyncio.to_thread(Path(row["path"]).read_bytes)
+            if row["audio_available"] and await asyncio.to_thread(store.has_audio, row["id"]):
+                data = await asyncio.to_thread(store.read_audio, row["id"])
                 value = await asyncio.to_thread(analyze_voice, data)
                 store.save_recap_activity(row["id"], row["digest"], value)
 

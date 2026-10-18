@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import re
 import sqlite3
 from collections.abc import Callable
@@ -85,13 +84,22 @@ class Store(
     RecordingUploadStore,
     ProcessingProgressStore,
 ):
-    def __init__(self, root: Path):
+    def __init__(
+        self, root: Path, *, database_url: str | None = None,
+        database_schema: str = "public", storage=None,
+    ):
+        from .postgres import PostgresDatabase
+
+        self.database = PostgresDatabase(database_url, database_schema) if database_url else None
         self.root = root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.audio_dir = root / "audio"
         self.diary_dir = root / "diary"
         self.audio_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.diary_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        from .blob_storage import LocalAudioStorage
+
+        self.audio_storage = storage or LocalAudioStorage(self.audio_dir)
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executescript(CONVERSATION_TAGS_SCHEMA)
@@ -107,6 +115,8 @@ class Store(
             if "hint_policy" not in columns:
                 db.execute("ALTER TABLE events ADD COLUMN hint_policy TEXT NOT NULL DEFAULT '{}'")
             audio_columns = {row["name"] for row in db.execute("PRAGMA table_info(audio)")}
+            if "storage_bytes" not in audio_columns:
+                db.execute("ALTER TABLE audio ADD COLUMN storage_bytes INTEGER NOT NULL DEFAULT 0")
             if "segments" not in audio_columns:
                 db.execute("ALTER TABLE audio ADD COLUMN segments TEXT NOT NULL DEFAULT '[]'")
             if "transcription_details" not in audio_columns:
@@ -202,7 +212,8 @@ class Store(
                     "INTEGER NOT NULL DEFAULT 0"
                 )
             # Backups can be restored under a different data directory.
-            for row in db.execute("SELECT id,path FROM audio").fetchall():
+            for row in ([] if self.database or self.audio_storage.is_remote else
+                        db.execute("SELECT id,path FROM audio").fetchall()):
                 if Path(row["path"]).parent != self.audio_dir:
                     db.execute("UPDATE phone_observations SET historical=1")
                 db.execute(
@@ -210,8 +221,28 @@ class Store(
                     (str(self.audio_dir / f"{row['id']}.wav"), row["id"]),
                 )
 
+    def read_audio(self, audio_id: str) -> bytes:
+        return self.audio_storage.read(audio_id)
+
+    def has_audio(self, audio_id: str) -> bool:
+        return self.audio_storage.exists(audio_id)
+
+    def storage_usage(self) -> int:
+        with self.connect() as db:
+            return db.execute(
+                "SELECT COALESCE(SUM(storage_bytes),0) FROM audio WHERE audio_available=1"
+            ).fetchone()[0]
+
     @contextmanager
     def connect(self):
+        if self.database:
+            db = self.database.connect()
+            try:
+                with db:
+                    yield db
+            finally:
+                db.close()
+            return
         db = sqlite3.connect(self.root / "omi.sqlite3", timeout=30)
         db.row_factory = sqlite3.Row
         db.create_function("location_zone_contains", 3, contains, deterministic=True)
@@ -220,6 +251,13 @@ class Store(
                 yield db
         finally:
             db.close()
+
+    def migrate_sqlite(self, path: Path) -> None:
+        """Atomically copy an existing archive into an empty managed database."""
+        if not self.database:
+            raise ValueError("SQLite migration requires a PostgreSQL destination")
+        with sqlite3.connect(path) as source, self.connect() as target:
+            target.import_sqlite(source)
 
     def ingest(
         self, audio_id: UUID, device: str, start: datetime, data: bytes, duration: float,
@@ -260,11 +298,9 @@ class Store(
                 ) != (digest, device, at, source_kind, source_id, metadata):
                     raise ValueError("Audio ID already exists with different content or metadata")
                 # A matching resend can repair a missing file, but never reverse retention.
-                if old["audio_available"] and not Path(old["path"]).is_file():
-                    with Path(old["path"]).open("wb") as target:
-                        target.write(data)
-                        target.flush()
-                        os.fsync(target.fileno())
+                if old["audio_available"] and not self.has_audio(key):
+                    self.audio_storage.write(key, data)
+                    db.execute("UPDATE audio SET storage_bytes=? WHERE id=?", (len(data), key))
                     if old["state"] == "blocked" and old["error_code"] == "missing_audio":
                         db.execute(
                             "UPDATE audio SET state='queued',retry_at='',error=NULL,"
@@ -297,16 +333,14 @@ class Store(
                                 (digest, at, end))):
                         raise ValueError("Recording part conflicts with previously uploaded parts")
             # Each ID is a validated UUID, never a client-supplied filename.
-            path = self.audio_dir / f"{key}.wav"
-            with path.open("wb") as target:
-                target.write(data)
-                target.flush()
-                os.fsync(target.fileno())
+            path = self.audio_storage.location(key)
+            self.audio_storage.write(key, data)
             db.execute(
                 "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at,"
-                "source_kind,source_id,source_metadata) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "source_kind,source_id,source_metadata,storage_bytes) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (key, device, at, end, digest, str(path), stamp(utc_now()), source_kind, source_id,
-                 encoded_metadata),
+                 encoded_metadata, len(data)),
             )
             if metadata.get("recording_id"):
                 db.execute(

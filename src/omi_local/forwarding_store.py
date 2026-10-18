@@ -38,7 +38,7 @@ class ForwardingStore:
         fingerprint = hashlib.sha256(str(sample_rate).encode() + b":" + pcm).hexdigest()
         duration = len(pcm) / (sample_rate * 2)
         key = str(uuid4())
-        path = self.audio_dir / f"{key}.wav"
+        path = self.audio_storage.location(key)
         temporary = None
         try:
             with self.connect() as db:
@@ -59,18 +59,23 @@ class ForwardingStore:
                         "duplicate": True,
                         "state": "accepted",
                     }
-                descriptor, temporary = tempfile.mkstemp(prefix=".omi-audio-", dir=self.audio_dir)
-                with os.fdopen(descriptor, "wb") as target:
-                    target.write(wav)
-                    target.flush()
-                    os.fsync(target.fileno())
-                os.replace(temporary, path)
-                temporary = None
-                directory = os.open(self.audio_dir, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
+                if self.audio_storage.is_remote:
+                    self.audio_storage.write(key, wav)
+                else:
+                    descriptor, temporary = tempfile.mkstemp(
+                        prefix=".omi-audio-", dir=self.audio_dir,
+                    )
+                    with os.fdopen(descriptor, "wb") as target:
+                        target.write(wav)
+                        target.flush()
+                        os.fsync(target.fileno())
+                    os.replace(temporary, path)
+                    temporary = None
+                    directory = os.open(self.audio_dir, os.O_RDONLY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
                 metadata = {
                     "input_sample_rate": sample_rate,
                     "archive_sample_rate": 16000,
@@ -80,7 +85,8 @@ class ForwardingStore:
                 }
                 db.execute(
                     "INSERT INTO audio(id,device_id,started_at,ended_at,digest,path,received_at,"
-                    "source_kind,source_id,source_metadata) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "source_kind,source_id,source_metadata,storage_bytes) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         key,
                         device,
@@ -92,6 +98,7 @@ class ForwardingStore:
                         "omi_audio_webhook",
                         uid,
                         json.dumps(metadata),
+                        len(wav),
                     ),
                 )
                 db.execute(
@@ -106,7 +113,8 @@ class ForwardingStore:
                 "state": "accepted",
             }
         except Exception:
-            path.unlink(missing_ok=True)
+            if not self.audio_storage.is_remote:
+                self.audio_storage.delete(key)
             raise
         finally:
             if temporary is not None:

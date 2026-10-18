@@ -60,11 +60,12 @@ def pcm_wav(pcm: bytes) -> bytes:
     return output.getvalue()
 
 
-def slice_pcm(row: dict, start: float, end: float) -> bytes:
-    if not row["audio_available"] or not Path(row["path"]).is_file():
+def slice_pcm(row: dict, start: float, end: float, read_audio=None) -> bytes:
+    if not row["audio_available"] or (not read_audio and not Path(row["path"]).is_file()):
         raise HTTPException(409, "Original audio is unavailable for this conversation")
     try:
-        with wave.open(row["path"], "rb") as stream:
+        source = io.BytesIO(read_audio(row["id"])) if read_audio else row["path"]
+        with wave.open(source, "rb") as stream:
             if (stream.getnchannels(), stream.getsampwidth(), stream.getframerate()) != (
                 1, 2, 16000,
             ):
@@ -148,7 +149,7 @@ class Speakers:
             self.attach_text(turns, scope["rows"])
         speakers = payload["speakers"]
         audio_available = bool(scope["rows"]) and all(
-            r["audio_available"] and Path(r["path"]).is_file() for r in scope["rows"]
+            r["audio_available"] and self.memory.store.has_audio(r["id"]) for r in scope["rows"]
         )
         recognition = self.memory.voices.annotate(db, scope, payload, ready and audio_available)
         for speaker in speakers:
@@ -216,7 +217,7 @@ class Speakers:
             if len(pcm) / 32000 + end - start > MAX_SECONDS:
                 raise HTTPException(422, "Choose a conversation with at most eight hours of audio")
             offset = len(pcm) / 32000
-            piece = slice_pcm(row, start, end)
+            piece = slice_pcm(row, start, end, self.memory.store.read_audio)
             mappings.append({"source_id": row["id"], "offset": offset,
                              "start": start, "end": start + len(piece) / 32000})
             pcm.extend(piece)
@@ -385,4 +386,7 @@ class Speakers:
             intervals = self.intervals(payload["turns"], speaker)
             if not intervals:
                 raise HTTPException(409, "This speaker has no assigned speaking turns")
-            return pcm_wav(b"".join(slice_pcm(rows[source], a, b) for source, a, b in intervals))
+            return pcm_wav(b"".join(
+                slice_pcm(rows[source], a, b, self.memory.store.read_audio)
+                for source, a, b in intervals
+            ))

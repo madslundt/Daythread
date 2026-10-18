@@ -4,7 +4,6 @@ import hashlib
 import json
 import math
 from datetime import datetime, timedelta
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -68,12 +67,14 @@ class PrepareUpload(BaseModel):
 
 
 def available(db, plan):
+    from .blob_storage import audio_is_present
+
     result = []
     for part in plan["parts"]:
         row = db.execute("SELECT * FROM audio WHERE id=?", (part["id"],)).fetchone()
         result.append(bool(row and row["digest"] == part["digest"]
                            and row["audio_available"] and row["state"] != "expired"
-                           and Path(row["path"]).is_file()))
+                           and audio_is_present(row)))
     return result
 
 

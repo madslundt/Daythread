@@ -17,7 +17,7 @@ RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
 ROUTE_FIELDS = {"stt_routes", "llm_routes"}
 SECRET_FIELDS = {
     key
-    for key, field in Settings.model_fields.items()
+    for key, field in Settings.model_fields.items() if key not in DEPLOYMENT_FIELDS
     if field.annotation is SecretStr or SecretStr in get_args(field.annotation)
 }
 

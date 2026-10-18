@@ -3,8 +3,8 @@
 import hashlib
 import json
 from datetime import datetime
-from pathlib import Path
 
+from .blob_storage import audio_is_present
 from .domain import EvidenceChanged, stamp, utc_now
 from .processing_progress import processing_observation
 from .vendor_imports import TRANSCRIPT_IMPORT_SQL, transcript_import
@@ -50,7 +50,7 @@ def audio_availability(row: dict) -> str:
         return "transcript_only"
     if not row.get("audio_available", True):
         return "expired"
-    return "available" if Path(row["path"]).is_file() else "missing"
+    return "available" if audio_is_present(row) else "missing"
 
 
 def revision(source: dict) -> str:
@@ -186,7 +186,7 @@ class CompletenessStore:
                 dict(r)
                 for r in db.execute(
                     "SELECT id,started_at,ended_at,state,audio_available,path,source_kind,"
-                    "transcription_outcome,length(coalesce(text,''))>0 AS has_text "
+                    "transcription_outcome,error_code,length(coalesce(text,''))>0 AS has_text "
                     "FROM audio WHERE started_at<? AND ended_at>? ORDER BY started_at,id",
                     (stamp(end), stamp(start)),
                 )
@@ -214,7 +214,7 @@ class CompletenessStore:
                 for r in selected
             ]
 
-        available = [r for r in rows if r["audio_available"] and Path(r["path"]).is_file()]
+        available = [r for r in rows if audio_is_present(r)]
         text = [r for r in rows if r["state"] == "done" and r["has_text"]]
         pauses, interruptions = [], []
         capture_intervals = []
@@ -290,7 +290,7 @@ class CompletenessStore:
                 not r["audio_available"] and not transcript_import(r["source_kind"]) for r in rows
             ),
             "missing_audio": sum(
-                r["audio_available"] and not Path(r["path"]).is_file() for r in rows
+                r["audio_available"] and not audio_is_present(r) for r in rows
             ),
             "silence_gate": sum(r["transcription_outcome"] == "silence_gate" for r in rows),
             "empty_stt": sum(r["transcription_outcome"] == "empty_stt" for r in rows),

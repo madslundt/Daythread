@@ -21,7 +21,7 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = f"paused-live-conversations-6-topic-notes-{SUMMARY_FILTER_VERSION}"
+PROMPT_VERSION = f"paused-live-conversations-7-source-language-{SUMMARY_FILTER_VERSION}"
 DAY_PROMPT_VERSION = "daily-topics-2-one-summary"
 BOUNDARY_NOTE = (
     "Uploaded recordings are included after transcription. Live conversations wait for the "
@@ -40,7 +40,7 @@ class Recaps:
 
     def groups(self, now: datetime, db: sqlite3.Connection | None = None) -> list[Conversation]:
         return recordings(self.memory.store.recap_snapshot(db), now,
-                          self.memory.settings.recap_quiet_minutes * 60)
+                          5 * 60)
 
     def for_day(self, groups: list[Conversation], day: date) -> list[Conversation]:
         start, end = map(stamp, self.memory.day_window(day))

@@ -15,6 +15,12 @@ RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
     key for key in Settings.model_fields if key.startswith("embedding_")
 }
 ROUTE_FIELDS = {"stt_routes", "llm_routes"}
+RETIRED_FIELDS = {
+    "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds",
+    "marker_context_seconds", "marker_after_seconds", "marker_cooldown_seconds",
+    "recap_hour", "recap_interval_minutes", "recap_quiet_minutes",
+    "capture_paused",
+}
 SECRET_FIELDS = {
     key
     for key, field in Settings.model_fields.items() if key not in DEPLOYMENT_FIELDS
@@ -57,6 +63,9 @@ def group(key: str) -> str:
 
 
 DESCRIPTIONS = {
+    "meeting_quiet_minutes": "After the first hour, end the meeting marker after this many "
+    "minutes of continuously recorded quiet. Recording continues. "
+    "Missing uploads and connection gaps do not count as silence. Applies to new meetings.",
     "voice_recognition_enabled": "Remember explicitly confirmed voices across conversations in "
     "this archive. Suggestions require a passing evaluation on separate recordings; names are "
     "never applied automatically. Original audio retention also removes learned examples.",
@@ -134,9 +143,10 @@ DESCRIPTIONS = {
     "web_dir": "Optional custom web asset directory on home-core. Empty uses bundled assets.",
     "summary_language": "Language for summaries, independently of transcription. "
     "auto follows the source language; use a language code such as da or en to choose one.",
-    "translation_languages": "Languages available for transcript translation, independently of "
-    "summary language. Use language codes such as en or da; the first is the default target. "
-    "An empty list disables translation until a language is added.",
+    "translation_languages": "Languages available for transcript and summary translation, "
+    "independently of the generated summary language. Use language codes such as en or da; "
+    "the first is the default target. An empty list disables translation until a language "
+    "is added.",
     "timezone": "IANA timezone used for calendar boundaries, for example Europe/Copenhagen.",
     "audio_retention_days": "Days to keep audio. 0 keeps it indefinitely. "
     "Applies to existing audio.",
@@ -149,7 +159,7 @@ def descriptors() -> list[dict]:
     schema = Settings.model_json_schema()["properties"]
     result = []
     for key, prop in schema.items():
-        if key in DEPLOYMENT_FIELDS:
+        if key in DEPLOYMENT_FIELDS | RETIRED_FIELDS:
             continue
         variants = prop.get("anyOf", [prop])
         kind = next((item.get("type") for item in variants if item.get("type") != "null"), "string")
@@ -161,13 +171,14 @@ def descriptors() -> list[dict]:
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
         title = {
+            "meeting_quiet_minutes": "End meeting after recorded quiet (minutes)",
             "pocket_api_key": "Pocket API key",
-            "stt_base_url": "STT endpoint URL",
-            "stt_api_key": "STT API key",
-            "stt_model": "STT model",
-            "llm_base_url": "LLM endpoint URL",
-            "llm_api_key": "LLM API key",
-            "llm_model": "LLM model",
+            "stt_base_url": "Transcription endpoint",
+            "stt_api_key": "Transcription API key",
+            "stt_model": "Transcription model",
+            "llm_base_url": "Summaries & chat endpoint",
+            "llm_api_key": "Summaries & chat API key",
+            "llm_model": "Summaries & chat model",
             "voice_recognition_enabled": "Remember speakers",
             "voice_recognition_report": "Speaker recognition evaluation report",
             "diarization_enabled": "Enable speaker detection",

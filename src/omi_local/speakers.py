@@ -15,8 +15,8 @@ import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .conversation_state import conversations
-from .domain import project_events, stamp, utc_now
+from .conversation_state import conversations, meeting_timeline
+from .domain import stamp, utc_now
 
 if TYPE_CHECKING:
     from .service import Memory
@@ -92,7 +92,7 @@ class Speakers:
         source = next((r for r in rows if r["id"] == key), None) if kind == "source" else None
         if kind == "source" and source is None:
             raise HTTPException(404, "Recording not found")
-        meetings = project_events(snapshot["events"], utc_now())["meetings"]
+        meetings = meeting_timeline(snapshot, utc_now())["meetings"]
         meeting = next((m for m in meetings if (
             m["id"] == key if kind == "meeting" else
             m["started_at"] < source["ended_at"]
@@ -125,7 +125,7 @@ class Speakers:
             left, right = rows[0]["started_at"], rows[-1]["ended_at"]
         else:
             groups = conversations(
-                snapshot, utc_now(), self.memory.settings.recap_quiet_minutes * 60,
+                snapshot, utc_now(), 5 * 60,
             )
             group = next((g for g in groups if any(r["id"] == key for r in g.sources)), None)
             rows = group.sources if group else [source]

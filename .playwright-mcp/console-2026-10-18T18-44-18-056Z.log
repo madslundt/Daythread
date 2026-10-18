@@ -1,0 +1,2 @@
+[  289686ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/node_modules/.vite/deps/react-dom_client.js:15804
+[  320188ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:1082

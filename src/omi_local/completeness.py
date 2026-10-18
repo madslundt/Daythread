@@ -326,14 +326,23 @@ class CompletenessStore:
             ).fetchone()
         return dict(row) | {"selection_observed_at": stamp(utc_now())}
 
-    def _save_evidence(self, db, output_id: str, evidence: dict, sources: list[dict]):
+    def _save_evidence(
+        self, db, output_id: str, evidence: dict, sources: list[dict], summary: str | None = None,
+    ):
         self.verify_sources(db, sources)
         db.execute("INSERT INTO output_evidence VALUES(?,?)", (output_id, json.dumps(evidence)))
 
-    def save_evidence(self, output_id: str, evidence: dict, sources: list[dict]):
+        if summary is not None:
+            db.execute("INSERT INTO summary_outputs VALUES(?,?)", (output_id, summary))
+            db.executemany("INSERT OR IGNORE INTO summary_output_sources VALUES(?,?)",
+                           [(output_id, source["id"]) for source in sources])
+
+    def save_evidence(
+        self, output_id: str, evidence: dict, sources: list[dict], summary: str | None = None,
+    ):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            self._save_evidence(db, output_id, evidence, sources)
+            self._save_evidence(db, output_id, evidence, sources, summary)
 
     def evidence(self, output_id: str) -> dict | None:
         with self.connect() as db:

@@ -73,8 +73,6 @@ export function CaptureStatus({
           <p className="caption">
             {t("Latest captured endpoint:")}{" "}{when(status.ingestion?.last_captured_at)}
             {t(". Backlog uploads can arrive later; this does not establish continuous capture.")}{" "}</p>
-          <p className="caption">
-            {t("Shared pause requested:")}{" "}{status.capture_paused ? t("yes") : t("no")}{t(". Observed phone state is separate.")}{" "}</p>
           {processing ? (
             <>
               <p>
@@ -203,7 +201,7 @@ export function RecordingActivity({ status, error }: { status?: Status; error?: 
       {recording.length ? recording.map((phone) => <p className="recording-live" key={phone.phone_id}>
         <span className="status-dot online" aria-hidden="true" />
         {phone.capture_source === "omi" ? t("Recording from Omi") : phone.capture_source === "phone" ? t("Recording from phone microphone") : t("Recording in progress")}
-      </p>) : <p className="caption">{stale && status ? t("Status needs a refresh") : phones.some((phone) => phone.capture_state === "paused") ? t("Capture paused") : t("Live capture unknown")}</p>}
+      </p>) : <p className="caption">{stale && status ? t("Status needs a refresh") : phones.some((phone) => phone.capture_state === "paused") ? t("Recording stopped on iPhone") : t("Live capture unknown")}</p>}
       {processing ? <p className="activity-counts">{t("Recordings: {queued} queued · {processing} processing", { queued: processing.queued, processing: processing.transcribing })}</p> : null}
       {waiting > 0 ? <p className="caption">{t("{count} recordings waiting to upload", { count: waiting })}</p> : null}
       {!stale && processing && status?.worker_running ? <ProcessingProgress processing={processing} /> : null}

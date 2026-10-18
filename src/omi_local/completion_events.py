@@ -77,6 +77,9 @@ def job_notice(memory, job: dict, result: dict) -> tuple[str, str]:
     if kind == "recap":
         return (f"Recap ready · {params['day']}",
                 preview(result.get("summary", "")) or "Your recording coverage is ready to view.")
+    if kind == "summary_translation":
+        language = language_label(result.get("language", params.get("language", "")) or "")
+        return (f"Translation ready · {language}", f"Summary is available in {language}.")
     if kind == "translation":
         source = memory.store.get_audio(params["source_id"]) or {}
         language = language_label(result.get("language", params.get("language", "")) or "")

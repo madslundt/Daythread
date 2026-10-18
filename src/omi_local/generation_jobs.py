@@ -13,6 +13,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
 from .recording_topics import topic_fingerprint
+from .summary_translation import generate_summary_translation
 from .translation import generate_translation
 
 logger = logging.getLogger(__name__)
@@ -76,19 +77,25 @@ class TranslationParameters(Parameters):
         return self
 
 
+class SummaryTranslationParameters(Parameters):
+    output_id: UUID
+    language: str | None = Field(default=None, max_length=35)
+
+
 class MeetingParameters(Parameters):
     meeting_id: UUID
 
 
 class GenerationRequest(Parameters):
     id: UUID
-    kind: Literal["rewind", "recap", "translation", "meeting_recap"]
+    kind: Literal["rewind", "recap", "translation", "summary_translation", "meeting_recap"]
     parameters: dict
 
 
 PARAMETERS = {
     "rewind": RewindParameters, "recap": RecapParameters,
-    "translation": TranslationParameters, "meeting_recap": MeetingParameters,
+    "translation": TranslationParameters, "summary_translation": SummaryTranslationParameters,
+    "meeting_recap": MeetingParameters,
 }
 
 
@@ -132,7 +139,8 @@ class GenerationJobs:
                 queued += row["n"]
             else:
                 running += row["n"]
-                stage = "translating" if row["kind"] == "translation" else "summarizing"
+                stage = ("translating" if row["kind"] in {"translation", "summary_translation"}
+                         else "summarizing")
                 stages[stage] = stages.get(stage, 0) + row["n"]
         for stage, count in self.memory.background_activity.copy().items():
             if count:
@@ -179,6 +187,10 @@ class GenerationJobs:
             )
         if kind == "recap":
             return await memory.recap(date.fromisoformat(params["day"]))
+        if kind == "summary_translation":
+            return await generate_summary_translation(
+                memory, UUID(params["output_id"]), params["language"],
+            )
         if kind == "translation":
             return await generate_translation(
                 memory, UUID(params["source_id"]), params["start_offset"], params["end_offset"],
@@ -203,6 +215,11 @@ class GenerationJobs:
                         "transcript_version": translation.get("transcript_version")}]
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if job["kind"] == "summary_translation":
+                source = self.store._summary_source(db, job["parameters"]["output_id"])
+                if source["summary_version"] != result["summary_version"]:
+                    raise EvidenceChanged("Summary changed; try again")
+                sources = source["sources"]
             for source in sources:
                 current = db.execute(
                     "SELECT transcript_version FROM audio WHERE id=?", (source["id"],)

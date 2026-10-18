@@ -6,7 +6,8 @@ import { Icon } from "./Icon";
 import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
 import type { MemoryWindow } from "./types";
-import { EmptyState, ErrorState, Notice, RichText } from "./UI";
+import { EmptyState, ErrorState, Notice } from "./UI";
+import { SummaryTranslation } from "./SummaryTranslation";
 
 export type RewindIntent = { minutes: number; id: number };
 
@@ -130,7 +131,7 @@ export function Rewind({
               {result.summary ? (
                 <section className="rewind-summary">
                   <h2>{t("What you heard")}</h2>
-                  <RichText text={result.summary} />
+                  <SummaryTranslation outputId={result.output_id} original={result.summary} />
                   <EvidenceFeedback outputId={result.output_id} evidence={result.evidence} outputText={result.summary} />
                 </section>
               ) : summarize ? (

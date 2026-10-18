@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .service import Memory
 
 logger = logging.getLogger(__name__)
-VERSION = "recording-topics-2-broad-subjects"
+VERSION = "recording-topics-3-source-language"
 MAX_INPUT = 12000
 
 SCHEMA = """

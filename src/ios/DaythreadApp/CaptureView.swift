@@ -20,7 +20,7 @@ struct CaptureView: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(L10n.key(model.bluetooth.status)).font(.headline)
-                        Text(model.bluetooth.connected ? (!model.bluetooth.captureEnabled ? L10n.text("Capture is paused. Resume when you’re ready.") : L10n.text("Audio is saved on this iPhone before uploading.")) : L10n.text("Keep your Omi nearby and powered on."))
+                        Text(model.bluetooth.connected ? (!model.bluetooth.captureEnabled ? L10n.text("Recording is stopped on this iPhone.") : L10n.text("Audio is saved on this iPhone before uploading.")) : L10n.text("Keep your Omi nearby and powered on."))
                             .font(.subheadline).foregroundStyle(.secondary)
                     }.fixedSize(horizontal: false, vertical: true)
                 }.padding(.vertical, 6)
@@ -34,7 +34,7 @@ struct CaptureView: View {
                         if model.bluetooth.captureEnabled { model.disableMicrophone() }
                         else { model.startManualPendant() }
                     } label: {
-                        Label(!model.bluetooth.captureEnabled ? L10n.text("Resume capture") : L10n.text("Pause capture"), systemImage: !model.bluetooth.captureEnabled ? "record.circle" : "pause.circle")
+                        Label(!model.bluetooth.captureEnabled ? L10n.text("Start recording") : L10n.text("Stop recording"), systemImage: !model.bluetooth.captureEnabled ? "record.circle" : "stop.circle")
                     }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("capture.toggle")
                 } else {
                     Button { model.bluetooth.scan() } label: { Label(L10n.text("Find Omi"), systemImage: "dot.radiowaves.left.and.right") }
@@ -45,6 +45,8 @@ struct CaptureView: View {
                     }
                     if model.bluetooth.scanning { ProgressView(L10n.text("Scanning for nearby pendants")) }
                 }
+            } header: { Text(L10n.text("Omi pendant · this iPhone")) } footer: {
+                Text(L10n.text("These controls affect recordings on this iPhone. Saved uploads and other devices continue."))
             }
             Section {
                 Button { model.event(.mark) } label: {
@@ -53,14 +55,18 @@ struct CaptureView: View {
                 Button { model.event(.meetingToggle) } label: {
                     Label(model.meetingStart == nil ? L10n.text("Start meeting hint") : L10n.text("End meeting hint"), systemImage: "person.2")
                 }.accessibilityIdentifier("hint.meeting")
-                if model.meetingStart != nil, let deadline = model.meetingDeadline {
+                if model.meetingStart != nil {
                     Text(model.meetingQualifiesAt.map { model.now < $0 } == true ? L10n.text("Provisional meeting · short meetings are ignored") : L10n.text("Meeting hint active"))
                         .font(.callout).foregroundStyle(Theme.accent)
-                    LabeledContent(L10n.text("Auto-stop"), value: deadline.formatted(.dateTime.locale(L10n.locale).hour().minute()))
+                    Text(L10n.text("End the meeting anytime. Recording continues after the meeting marker ends."))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.notice.isEmpty { Text(L10n.key(model.notice)).font(.callout).foregroundStyle(.secondary) }
             } header: { Text(L10n.text("Nearby speech")) } footer: {
-                Text(L10n.text("Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. \(model.gesture == .doubleClick ? L10n.text("Double-click") : L10n.text("Verified hold")) toggles a meeting."))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.text("Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. \(model.gesture == .doubleClick ? L10n.text("Double-click") : L10n.text("Verified hold")) toggles a meeting."))
+                    Text(L10n.text("Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually."))
+                }
             }
             Section {
                 Text(L10n.key(model.serverStatus)).font(.callout).textSelection(.enabled)
@@ -99,7 +105,7 @@ struct CaptureView: View {
                     Text(L10n.text("A saved archive or connection does not establish continuous capture. Backend values show the timestamp of the last successful check.")).font(.caption).foregroundStyle(.secondary)
                 }
                 NavigationLink(L10n.text("Feedback and repairs")) { FeedbackReviewView() }
-            } header: { Text(L10n.text("Home-core")) } footer: { Text(L10n.text("Unsent audio stays on this iPhone. Synced audio remains available for local rewind for one hour. Capture stops if the storage budget fills.")) }
+            } header: { Text(L10n.text("Your server")) } footer: { Text(L10n.text("Unsent audio stays on this iPhone. Synced audio remains available for local rewind for one hour. Capture stops if the storage budget fills.")) }
             if !model.recentGaps.isEmpty {
                 Section(L10n.text("Recent capture gaps")) {
                     ForEach(model.recentGaps) { gap in

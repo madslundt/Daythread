@@ -14,9 +14,15 @@ public struct OutboxItem: Codable, Identifiable {
     public var codec: Int?
     public var clock: CaptureClock?
     public var action: SemanticAction?
+    public var meetingIntent: String?
+    public var meetingID: UUID?
     public var meetingMaxMinutes: Int?
     public var meetingMinSeconds: Int?
     public var markerCooldownSeconds: Int?
+    /// Archived cooldowns remain receipt metadata; current flag behavior is fixed.
+    public var flagAvailableAgainAt: Date? {
+        action == .mark ? capturedAt.addingTimeInterval(60) : nil
+    }
     public var reason: String?
     public var cause: String?
     public var captureState: String?
@@ -169,8 +175,11 @@ public final class DurableStore {
     }
 
     @discardableResult
-    public func event(deviceID: String, at date: Date, action: SemanticAction, meetingMaxMinutes: Int = 120, meetingMinSeconds: Int = 60, markerCooldownSeconds: Int = 60) throws -> UUID {
+    public func event(deviceID: String, at date: Date, action: SemanticAction, meetingMaxMinutes: Int = 120, meetingMinSeconds: Int = 60, markerCooldownSeconds: Int = 60, meetingIntent: String? = nil, meetingID: UUID? = nil) throws -> UUID {
         var item = OutboxItem(id: UUID(), kind: .event, deviceID: deviceID, capturedAt: date)
+        // Flags never carry meeting targets, even while a meeting is active.
+        item.meetingIntent = action == .meetingToggle ? meetingIntent : nil
+        item.meetingID = item.meetingIntent == "end" ? meetingID : nil
         item.action = action; item.meetingMaxMinutes = meetingMaxMinutes; item.ready = true
         item.meetingMinSeconds = meetingMinSeconds; item.markerCooldownSeconds = markerCooldownSeconds
         return try appendMetadata(item)
@@ -201,6 +210,10 @@ public final class DurableStore {
         } else {
             guard let endedAt = item.endedAt, let reason = item.reason else { throw CaptureError.corruptedStore }
             body = ["gap_id": item.id.uuidString, "device_id": item.deviceID, "started_at": Self.stamp(item.capturedAt), "ended_at": Self.stamp(endedAt), "reason": reason]
+        }
+        if item.kind == .event {
+            if let intent = item.meetingIntent { body["meeting_intent"] = intent }
+            if let id = item.meetingID { body["meeting_id"] = id.uuidString }
         }
         if item.kind == .gap, let cause = item.cause { body["cause"] = cause }
         return try JSONSerialization.data(withJSONObject: body, options: .sortedKeys)

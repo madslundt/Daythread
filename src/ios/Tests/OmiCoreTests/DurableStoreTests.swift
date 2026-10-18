@@ -332,3 +332,52 @@ extension DurableStoreTests {
         XCTAssertLessThan(store.storageBytes,store.maximumBytes + 65_536)
     }
 }
+
+extension DurableStoreTests {
+    func testQueuedMeetingIntentsKeepTheirTargetAfterRestart() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory)
+        let startID = try store.event(deviceID: "pendant", at: Date(), action: .meetingToggle, meetingIntent: "start")
+        let endID = try store.event(deviceID: "pendant", at: Date().addingTimeInterval(90), action: .meetingToggle, meetingIntent: "end", meetingID: startID)
+        let restored = try DurableStore(directory: directory)
+        let start = try XCTUnwrap(restored.items.first { $0.id == startID })
+        let end = try XCTUnwrap(restored.items.first { $0.id == endID })
+        XCTAssertEqual(start.meetingIntent, "start")
+        XCTAssertNil(start.meetingID)
+        XCTAssertEqual(end.meetingIntent, "end")
+        XCTAssertEqual(end.meetingID, startID)
+        let request = try JSONSerialization.jsonObject(with: Data(contentsOf: restored.file(endID, extension: "json"))) as? [String: Any]
+        XCTAssertEqual(request?["meeting_intent"] as? String, "end")
+        XCTAssertEqual(request?["meeting_id"] as? String, startID.uuidString)
+    }
+}
+
+
+extension DurableStoreTests {
+    func testFlagQueuedDuringMeetingDoesNotSendMeetingTarget() throws {
+        let store = try DurableStore(directory: folder())
+        let activeMeetingID = try store.event(deviceID: "pendant", at: Date(), action: .meetingToggle, meetingIntent: "start")
+        let flagID = try store.event(deviceID: "pendant", at: Date(), action: .mark, meetingID: activeMeetingID)
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.file(flagID, extension: "json"))) as? [String: Any])
+        XCTAssertEqual(request["action"] as? String, "mark")
+        XCTAssertNil(request["meeting_intent"])
+        XCTAssertNil(request["meeting_id"])
+        let restored = try DurableStore(directory: store.directory)
+        let flag = try XCTUnwrap(restored.items.first { $0.id == flagID })
+        XCTAssertNil(flag.meetingIntent)
+        XCTAssertNil(flag.meetingID)
+    }
+}
+
+
+extension DurableStoreTests {
+    func testLegacyFlagCooldownDoesNotOverrideFixedOneMinuteWait() {
+        let at = Date(timeIntervalSince1970: 1000)
+        var oldFlag = OutboxItem(id: UUID(), kind: .event, deviceID: "pendant", capturedAt: at)
+        oldFlag.action = .mark; oldFlag.markerCooldownSeconds = 3600
+        XCTAssertEqual(oldFlag.flagAvailableAgainAt, at.addingTimeInterval(60))
+        oldFlag.markerCooldownSeconds = 0
+        XCTAssertEqual(oldFlag.flagAvailableAgainAt, at.addingTimeInterval(60))
+        oldFlag.action = .meetingToggle
+        XCTAssertNil(oldFlag.flagAvailableAgainAt)
+    }
+}

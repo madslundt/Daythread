@@ -192,7 +192,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
     <p className="caption">{t("Voice profiles stay in the selected archive. A suggestion never changes a name until you confirm it.")}</p>
     {voiceError ? <ErrorState message={voiceError} retry={onRetry} /> : null}
     {onForget ? <VoiceProfilesManager voices={voices} busy={busy || loading} onForget={onForget} /> : null}
-    {data && !data.configured ? <p className="caption">{t("Enable speaker detection and configure your local speaker service in")}{" "}<a href="/settings/server">{t("Settings → Models & server → Speaker detection")}</a>.</p> : null}
+    {data && !data.configured ? <p className="caption">{t("Enable speaker detection and configure your local speaker service in")}{" "}<a href="/settings/server">{t("Settings → Advanced → Speaker detection")}</a>.</p> : null}
     {data && !data.audio_available ? <p className="caption">{t("Original audio is unavailable. Speaker detection and speaker-only playback require retained audio.")}</p> : null}
     {data && data.state !== "idle" ? <p className="caption">{t("Detecting again replaces speaker labels, names and turn assignments.")}</p> : null}
     {stale ? <p className="caption" role="status">{t("The recordings or transcript changed. Detect speakers again before editing labels or listening to their turns.")}</p> : null}

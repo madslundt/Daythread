@@ -1,3 +1,4 @@
+import { languageCodes } from "./languages";
 import { request } from "./api";
 import { profileScope } from "./profiles";
 import { interfaceLanguage } from "./i18n";
@@ -6,11 +7,18 @@ export type TranscriptTranslationData = {
   language: string;
   available_languages: string[];
   redundant_languages?: string[];
+  language_analysis?: {
+    dominant_language: string | null;
+    dominant_language_share: number;
+    language_shares: Record<string, number>;
+  };
+  recommended_language?: string | null;
   already_in_target_language: boolean;
   translation: {
     text: string;
     language: string;
-    transcript_version: string;
+    transcript_version?: string;
+    summary_version?: string;
     created_at: string;
   } | null;
 };
@@ -27,7 +35,8 @@ export class TranscriptTranslationRequests {
   private controller?: AbortController;
   private readonly scope = profileScope();
 
-  constructor(private readonly sourceId: string, private readonly passage?: TranslationPassage) {}
+  constructor(private readonly sourceId: string, private readonly passage?: TranslationPassage,
+    private readonly content: "transcript" | "summary" = "transcript") {}
 
   cancel() {
     this.controller?.abort();
@@ -46,7 +55,7 @@ export class TranscriptTranslationRequests {
       if (language) parameters.set("language", language);
       const query = parameters.size ? `?${parameters}` : "";
       const result = await request<TranscriptTranslationData>(
-        `/v1/transcripts/${encodeURIComponent(this.sourceId)}/translation${query}`,
+        `/v1/${this.content === "summary" ? "outputs" : "transcripts"}/${encodeURIComponent(this.sourceId)}/translation${query}`,
         { method, signal: controller.signal }, this.scope,
       );
       return controller.signal.aborted ? undefined : result;
@@ -57,10 +66,29 @@ export class TranscriptTranslationRequests {
   }
 }
 
+const languageLabels = new Map<string, string>();
 export function translationLanguageLabel(code: string): string {
+  const locale = interfaceLanguage();
+  const key = `${locale}:${code}`;
+  const cached = languageLabels.get(key);
+  if (cached) return cached;
+  let label = code;
+  try { label = new Intl.DisplayNames([locale], { type: "language" }).of(code) || code; } catch { /* Preserve unknown language codes. */ }
+  languageLabels.set(key, label);
+  return label;
+}
+
+const translationTargetKey = "daythread:translation-language:v1";
+
+export function preferredTranslationLanguage(): string {
   try {
-    return new Intl.DisplayNames([interfaceLanguage()], { type: "language" }).of(code) || code;
-  } catch {
-    return code;
-  }
+    const saved = localStorage.getItem(translationTargetKey);
+    if (saved && languageCodes.includes(saved)) return saved;
+  } catch { /* Translation works when browser storage is unavailable. */ }
+  return languageCodes.includes(interfaceLanguage()) ? interfaceLanguage() : "en";
+}
+
+export function rememberTranslationLanguage(code: string) {
+  if (!languageCodes.includes(code)) return;
+  try { localStorage.setItem(translationTargetKey, code); } catch { /* Keep the choice for this visit. */ }
 }

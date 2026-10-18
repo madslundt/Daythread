@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omi_local.api import create_app
+from omi_local.configuration import RETIRED_FIELDS
 from omi_local.settings import DEPLOYMENT_FIELDS, Settings
 
 
@@ -37,7 +38,7 @@ def test_every_setting_is_editable_and_read_responses_never_reveal_keys(settings
         value = response.json()
         assert response.headers["cache-control"] == "no-store"
         assert {field["key"] for field in value["fields"]} == (
-            set(Settings.model_fields) - DEPLOYMENT_FIELDS
+            set(Settings.model_fields) - DEPLOYMENT_FIELDS - RETIRED_FIELDS
         )
         assert value["secrets"]["inference_token"]
         assert value["secrets"]["stt_routes.da.token"]

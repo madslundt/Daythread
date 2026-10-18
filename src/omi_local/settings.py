@@ -181,6 +181,7 @@ class Settings(BaseSettings):
     )
     translation_languages: list[str] = Field(default_factory=lambda: ["en"])
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
+    meeting_quiet_minutes: int = Field(default=10, ge=1, le=30)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)
     marker_after_seconds: int = Field(default=60, ge=0, le=600)
     marker_cooldown_seconds: int = Field(default=60, ge=0, le=3600)
@@ -272,12 +273,6 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def meeting_period(self):
-        if self.meeting_min_seconds > self.meeting_max_minutes * 60:
-            raise ValueError("Meeting minimum must not exceed the automatic stop duration")
-        return self
-
-    @model_validator(mode="after")
     def embedding_contract(self):
         if self.embedding_enabled and not (
             self.embedding_model.strip()
@@ -310,7 +305,9 @@ class Settings(BaseSettings):
 
     @property
     def hint_policy(self) -> HintPolicy:
-        return HintPolicy(**{key: getattr(self, key) for key in HintPolicy.model_fields})
+        # Legacy fields remain readable for old clients and queued receipts;
+        # flag context and accidental-gesture rules are fixed product policy.
+        return HintPolicy(meeting_quiet_minutes=self.meeting_quiet_minutes)
 
     @field_validator("timezone")
     @classmethod
@@ -336,6 +333,7 @@ RUNTIME_FIELDS = (
     "audio_forwarding_enabled",
     "timezone",
     "meeting_max_minutes",
+    "meeting_quiet_minutes",
     "meeting_min_seconds",
     "meeting_context_seconds",
     "marker_context_seconds",

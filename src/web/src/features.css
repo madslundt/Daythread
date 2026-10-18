@@ -418,3 +418,6 @@
 .local-recording > p { margin: 0 0 12px; }
 .local-recording audio { display: block; width: min(100%, 480px); margin: 12px 0; }
 @media (max-width: 760px) { .browser-recorder { padding: 18px; } }
+
+.translation-language-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; font-size: 12px; color: var(--secondary); }
+.translation-language-picker input, .translation-language-picker select { width: auto; max-width: 100%; min-height: 40px; flex: 1 1 150px; }

@@ -134,9 +134,9 @@ struct ServerConfigurationView: View {
         let _ = interfaceLocale
         Form {
             Section {
-                Text(L10n.text("STT and LLM connections are independent. Each can use a different endpoint, API key, and model."))
+                Text(L10n.text("Transcription and summaries can use different providers. Each has its own address, API key and model."))
                     .font(.callout).foregroundStyle(.secondary)
-                Text(L10n.text("Shared with the web app. Keys are write-only and stay on home-core."))
+                Text(L10n.text("Shared with the web app. API keys are stored on your server and cannot be read back."))
                     .font(.callout).foregroundStyle(.secondary)
                 if let snapshot, !snapshot.pending_restart.isEmpty {
                     Text(L10n.text("Saved changes awaiting backend restart: \(snapshot.pending_restart.joined(separator: ", "))."))
@@ -158,7 +158,7 @@ struct ServerConfigurationView: View {
                                 try connectionRequest(provider: provider, includeModel: includeModel)
                             }
                         } header: {
-                            Text(provider == "stt" ? L10n.text("Speech-to-text (STT)") : L10n.text("Language model (LLM)"))
+                            Text(provider == "stt" ? L10n.text("Transcription") : L10n.text("Summaries & chat"))
                         } footer: {
                             Text(provider == "stt" ? L10n.text("Transcribes your recordings into text. Enter a local or hosted endpoint and its credentials.") : L10n.text("Answers questions and generates summaries. Enter a local or hosted endpoint and its credentials."))
                         }.disabled(busy)
@@ -174,7 +174,7 @@ struct ServerConfigurationView: View {
                 Section {
                     Button(L10n.text("Save server settings")) { Task { await save(snapshot) } }
                         .disabled(busy).accessibilityIdentifier("settings.saveServer")
-                    Text(L10n.text("Settings marked restart required take effect the next time home-core starts."))
+                    Text(L10n.text("Settings marked restart required take effect the next time your server starts."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -192,8 +192,37 @@ struct ServerConfigurationView: View {
             if !result.contains(field.group) { result.append(field.group) }
         }
     }
+    // New backend fields require an explicit product decision before appearing here.
+    // Import and forwarding credentials are managed in the native connections page.
+    private let advancedKeys: Set<String> = [
+        "stt_base_url", "stt_api_key", "stt_model", "stt_routes", "stt_chunk_seconds", "stt_filter_speech",
+        "stt_enhancement_mode", "stt_enhancement_timeout_seconds", "stt_segment_timestamps",
+        "llm_base_url", "llm_api_key", "llm_model", "llm_revision", "llm_routes", "llm_enable_thinking",
+        "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
+        "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
+        "embedding_dimension", "embedding_timeout_seconds", "embedding_min_score",
+        "diarization_enabled", "diarization_base_url", "diarization_timeout_seconds",
+        "voice_recognition_enabled", "voice_recognition_report", "worker_enabled",
+    ]
+    private func isVisible(_ field: ServerSettingField) -> Bool {
+        let key = field.key
+        guard advancedKeys.contains(key) else { return false }
+        if key.hasPrefix("embedding_"), key != "embedding_enabled" {
+            return values["embedding_enabled"] == .bool(true)
+        }
+        if key.hasPrefix("diarization_"), key != "diarization_enabled" {
+            return values["diarization_enabled"] == .bool(true)
+        }
+        if key == "voice_recognition_enabled" { return values["diarization_enabled"] == .bool(true) }
+        if key == "voice_recognition_report" {
+            return values["diarization_enabled"] == .bool(true) && values["voice_recognition_enabled"] == .bool(true)
+        }
+        if key == "chat_query_expansion_timeout_seconds" { return values["chat_query_expansion"] == .bool(true) }
+        if key == "stt_enhancement_timeout_seconds" { return values["stt_enhancement_mode"] != .string("off") }
+        return true
+    }
     private func matches(_ field: ServerSettingField) -> Bool {
-        search.isEmpty || "\(field.label) \(field.key) \(field.description) \(L10n.key(field.label)) \(L10n.key(field.description))".localizedCaseInsensitiveContains(search)
+        isVisible(field) && (search.isEmpty || "\(field.label) \(field.key) \(field.description) \(L10n.key(field.label)) \(L10n.key(field.description))".localizedCaseInsensitiveContains(search))
     }
     private func valueBinding(_ key: String) -> Binding<String> {
         Binding(get: {
@@ -207,16 +236,7 @@ struct ServerConfigurationView: View {
     @ViewBuilder
     private func setting(_ field: ServerSettingField, snapshot: ServerConfiguration) -> some View {
         let title = L10n.key(field.label) + (field.restart_required ? L10n.text(" · restart required") : "")
-        if field.key == "translation_languages" {
-            NavigationLink {
-                TranslationLanguageSelectionView(languages: Binding(
-                    get: { values[field.key]?.array.map(\.text) ?? [] },
-                    set: { values[field.key] = .array($0.map(JSONValue.string)); status = nil }
-                ))
-            } label: {
-                LabeledContent(title, value: L10n.text("\(values[field.key]?.array.count ?? 0) selected"))
-            }
-        } else if field.kind == "routes" {
+        if field.kind == "routes" {
             Text(L10n.key(field.label)).font(.headline)
             ForEach(routes[field.key] ?? []) { row in
                 ServerRouteControl(route: Binding(get: {
@@ -322,7 +342,7 @@ struct ServerConfigurationView: View {
         busy = true; error = nil; status = nil; defer { busy = false }
         do {
             var changes: [String: JSONValue] = [:]
-            for field in snapshot.fields {
+            for field in snapshot.fields where isVisible(field) {
                 var value = values[field.key] ?? .null
                 if field.kind == "secret" {
                     guard let edited = try (secrets[field.key] ?? ServerSecretEdit()).change() else { continue }
@@ -351,7 +371,7 @@ struct ServerConfigurationView: View {
             if changes.isEmpty { status = L10n.text("Server settings are up to date"); return }
             let payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(JSONValue.object(changes)))
             let result = try await model.client().decoded("v1/configuration", method: "PATCH", body: ["revision": snapshot.revision, "changes": payload], as: ServerConfiguration.self)
-            apply(result); status = L10n.text("Server settings saved on home-core")
+            apply(result); status = L10n.text("Server settings saved")
             await model.refreshStatus()
         } catch { self.error = L10n.error(error) }
     }

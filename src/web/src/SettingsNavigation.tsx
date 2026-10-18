@@ -2,21 +2,20 @@ import { t, source } from "./i18n";
 import { Icon, type IconName } from "./Icon";
 
 const categories: { id: SettingsSection; label: string; detail: string; icon: IconName }[] = [
-  { id: "account", label: source("Daythread account"), detail: source("Optional hosting, credits & AI providers"), icon: "people" },
-  { id: "usage", label: source("Audio & credit usage"), detail: source("Processed minutes & measured credits"), icon: "clock" },
-  { id: "locations", label: source("Location zones"), detail: source("Home, work, gym & other places"), icon: "home" },
-  { id: "profiles", label: source("Profiles"), detail: source("Choose, create & edit profiles"), icon: "people" },
-  { id: "general", label: source("Daily preferences"), detail: source("Appearance, recording & recaps"), icon: "home" },
-  { id: "gestures", label: source("Flags & meetings"), detail: source("Important moments & context"), icon: "star" },
-  { id: "storage", label: source("Storage & privacy"), detail: source("Audio & transcript retention"), icon: "inbox" },
-  { id: "connections", label: source("Connections"), detail: source("iPhone, devices & imports"), icon: "phone" },
-  { id: "server", label: source("Models & server"), detail: source("STT & LLM endpoints, keys & models"), icon: "settings" },
+  { id: "general", label: source("General"), detail: source("Appearance, language & timezone"), icon: "home" },
+  { id: "connections", label: source("Recording & devices"), detail: source("Connect devices & import recordings"), icon: "phone" },
+  { id: "storage", label: source("Storage & privacy"), detail: source("Retention, access & location zones"), icon: "inbox" },
+  { id: "account", label: source("Account & profiles"), detail: source("Profiles, hosting & usage"), icon: "people" },
+  { id: "server", label: source("Advanced"), detail: source("Your server & model services"), icon: "settings" },
 ];
-export type SettingsSection = "account" | "profiles" | "general" | "gestures" | "storage" | "connections" | "server" | "locations" | "usage";
+export type SettingsSection = "account" | "general" | "storage" | "connections" | "server";
 
 export function sectionFromPath(managed = false): SettingsSection {
   const value = window.location.pathname.split("/")[2];
   if (managed && value === "server") return "account";
+  if (value === "usage" || value === "profiles") return "account";
+  if (value === "locations") return "storage";
+  if (value === "gestures") return "connections";
   return categories.find((category) => category.id === value)?.id || "general";
 }
 
@@ -26,8 +25,8 @@ const searchTerms: Record<string, string> = {
   locations: source("location zones home work gym places coordinates radius gps"),
   profiles: source("profiles profile archive active select selection choose switch name rename edit create new manage"),
   appearance: source("daily preferences appearance theme system light dark device display"),
-  daily: source("daily preferences recording capture pause language translation translate whitelist allowed transcription summary summaries automatic home timezone time zone diary daily recap time hour schedule daytime interval refresh evening silence noise quiet conversation grace wait"),
-  gestures: source("flags meetings gestures important moments context speech before after cooldown time between minimum length maximum duration automatically end auto stop"),
+  daily: source("language transcription summary summaries translation languages automatic home timezone time zone diary daily recap"),
+  meetings: source("meeting quiet silence automatic end waiting minutes"),
   storage: source("storage privacy local archive retention keep original audio transcripts days delete remove expire history sign in access"),
   connections: source("connections omi plaud pocket apple sony zoom devices brands iphone bluetooth pendant companion cloud import conversations transcripts official app audio forwarding receiver webhook"),
 };

@@ -196,12 +196,12 @@ def test_malformed_query_metadata(receiver, params):
     )
 
 
-def test_token_enablement_pause_and_sanitized_settings(receiver, tmp_path):
+def test_token_enablement_retired_pause_and_sanitized_settings(receiver, tmp_path):
     assert receiver.post(PATH, content=PCM).status_code == 401
     assert TOKEN not in receiver.get("/v1/settings").text
     assert TOKEN not in receiver.get(PATH + "/status").text
     assert receiver.patch("/v1/settings", json={"capture_paused": True}).status_code == 200
-    assert send(receiver).status_code == 409
+    assert send(receiver).status_code == 200  # Legacy shared pause no longer controls devices.
     receiver.patch(
         "/v1/settings", json={"capture_paused": False, "audio_forwarding_enabled": False}
     )

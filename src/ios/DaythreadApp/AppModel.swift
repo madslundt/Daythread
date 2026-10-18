@@ -22,7 +22,7 @@ final class AppModel {
             && (!usesManagedHosting || managedAccount.account?.hosting_active == true)
     }
     private var pendantCaptureAllowed: Bool {
-        liveCaptureAllowed && (!recordingSchedule.scheduled || recordingSchedule.activeSource == "omi")
+        liveCaptureAllowed && recordingSchedule.activeSource == "omi"
     }
     func setRecordingSchedule(_ policy: RecordingSchedule) {
         let changed = recordingSchedule != policy
@@ -42,27 +42,17 @@ final class AppModel {
         setRecordingSchedule(policy)
     }
     func startManualRecording() {
-        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled; policy.manualSource = "phone"
-        // Explicit manual recording also clears the existing shared capture pause.
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = true; policy.manualSource = "phone"
+        // Explicit recording clears a previous failure on this iPhone.
         if paused || captureFailure != nil { setPaused(false) }
         setRecordingSchedule(policy)
         stopPlayback()
         Task { await microphone.start(archiveIdentity: archiveIdentity) }
     }
     func startManualPendant() {
-        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled; policy.manualSource = "omi"
+        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = true; policy.manualSource = "omi"
         if paused || captureFailure != nil { setPaused(false) }
         setRecordingSchedule(policy)
-    }
-    func enableMicrophone() {
-        var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = policy.scheduled
-        policy.manualSource = policy.source
-        if paused || captureFailure != nil { setPaused(false) }
-        setRecordingSchedule(policy)
-        if policy.source == "phone" {
-            stopPlayback()
-            Task { await microphone.start(archiveIdentity: archiveIdentity) }
-        }
     }
     func applyRecordingSchedule() {
         armScheduleTimer()
@@ -77,7 +67,7 @@ final class AppModel {
         if bluetooth.captureEnabled != pendant { bluetooth.captureEnabled = pendant }
         updateLocationCapture()
         microphone.captureDeadline = allowed && recordingSchedule.scheduled && !recordingSchedule.manualOverride ? scheduledTransition : nil
-        microphone.captureAllowed = allowed && (!recordingSchedule.scheduled || recordingSchedule.activeSource == "phone")
+        microphone.captureAllowed = allowed && recordingSchedule.activeSource == "phone"
         if !allowed { scheduleAttempted = false; return }
         guard recordingSchedule.scheduled, !recordingSchedule.manualOverride, recordingSchedule.source == "phone",
               microphone.active == nil, !microphone.requestingPermission, !scheduleAttempted,
@@ -215,11 +205,10 @@ final class AppModel {
     var archiveRevision = ""
     var serverTimeZoneIdentifier: String?
     var gesture: MeetingGesture { didSet { UserDefaults.standard.set(gesture.rawValue, forKey: "meetingGesture") } }
-    var meetingMinutes: Int { didSet { UserDefaults.standard.set(meetingMinutes, forKey: "meetingMinutes") } }
     var paused: Bool {
         didSet {
             UserDefaults.standard.set(paused, forKey: "capturePaused")
-            if paused != oldValue { pauseRevision = UUID(); updateLocationCapture() }
+            if paused != oldValue { updateLocationCapture() }
         }
     }
     var uploadWiFiOnly: Bool {
@@ -243,10 +232,10 @@ final class AppModel {
     var recentGaps: [OutboxItem] = []
     var queueErrors: [String] = []
     var meetingStart: Date?
-    var meetingDeadline: Date?
+    var meetingID: UUID?
     var meetingQualifiesAt: Date?
-    var markerCooldownSeconds: Int { didSet { UserDefaults.standard.set(markerCooldownSeconds, forKey: "markerCooldownSeconds") } }
-    var meetingMinSeconds: Int { didSet { UserDefaults.standard.set(meetingMinSeconds, forKey: "meetingMinSeconds") } }
+    let markerCooldownSeconds = 60
+    let meetingMinSeconds = 60
     var nextMarkAt: Date?
     var serverStatus = L10n.source("Not connected")
     var serverTimeline: JSONValue = .null
@@ -282,7 +271,6 @@ final class AppModel {
     @ObservationIgnored private var lastStatusCheck = Date.distantPast
     @ObservationIgnored private var lastLocalCheck = Date.distantPast
     @ObservationIgnored private var backendGeneration = UUID()
-    @ObservationIgnored private var pauseRevision = UUID()
     @ObservationIgnored private var refreshingStatus = false
     @ObservationIgnored private var refreshStatusPending = false
     @ObservationIgnored private let endpointRouter: BackendEndpointRouter
@@ -306,10 +294,6 @@ final class AppModel {
         backendConfiguration = storedConfiguration
         endpointRouter = BackendEndpointRouter(configuration: storedConfiguration)
         gesture = MeetingGesture(rawValue: defaults.string(forKey: "meetingGesture") ?? "") ?? .doubleClick
-        let timeout = defaults.integer(forKey: "meetingMinutes")
-        meetingMinutes = timeout == 0 ? 120 : timeout
-        markerCooldownSeconds = defaults.object(forKey: "markerCooldownSeconds") as? Int ?? 60
-        meetingMinSeconds = defaults.object(forKey: "meetingMinSeconds") as? Int ?? 60
         recordingLocationsEnabled = defaults.bool(forKey: "recordingLocationsEnabled")
         paused = defaults.bool(forKey: "capturePaused")
         uploadWiFiOnly = defaults.bool(forKey: "uploadWiFiOnly")
@@ -565,24 +549,12 @@ final class AppModel {
             }
             completenessStatus = status
             serverStatus = status["worker_running"] == .bool(true) ? L10n.source("Home-core connected · worker running") : L10n.source("Home-core connected")
-            if UserDefaults.standard.bool(forKey: "pauseSettingDirty") {
-                let revision = pauseRevision
-                _ = try await backend.request("v1/settings", method: "PATCH", body: ["capture_paused": paused && captureFailure == nil])
-                guard backendGeneration == generation else { return }
-                guard pauseRevision == revision else { refreshStatusPending = true; return }
-                UserDefaults.standard.set(false, forKey: "pauseSettingDirty")
+            let acknowledgedMeetingEvents = store?.items.filter { $0.destinationID == destinationIdentity && $0.resolvedProfileID == selectedProfileID && $0.acknowledged && $0.kind == .event && $0.action == .meetingToggle }.map { JSONValue.string($0.id.uuidString.lowercased()) } ?? []
+            var timeline = try await backend.request("v1/timeline")
+            if case .object(var object) = timeline {
+                object["_local_observed_meeting_events"] = .array(acknowledgedMeetingEvents)
+                timeline = .object(object)
             }
-            let revision = pauseRevision
-            let settings = try await backend.request("v1/settings")
-            guard backendGeneration == generation else { return }
-            if settings["meeting_max_minutes"].integer > 0 { meetingMinutes = settings["meeting_max_minutes"].integer }
-            if case .number(let cooldown) = settings["marker_cooldown_seconds"] { markerCooldownSeconds = max(0, min(3600, Int(cooldown))) }
-            if settings["meeting_min_seconds"].integer >= 60 { meetingMinSeconds = settings["meeting_min_seconds"].integer }
-            if pauseRevision == revision, !UserDefaults.standard.bool(forKey: "pauseSettingDirty"),
-               case .bool(let remotePause) = settings["capture_paused"], remotePause != paused, captureFailure == nil {
-                setPaused(remotePause, synchronize: false)
-            }
-            let timeline = try await backend.request("v1/timeline")
             guard backendGeneration == generation else { return }
             serverTimeline = timeline
             LocalCache.save(timeline, key: identity + ".timeline")
@@ -619,7 +591,7 @@ final class AppModel {
         importanceRevision = UUID()
         if value { importanceMarks.insert(target) } else { importanceMarks.remove(target) }
     }
-    func setPaused(_ value: Bool, synchronize: Bool = true) {
+    func setPaused(_ value: Bool) {
         if value { microphone.captureAllowed = false; flush() }
         else {
             // A failed finalization keeps the previous segment recoverable. Close it before accepting new frames.
@@ -629,17 +601,14 @@ final class AppModel {
         recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
         paused = value; bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         applyRecordingSchedule()
-        notice = value ? L10n.source("Capture paused") : L10n.source("Capture resumed")
+        notice = value ? L10n.source("Recording stopped on this iPhone") : L10n.source("Recording ready on this iPhone")
         if value {
             disconnectedAt = nil
             nextAudioDate = nil
         } else if let codec = bluetooth.codec {
             do { decoder = try FrameDecoder(codec: codec) } catch { failCapture(error) }
         }
-        if synchronize {
-            UserDefaults.standard.set(true, forKey: "pauseSettingDirty")
-            Task { await refreshStatus() }
-        }
+
     }
     private func audio(_ data: Data, date suppliedDate: Date, uptime: TimeInterval) {
         // A BLE callback can wake the app after a suspended timer's deadline.
@@ -745,7 +714,7 @@ final class AppModel {
         do {
             let oldStart = meetingStart
             let oldQualification = meetingQualifiesAt
-            try store.event(deviceID: bluetooth.identifier, at: date, action: action, meetingMaxMinutes: meetingMinutes, meetingMinSeconds: meetingMinSeconds, markerCooldownSeconds: markerCooldownSeconds)
+            try store.event(deviceID: recordingSchedule.hintDeviceID(phoneID: phoneID, pendantID: bluetooth.identifier), at: date, action: action, meetingIntent: action == .meetingToggle ? (oldStart == nil ? "start" : "end") : nil, meetingID: action == .meetingToggle && oldStart != nil ? meetingID : nil)
             if action == .mark { notice = L10n.source("Marked nearby speech as important") }
             else if let oldStart {
                 let qualifies = oldQualification ?? oldStart.addingTimeInterval(Double(meetingMinSeconds))
@@ -766,29 +735,37 @@ final class AppModel {
         storageMB = Double(store.storageBytes) / 1_000_000
         recentGaps = Array(items.filter { $0.kind == .gap }.suffix(5).reversed())
         queueErrors = Array(items.compactMap(\.error).suffix(3))
-        nextMarkAt = items.filter { $0.action == .mark }.map { $0.capturedAt.addingTimeInterval(Double($0.markerCooldownSeconds ?? 60)) }.max()
+        nextMarkAt = items.compactMap(\.flagAvailableAgainAt).max()
         if let remoteMark = serverTimeline["markers"].array.compactMap({ Self.date($0["occurred_at"].text) }).max() {
             let remoteNext = remoteMark.addingTimeInterval(Double(markerCooldownSeconds))
             nextMarkAt = max(nextMarkAt ?? .distantPast, remoteNext)
         }
-        if serverTimeline != .null, !pending.contains(where: { $0.kind == .event && $0.action == .meetingToggle }) {
-            meetingStart = Self.date(serverTimeline["active_meeting"]["started_at"].text)
-            meetingDeadline = Self.date(serverTimeline["active_meeting"]["auto_stop_at"].text)
-            meetingQualifiesAt = Self.date(serverTimeline["active_meeting"]["qualifies_at"].text)
-            if let stop = meetingDeadline, stop <= Date() { meetingStart = nil; meetingDeadline = nil; meetingQualifiesAt = nil }
-            return
+        // Start with the server's authoritative meeting state, then apply local events
+        // it has not observed. Explicit ends cannot reopen an automatically ended meeting.
+        var start = Self.date(serverTimeline["active_meeting"]["started_at"].text)
+        var id = UUID(uuidString: serverTimeline["active_meeting"]["id"].text)
+        var qualifies = Self.date(serverTimeline["active_meeting"]["qualifies_at"].text)
+        let knownEvents = Set(serverTimeline["_local_observed_meeting_events"].array.map(\.text))
+        let hasObservedEvents = serverTimeline["_local_observed_meeting_events"] != .null
+        let localEvents = items.filter {
+            $0.kind == .event && $0.action == .meetingToggle &&
+            (serverTimeline == .null || !$0.acknowledged || (hasObservedEvents && !knownEvents.contains($0.id.uuidString.lowercased())))
+        }.sorted {
+            $0.capturedAt == $1.capturedAt ? $0.id.uuidString < $1.id.uuidString : $0.capturedAt < $1.capturedAt
         }
-        var start: Date?; var deadline: Date?; var qualifies: Date?
-        for item in items.filter({ $0.kind == .event && $0.action == .meetingToggle }).sorted(by: { $0.capturedAt < $1.capturedAt }) {
-            if let stop = deadline, item.capturedAt >= stop { start = nil; deadline = nil }
-            if start != nil { start = nil; deadline = nil }
-            else {
-                start = item.capturedAt; deadline = item.capturedAt.addingTimeInterval(Double(item.meetingMaxMinutes ?? 120) * 60)
-                qualifies = item.capturedAt.addingTimeInterval(Double(item.meetingMinSeconds ?? 60))
+        for item in localEvents {
+            if item.meetingIntent == "end" {
+                if id == item.meetingID { start = nil; id = nil; qualifies = nil }
+            } else if item.meetingIntent == "start" {
+                if start == nil { start = item.capturedAt; id = item.id; qualifies = item.capturedAt.addingTimeInterval(60) }
+            } else if start != nil {
+                start = nil; id = nil; qualifies = nil
+            } else {
+                start = item.capturedAt; id = item.id; qualifies = item.capturedAt.addingTimeInterval(60)
             }
         }
-        if let stop = deadline, stop <= Date() { start = nil; deadline = nil }
-        meetingStart = start; meetingDeadline = deadline; meetingQualifiesAt = start == nil ? nil : qualifies
+        meetingStart = start; meetingID = id; meetingQualifiesAt = start == nil ? nil : qualifies
+
     }
     private func recordCaptureState(_ state: String, cause: String) {
         guard hasSelectedProfile else { return }

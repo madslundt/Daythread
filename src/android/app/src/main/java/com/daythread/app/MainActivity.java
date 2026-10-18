@@ -142,7 +142,6 @@ public final class MainActivity extends Activity {
                     if (profiles.length() == 0) throw new IOException(getString(R.string.choose_profile));
                     String[] names = new String[profiles.length()];
                     for (int i = 0; i < names.length; i++) { names[i] = profiles.getJson(i).getString("name"); new Destination(candidate.endpoints(), profiles.getJson(i).getString("id")); }
-                    Json settings = Backend.request(candidate, "/v1/settings", "GET", null, null).json();
                     runOnUiThread(() -> {
                         if (isFinishing() || !screen.equals("connection")) return;
                         save.setEnabled(true); result.setText("");
@@ -150,9 +149,6 @@ public final class MainActivity extends Activity {
                             if (CaptureService.active) { toast(R.string.capture_running); return; }
                             AppState.preferences(this).edit().putString("endpoints", String.join("\n", candidate.endpoints()))
                                 .putString("profile", profiles.getJson(which).getString("id")).putString("profileName", names[which])
-                                .putInt("meeting_max_minutes", settings.getInt("meeting_max_minutes"))
-                                .putInt("meeting_min_seconds", settings.getInt("meeting_min_seconds"))
-                                .putInt("marker_cooldown_seconds", settings.getInt("marker_cooldown_seconds"))
                                 .putString("error", "").apply();
                             profile.setText(names[which]); result.setText(R.string.connected); webOrigin = "";
                             UploadJob.schedule(this);

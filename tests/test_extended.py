@@ -450,7 +450,7 @@ def test_chat_followup_reloads_current_original_evidence(client):
     assert client.post("/v1/chat", json={"question": "kitchen on 2026-13-01"}).status_code == 422
 
 
-def test_native_offline_policy_snapshot_survives_changed_server_settings(client):
+def test_native_offline_policy_is_acknowledged_without_overriding_fixed_behavior(client):
     assert (
         client.patch(
             "/v1/settings",
@@ -486,13 +486,14 @@ def test_native_offline_policy_snapshot_survives_changed_server_settings(client)
     state = client.post("/v1/events", json=stop).json()
     assert [row["occurred_at"] for row in state["markers"]] == [
         stamp(AT),
+        stamp(AT + timedelta(seconds=60)),
         stamp(AT + timedelta(seconds=120)),
     ]
     assert len(state["meetings"]) == 1
     meeting = state["meetings"][0]
     assert meeting["end_reason"] == "button"
-    assert meeting["auto_stop_at"] == stamp(AT + timedelta(minutes=15))
-    assert meeting["qualifies_at"] == stamp(AT + timedelta(minutes=11, seconds=30))
+    assert meeting["auto_stop_at"] is None
+    assert meeting["qualifies_at"] == stamp(AT + timedelta(minutes=11))
     assert client.post("/v1/events", json=events[0]).status_code == 200
     assert (
         client.post("/v1/events", json=events[0] | {"marker_cooldown_seconds": 121}).status_code

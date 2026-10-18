@@ -6,7 +6,7 @@ import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
 import { ModelPicker } from "./ModelPicker";
 import {
-  canRebaseConfiguration, configurationChanges, configurationDraft, configurationIsDirty,
+  advancedConfigurationFields, canRebaseConfiguration, configurationChanges, configurationDraft, configurationIsDirty,
   keepSecret, matchingConfigurationFields, tasks,
   type ConfigurationData, type ConfigurationDraft, type ConfigurationField,
   type RouteRow, type SecretEdit,
@@ -88,13 +88,12 @@ const groupDescriptions: Record<string, string> = {
   "Semantic search": source("Find related conversations by meaning."),
   "Local inference": source("Shared connection settings for your model services."),
   "Omi connections": source("Credentials for optional Omi imports and audio forwarding."),
-  "Capture & hints": source("Fine-tune how flags and meeting gestures are interpreted."),
   "Archive & processing": source("Control storage locations and background processing."),
 };
 
 const modelConnections = [
-  { provider: "stt", title: source("Speech-to-text (STT)"), description: source("Transcribes your recordings into text.") },
-  { provider: "llm", title: source("Language model (LLM)"), description: source("Answers questions and generates summaries.") },
+  { provider: "stt", title: source("Transcription"), description: source("Transcribes your recordings into text.") },
+  { provider: "llm", title: source("Summaries & chat"), description: source("Answers questions and generates summaries.") },
 ] as const;
 const connectionKeys = modelConnections.flatMap(({ provider }) =>
   [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]);
@@ -229,7 +228,7 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
       {field.description ? <small id={`${id}-hint`}>{t(field.description)}</small> : null}
     </label>;
   }
-  const fields = matchingConfigurationFields(baseline?.fields || [], search, hiddenFields);
+  const fields = matchingConfigurationFields(advancedConfigurationFields(baseline?.fields || [], draft?.values || {}), search, hiddenFields);
   const otherFields = fields.filter((field) => !connectionKeys.includes(field.key));
   const groupOrder = [source("Transcription"), source("Language models & chat"), source("Local inference"), source("Omi connections"), source("Semantic search"), source("Archive & processing")];
   const groups = [...new Set(otherFields.map((field) => field.group))].sort((a, b) => {
@@ -240,8 +239,8 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
     onSearchResults?.(baseline && !resource.error ? fields.length : -1);
   }, [Boolean(baseline), resource.error, search, fields.length, onSearchResults]);
   return <section aria-label={t("Server configuration")} className="server-configuration">
-    <h2>{t("Models & server")}</h2>
-    <p className="muted">{t("Choose the services that transcribe, summarize, and search your recordings. STT and LLM connections are independent: each can use a different endpoint, API key, and model. Changes are shared by the iPhone app and web. Keys stay on your server and are never shown after saving.")}</p>
+    <h2>{t("Advanced")}</h2>
+    <p className="muted">{t("Manage your server and the services that transcribe, summarize, and search recordings. Transcription and summaries can use different providers. Changes apply to the iPhone app and web. Saved keys stay on your server.")}</p>
     {resource.loading && !baseline ? <Loading>{t("Loading server settings…")}</Loading> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {baseline && draft ? <form onSubmit={save} aria-busy={busy}>

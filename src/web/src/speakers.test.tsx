@@ -254,7 +254,7 @@ describe("speaker display", () => {
 
   it("explains local setup and unavailable original audio without running inference", () => {
     const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, state: "idle", configured: false, audio_available: false, speakers: [], turns: [] }} />);
-    expect(html).toContain("Settings → Models &amp; server → Speaker detection");
+    expect(html).toContain("Settings → Advanced → Speaker detection");
     expect(html).toContain('href="/settings/server"');
     expect(html).toContain("Original audio is unavailable");
     expect(html).toContain('disabled="">Detect speakers');

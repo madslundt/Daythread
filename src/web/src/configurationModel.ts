@@ -114,6 +114,32 @@ export function canRebaseConfiguration(
     .every((key) => previous.secrets[key] === latest.secrets[key]);
 }
 
+// Curate administration controls explicitly; new backend fields do not become UI automatically.
+const advancedKeys = new Set([
+  "stt_base_url", "stt_api_key", "stt_model", "stt_routes", "stt_chunk_seconds", "stt_filter_speech",
+  "stt_enhancement_mode", "stt_enhancement_timeout_seconds", "stt_segment_timestamps",
+  "llm_base_url", "llm_api_key", "llm_model", "llm_revision", "llm_routes", "llm_enable_thinking",
+  "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
+  "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
+  "embedding_dimension", "embedding_timeout_seconds", "embedding_min_score",
+  "diarization_enabled", "diarization_base_url", "diarization_timeout_seconds",
+  "voice_recognition_enabled", "voice_recognition_report", "omi_api_key", "pocket_api_key",
+  "audio_forwarding_token", "worker_enabled",
+]);
+
+export function advancedConfigurationFields(fields: ConfigurationField[], values: Record<string, unknown>): ConfigurationField[] {
+  return fields.filter(({ key }) => {
+    if (!advancedKeys.has(key)) return false;
+    if (key.startsWith("embedding_") && key !== "embedding_enabled") return values.embedding_enabled === true;
+    if (key.startsWith("diarization_") && key !== "diarization_enabled") return values.diarization_enabled === true;
+    if (key === "voice_recognition_enabled") return values.diarization_enabled === true;
+    if (key === "voice_recognition_report") return values.diarization_enabled === true && values.voice_recognition_enabled === true;
+    if (key === "chat_query_expansion_timeout_seconds") return values.chat_query_expansion === true;
+    if (key === "stt_enhancement_timeout_seconds") return values.stt_enhancement_mode !== "off";
+    return true;
+  });
+}
+
 export function matchingConfigurationFields(
   fields: ConfigurationField[], search: string, hiddenFields: readonly string[] = [],
 ): ConfigurationField[] {

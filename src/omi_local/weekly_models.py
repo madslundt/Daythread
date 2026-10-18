@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import utc_now
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 MAX_INPUT_CHARS = 2_000_000
 MAX_MODEL_CALLS = 256
 BATCH_CHARS = 9_000

@@ -87,3 +87,17 @@ final class RecordingScheduleTests: XCTestCase {
         XCTAssertFalse(policy.allows(date("2026-10-17T20:00:00Z"), calendar: calendar))
     }
 }
+
+
+extension RecordingScheduleTests {
+    func testPhoneMeetingCannotUseQuietEvidenceFromPairedPendant() {
+        let phoneID = UUID()
+        var policy = RecordingSchedule(); policy.source = "omi"
+        XCTAssertEqual(policy.hintDeviceID(phoneID: phoneID, pendantID: "old-pendant"), "old-pendant")
+        policy.manualOverride = true; policy.manualSource = "phone"
+        let phoneDevice = policy.hintDeviceID(phoneID: phoneID, pendantID: "old-pendant")
+        XCTAssertNotEqual(phoneDevice, "old-pendant")
+        XCTAssertEqual(phoneDevice, policy.hintDeviceID(phoneID: phoneID, pendantID: "new-pendant"))
+        XCTAssertNotEqual(phoneDevice, policy.hintDeviceID(phoneID: UUID(), pendantID: "old-pendant"))
+    }
+}

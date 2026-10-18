@@ -105,7 +105,9 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
     settings = config(tmp_path, summary_language=language)
     key = str(uuid4())
     sources = [
-        {"id": key, "started_at": stamp(AT), "text": "English evidence " * (1600 if large else 1)}
+        {"id": key, "started_at": stamp(AT),
+         "text": "Vi talte om dagens planer og aftalte at mødes i morgen. "
+         * (600 if large else 1)}
     ]
     calls = []
 
@@ -122,9 +124,48 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
         task = json.loads(body["messages"][1]["content"])["task"]
         if language == "auto":
             assert "language with code" not in task
+            assert "Use the transcript language." in task
+            assert "titles, headings and summary prose" in task
+            assert "predominant language of the original transcripts" in task
+            assert "Respond in the user's language." not in body["messages"][0]["content"]
         else:
             assert f"language with code {language.lower()}" in task
             assert "exact evidence quotes" in task
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("language", ["auto", "da", "en"])
+async def test_recording_titles_receive_summary_language_instruction(tmp_path, language):
+    from omi_local.recording_topics import analyze
+    from omi_local.service import Memory
+    from omi_local.store import Store
+
+    transcript = "Vi talte om dagens planer og aftalte at mødes i morgen."
+    settings = config(tmp_path, summary_language=language)
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        payload = json.loads(body["messages"][1]["content"])
+        calls.append(payload)
+        assert payload["evidence"] == transcript
+        task = payload["task"]
+        assert "titles, headings and summary prose" in task
+        if language == "auto":
+            assert "Use the transcript language." in task
+            assert "predominant language of the original transcripts" in task
+        else:
+            assert f"language with code {language}" in task
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
+            "title": "Dagens planer",
+            "sections": [{"title": "Dagens planer", "start_quote": transcript}],
+        })}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        memory = Memory(Store(tmp_path), settings, Inference(settings, http))
+        result = await analyze(memory, {"text": transcript})
+    assert result["title"] == "Dagens planer"
+    assert len(calls) == 1
 
 
 @pytest.mark.anyio

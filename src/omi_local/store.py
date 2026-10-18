@@ -42,6 +42,8 @@ from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
 from .source_matching import MATCH_VERSION, SourceMatchingStore, UploadGrouping
 from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
+from .summary_translation import SCHEMA as SUMMARY_TRANSLATION_SCHEMA
+from .summary_translation import SummaryTranslationStore
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
 from .usage import SCHEMA as USAGE_SCHEMA
@@ -83,6 +85,7 @@ class Store(
     ForwardingStore,
     ImportanceStore,
     TranslationStore,
+    SummaryTranslationStore,
     RecapStore,
     SourceMatchingStore,
     RecordingUploadStore,
@@ -181,6 +184,7 @@ class Store(
                 db.execute("UPDATE audio SET transcript_version=lower(hex(randomblob(16)))")
             db.executescript(SEMANTIC_SCHEMA)
             db.executescript(TRANSLATION_SCHEMA)
+            db.executescript(SUMMARY_TRANSLATION_SCHEMA)
             db.executescript(SPEAKER_SCHEMA)
             db.executescript(VOICE_SCHEMA)
             message_columns = {
@@ -625,6 +629,12 @@ class Store(
                     override = getattr(event, field)
                     if override is not None and override != getattr(captured_policy, field):
                         raise ValueError("Event ID already exists with a different captured policy")
+                metadata = json.loads(existing["hint_policy"])
+                for field in ("meeting_intent", "meeting_id", "meeting_capture_device_id"):
+                    expected = getattr(event, field)
+                    expected = str(expected) if expected is not None else None
+                    if expected != metadata.get(field):
+                        raise ValueError("Event ID already exists with different meeting intent")
                 return dict(existing)
             captured_max = (
                 event.meeting_max_minutes if event.meeting_max_minutes is not None else max_minutes
@@ -636,10 +646,16 @@ class Store(
                     if getattr(event, field) is not None
                 }
             )
+            metadata = captured_policy.model_dump()
+            metadata.update({field: str(getattr(event, field))
+                             for field in (
+                                 "meeting_intent", "meeting_id", "meeting_capture_device_id",
+                             )
+                             if getattr(event, field) is not None})
             db.execute(
                 "INSERT INTO events(event_id,device_id,occurred_at,action,max_minutes,"
                 "context_seconds,hint_policy) VALUES(?,?,?,?,?,?,?)",
-                (*values, captured_max, context, captured_policy.model_dump_json()),
+                (*values, captured_max, context, json.dumps(metadata)),
             )
             return dict(
                 db.execute("SELECT * FROM events WHERE event_id=?", (values[0],)).fetchone()
@@ -683,7 +699,8 @@ class Store(
             self.verify_sources(db, content["sources"])
             if content.get("output_id") and content.get("evidence"):
                 self._save_evidence(
-                    db, content["output_id"], content["evidence"], content["sources"]
+                    db, content["output_id"], content["evidence"], content["sources"],
+                    summary=content.get("summary"),
                 )
             db.execute(
                 "INSERT INTO diary_versions VALUES(?,?,?,?,?)",

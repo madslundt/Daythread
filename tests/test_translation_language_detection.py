@@ -1,12 +1,19 @@
 """Spoken-language coverage regressions from transcript topic passages."""
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 from test_translation import DANISH, ENGLISH, source, translator
 
 from omi_local.api import create_app
 from omi_local.settings import Settings
-from omi_local.translation import transcript_in_language
+from omi_local.translation import (
+    analyze_transcript_languages,
+    language_profiles,
+    recommended_translation_language,
+    transcript_in_language,
+)
 
 SPOKEN_PASSAGES = [
     (
@@ -70,8 +77,149 @@ def test_spoken_passages_hide_the_language_already_spoken(tmp_path, name, langua
 
 
 @pytest.mark.parametrize("text, language", [
-    (DANISH * 10 + " " + ENGLISH, "da"),
+    (DANISH * 3 + " " + ENGLISH, "da"),
     (ENGLISH * 10 + " " + DANISH, "en"),
 ])
 def test_context_does_not_hide_a_clear_foreign_sentence(text, language):
     assert not transcript_in_language(text, language)
+
+
+@pytest.mark.parametrize("text, dominant", [
+    (DANISH, "da"), (ENGLISH, "en"),
+    (DANISH * 3 + " " + ENGLISH, "da"),
+    (ENGLISH * 3 + " " + DANISH, "en"),
+])
+def test_analysis_finds_dominant_spoken_language(text, dominant):
+    analysis = analyze_transcript_languages(text)
+    assert analysis["dominant_language"] == dominant
+    assert analysis["dominant_language_share"] == analysis["language_shares"][dominant]
+    if " " + ENGLISH in text or " " + DANISH in text:
+        assert set(analysis["language_shares"]) == {"da", "en"}
+        assert 0.5 < analysis["dominant_language_share"] < 0.9
+    else:
+        assert analysis["dominant_language_share"] == 1
+    assert sum(analysis["language_shares"].values()) == pytest.approx(1)
+
+
+@pytest.mark.parametrize("danish_parts, english_parts, share, redundant", [
+    (9, 1, 0.9, True), (8, 1, 8 / 9, False), (10, 1, 10 / 11, True),
+])
+def test_letter_coverage_uses_exact_ninety_percent_boundary(
+    monkeypatch, danish_parts, english_parts, share, redundant,
+):
+    # Equal-length sentences isolate coverage arithmetic from detector probabilities.
+    class Detector:
+        def append(self, text):
+            self.language = "da" if "dansk" in text else "en"
+
+        def get_probabilities(self):
+            return [SimpleNamespace(lang=self.language, prob=1)]
+
+    monkeypatch.setattr("omi_local.translation.language_profiles", lambda: SimpleNamespace(
+        create=Detector,
+    ))
+    text = "\n".join(["dansk taler meget."] * danish_parts
+                     + ["words speak today."] * english_parts)
+    analysis = analyze_transcript_languages(text)
+    assert analysis["dominant_language"] == "da"
+    assert analysis["dominant_language_share"] == share
+    assert transcript_in_language(text, "da-DK") is redundant
+    assert recommended_translation_language(analysis, ["en", "da"]) == (
+        None if redundant else "da"
+    )
+
+
+@pytest.mark.parametrize("text", ["", "123?!", "John James Smith", "qzxv prstq"])
+def test_uncertain_text_has_no_dominant_language_or_translation_recommendation(text):
+    analysis = analyze_transcript_languages(text)
+    assert analysis == {"dominant_language": None, "dominant_language_share": 0,
+                        "language_shares": {}}
+    assert recommended_translation_language(analysis, ["en", "da"]) is None
+
+
+def test_unknown_letters_do_not_create_a_second_detected_language():
+    analysis = analyze_transcript_languages(DANISH + "\nJohn James Smith")
+    assert analysis["dominant_language"] == "da"
+    assert analysis["dominant_language_share"] < 0.9
+    assert set(analysis["language_shares"]) == {"da"}
+    assert recommended_translation_language(analysis, ["en", "da"]) is None
+
+
+def test_small_known_fragments_amid_unknown_text_do_not_recommend_translation():
+    text = DANISH + "\n" + ENGLISH + "\n" + "John James Smith\n" * 100
+    analysis = analyze_transcript_languages(text)
+    assert set(analysis["language_shares"]) == {"da", "en"}
+    assert sum(analysis["language_shares"].values()) < 0.2
+    assert recommended_translation_language(analysis, ["en", "da"]) is None
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_long_varied_recordings_sample_languages_across_the_whole_recording(monkeypatch, reverse):
+    factory, calls = language_profiles(), []
+
+    def create():
+        calls.append(None)
+        return factory.create()
+
+    monkeypatch.setattr("omi_local.translation.language_profiles", lambda: SimpleNamespace(
+        create=create,
+    ))
+    # Hundreds of unique paragraph contexts used to exhaust the 256-classification
+    # budget before reaching the English portion at the end of the recording.
+    danish = "\n".join(DANISH + " Det gælder opgaven " + chr(97 + index // 26)
+                       + chr(97 + index % 26) + "." for index in range(600))
+    english = (ENGLISH + "\n") * 600
+    text = english + danish if reverse else danish + english
+    analysis = analyze_transcript_languages(text)
+    assert analysis["dominant_language"] == "da"
+    assert {"da", "en"} <= set(analysis["language_shares"])
+    expected = sum(map(str.isalpha, danish)) / sum(map(str.isalpha, text))
+    assert analysis["dominant_language_share"] == pytest.approx(expected, abs=0.08)
+    assert recommended_translation_language(analysis, ["en", "da"]) == "da"
+    assert 0 < len(calls) <= 256
+
+
+@pytest.mark.parametrize("languages, default, recommended", [
+    (["en", "da"], "da", "da"), (["en", "da-dk"], "da-dk", "da-dk"),
+    (["en", "sv"], "en", None), ([], "", None),
+])
+def test_mixed_transcript_recommends_only_configured_dominant_target(
+    tmp_path, languages, default, recommended,
+):
+    settings = Settings(data_dir=tmp_path, translation_languages=languages,
+                        worker_enabled=False, _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        text = DANISH * 3 + "\n" + ENGLISH
+        key, path = source(client, text)
+        calls = translator(client)
+        result = client.get(path).json()
+        assert result["language"] == default
+        assert result["recommended_language"] == recommended
+        assert result["available_languages"] == languages
+        assert result["language_analysis"]["dominant_language"] == "da"
+        assert result["language_analysis"]["dominant_language_share"] < 0.9
+        assert calls == []
+        assert client.get(f"/v1/transcripts/{key}").json()["text"] == text
+        if languages:
+            explicit = client.get(path, params={"language": "en"}).json()
+            assert explicit["language"] == "en"
+        if recommended:
+            generated = client.post(path).json()
+            assert generated["recommended_language"] == recommended
+            assert generated["language_analysis"] == result["language_analysis"]
+            assert calls == [(text, recommended)]
+
+
+def test_scoped_language_analysis_uses_selected_passage(tmp_path):
+    settings = Settings(data_dir=tmp_path, translation_languages=["en", "da"],
+                        worker_enabled=False, _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        prefix = ENGLISH * 10 + "\n"
+        selected = DANISH * 3 + "\n" + ENGLISH
+        key, path = source(client, prefix + selected)
+        version = client.app.state.memory.store.get_audio(key)["transcript_version"]
+        result = client.get(path, params={"start_offset": len(prefix),
+                                          "end_offset": len(prefix + selected),
+                                          "transcript_version": version}).json()
+        assert result["language_analysis"] == analyze_transcript_languages(selected)
+        assert result["recommended_language"] == "da"

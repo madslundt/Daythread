@@ -29,7 +29,7 @@ struct PhoneRecordingSection: View {
             }
             ErrorNote(message: microphone.error)
             ErrorNote(message: microphone.recoveryWarning)
-        } header: { Text(L10n.text("Record with iPhone")) } footer: {
+        } header: { Text(L10n.text("This iPhone")) } footer: {
             Text(L10n.text("Record with this iPhone’s microphone. Audio stays on this iPhone until you upload it. Recordings stop automatically after two hours."))
         }
         RecordingScheduleSection()
@@ -98,15 +98,6 @@ struct RecordingScheduleSection: View {
     }
     var body: some View {
         Section {
-            Toggle(L10n.text("Microphone enabled"), isOn: Binding(
-                get: { policy.allows(model.now) && !model.paused },
-                set: { if $0 { model.enableMicrophone() } else { model.disableMicrophone() } }
-            )).accessibilityIdentifier("microphone.enabled")
-            Text(L10n.text("Turning off stops live capture immediately. Saved recordings are kept. Manual recording is always available."))
-                .font(.caption).foregroundStyle(.secondary)
-            if policy.enabled && policy.scheduled && !policy.allows(model.now) {
-                Button(L10n.text("Pause capture")) { model.disableMicrophone() }
-            }
             Toggle(L10n.text("Recording schedule"), isOn: Binding(get: { policy.scheduled }, set: { scheduled in
                 update { $0.scheduled = scheduled; $0.manualOverride = false }
             })).accessibilityIdentifier("microphone.schedule")
@@ -134,7 +125,7 @@ struct RecordingScheduleSection: View {
                 Text(L10n.text("Recording starts automatically during scheduled hours while the app is available. iOS cannot wake a suspended or closed app to start the microphone. Open the app to resume. Pair Omi first for pendant capture."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-        } header: { Text(L10n.text("Microphone & schedule")) }
+        } header: { Text(L10n.text("Recording schedule")) }
     }
     private func weekday(_ day: Int) -> String {
         let formatter = DateFormatter(); formatter.locale = L10n.locale

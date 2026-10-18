@@ -64,7 +64,7 @@ export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected
       {vendor.capabilities.includes("file_upload") ? <p className="caption">{t("Use Upload recordings on Today and choose this brand to keep its source information.")}</p> : null}
       {cloud ? <>
         <p className="caption">{t("This connection imports transcripts only. Original audio remains with the vendor.")}</p>
-        {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Profiles to import conversations.")}</p> : null}
+        {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p> : null}
         {!vendor.configured ? <>
           <p className="caption">{t("Save the vendor API key in server settings. Keys stay on your server.")}</p>
           <button type="button" className="text-button" onClick={() => onConfigure(vendor.label)}>{t("Configure {vendor} connection", { vendor: t(vendor.label) })}</button>

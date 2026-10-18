@@ -15,7 +15,8 @@ import httpx
 from .audio import coverage_gaps
 from .completeness import audio_availability, revision
 from .completion_events import generating_job
-from .domain import ChatScopeConflict, ChatScopeNotFound, project_events, stamp, utc_now
+from .conversation_state import meeting_timeline
+from .domain import ChatScopeConflict, ChatScopeNotFound, stamp, utc_now
 from .hybrid import HybridRetriever, bound_sources
 from .inference import Inference, InferenceError, validate_citations
 from .recaps import Recaps
@@ -210,7 +211,7 @@ class Memory:
                 kind=kind,
             )
             if kind != "recap":
-                self.store.save_evidence(output_id, evidence, done)
+                self.store.save_evidence(output_id, evidence, done, summary=result["summary"])
             result.update(output_id=output_id, evidence=evidence)
         return result
 
@@ -287,8 +288,9 @@ class Memory:
                 return await self.recaps.generate(day, utc_now())
 
     def timeline(self) -> dict:
-        return project_events(self.store.events(), utc_now()) | {
-            "capture_gaps": self.store.capture_gaps()
+        snapshot = self.store.recap_snapshot()
+        return meeting_timeline(snapshot, utc_now()) | {
+            "capture_gaps": snapshot["gaps"],
         }
 
     @staticmethod

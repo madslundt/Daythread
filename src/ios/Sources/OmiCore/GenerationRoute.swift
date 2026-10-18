@@ -15,6 +15,8 @@ public struct GenerationRoute: Equatable {
             kind = "recap"; parameters = ["day": p[2]]
         case let p where p.count == 4 && p[0] == "v1" && p[1] == "transcripts" && p[3] == "translation":
             kind = "translation"; parameters = ["source_id": p[2]]
+        case let p where p.count == 4 && p[0] == "v1" && p[1] == "outputs" && p[3] == "translation":
+            kind = "summary_translation"; parameters = ["output_id": p[2]]
         case let p where p.count == 4 && p[0] == "v1" && p[1] == "meetings" && p[3] == "recap":
             kind = "meeting_recap"; parameters = ["meeting_id": p[2]]
         default: return nil

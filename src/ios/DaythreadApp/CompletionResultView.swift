@@ -70,14 +70,17 @@ struct CompletionResultView: View {
             if job["state"].text == "failed" {
                 Section(L10n.text("Could not finish")) { Text(job["error"].text.isEmpty ? L10n.text("This request failed. Return to the original recording or day to try again.") : L10n.key(job["error"].text)) }
             } else if job["state"].text == "completed" {
-                if job["kind"].text == "translation" {
+                if ["translation", "summary_translation"].contains(job["kind"].text) {
                     Section(L10n.text("Translation")) {
+                        let summary = job["kind"].text == "summary_translation"
                         let translation = result["translation"]
                         let language = translation["language"].text
                         if !language.isEmpty { Text(L10n.locale.localizedString(forLanguageCode: language) ?? language).font(.headline) }
-                        if !translation["text"].text.isEmpty { Text(translation["text"].text).textSelection(.enabled) }
-                        else { Text(L10n.text("This recording is already in the requested language.")) }
-                        Text(L10n.text("The original transcript is preserved.")).font(.caption).foregroundStyle(.secondary)
+                        if !translation["text"].text.isEmpty {
+                            if summary { Text(.init(translation["text"].text)).textSelection(.enabled) }
+                            else { Text(translation["text"].text).textSelection(.enabled) }
+                        } else { Text(summary ? L10n.text("This summary is already in the requested language.") : L10n.text("This recording is already in the requested language.")) }
+                        Text(summary ? L10n.text("The original summary is preserved.") : L10n.text("The original transcript is preserved.")).font(.caption).foregroundStyle(.secondary)
                     }
                     if source != .null { Section(L10n.text("Original recording")) { SourceList(sources: [source]) } }
                 } else {
@@ -85,7 +88,11 @@ struct CompletionResultView: View {
                         Section(L10n.text("Saved summary")) {
                             if job["kind"].text == "recap" {
                                 RecapContentView(recap: result, day: parameters["day"].text)
-                            } else { Text(.init(result["summary"].text)).textSelection(.enabled) }
+                            } else {
+                                SummaryTranslationView(output: result) {
+                                    Text(.init(result["summary"].text)).textSelection(.enabled)
+                                }
+                            }
                         }
                     }
                     if job["kind"].text == "rewind" {

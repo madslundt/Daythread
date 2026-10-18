@@ -1,3 +1,4 @@
+import { sendHintEvent, meetingCaptureDevice } from "./hintActions";
 import { t } from "./i18n";
 import { resolveProfile, savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
 import { ImportanceProvider } from "./Importance";
@@ -13,8 +14,8 @@ import { Settings } from "./Settings";
 import { Today } from "./Today";
 import { UploadDialog } from "./UploadDialog";
 import { BrowserRecorder } from "./BrowserRecorder";
-import { errorMessage, newId, post } from "./api";
-import { localDay, remainingCooldown, timeLabel } from "./format";
+import { errorMessage, newId } from "./api";
+import { localDay, remainingCooldown } from "./format";
 import { Icon } from "./Icon";
 import { Navigation, pages, type Page } from "./Navigation";
 import { dayFromPath, isDayPage, pageFromPath, pagePath, profileRoute, navigatePath, subscribeNavigation } from "./routing";
@@ -223,6 +224,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
                 <HintActions
                   timeline={timeline.data}
                   policy={status.data?.hint_policy}
+                  captureDeviceID={meetingCaptureDevice(status.data, status.error)}
                   onTimeline={timeline.setData}
                   onMessage={setNotice}
                 />
@@ -238,6 +240,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
               <HintActions
                 timeline={timeline.data}
                 policy={status.data?.hint_policy}
+                captureDeviceID={meetingCaptureDevice(status.data, status.error)}
                 onTimeline={timeline.setData}
                 onMessage={setNotice}
               />
@@ -261,7 +264,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
         {selected ? <BrowserRecorder key={recordingOwner} owner={recordingOwner} timezone={timezone}
           visible={page === "today" && !prepOpen} onUploaded={uploaded} /> : null}
         {timeline.data?.active_meeting ? (
-          <ActiveMeeting timeline={timeline.data} timezone={timezone} />
+          <ActiveMeeting captureDeviceID={timeline.data.active_meeting.meeting_capture_device_id} />
         ) : null}
         {prepOpen ? (
           <ConversationPrep timezone={timezone} onDirtyChange={setPrepDirty} onClose={() => { setPrepOpen(false); setPrepDirty(false); }} />
@@ -325,11 +328,13 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
 function HintActions({
   timeline,
   policy,
+  captureDeviceID,
   onTimeline,
   onMessage,
 }: {
   timeline?: Timeline;
   policy?: Status["hint_policy"];
+  captureDeviceID?: string;
   onTimeline: (timeline: Timeline) => void;
   onMessage: (message: string) => void;
 }) {
@@ -351,12 +356,7 @@ function HintActions({
     setBusy(true);
     try {
       const eventId = newId();
-      const result = await post<Timeline>("/v1/events", {
-        event_id: eventId,
-        device_id: "web",
-        occurred_at: new Date().toISOString(),
-        action,
-      });
+      const result = await sendHintEvent(action, eventId, active?.id, captureDeviceID);
       onTimeline(result);
       setNow(Date.now());
       const markAccepted =
@@ -398,6 +398,7 @@ function HintActions({
       <button
         className={`button ${active ? "dark" : "accent"}`}
         onClick={() => void event("meeting_toggle")}
+        title={!active && !captureDeviceID ? t("Automatic ending needs one currently recording Omi device. Otherwise, end the meeting manually.") : undefined}
         disabled={busy || !timeline}
       >
         <Icon name="mic" />
@@ -407,20 +408,10 @@ function HintActions({
   );
 }
 
-function ActiveMeeting({
-  timeline,
-  timezone,
-}: {
-  timeline: Timeline;
-  timezone: string;
-}) {
-  const active = timeline.active_meeting!;
-  return (
-    <div className="meeting-notice">
-      <Icon name="mic" size={17} />
-      <span>
-        {t("Meeting hint in progress · auto stops at")}{" "}
-        {timeLabel(active.auto_stop_at, timezone)}{t(". Timing is approximate; short meeting hints are ignored.")}{" "}</span>
-    </div>
-  );
+export function ActiveMeeting({ captureDeviceID }: { captureDeviceID?: string | null }) {
+  return <div className="meeting-notice">
+    <Icon name="mic" size={17} />
+    <span>{t("Meeting in progress")}{" · "}{captureDeviceID ? t("End meeting when you’re done. After the first hour, recorded quiet can end it automatically. Recording continues.")
+      : t("End this meeting manually. No live Omi recording was linked when it started. Recording continues.")}</span>
+  </div>;
 }

@@ -1,5 +1,6 @@
+import { languageCodes } from "./languages";
 import { LocationZones } from "./LocationZones";
-import { displayLocale, t, source } from "./i18n";
+import { displayLocale, t } from "./i18n";
 import { ProfileManagement } from "./ProfileManagement";
 import type { Profile } from "./profiles";
 import { navigatePath, subscribeNavigation } from "./routing";
@@ -18,76 +19,28 @@ import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLangua
 import { ManagedAccountPanel, ManagedConnections, useManagedAccount } from "./ManagedAccount";
 import { Usage } from "./Usage";
 
-type NumberKey = {
-  [K in keyof SettingsData]-?: SettingsData[K] extends number ? K : never;
-}[keyof SettingsData];
-const hintFields: {
-  key: NumberKey;
-  label: string;
-  options: number[];
-  unit?: "minutes";
-  zeroLabel?: string;
-  detail: string;
-}[] = [
-  {
-    key: "marker_cooldown_seconds",
-    label: source("Time between important flags"),
-    options: [0, 15, 30, 60, 120, 300, 600, 1800, 3600],
-    zeroLabel: source("No cooldown"),
-    detail: source("Wait before accepting another flag. Extra clicks do not extend the wait."),
-  },
-  {
-    key: "marker_context_seconds",
-    label: source("Context before a flag"),
-    options: [0, 15, 30, 60, 120, 180, 300],
-    zeroLabel: source("No extra context"),
-    detail: source("Surrounding speech to consider before an important flag."),
-  },
-  {
-    key: "marker_after_seconds",
-    label: source("Context after a flag"),
-    options: [0, 15, 30, 60, 120, 300, 600],
-    zeroLabel: source("No extra context"),
-    detail: source("Surrounding speech to consider after an important flag."),
-  },
-  {
-    key: "meeting_min_seconds",
-    label: source("Minimum meeting length"),
-    options: [60, 120, 300, 600, 900, 1800, 3600],
-    detail: source("Shorter meeting gestures are ignored; recordings are kept. Cannot exceed the auto-stop duration."),
-  },
-  {
-    key: "meeting_context_seconds",
-    label: source("Context around meetings"),
-    options: [0, 15, 30, 60, 120, 300, 600],
-    zeroLabel: source("No extra context"),
-    detail: source("Speech to include before and after the meeting gesture times."),
-  },
-  {
-    key: "meeting_max_minutes",
-    label: source("Automatically end a meeting after"),
-    options: [1, 5, 15, 30, 60, 90, 120, 180, 240, 360, 480],
-    unit: "minutes",
-    detail: source("End a meeting gesture if you forget to stop it. Cannot be shorter than the minimum meeting length."),
-  },
-];
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
-const editableSettings: (keyof SettingsData)[] = [
-  "timezone", "summary_language", "translation_languages", "meeting_max_minutes", "meeting_min_seconds",
-  "meeting_context_seconds", "marker_context_seconds", "marker_after_seconds",
-  "marker_cooldown_seconds", "recap_hour", "recap_interval_minutes", "recap_quiet_minutes", "capture_paused",
-  "audio_retention_days", "transcript_retention_days",
+export const editableSettings: (keyof SettingsData)[] = [
+  "timezone", "summary_language", "translation_languages", "meeting_quiet_minutes", "audio_retention_days", "transcript_retention_days",
 ];
-const serverHiddenFields = [...editableSettings, "language", "audio_forwarding_enabled"];
-// ISO 639-1 choices for summaries and optional transcript translations.
-const languageCodes = (
-  "aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy " +
-  "da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz " +
-  "ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv " +
-  "mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt " +
-  "qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr " +
-  "ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu"
-).split(" ");
+const serverHiddenFields = [...editableSettings, "language", "translation_languages", "capture_paused",
+  "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds", "marker_context_seconds",
+  "marker_after_seconds", "marker_cooldown_seconds", "recap_hour", "recap_interval_minutes", "recap_quiet_minutes", "audio_forwarding_enabled"];
+export function preferenceChanges(draft: SettingsData, managed: boolean): Partial<SettingsData> {
+  return Object.fromEntries(editableSettings
+    .filter((key) => !managed || !["audio_retention_days", "transcript_retention_days"].includes(key))
+    .map((key) => [key, draft[key]]));
+}
+
+export function MeetingQuietSetting({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return <label className="setting-field" htmlFor="meeting-quiet">
+    <span id="meeting-quiet-label">{t("End meeting after this much quiet")}</span>
+    <NumberSelect id="meeting-quiet" value={value} options={[1, 2, 5, 10, 15, 30]} onChange={onChange}
+      label={(minutes) => new Intl.NumberFormat(displayLocale(), { style: "unit", unit: "minute", unitDisplay: "long" }).format(minutes)} />
+    <small id="meeting-quiet-hint">{t("Applies to new meetings after the first hour. Only recorded quiet counts; missing uploads do not end a meeting.")}</small>
+  </label>;
+}
+
 function languageLabel(code: string) {
   try {
     return new Intl.DisplayNames([interfaceLanguage()], { type: "language" }).of(code) || code;
@@ -100,12 +53,6 @@ const timezones = typeof Intl.supportedValuesOf === "function"
   : ["Europe/Copenhagen", "Europe/London", "Europe/Paris", "America/New_York",
     "America/Chicago", "America/Denver", "America/Los_Angeles", "Asia/Tokyo",
     "Asia/Kolkata", "Asia/Shanghai", "Australia/Sydney", "Pacific/Auckland"];
-function durationLabel(seconds: number): string {
-  const unit = seconds >= 3600 && seconds % 3600 === 0 ? "hour"
-    : seconds >= 60 && seconds % 60 === 0 ? "minute" : "second";
-  const amount = seconds / (unit === "hour" ? 3600 : unit === "minute" ? 60 : 1);
-  return new Intl.NumberFormat(displayLocale(), { style: "unit", unit, unitDisplay: "long" }).format(amount);
-}
 function retentionLabel(days: number): string {
   return days === 0 ? t("Until I remove it")
     : new Intl.NumberFormat(displayLocale(), { style: "unit", unit: "day", unitDisplay: "long" }).format(days);
@@ -183,8 +130,8 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
     ? matchesSettings(group, query) : section === category;
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
-    || show("gestures", "gestures") || show("storage", "storage");
-  const noMatches = query && !["account", "profiles", "appearance", "daily", "gestures", "storage", "connections", "locations", "usage"].some((group) => matchesSettings(group, query))
+    || show("storage", "storage") || show("meetings", "connections");
+  const noMatches = query && !["account", "profiles", "appearance", "daily", "storage", "connections", "meetings", "locations", "usage"].some((group) => matchesSettings(group, query))
     && (managed || serverMatches?.query === search && serverMatches.count === 0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
@@ -211,9 +158,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
     setError("");
     setSaved(false);
     try {
-      const changes = Object.fromEntries(editableSettings
-        .filter((key) => !managed || !["audio_retention_days", "transcript_retention_days"].includes(key))
-        .map((key) => [key, draft[key]]));
+      const changes = preferenceChanges(draft, managed);
       resource.setData(
         await request<SettingsData>("/v1/settings", {
           method: "PATCH",
@@ -239,23 +184,29 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       <SettingsNavigation section={section} search={search} onSearch={setSearch} onSelect={selectSection}
         preferencesDirty={dirty} serverDirty={serverDirty} managed={managed} />
       <div className="settings-panels">
-      {show("account", "account") ? <ManagedAccountPanel /> : null}
-      {show("usage", "usage") ? <Usage key={selectedProfile} /> : null}
-      {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {dirty && !preferencesVisible ? <div className="notice">
         <span>{t("You have unsaved preferences in another category.")}</span>
-        <button type="button" className="text-button" onClick={() => selectSection("general")}>{t("Review preferences")}</button>
+        <button type="button" className="text-button" onClick={() => selectSection(draft?.meeting_quiet_minutes !== resource.data?.meeting_quiet_minutes ? "connections"
+          : draft?.audio_retention_days !== resource.data?.audio_retention_days || draft?.transcript_retention_days !== resource.data?.transcript_retention_days ? "storage" : "general")}>{t("Review preferences")}</button>
       </div> : null}
       {query ? <div className="settings-section-heading"><h2>{t("Search results")}</h2>
         <p>{t("Settings matching “")}{query}{t("” across all categories.")}</p></div> : null}
       {noMatches ? <div className="settings-empty" role="status"><Icon name="search" size={28} />
         <h2>{t("No settings found")}</h2><p>{t("Try “language”, “audio”, “recap”, or “model”.")}</p>
         <button type="button" className="button" onClick={() => setSearch("")}>{t("Clear search")}</button></div> : null}
-      {show("profiles", "profiles") && onCreateProfile && onUpdateProfile && onSelectProfile ? <ProfileManagement
+      {!query && section === "account" ? <div className="settings-section-heading"><h2>{t("Account & profiles")}</h2></div> : null}
+      {!query && section === "connections" ? <div className="settings-section-heading"><h2>{t("Recording & devices")}</h2></div> : null}
+      {show("profiles", "account") && onCreateProfile && onUpdateProfile && onSelectProfile ? <ProfileManagement
         profiles={profiles} selected={selectedProfile} onCreate={onCreateProfile} managed={managed}
         onUpdate={onUpdateProfile} onSelect={onSelectProfile} error={profileError} onRetry={onRetryProfiles} /> : null}
+      {show("account", "account") ? <details className="settings-disclosure" open={query ? true : undefined}>
+        <summary>{t("Hosting & account")}</summary><div className="settings-disclosure-body"><ManagedAccountPanel /></div>
+      </details> : null}
+      {show("usage", "account") ? <details className="settings-disclosure" open={query ? true : undefined}>
+        <summary>{t("Audio & credit usage")}</summary><div className="settings-disclosure-body"><Usage key={selectedProfile} /></div>
+      </details> : null}
       <section hidden={!show("appearance", "general")}>
-      {!query ? <div className="settings-section-heading"><h2>{t("Daily preferences")}</h2></div> : null}
+      {!query ? <div className="settings-section-heading"><h2>{t("General")}</h2></div> : null}
       <fieldset>
         <legend>{t("Appearance")}{" "}<span className="settings-badge">{t("Saves automatically")}</span></legend>
         <label className="setting-field" htmlFor="appearance">
@@ -299,7 +250,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       ) : (
         <form id="preferences-form" className="settings-form" onSubmit={save} aria-busy={busy}>
           <fieldset disabled={busy} hidden={!show("daily", "general")}>
-            <legend>{t("Recording & daily recap")}</legend>
+            <legend>{t("Language & timezone")}</legend>
             <div className="settings-grid">
               <label className="setting-field" htmlFor="timezone">
                 <span id="timezone-label">{t("Home timezone")}</span>
@@ -345,7 +296,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
               </label>
               <div className="setting-field translation-language-settings">
                 <span id="translation-languages-label">{t("Translation languages")}</span>
-                <small id="translation-languages-hint">{t("Choose the languages offered by the transcript Translate button. These are independent of the summary language. Translations are generated only when you click Translate.")}</small>
+                <small id="translation-languages-hint">{t("Choose the languages offered by the transcript and summary Translate buttons. These are independent of the generated summary language. Translations are generated only when you click Translate.")}</small>
                 <ul className="translation-language-list" aria-labelledby="translation-languages-label">
                   {(draft.translation_languages ?? ["en"]).map((code) => <li key={code}>
                     <span>{languageLabel(code)}</span>
@@ -364,70 +315,16 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                 </select>
               </div>
               <p className="caption">{t("Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
-              <label className="setting-field" htmlFor="recap-quiet">
-                <span id="recap-quiet-label">{t("Pause before summarizing live conversations")}</span>
-                <NumberSelect id="recap-quiet" value={draft.recap_quiet_minutes ?? 5}
-                  options={[1, 2, 5, 10, 15, 30]} onChange={(value) => update("recap_quiet_minutes", value)}
-                  label={(minutes) => durationLabel(minutes * 60)} />
-                <small id="recap-quiet-hint">{t("Live conversations wait for this many minutes of recorded quiet. Default: 5 minutes. Uploaded files are summarized after transcription. Missing uploads do not count as silence.")}</small>
-              </label>
-              <label className="capture-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.capture_paused}
-                  onChange={(event) =>
-                    update("capture_paused", event.target.checked)
-                  }
-                />
-                <span>
-                  {t("Pause capture")}{" "}<small>
-                    {t("The iPhone checks this setting when connected. Save changes to apply it.")}{" "}</small>
-                </span>
-              </label>
             </div>
           </fieldset>
-          <fieldset disabled={busy} hidden={!show("gestures", "gestures")}>
-            <legend>{t("Flags & meetings")}</legend>
-            <p className="muted settings-description">
-              {t("Mark an important moment or a meeting to help Daythread understand nearby speech. These gestures provide context; they do not trim your recordings.")}{" "}</p>
-            {[{ title: t("Important flags"), fields: hintFields.slice(0, 3) },
-              { title: t("Meeting gestures"), fields: hintFields.slice(3) }].map((group) => <div className="settings-subgroup" key={group.title}>
-            <h3>{group.title}</h3>
-            <div className="settings-grid">
-              {group.fields.map((field) => (
-                <label
-                  className="setting-field"
-                  htmlFor={field.key}
-                  key={field.key}
-                >
-                  <span id={`${field.key}-label`}>{t(field.label)}</span>
-                  <NumberSelect
-                    id={field.key}
-                    value={draft[field.key]}
-                    options={field.options}
-                    onChange={(value) => update(field.key, value)}
-                    label={(value) =>
-                      value === 0 && field.zeroLabel
-                        ? t(field.zeroLabel)
-                        : durationLabel(value * (field.unit === "minutes" ? 60 : 1))
-                    }
-                    unavailable={
-                      field.key === "meeting_min_seconds"
-                        ? (value) => value > draft.meeting_max_minutes * 60
-                        : field.key === "meeting_max_minutes"
-                          ? (value) => value * 60 < draft.meeting_min_seconds
-                          : undefined
-                    }
-                  />
-                  <small id={`${field.key}-hint`}>{t(field.detail)}</small>
-                </label>
-              ))}
-            </div></div>)}
+          <fieldset disabled={busy} hidden={!show("meetings", "connections")}>
+            <legend>{t("Meetings")}</legend>
+            <MeetingQuietSetting value={draft.meeting_quiet_minutes ?? 10} onChange={(value) => update("meeting_quiet_minutes", value)} />
           </fieldset>
           <fieldset disabled={busy} hidden={!show("storage", "storage")}>
             <legend>{t("Storage & privacy")}</legend>
-            <p className="settings-description muted">{managed ? t("Until I remove it") : t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
-            <div className="settings-grid">
+            <p className="settings-description muted">{managed ? t("Audio and transcripts are kept until you delete them.") : t("Choose how long recordings stay in your archive. Audio and transcripts have separate schedules.")}</p>
+            {!managed ? <div className="settings-grid">
               <label className="setting-field" htmlFor="audio-retention">
                 <span id="audio-retention-label">{t("Keep original audio")}</span>
                 <NumberSelect
@@ -453,12 +350,15 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                 <small id="transcript-retention-hint">
                   {managed ? t("Until I remove it") : t("Default: 30 days. Expiring transcripts also clears derived diary/chat content and related inbox items, including manual edits and history. Shorter retention periods apply to existing recordings when saved.")}{" "}</small>
               </label>
-            </div>
+            </div> : null}
             <p className="caption access-note">
               {managed ? t("Your hosted archive is protected by your Daythread account. Sign out on shared devices.") : t("This app has no sign-in. Anyone who can reach your server address can access this archive.")}{" "}</p>
           </fieldset>
         </form>
       )}
+      {show("locations", "storage") ? <details className="settings-disclosure" open={query ? true : undefined}>
+        <summary>{t("Location zones")}</summary><div className="settings-disclosure-body"><LocationZones key={selectedProfile} /></div>
+      </details> : null}
       {!managed ? <div hidden={!showServer}>
         <Configuration search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
           onSearchResults={onSearchResults}

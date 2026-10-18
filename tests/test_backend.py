@@ -120,13 +120,15 @@ def test_delayed_button_events_replay_in_capture_order_and_deduplicate(store):
     assert state["active_meeting"] is None
 
 
-def test_meeting_auto_stop_survives_restart_and_next_toggle_starts_new_meeting(store):
+def test_meeting_survives_old_deadline_and_next_toggle_ends_it(store):
     event(store, AT)
     expired = project_events(Store(store.root).events(), AT + timedelta(minutes=11))
-    assert expired["meetings"][0]["end_reason"] == "timeout"
-    assert expired["meetings"][0]["ended_at"] == stamp(AT + timedelta(minutes=10))
+    assert expired["active_meeting"]
+    assert expired["meetings"][0]["auto_stop_at"] is None
     event(store, AT + timedelta(minutes=12))
-    assert project_events(store.events(), AT + timedelta(minutes=13))["active_meeting"]
+    state = project_events(store.events(), AT + timedelta(minutes=13))
+    assert state["active_meeting"] is None
+    assert state["meetings"][0]["ended_at"] == stamp(AT + timedelta(minutes=12))
 
 
 def test_marker_contains_configured_previous_context(store):
@@ -213,7 +215,7 @@ def test_ignored_meeting_has_no_recap_endpoint(client, store):
     assert client.post(f"/v1/meetings/{start.event_id}/recap").status_code == 404
 
 
-def test_hint_configuration_is_captured_with_event_for_replay(store):
+def test_legacy_hint_configuration_is_preserved_but_fixed_policy_applies(store):
     policy = HintPolicy(
         marker_cooldown_seconds=90,
         marker_after_seconds=30,
@@ -230,8 +232,8 @@ def test_hint_configuration_is_captured_with_event_for_replay(store):
         store.append_event(data, 10, 45, policy)
     markers = project_events(Store(store.root).events(), AT + timedelta(minutes=5))["markers"]
     assert len(markers) == 2
-    assert markers[0]["context_start"] == stamp(AT - timedelta(seconds=45))
-    assert markers[0]["context_end"] == stamp(AT + timedelta(seconds=30))
+    assert markers[0]["context_start"] == stamp(AT - timedelta(seconds=60))
+    assert markers[0]["context_end"] == stamp(AT + timedelta(seconds=60))
 
 
 def test_existing_database_events_migrate_without_losing_history(tmp_path):

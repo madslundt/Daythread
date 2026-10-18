@@ -56,7 +56,8 @@ export type Meeting = {
   id: string;
   started_at: string;
   ended_at: string | null;
-  auto_stop_at: string;
+  auto_stop_at: string | null;
+  meeting_capture_device_id?: string | null;
   qualifies_at: string;
   status: string;
   context_start: string;
@@ -101,6 +102,7 @@ export type Status = {
   };
   phones?: {
     phone_id: string;
+    device_id?: string;
     fresh: boolean;
     observed_at: string;
     capture_state: string;
@@ -184,6 +186,7 @@ export type ChatMessage = {
 };
 export type Conversation = ChatSession & { messages: ChatMessage[] };
 export type Settings = {
+  meeting_quiet_minutes?: number;
   timezone: string;
   language: string;
   summary_language: string;

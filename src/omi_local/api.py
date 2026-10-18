@@ -63,6 +63,7 @@ from .settings import RUNTIME_FIELDS, Settings, public_settings, validate_settin
 from .source_matching import UploadGrouping
 from .speaker_api import speaker_routes
 from .store import Store
+from .summary_translation import summary_translation_routes
 from .translation import translation_routes
 from .vendor_catalog import file_vendor
 from .vendor_routes import vendor_routes
@@ -187,6 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decision_routes(memory))
     app.include_router(inbox_router(memory))
     app.include_router(translation_routes(memory))
+    app.include_router(summary_translation_routes(memory))
     app.include_router(notification_routes(memory))
     app.include_router(generation_routes(lambda: runtime().jobs))
     app.include_router(speaker_routes(memory))
@@ -671,6 +673,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "meeting_min_seconds": policy.meeting_min_seconds,
             "marker_cooldown_seconds": policy.marker_cooldown_seconds,
         }
+        metadata = json.loads(stored["hint_policy"])
+        receipt.update({field: metadata[field] for field in (
+            "meeting_intent", "meeting_id", "meeting_capture_device_id",
+        )
+                        if field in metadata})
         return receipt if receipt_only else memory().timeline() | receipt
 
     @app.get("/v1/timeline")

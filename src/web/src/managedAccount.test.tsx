@@ -22,7 +22,7 @@ describe("optional web account entry", () => {
     const html = renderToStaticMarkup(<SettingsNavigation section="account" search="" onSearch={() => {}}
       onSelect={() => {}} preferencesDirty={false} serverDirty={false} />);
     expect(html).toContain('href="/settings/account" aria-current="page"');
-    expect(html).toContain("Models &amp; server");
+    expect(html).toContain("Advanced");
   });
 
   it("uses account actions instead of exposing managed server administration", () => {

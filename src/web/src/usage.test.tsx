@@ -154,8 +154,8 @@ describe("trial usage measurements", () => {
 
   it("makes usage discoverable through navigation and settings search", () => {
     vi.stubGlobal("window", { location: { pathname: "/settings/usage" } });
-    expect(sectionFromPath()).toBe("usage");
-    expect(sectionFromPath(true)).toBe("usage");
+    expect(sectionFromPath()).toBe("account");
+    expect(sectionFromPath(true)).toBe("account");
     expect(matchesSettings("usage", "processed minutes")).toBe(true);
     expect(matchesSettings("usage", "credits")).toBe(true);
   });

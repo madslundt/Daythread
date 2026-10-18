@@ -8,7 +8,8 @@ const resource = vi.hoisted(() => ({ data: undefined as Recap | undefined, useRe
 vi.mock("./useResource", () => ({
   useResource: (path: string, interval: number) => {
     resource.useResource(path, interval);
-    return { data: resource.data, loading: false, error: "", refresh: () => {}, setData: () => {} };
+    return { data: path?.startsWith("/v1/recaps/") ? resource.data : undefined,
+      loading: false, error: "", refresh: () => {}, setData: () => {} };
   },
 }));
 function render(day = "2026-10-15", compact = false) {
@@ -19,6 +20,15 @@ beforeEach(() => {
   resource.useResource.mockClear();
 });
 describe("transcribed recording recap display", () => {
+  it("offers summary translation without replacing the original topic controls", () => {
+    resource.data = { ...resource.data!, output_id: "11111111-1111-4111-8111-111111111111",
+      summary: "## Cocoa\nA test with dark chocolate." };
+    const html = render();
+    expect(html).toContain('aria-label="Summary language"');
+    expect(html).toContain("Checking summary language and saved translation…");
+    expect(html).toContain('aria-label="Copy summary: Cocoa"');
+    expect(html).toContain("Original passages");
+  });
   it("has no manual generation button and explains automatic updates", () => {
     resource.data = { ...resource.data!, stale: true };
     const html = render();

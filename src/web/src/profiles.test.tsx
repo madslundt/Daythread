@@ -115,13 +115,13 @@ describe("profile isolation", () => {
     expect(html).not.toContain("Manage profiles");
   });
 
-  it("lists profiles with editing and creation in their own settings category", () => {
+  it("lists profiles with editing and creation under account settings", () => {
     vi.stubGlobal("window", { location: { pathname: "/settings/profiles" } });
-    expect(sectionFromPath()).toBe("profiles");
+    expect(sectionFromPath()).toBe("account");
     expect(matchesSettings("profiles", "rename profile")).toBe(true);
-    const navigation = renderToStaticMarkup(<SettingsNavigation section="profiles" search="" onSearch={() => {}}
+    const navigation = renderToStaticMarkup(<SettingsNavigation section="account" search="" onSearch={() => {}}
       onSelect={() => {}} preferencesDirty={false} serverDirty={false} />);
-    expect(navigation).toContain('href="/settings/profiles" aria-current="page"');
+    expect(navigation).toContain('href="/settings/account" aria-current="page"');
     const html = renderToStaticMarkup(<ProfileManagement profiles={[{ id: "default", name: "Default" }, { id: "work", name: "Work" }]}
       selected="work" onSelect={() => {}} onCreate={() => {}} onUpdate={() => {}} />);
     expect(html).toContain('aria-label="Profiles"');

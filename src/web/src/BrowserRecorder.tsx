@@ -142,7 +142,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
     } catch (error) { if (alive.current) setError(errorMessage(error)); }
     finally { if (alive.current) setBusy(""); }
   }
-  return <section className="browser-recorder" hidden={!visible && !active && !recordings.length && !unsaved && !saving} aria-label={t("Record audio")}>
+  return <section className="browser-recorder" hidden={!visible && !active && !unsaved && !saving} aria-label={t("Record audio")}>
     <div className="section-heading">
       <h2>{t("Record audio")}</h2>
       {active ? <div className="button-row">
@@ -151,6 +151,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
       </div> : <button className="button accent" disabled={starting || saving || !!unsaved || !!busy || !microphoneAvailable()}
         onClick={() => void start()}><Icon name="mic" />{starting ? t("Opening microphone…") : t("Start recording")}</button>}
     </div>
+    <p className="caption" role="status">{active ? t("Recording on this device") : t("Recording stopped on this device")}</p>
     <p className="caption">{microphoneAvailable()
       ? t("Record with this device’s microphone. After stopping, choose Upload now, Remove, or Upload later.")
       : t("Microphone recording requires HTTPS or localhost and a supported browser.")}</p>

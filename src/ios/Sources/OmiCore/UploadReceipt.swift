@@ -34,6 +34,8 @@ public enum UploadReceipt {
             guard matches("event_id", item.id), value["device_id"] as? String == item.deviceID,
                   let occurred = date("occurred_at"), abs(occurred.timeIntervalSince(item.capturedAt)) < 0.002,
                   value["action"] as? String == item.action?.rawValue,
+                  item.meetingIntent == nil || value["meeting_intent"] as? String == item.meetingIntent,
+                  item.meetingID == nil || (value["meeting_id"] as? String).flatMap(UUID.init(uuidString:)) == item.meetingID,
                   item.meetingMaxMinutes == nil || value["meeting_max_minutes"] as? Int == item.meetingMaxMinutes,
                   item.meetingMinSeconds == nil || value["meeting_min_seconds"] as? Int == item.meetingMinSeconds,
                   item.markerCooldownSeconds == nil || value["marker_cooldown_seconds"] as? Int == item.markerCooldownSeconds else { throw CaptureError.invalidReceipt }

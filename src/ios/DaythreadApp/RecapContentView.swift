@@ -16,6 +16,17 @@ struct RecapContentView: View {
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
+        SummaryTranslationView(output: recap) {
+            original
+        }
+        .buttonStyle(.borderless)
+        .disclosureGroupStyle(RecapDisclosureStyle())
+        .id(identity)
+        .onChange(of: identity, initial: true) { _, _ in
+            checks = RecapCheckStore().checks(archive: model.archiveIdentity, day: day, version: version)
+        }
+    }
+    private var original: some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                 RecapTopicView(group: group, day: day, version: version, sources: recap["sources"].array,
@@ -29,12 +40,6 @@ struct RecapContentView: View {
                 ImportanceButton(target: .init(kind: "recap", id: version), label: L10n.text("day recap"))
                     .font(.subheadline)
             }
-        }
-        .buttonStyle(.borderless)
-        .disclosureGroupStyle(RecapDisclosureStyle())
-        .id(identity)
-        .onChange(of: identity, initial: true) { _, _ in
-            checks = RecapCheckStore().checks(archive: model.archiveIdentity, day: day, version: version)
         }
     }
     private func saveChecks() {

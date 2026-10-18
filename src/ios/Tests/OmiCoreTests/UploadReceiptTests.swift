@@ -84,3 +84,18 @@ extension UploadReceiptTests {
         XCTAssertNoThrow(try UploadReceipt.validate(data(receipt),for:item))
     }
 }
+
+extension UploadReceiptTests {
+    func testMeetingEndReceiptMustConfirmTargetMeetingAndIntent() throws {
+        var item = OutboxItem(id: UUID(), kind: .event, deviceID: "pendant", capturedAt: Date())
+        item.action = .meetingToggle; item.meetingIntent = "end"; item.meetingID = UUID()
+        var receipt: [String: Any] = ["event_id": item.id.uuidString, "device_id": item.deviceID,
+            "occurred_at": DurableStore.stamp(item.capturedAt), "action": "meeting_toggle",
+            "meeting_intent": "end", "meeting_id": item.meetingID!.uuidString.lowercased()]
+        XCTAssertNoThrow(try UploadReceipt.validate(data(receipt), for: item))
+        receipt["meeting_id"] = UUID().uuidString
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt), for: item))
+        receipt["meeting_id"] = item.meetingID!.uuidString; receipt["meeting_intent"] = "start"
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt), for: item))
+    }
+}

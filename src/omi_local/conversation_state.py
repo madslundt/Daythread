@@ -80,16 +80,54 @@ def quiet_runs(quiet: list, blockers: list) -> list:
     return result
 
 
+def meeting_timeline(snapshot: dict, now: datetime) -> dict:
+    """Replay meeting intent with the same recorded-quiet evidence as live recaps.
+
+    Absence of uploads is unknown, never silence. Imports and receipt-timed
+    webhooks cannot establish continuity on the device that started a meeting.
+    """
+    devices = {json.loads(event.get("hint_policy", "{}")).get(
+        "meeting_capture_device_id", event["device_id"],
+    ) for event in snapshot["events"]
+               if event["action"] == "meeting_toggle"}
+    observed = {}
+    settled = stamp(now - timedelta(seconds=30))
+    for device in devices:
+        quiet, blockers = [], []
+        for row in snapshot["rows"]:
+            if row["device_id"] != device or finished_file(row):
+                continue
+            value = activity(row)
+            if (row["state"] != "done" or row["text"]
+                    or row.get("source_kind") == "omi_audio_webhook"
+                    or value.get("status") != "observed"):
+                blockers.append((row["started_at"], row["ended_at"]))
+                continue
+            base = datetime.fromisoformat(row["started_at"])
+            for start, end in value.get("non_speech", []):
+                left, right = stamp(base + timedelta(seconds=start)), min(
+                    row["ended_at"], settled, stamp(base + timedelta(seconds=end)),
+                )
+                if left < right:
+                    quiet.append((left, right, (row["id"], row["source_version"])))
+            for start, end in value.get("speech", []):
+                blockers.append((stamp(base + timedelta(seconds=start)),
+                                 stamp(base + timedelta(seconds=end))))
+        blockers.extend((gap["started_at"], gap["ended_at"]) for gap in snapshot["gaps"]
+                        if gap["device_id"] in {device, ""})
+        observed[device] = quiet_runs(quiet, blockers)
+    return project_events(snapshot["events"], now, observed)
+
+
 def conversations(
     snapshot: dict, now: datetime, quiet_seconds: int, *, respect_open_meeting: bool = True,
 ) -> list[Conversation]:
     settled = stamp(now - timedelta(seconds=30))
     streams: dict[str, list[dict]] = {}
     result = []
-    timeline = project_events(snapshot["events"], now)
+    timeline = meeting_timeline(snapshot, now)
     active = timeline["active_meeting"]
-    active_device = next((event["device_id"] for event in snapshot["events"]
-                          if active and event["event_id"] == active["id"]), None)
+    active_device = active["meeting_capture_device_id"] if active else None
     for row in snapshot["rows"]:
         if row["started_at"] > stamp(now) or row["state"] == "expired":
             continue
@@ -183,7 +221,7 @@ def finished_file(row: dict) -> bool:
 def recordings(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Conversation]:
     timestamp = stamp(now)
     result = []
-    timeline = project_events(snapshot["events"], now)
+    timeline = meeting_timeline(snapshot, now)
     for row in snapshot["rows"]:
         if not finished_file(row):
             continue

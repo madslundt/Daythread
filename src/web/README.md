@@ -52,9 +52,12 @@ Saved recordings, meetings, person/project labels, day recaps and individual rec
 
 Settings includes a searchable **Models, keys & server settings** editor shared with iPhone. It starts with separate **Speech-to-text (STT)** and **Language model (LLM)** sections, each showing its own endpoint URL, write-only API key and model field. Enter local or hosted endpoints and choose a discovered model or Custom to enter a name. Processing options, STT language routes and LLM task routes appear below these connections. All backend settings remain available across the preference controls and server editor. Key actions distinguish Keep, Replace, Clear, and route inheritance. Settings requiring a backend restart display that state explicitly. Configuration is fetched without HTTP caching and replacement keys are never stored in browser storage.
 
-Transcript language controls use tabs for **Original** and each configured translation language.
-Targets matching at least 95% of the current transcript or topic passage are hidden, based on
-local passage detection weighted by letter count. Uncertain text keeps translation available.
+Transcript and summary language controls keep **Original** available and limit translation
+choices to **Settings → Translation languages**. Targets matching at least 90% of the current
+text are hidden, based on local detection weighted by letter count. For mixed text below 90%,
+the dominant language is suggested when enabled in Settings; an explicit target choice wins.
+The share is an estimate of text coverage, not detector confidence or audio duration.
+Uncertain text keeps translation available without presenting a dominant-language suggestion.
 Opening a language tab only checks its saved translation; an untranslated tab shows a blurred
 original with an explicit **Translate** action. Generation keeps that preview with a progress
 status, then displays the saved translation. Failures show an error and **Translate again**

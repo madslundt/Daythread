@@ -14,6 +14,11 @@ public struct RecordingSchedule: Codable, Equatable, Sendable {
 
     public init() {}
 
+    /// Phone hints must never borrow quiet evidence from a previously paired pendant.
+    public func hintDeviceID(phoneID: UUID, pendantID: String) -> String {
+        activeSource == "phone" ? "phone-" + phoneID.uuidString.lowercased() : pendantID
+    }
+
     public func allows(_ date: Date, calendar: Calendar = .current) -> Bool {
         guard enabled else { return false }
         if manualOverride || !scheduled { return true }

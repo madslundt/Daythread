@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Callable
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 from uuid import UUID
 
 import httpx
@@ -25,6 +25,21 @@ CJK_LETTERS = re.compile(
     r"[\u3005\u3006\u303b\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff"
     r"\uf900-\ufaff\uff66-\uff9f\U00020000-\U0002fa1f]+"
 )
+
+
+def translation_targets(memory: Memory, requested: str | None) -> tuple[str, list[str]]:
+    """Choose only configured targets; an empty list disables translation."""
+    languages = list(memory.settings.translation_languages)
+    if requested is None:
+        return (languages[0] if languages else ""), languages
+    try:
+        target = translation_language(requested)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if target not in languages:
+        raise HTTPException(422, "Choose a translation language enabled in Settings")
+    return target, languages
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transcript_translations (
@@ -139,20 +154,50 @@ def language_profiles() -> DetectorFactory:
     return factory
 
 
-def transcript_in_language(text: str, language: str) -> bool:
+class LanguageAnalysis(TypedDict):
+    dominant_language: str | None
+    dominant_language_share: float
+    language_shares: dict[str, float]
+
+
+def _language_sample(text: str) -> str:
+    """Sample equal-width strata across long recordings, including their final stratum."""
+    if len(text) <= 3072:
+        return text
+    samples = []
+    for index in range(16):
+        left, right = len(text) * index // 16, len(text) * (index + 1) // 16
+        start = (left + right - 192) // 2
+        end = start + 192
+        # Keep complete words where possible without dropping unspaced scripts.
+        if start > left and text[start - 1:start + 1].isalpha():
+            boundary = re.search(r"\W", text[start:start + 24])
+            if boundary:
+                start += boundary.end()
+        if end < right and text[end - 1:end + 1].isalpha():
+            boundaries = list(re.finditer(r"\W", text[end - 24:end]))
+            if boundaries:
+                end = end - 24 + boundaries[-1].start()
+        samples.append(text[start:end])
+    return "\n".join(samples)
+
+
+def analyze_transcript_languages(text: str) -> LanguageAnalysis:
     """Measure language coverage locally, with context for ambiguous speech fragments.
 
     Short windows can confuse related languages or misread conversational endings.
     A confidently classified paragraph supplies context, while corroborated foreign
     windows still count against its language. Coverage is letter-weighted, not the
-    detector's document confidence. Classification and text remain request-local.
+    detector's document confidence. Long recordings use equal-width samples spread
+    across the entire recording; shares are estimates. Work and retained text stay
+    bounded, and no transcript text is cached beyond this request.
     """
-    target = language.lower().split("-")[0]
-    if target == "auto" or not text.strip():
-        return False
+    unknown: LanguageAnalysis = {
+        "dominant_language": None, "dominant_language_share": 0.0, "language_shares": {},
+    }
+    if not text.strip():
+        return unknown
     factory = language_profiles()
-    if target not in {code.split("-")[0] for code in factory.get_lang_list()}:
-        return False
     checked: dict[str, dict[str, float]] = {}
 
     def classify(passage: str, cjk: bool = False) -> dict[str, float] | None:
@@ -175,18 +220,21 @@ def transcript_in_language(text: str, language: str) -> bool:
         checked[passage] = probabilities
         return probabilities
 
-    matched, total = 0, 0
-    for paragraph in text.splitlines():
+    matched: dict[str, int] = {}
+    total = 0
+    for paragraph in _language_sample(text).splitlines():
         # Speaker labels are presentation metadata, not spoken text.
         paragraph = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", paragraph, flags=re.I)
         paragraph_words = re.findall(r"[^\W\d_]+", paragraph, flags=re.UNICODE)
         normalized = " ".join(paragraph_words)
-        contextual = False
+        contextual = ""
         if len(paragraph_words) >= 24 and not CJK_LETTERS.search(paragraph):
             context = classify(normalized)
             if context is None:
-                return False
-            contextual = context.get(target, 0) >= 0.8
+                return unknown
+            candidate = max(context, key=context.get, default="")
+            if context.get(candidate, 0) >= 0.8:
+                contextual = candidate
         for utterance in re.split(r"[.!?;。！？]+", paragraph):
             utterance = re.sub(r"^\s*(?:Speaker|Taler)\s*\d+\s*:\s*", "", utterance, flags=re.I)
             # Script changes also separate languages without sentence punctuation.
@@ -196,16 +244,12 @@ def transcript_in_language(text: str, language: str) -> bool:
                 total += len(letters)
                 if len(letters) < 12:
                     if contextual:
-                        matched += len(letters)
+                        matched[contextual] = matched.get(contextual, 0) + len(letters)
                     continue
                 cjk = bool(CJK_LETTERS.fullmatch(letters))
                 if cjk:
-                    if target not in {"zh", "ja"}:
-                        continue
                     units, width, separator = letters, 48, ""
                 else:
-                    if target in {"zh", "ja"}:
-                        continue
                     units = re.findall(r"[^\W\d_]+", run, flags=re.UNICODE)
                     if len(units) < 3 or all(word.istitle() or word.isupper() for word in units):
                         continue
@@ -216,17 +260,18 @@ def transcript_in_language(text: str, language: str) -> bool:
                     passage = separator.join(units[context_start:context_start + width])
                     probabilities = classify(passage, cjk)
                     if probabilities is None:
-                        return False
-                    same_language = probabilities.get(target, 0) >= 0.9
-                    if not same_language and contextual:
-                        foreign = max(probabilities, key=probabilities.get, default="")
+                        return unknown
+                    detected = max(probabilities, key=probabilities.get, default="")
+                    language = detected if probabilities.get(detected, 0) >= 0.9 else ""
+                    if language != contextual and contextual and not cjk:
+                        foreign = language
                         corroborated = False
-                        if foreign != target and probabilities.get(foreign, 0) >= 0.9:
+                        if foreign:
                             # A clear foreign sentence must remain translatable, even
                             # when the paragraph's dominant language hides it.
                             sentence = classify(separator.join(units)) if len(letters) >= 32 else {}
                             if sentence is None:
-                                return False
+                                return unknown
                             corroborated = sentence.get(foreign, 0) >= 0.9
                             if not corroborated:
                                 index = normalized.find(passage)
@@ -234,12 +279,41 @@ def transcript_in_language(text: str, language: str) -> bool:
                                 left = max(0, min(word_index - 4, len(paragraph_words) - 16))
                                 context = classify(" ".join(paragraph_words[left:left + 16]))
                                 if context is None:
-                                    return False
+                                    return unknown
                                 corroborated = context.get(foreign, 0) >= 0.9
-                        same_language = not corroborated
-                    if same_language:
-                        matched += sum(len(unit) for unit in units[start:start + width])
-    return total > 0 and matched * 100 >= total * 95
+                        if not corroborated:
+                            language = contextual
+                    if language:
+                        matched[language] = matched.get(language, 0) + sum(
+                            len(unit) for unit in units[start:start + width]
+                        )
+    if not total or not matched:
+        return unknown
+    shares = {code: count / total for code, count in sorted(matched.items())}
+    dominant = max(shares, key=shares.get)
+    return {"dominant_language": dominant, "dominant_language_share": shares[dominant],
+            "language_shares": shares}
+
+
+def transcript_in_language(text: str, language: str) -> bool:
+    """A language covering at least 90% of spoken letters needs no translation."""
+    return analyze_transcript_languages(text)["language_shares"].get(
+        language.lower().split("-")[0], 0
+    ) >= 0.9
+
+
+def recommended_translation_language(
+    analysis: LanguageAnalysis, languages: list[str],
+) -> str | None:
+    """Offer the dominant enabled language only for observed mixed-language speech."""
+    if (
+        analysis["dominant_language_share"] >= 0.9
+        or len(analysis["language_shares"]) < 2
+        or sum(analysis["language_shares"].values()) < 0.8
+    ):
+        return None
+    return next((code for code in languages
+                 if code.split("-")[0] == analysis["dominant_language"]), None)
 
 
 def translation_chunks(text: str, size: int = 4000) -> list[str]:
@@ -264,24 +338,20 @@ def read_translation(
     if source is None:
         raise HTTPException(404, "Transcript not found")
     passage = translation_passage(source, start, end, version)
-    languages = list(memory.settings.translation_languages)
-    language = languages[0] if languages else ""
-    if requested_language is not None:
-        try:
-            language = translation_language(requested_language)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        if language not in languages:
-            raise HTTPException(422, "Choose a translation language enabled in Settings")
-    already_in_target = bool(language) and source["state"] == "done" and transcript_in_language(
-        passage, language
-    )
+    language, languages = translation_targets(memory, requested_language)
+    analysis = analyze_transcript_languages(passage if source["state"] == "done" else "")
+    recommended = recommended_translation_language(analysis, languages)
+    if requested_language is None and recommended:
+        language = recommended
     redundant = [
         code for code in languages if source["state"] == "done"
-        and (already_in_target if code == language else transcript_in_language(passage, code))
+        and analysis["language_shares"].get(code.split("-")[0], 0) >= 0.9
     ]
+    already_in_target = language in redundant
     return {
         "language": language,
+        "language_analysis": analysis,
+        "recommended_language": recommended,
         "available_languages": languages,
         "redundant_languages": redundant,
         "already_in_target_language": already_in_target,
@@ -307,9 +377,7 @@ async def generate_translation(
         )
         language = result["language"]
         if not language:
-            raise HTTPException(
-                409, "Add a translation language in Settings before translating"
-            )
+            raise HTTPException(409, "Add a translation language in Settings before translating")
         if language not in memory.settings.translation_languages:
             raise HTTPException(
                 409, "Translation languages changed; choose a language and try again"

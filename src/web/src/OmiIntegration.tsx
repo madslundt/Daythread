@@ -53,8 +53,7 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search, 
   }
   return (
     <section className="connection-options" aria-label={t("Recording devices and brands")}>
-      <div className="settings-section-heading"><h2>{t("Connections")}</h2>
-        <p>{t("Choose how recordings reach your private archive.")}</p></div>
+      <p>{t("Choose how recordings reach your private archive.")}</p>
       <section className="connection-local">
       <span className="settings-badge">{t("Local capture")}</span>
       <h3>{t("Omi + iPhone companion")}</h3>
@@ -67,13 +66,13 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search, 
         <div className="settings-disclosure-body">
       <p className="muted settings-description">
         {t("Optionally import existing conversations from Omi’s cloud into your local archive. Imports include transcripts only, without original audio.")}{" "}</p>
-      {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Profiles to import conversations.")}</p> : null}
+      {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p> : null}
       {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
       {resource.loading ? <Loading>{t("Checking Omi API connection…")}</Loading> : resource.data ? (
         <p className="caption">
           {resource.data.configured
             ? t("Omi API is configured on your server. Import up to 25 conversations at a time, newest first.")
-            : <>{t("To enable cloud import, add your Omi API key in Models & server → Omi connections. Saved keys stay on your server and are never displayed here.")}</>}
+            : <>{t("To enable cloud import, add your Omi API key in Advanced → Omi connections. Saved keys stay on your server and are never displayed here.")}</>}
         </p>
       ) : null}
       {!resource.data?.configured ? <button type="button" className="text-button" onClick={() => onConfigure()}>{t("Set up an Omi API key")}{" "}<Icon name="chevron-right" size={14} /></button> : null}
@@ -101,7 +100,7 @@ export function OmiIntegration({ onSaved, onConfigure, refreshRevision, search, 
       </details>
       <details className="settings-disclosure" open={search.trim() ? true : undefined}>
         <summary>{t("Forward audio from the official app")}{" "}<span>{t("Advanced · optional")}</span></summary>
-        <div className="settings-disclosure-body">{profileSelected ? <AudioForwarding onSaved={onSaved} /> : <p className="caption">{t("Choose a profile in Settings → Profiles to set up an audio receiver for its archive.")}</p>}</div>
+        <div className="settings-disclosure-body">{profileSelected ? <AudioForwarding onSaved={onSaved} /> : <p className="caption">{t("Choose a profile in Settings → Account & profiles to set up an audio receiver for its archive.")}</p>}</div>
       </details>
       <VendorConnections onSaved={onSaved} onConfigure={onConfigure} refreshRevision={refreshRevision}
         search={search} profileSelected={profileSelected} />

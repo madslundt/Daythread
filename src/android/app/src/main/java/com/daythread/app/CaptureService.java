@@ -281,10 +281,7 @@ public final class CaptureService extends Service {
         if (!active || !captureAllowed() || destination == null) return;
         try {
             // The backend replays the raw gestures and enforces cooldown/minimum duration once.
-            outbox.enqueue("event", destination, new Json().put("device_id", device).put("occurred_at", now().toString()).put("action", action)
-                .put("meeting_max_minutes", AppState.preferences(this).getInt("meeting_max_minutes", 120))
-                .put("meeting_min_seconds", AppState.preferences(this).getInt("meeting_min_seconds", 60))
-                .put("marker_cooldown_seconds", AppState.preferences(this).getInt("marker_cooldown_seconds", 60)));
+            outbox.enqueue("event", destination, new Json().put("device_id", device).put("occurred_at", now().toString()).put("action", action));
             UploadJob.pump(this); UploadJob.schedule(this);
         } catch (Exception e) { fail(e); }
     }

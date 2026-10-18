@@ -165,6 +165,21 @@ def test_summary_language_change_reanalyzes_existing_recordings(recording):
     assert memory.inference.calls == 2
 
 
+def test_language_prompt_upgrade_reanalyzes_existing_recordings(recording, monkeypatch):
+    from omi_local import recording_topics
+
+    client, memory, key = recording
+    memory.inference = Model()
+    with monkeypatch.context() as previous:
+        previous.setattr(recording_topics, "VERSION", "recording-topics-2-broad-subjects")
+        assert run(memory)
+        assert not run(memory)
+    assert run(memory)
+    assert memory.inference.calls == 2
+    assert not run(memory)
+    assert client.get(f"/v1/transcripts/{key}").json()["text"] == TEXT
+
+
 @pytest.mark.parametrize("text", [
     "Hej", "\n".join(f"Topic line {i}: a complete sentence." for i in range(1000)) + " TAIL",
 ], ids=["short", "long"])

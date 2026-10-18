@@ -81,8 +81,7 @@ export function ManagedAccountPanel() {
 }
 
 export function ManagedConnections() {
-  return <section aria-labelledby="managed-connections-title">
-    <div className="settings-section-heading"><h2 id="managed-connections-title">{t("Connections")}</h2></div>
+  return <section aria-label={t("Recording & devices")}>
     <p>{t("Sign in to Daythread in the iPhone app to sync recordings with your hosted archive.")}</p>
     <a className="button" href={managedServiceUrl("/account")}>{t("Manage account")}</a>
   </section>;

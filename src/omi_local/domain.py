@@ -1,4 +1,5 @@
 import io
+import json
 import wave
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -27,6 +28,25 @@ class ButtonEvent(BaseModel):
     meeting_max_minutes: int | None = Field(default=None, ge=1, le=480, strict=True)
     meeting_min_seconds: int | None = Field(default=None, ge=60, le=3600, strict=True)
     marker_cooldown_seconds: int | None = Field(default=None, ge=0, le=3600, strict=True)
+    meeting_intent: Literal["start", "end"] | None = None
+    meeting_id: UUID | None = None
+    meeting_capture_device_id: str | None = Field(
+        default=None, min_length=1, max_length=80, pattern=r"^[\w-]+$",
+    )
+
+    @model_validator(mode="after")
+    def meeting_target(self):
+        if self.meeting_intent is not None and self.action != "meeting_toggle":
+            raise ValueError("Meeting intent requires a meeting event")
+        if self.meeting_intent == "end" and self.meeting_id is None:
+            raise ValueError("Ending a meeting requires its ID")
+        if self.meeting_id is not None and self.meeting_intent != "end":
+            raise ValueError("Meeting ID is only used when ending a meeting")
+        if self.meeting_capture_device_id is not None and (
+            self.action != "meeting_toggle" or self.meeting_intent != "start"
+        ):
+            raise ValueError("Capture device association requires a meeting start")
+        return self
 
 
 class RewindRequest(BaseModel):
@@ -95,6 +115,7 @@ class HintPolicy(BaseModel):
     marker_after_seconds: int = Field(default=60, ge=0, le=600)
     meeting_min_seconds: int = Field(default=60, ge=60, le=3600)
     meeting_context_seconds: int = Field(default=60, ge=0, le=600)
+    meeting_quiet_minutes: int = Field(default=10, ge=1, le=30)
 
 
 def wav_duration(data: bytes) -> float:
@@ -111,40 +132,73 @@ def wav_duration(data: bytes) -> float:
         raise ValueError("Invalid PCM WAV file") from exc
 
 
-def project_events(events: list[dict], now: datetime) -> dict:
+def project_events(
+    events: list[dict], now: datetime, quiet_by_device: dict[str, list] | None = None,
+) -> dict:
     """Replay raw capture events into approximate hints, suppressing accidental gestures."""
     meetings: list[dict] = []
     markers: list[dict] = []
     active: dict | None = None
     next_marker_at: datetime | None = None
+    policy = HintPolicy()
+
+    def close_after_quiet(before: datetime) -> None:
+        nonlocal active
+        if not active:
+            return
+        # A brief pause during the first hour must never end a meeting. Only
+        # continuous, positively observed quiet after that hour counts.
+        eligible = datetime.fromisoformat(active["started_at"]) + timedelta(hours=1)
+        for start, end, _proof in (quiet_by_device or {}).get(
+            active["meeting_capture_device_id"], [],
+        ):
+            finish = max(datetime.fromisoformat(start), eligible) + timedelta(
+                minutes=active["meeting_quiet_minutes"],
+            )
+            if finish <= min(datetime.fromisoformat(end), before):
+                active.update(ended_at=stamp(finish), end_reason="observed_non_speech")
+                active = None
+                return
+
     for event in sorted(events, key=lambda event: (event["occurred_at"], event["event_id"])):
         at = datetime.fromisoformat(event["occurred_at"])
         if at > now:
             continue
-        if active and at >= datetime.fromisoformat(active["auto_stop_at"]):
-            active.update(ended_at=active["auto_stop_at"], end_reason="timeout")
-            active = None
-        policy = HintPolicy.model_validate_json(event.get("hint_policy", "{}"))
+        close_after_quiet(at)
+        # Legacy timing overrides remain stored for retry identity only.
+        # Only the new quiet threshold varies, captured when a meeting starts.
+        metadata = json.loads(event.get("hint_policy", "{}"))
         if event["action"] == "mark":
             if next_marker_at is not None and at < next_marker_at:
                 continue
             markers.append(
                 {key: value for key, value in event.items() if key != "hint_policy"}
                 | {
-                    "context_start": stamp(at - timedelta(seconds=event["context_seconds"])),
+                    "context_start": stamp(at - timedelta(seconds=60)),
                     "context_end": stamp(at + timedelta(seconds=policy.marker_after_seconds)),
                     "timing": "approximate",
                 }
             )
             next_marker_at = at + timedelta(seconds=policy.marker_cooldown_seconds)
+        elif metadata.get("meeting_intent") == "end":
+            if active and active["id"] == metadata.get("meeting_id"):
+                active.update(ended_at=stamp(at), end_reason="button")
+                active = None
+        elif active and metadata.get("meeting_intent") == "start":
+            continue
         elif active:
             active.update(ended_at=stamp(at), end_reason="button")
             active = None
         else:
             active = {
                 "id": event["event_id"],
+                "device_id": event["device_id"],
+                "meeting_capture_device_id": metadata.get("meeting_capture_device_id") or (
+                    None if event["device_id"] == "web" else event["device_id"]
+                ),
                 "started_at": stamp(at),
-                "auto_stop_at": stamp(at + timedelta(minutes=event["max_minutes"])),
+                "auto_stop_at": None,
+                "meeting_quiet_minutes": metadata.get("meeting_quiet_minutes", 10),
                 "ended_at": None,
                 "end_reason": None,
                 "qualifies_at": stamp(at + timedelta(seconds=policy.meeting_min_seconds)),
@@ -152,9 +206,7 @@ def project_events(events: list[dict], now: datetime) -> dict:
                 "timing": "approximate",
             }
             meetings.append(active)
-    if active and now >= datetime.fromisoformat(active["auto_stop_at"]):
-        active.update(ended_at=active["auto_stop_at"], end_reason="timeout")
-        active = None
+    close_after_quiet(now)
     accepted = []
     for meeting in meetings:
         end = datetime.fromisoformat(meeting["ended_at"]) if meeting["ended_at"] else now

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TranscriptTranslationView } from "./TranscriptTranslation";
-import { TranscriptTranslationRequests, type TranscriptTranslationData } from "./transcriptTranslationRequests";
+import { TranscriptTranslationRequests, preferredTranslationLanguage, rememberTranslationLanguage, type TranscriptTranslationData } from "./transcriptTranslationRequests";
 import { selectProfile } from "./profiles";
 
 const data: TranscriptTranslationData = {
@@ -17,6 +17,20 @@ const view = { original, translated: false, loading: false, generating: false, e
 afterEach(() => { selectProfile("default"); vi.unstubAllGlobals(); });
 
 describe("transcript translation requests", () => {
+  it("uses the saved output and selected language for summary translation", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
+    vi.stubGlobal("fetch", fetch);
+    selectProfile("alice");
+    const requests = new TranscriptTranslationRequests("output/id", undefined, "summary");
+    await requests.run("GET", "de");
+    await requests.run("POST", "de");
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/v1/outputs/output%2Fid/translation?language=de",
+      "/v1/outputs/output%2Fid/translation?language=de",
+    ]);
+    expect(fetch.mock.calls.map(([, options]) => options.method)).toEqual(["GET", "POST"]);
+    expect(new Headers(fetch.mock.calls[1][1].headers).get("X-Omi-Profile")).toBe("alice");
+  });
   it("looks up saved translations without generating and uses a separate explicit POST", async () => {
     const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
     vi.stubGlobal("fetch", fetch);
@@ -103,12 +117,15 @@ describe("transcript translation requests", () => {
 });
 
 describe("transcript translation display", () => {
-  it("shows Original and every eligible language as tabs before translation exists", () => {
+  it("shows Original and the target as compact tabs with a searchable language picker", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, translation: null }} />);
     expect(html).toContain('role="tablist"');
-    for (const label of ["Original", "English", "Danish", "German"]) expect(html).toContain(`>${label}</button>`);
-    expect(html).not.toContain("<select");
-    expect(html).not.toContain("<option");
+    for (const label of ["Original", "English"]) expect(html).toContain(`>${label}</button>`);
+    expect(html).toContain('>German</option>');
+    expect(html).not.toContain('>Japanese</option>');
+    expect(html).toContain('type="search"');
+    expect(html).toContain("<select");
+    expect(html).toContain("<option");
     expect(html).not.toContain("translation-trigger");
     expect(html).toContain(original);
   });
@@ -144,7 +161,7 @@ describe("transcript translation display", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ ...data, redundant_languages: ["en", "da"] }} />);
     expect(html).not.toContain(">English</button>");
     expect(html).not.toContain(">Danish</button>");
-    expect(html).toContain(">German</button>");
+    expect(html).toContain(">German</option>");
     expect(html).toContain(">Original</button>");
   });
 
@@ -156,12 +173,57 @@ describe("transcript translation display", () => {
     expect(html).not.toContain("Translate to English");
   });
 
-  it("explains how to enable translation when none are configured", () => {
+  it("offers no targets when translation languages are disabled in Settings", () => {
     const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{ language: "", available_languages: [], already_in_target_language: false, translation: null }} />);
-    expect(html).toContain("Add translation languages");
+    expect(html).not.toContain(">Japanese</option>");
+    expect(html).not.toContain('aria-label="Find a translation language"');
     expect(html).toContain('href="/settings/general"');
     expect(html).toContain(original);
     expect(html).not.toContain("translation-trigger");
+  });
+
+  it("limits the picker to translation languages enabled in Settings", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} />);
+    expect(html).toContain(">Danish</option>");
+    expect(html).toContain(">English</option>");
+    expect(html).not.toContain(">Japanese</option>");
+  });
+
+  it.each(["transcript", "summary"] as const)("offers translation into a dominant language for mixed %s", (content) => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} content={content} data={{
+      ...data, translation: null, recommended_language: "da",
+      language_analysis: { dominant_language: "da", dominant_language_share: 0.8,
+        language_shares: { da: 0.8, en: 0.2 } },
+    }} />);
+    expect(html).toContain("Danish is dominant (about 80%)");
+    expect(html).toContain("Translate to Danish");
+    expect(html).toContain(original);
+  });
+
+  it.each([0.9, 0.95, 1])("does not offer the dominant language when its share is %s", (share) => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{
+      ...data, translation: null, recommended_language: "da",
+      language_analysis: { dominant_language: "da", dominant_language_share: share,
+        language_shares: { da: share, en: 1 - share } },
+    }} />);
+    expect(html).not.toContain("is dominant");
+    expect(html).not.toContain("Translate to Danish");
+  });
+
+  it("does not offer a disabled dominant target or mistake uncertainty for mixed languages", () => {
+    for (const changes of [
+      { available_languages: ["en"] },
+      { language_analysis: { dominant_language: "da", dominant_language_share: 0.8,
+        language_shares: { da: 0.8 } } },
+    ]) {
+      const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={{
+        ...data, translation: null, recommended_language: "da",
+        language_analysis: { dominant_language: "da", dominant_language_share: 0.8,
+          language_shares: { da: 0.8, en: 0.2 } }, ...changes,
+      }} />);
+      expect(html).not.toContain("is dominant");
+      expect(html).not.toContain("Translate to Danish");
+    }
   });
 
   it("shows a blurred original with status during lookup and generation", () => {
@@ -205,4 +267,37 @@ describe("transcript translation display", () => {
     expect(html).not.toContain("Translation model is unavailable");
     expect(html).not.toContain("translation-preview-text");
   });
+
+  it("uses summary copy and rich content within the same translation tabs", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data} translated
+      content="summary" renderText={(text) => <article><strong>{text}</strong></article>} />);
+    expect(html).toContain('aria-label="Summary language"');
+    expect(html).toContain("Generated translation · The original summary is preserved.");
+    expect(html).toContain(`<article><strong>${data.translation!.text}</strong></article>`);
+    expect(html).not.toContain("original transcript");
+  });
+
+  it("shows the original summary controls only on the Original tab", () => {
+    const renderText = (text: string, translated: boolean) => translated
+      ? <article>{text}</article> : <button>Original topic tools</button>;
+    const originalHtml = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data}
+      content="summary" renderText={renderText} />);
+    const pendingHtml = renderToStaticMarkup(<TranscriptTranslationView {...view}
+      data={{ ...data, translation: null }} translated content="summary" renderText={renderText} />);
+    expect(originalHtml).toContain("Original topic tools");
+    expect(pendingHtml).not.toContain("Original topic tools");
+    expect(pendingHtml).toContain("translation-preview-text");
+    expect(pendingHtml).toContain("Translate to English");
+  });
+});
+
+
+it("remembers the last explicit translation target without requiring shared settings", () => {
+  const values = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key), setItem: (key: string, value: string) => values.set(key, value) });
+  expect(preferredTranslationLanguage()).toBe("en");
+  rememberTranslationLanguage("ja");
+  expect(preferredTranslationLanguage()).toBe("ja");
+  rememberTranslationLanguage("invalid");
+  expect(preferredTranslationLanguage()).toBe("ja");
 });

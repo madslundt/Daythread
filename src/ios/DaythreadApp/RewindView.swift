@@ -65,7 +65,9 @@ struct RewindView: View {
                     }
                     if !result["summary"].text.isEmpty {
                         Section(L10n.text("What you heard")) {
-                            Text(.init(result["summary"].text)).textSelection(.enabled)
+                            SummaryTranslationView(output: result) {
+                                Text(.init(result["summary"].text)).textSelection(.enabled)
+                            }
                             EvidenceFeedbackView(outputID: result["output_id"].text, evidence: result["evidence"], outputText: result["summary"].text)
                         }
                     } else if summarize {

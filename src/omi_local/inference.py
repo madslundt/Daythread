@@ -67,10 +67,19 @@ SYSTEM = (
 
 def summary_language_instruction(language: str) -> str:
     if language.lower() == "auto":
-        return ""
-    return (
-        f" Write all generated summary prose in the language with code {language.lower()}, "
-        "regardless of the transcript language. Preserve source UUIDs, exact evidence quotes, "
+        instruction = (
+            " Use the transcript language. Write all generated titles, headings and summary prose "
+            "in the predominant language of the original transcripts, including intermediate "
+            "summaries. Determine the language from the transcript words, not from these English "
+            "instructions, metadata or previously generated summaries."
+        )
+    else:
+        instruction = (
+            " Write all generated titles, headings and summary prose in the language "
+            f"with code {language.lower()}, regardless of the transcript language."
+        )
+    return instruction + (
+        " Preserve source UUIDs, exact evidence quotes, "
         "proper names, JSON keys and schema enum values unchanged."
     )
 
@@ -139,7 +148,12 @@ class Inference(Transcription, InferenceUsage):
         return response
 
     async def generate(self, task: str, evidence: str) -> str:
-        return await self._generate(task, evidence, SYSTEM, 1600)
+        system = (
+            SYSTEM.replace("Respond in the user's language.",
+                           "Follow the task's output-language instruction.")
+            if self.task == "summary" else SYSTEM
+        )
+        return await self._generate(task, evidence, system, 1600)
 
     async def generate_json(self, task: str, evidence: str) -> str:
         return await self._generate(

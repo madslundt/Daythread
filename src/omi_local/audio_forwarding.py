@@ -104,8 +104,6 @@ def forwarding_routes(memory) -> APIRouter:
         if not secrets.compare_digest(supplied.encode(), secret.encode()):
             # Unauthenticated traffic must not overwrite operator diagnostics.
             raise HTTPException(401, "Invalid audio receiver token")
-        if current.settings.capture_paused:
-            fail(409, "Local capture is paused; resume in Settings before forwarding")
         if (
             request.headers.get("content-type", "").split(";")[0].strip().lower()
             != ("application/octet-stream")

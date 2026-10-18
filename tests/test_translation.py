@@ -15,7 +15,11 @@ from omi_local.inference import Inference, InferenceTruncated
 from omi_local.omi_api import ImportRequest, OmiAPI
 from omi_local.settings import Settings
 from omi_local.store import Store
-from omi_local.translation import transcript_in_language, translation_chunks
+from omi_local.translation import (
+    analyze_transcript_languages,
+    transcript_in_language,
+    translation_chunks,
+)
 
 DANISH = (
     "Vi skal sende forslaget til kunden i morgen. "
@@ -74,6 +78,8 @@ def test_reads_never_generate_and_explicit_translation_preserves_evidence(client
     assert client.get(path).json() == {
         "language": "da", "available_languages": ["da"],
         "translation": None, "already_in_target_language": False, "redundant_languages": [],
+        "language_analysis": analyze_transcript_languages(original["text"]),
+        "recommended_language": None,
     }
     assert calls == []
     translated = client.post(path).json()["translation"]
@@ -101,6 +107,8 @@ def test_translation_languages_select_separate_cache_independent_of_summary_lang
     assert client.get(path).json() == {
         "language": "en", "available_languages": ["en", "da"],
         "translation": None, "already_in_target_language": False, "redundant_languages": [],
+        "language_analysis": analyze_transcript_languages("Hello. Hej, hvordan går det?"),
+        "recommended_language": None,
     }
     assert client.post(path).json()["translation"]["language"] == "en"
     assert len(calls) == 2
@@ -108,13 +116,13 @@ def test_translation_languages_select_separate_cache_independent_of_summary_lang
     assert client.get(path, params={"language": "DA"}).json()["translation"] == first
     assert client.post(path, params={"language": "da"}).json()["translation"] == first
     client.patch("/v1/settings", json={"translation_languages": []})
-    assert client.get(path).json() == {
-        "language": "", "available_languages": [],
-        "translation": None, "already_in_target_language": False, "redundant_languages": [],
-    }
-    result = client.post(path)
-    assert result.status_code == 409
-    assert "Settings" in result.json()["detail"]
+    result = client.get(path).json()
+    assert result["language"] == ""
+    assert result["available_languages"] == []
+    assert result["translation"] is None
+    assert result["recommended_language"] is None
+    assert client.post(path, params={"language": "da"}).status_code == 422
+    assert client.post(path).status_code == 409
     assert len(calls) == 2
 
 
@@ -147,6 +155,8 @@ def test_target_language_transcripts_return_same_language_result_without_inferen
         "language": language.lower(), "available_languages": [language.lower()],
         "translation": None, "already_in_target_language": True,
         "redundant_languages": [language.lower()],
+        "language_analysis": analyze_transcript_languages(text),
+        "recommended_language": None,
     }
     response = client.post(path)
     assert response.status_code == 200
@@ -157,14 +167,14 @@ def test_target_language_transcripts_return_same_language_result_without_inferen
 @pytest.mark.parametrize(
     ("text", "language"),
     [
-        (DANISH * 10 + "\n" + ENGLISH, "da"),
+        (DANISH * 3 + "\n" + ENGLISH, "da"),
         (ENGLISH * 10 + "\n" + DANISH, "en-US"),
         ("We agreed to meet again tomorrow og så taler vi om projektet på dansk", "en"),
         ("Vi kommer til mødet i morgen but we should review the budget first", "da"),
-        (JAPANESE * 10 + "\n" + ENGLISH, "ja"),
+        (JAPANESE * 3 + "\n" + ENGLISH, "ja"),
         ("私たちは明日の会議で予算について話し合いplease check the budget決める予定です", "ja"),
-        (CHINESE * 10 + "\n" + ENGLISH, "zh-CN"),
-        (ENGLISH * 10 + "\n" + JAPANESE, "en"),
+        (CHINESE * 3 + "\n" + ENGLISH, "zh-CN"),
+        (ENGLISH * 3 + "\n" + JAPANESE, "en"),
     ],
 )
 def test_mixed_language_transcripts_remain_translatable_when_target_dominates(
@@ -259,12 +269,12 @@ def test_correction_during_language_classification_rejects_stale_snapshot(
         calls.clear()
     store = client.app.state.memory.store
 
-    def classify_then_correct(text, language):
+    def classify_then_correct(text):
         assert text == ENGLISH
         store.correct_transcript(key, DANISH)
-        return False
+        return analyze_transcript_languages(text)
 
-    monkeypatch.setattr("omi_local.translation.transcript_in_language", classify_then_correct)
+    monkeypatch.setattr("omi_local.translation.analyze_transcript_languages", classify_then_correct)
     result = client.post(path)
     assert result.status_code == 409
     assert result.json()["detail"] == "Transcript changed; try again"
@@ -273,7 +283,7 @@ def test_correction_during_language_classification_rejects_stale_snapshot(
 
 
 @pytest.mark.parametrize("cached", [False, True])
-def test_whitelist_removal_during_classification_rejects_stale_target(
+def test_disabled_language_during_classification_rejects_chosen_target(
     client, monkeypatch, cached
 ):
     _, path = source(client, ENGLISH)
@@ -283,21 +293,21 @@ def test_whitelist_removal_during_classification_rejects_stale_target(
         calls.clear()
     memory = client.app.state.memory
 
-    def classify_then_change_language(text, language):
-        assert language == "da"
+    def classify_then_change_language(text):
+        assert text == ENGLISH
         memory.settings.translation_languages = ["en"]
         memory.store.save_settings({"translation_languages": ["en"]})
-        return False
+        return analyze_transcript_languages(text)
 
     monkeypatch.setattr(
-        "omi_local.translation.transcript_in_language", classify_then_change_language
+        "omi_local.translation.analyze_transcript_languages", classify_then_change_language
     )
     result = client.post(path)
     assert result.status_code == 409
     assert result.json()["detail"] == (
         "Translation languages changed; choose a language and try again"
     )
-    assert calls == []
+    assert not calls
 
 
 @pytest.mark.parametrize("action", ["correct", "delete", "expire", "language"])
@@ -508,13 +518,29 @@ def test_whitelist_is_normalized_persisted_and_shared_globally(tmp_path):
         assert reopened.get("/v1/settings").json()["translation_languages"] == expected
 
 
-@pytest.mark.parametrize("language", ["fr", "auto", "en_US", ""])
-def test_explicit_invalid_or_disallowed_target_never_generates(client, language):
+@pytest.mark.parametrize("language", ["xx", "auto", "en_US", ""])
+def test_explicit_invalid_target_never_generates(client, language):
     _, path = source(client)
     calls = translator(client)
     for method in (client.get, client.post):
         assert method(path, params={"language": language}).status_code == 422
     assert calls == []
+
+
+@pytest.mark.parametrize("language", ["fr", "es", "zh-hant"])
+def test_target_must_be_enabled_in_settings_before_translation(client, language):
+    _, path = source(client)
+    calls = translator(client)
+    client.patch("/v1/settings", json={"translation_languages": []})
+    response = client.post(path, params={"language": language})
+    assert response.status_code == 422
+    assert calls == []
+    assert client.patch(
+        "/v1/settings", json={"translation_languages": [language]},
+    ).status_code == 200
+    assert client.post(path, params={"language": language}).status_code == 200
+    assert calls[0][1] == language
+    assert client.get(path, params={"language": language}).json()["translation"]
 
 
 @pytest.mark.parametrize("cached", [False, True])
@@ -526,13 +552,13 @@ def test_summary_language_change_during_classification_keeps_target(client, monk
         calls.clear()
     memory = client.app.state.memory
 
-    def classify_then_change_summary(text, language):
+    def classify_then_change_summary(text):
         memory.settings.summary_language = "en"
         memory.store.save_settings({"summary_language": "en"})
-        return False
+        return analyze_transcript_languages(text)
 
     monkeypatch.setattr(
-        "omi_local.translation.transcript_in_language", classify_then_change_summary
+        "omi_local.translation.analyze_transcript_languages", classify_then_change_summary
     )
     response = client.post(path)
     assert response.status_code == 200
@@ -560,7 +586,7 @@ def test_summary_and_whitelist_order_changes_during_inference_keep_enabled_targe
     assert memory.store.transcript_translation(key, "da")
 
 
-@pytest.mark.parametrize("repetitions, redundant", [(18, False), (19, True), (20, True)])
+@pytest.mark.parametrize("repetitions, redundant", [(8, False), (9, True), (10, True)])
 def test_language_coverage_threshold_counts_letters_not_detector_confidence(
     monkeypatch, repetitions, redundant
 ):
@@ -576,7 +602,7 @@ def test_language_coverage_threshold_counts_letters_not_detector_confidence(
     monkeypatch.setattr("omi_local.translation.language_profiles", lambda: SimpleNamespace(
         get_lang_list=lambda: ["en", "da"], create=Detector,
     ))
-    # Equal letter counts: 18/19 < 95%, 19/20 = 95%, 20/21 > 95%.
+    # Equal letter counts: 8/9 < 90%, 9/10 = 90%, 10/11 > 90%.
     english = "English words spoken here."
     danish = "Danske sproget tales heri."
     assert sum(map(str.isalpha, english)) == sum(map(str.isalpha, danish))

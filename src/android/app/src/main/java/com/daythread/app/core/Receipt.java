@@ -19,6 +19,7 @@ public final class Receipt {
                 case "gap" -> new String[]{"device_id", "started_at", "ended_at", "cause"};
                 default -> new String[]{"phone_id", "occurred_at", "state", "cause"};
             }) {
+                if (Set.of("meeting_max_minutes", "meeting_min_seconds", "marker_cooldown_seconds").contains(key) && !expected.has(key)) continue;
                 if (key.endsWith("_at")) {
                     if (Math.abs(Instant.parse(value.getString(key)).toEpochMilli() - Instant.parse(expected.getString(key)).toEpochMilli()) >= 2)
                         throw new IllegalArgumentException();

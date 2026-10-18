@@ -101,7 +101,7 @@ struct BackendClient {
         let global = ["v1/settings", "v1/configuration", "v1/profiles"].contains { path == $0 || path.hasPrefix($0 + "/") }
         if !global { try requireProfile() }
         let bodyData = try body.map { try JSONSerialization.data(withJSONObject: $0) }
-        let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || (path.hasPrefix("v1/transcripts/") && path.hasSuffix("/translation")))
+        let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || ((path.hasPrefix("v1/transcripts/") || path.hasPrefix("v1/outputs/")) && path.hasSuffix("/translation")))
         let responseData = try await data(path: path, method: method, query: query, body: bodyData, profileHeader: global ? nil : profileID, timeout: inference ? 3600 : 180)
         return try JSONDecoder().decode(JSONValue.self, from: responseData)
     }

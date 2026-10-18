@@ -117,6 +117,13 @@ public class CaptureCoreTest {
         assertThrows(IOException.class, () -> outbox.acknowledge(event, new Json(event.data().toString()).put("marker_cooldown_seconds", 60), "default"));
         outbox.acknowledge(event, event.data(), "default"); assertTrue(outbox.pending().isEmpty());
     }
+    @Test public void newEventReceiptsNeedNoRetiredPolicyFields() throws Exception {
+        Outbox outbox = new Outbox(temporary.newFolder());
+        outbox.enqueue("event", destination, new Json().put("device_id", "omi-test").put("occurred_at", started.toString()).put("action", "mark"));
+        Outbox.Item event = outbox.pending().get(0);
+        Json response = new Json(event.data().toString()).put("meeting_max_minutes", 120).put("meeting_min_seconds", 60).put("marker_cooldown_seconds", 60);
+        outbox.acknowledge(event, response, "default"); assertTrue(outbox.pending().isEmpty());
+    }
     @Test public void corruptedQueueFailsClosedAndPreservesSavedFiles() throws Exception {
         File directory = temporary.newFolder(); Outbox outbox = new Outbox(directory);
         Files.write(new File(directory, "broken.json").toPath(), "{broken".getBytes(java.nio.charset.StandardCharsets.UTF_8));

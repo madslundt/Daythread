@@ -20,6 +20,7 @@ import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
 import { RecapContent } from "./RecapContent";
 import { CopySummary } from "./CopySummary";
+import { SummaryTranslation } from "./SummaryTranslation";
 import { recapReadingText } from "./recapItems";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
@@ -63,17 +64,19 @@ export function RecapSection({
         <Loading>{t("Loading recap…")}</Loading>
       ) : recap.data?.summary ? (
         <div className="recap-content">
-          <RecapContent
-            key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
-            text={recap.data.summary}
-            day={day}
-            version={recap.data.output_id || recap.data.generated_at || "unversioned"}
-            sources={recap.data.sources || []}
-            timezone={timezone}
-            onChat={onChat}
-            onCorrect={recap.refresh}
-            compact={compact}
-          />
+          <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}>
+            <RecapContent
+              key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
+              text={recap.data.summary}
+              day={day}
+              version={recap.data.output_id || recap.data.generated_at || "unversioned"}
+              sources={recap.data.sources || []}
+              timezone={timezone}
+              onChat={onChat}
+              onCorrect={recap.refresh}
+              compact={compact}
+            />
+          </SummaryTranslation>
           {recap.data.pending_chunks ? (
             <p className="caption">
               {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>
@@ -179,9 +182,8 @@ function RecapVersions({ day, timezone }: { day: string; timezone: string }) {
         resource.data.items.map((version) => (
           <details key={version.id}>
             <summary>{dateTimeLabel(version.created_at, timezone)}</summary>
-            <RichText
-              text={version.content.summary || "No summary in this version."}
-            />
+            {version.content.summary ? <SummaryTranslation outputId={version.id} original={version.content.summary} />
+              : <RichText text={t("No summary in this version.")} />}
           </details>
         ))
       ) : (

@@ -364,7 +364,10 @@ def test_late_historical_transcript_updates_only_its_recap(client, monkeypatch):
     assert "State each fact or decision only once" in memory.inference.calls[-1][1]
 
 
-def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(client, monkeypatch):
+@pytest.mark.parametrize("version,expected_calls", [
+    ("DAY_PROMPT_VERSION", 3), ("PROMPT_VERSION", 4),
+])
+def test_prompt_upgrade_refreshes_saved_recap(client, monkeypatch, version, expected_calls):
     import asyncio
 
     import omi_local.recaps as recaps
@@ -376,13 +379,14 @@ def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(c
     previous = client.get("/v1/recaps/2026-10-16").json()
     assert len(memory.inference.calls) == 2
 
-    monkeypatch.setattr(recaps, "DAY_PROMPT_VERSION", "next-topic-format")
+    monkeypatch.setattr(recaps, version, "next-topic-format")
     assert client.get("/v1/recaps/2026-10-16").json()["stale"]
     asyncio.run(scheduled_recaps(memory))
     updated = client.get("/v1/recaps/2026-10-16").json()
     assert updated["output_id"] != previous["output_id"]
     assert not updated["stale"]
-    assert len(memory.inference.calls) == 3  # Reuse notes; rewrite only the daily recap.
+    # Conversation prompt changes must rewrite notes as well as the daily recap.
+    assert len(memory.inference.calls) == expected_calls
     purpose = memory.inference.calls[-1][1]
     assert "fewest meaningful topic sections" in purpose
     assert "one coherent summary per topic" in purpose
@@ -392,7 +396,7 @@ def test_daily_format_upgrade_refreshes_saved_recap_without_reprocessing_notes(c
     assert "do not create separate decisions/commitments or open-questions sections" in purpose
     assert "Rewrite, rename, merge or reorganize" in purpose
     asyncio.run(scheduled_recaps(memory))
-    assert len(memory.inference.calls) == 3
+    assert len(memory.inference.calls) == expected_calls
 
 
 @pytest.mark.parametrize("elapsed,ready", [(329, False), (330, True)])
@@ -468,7 +472,7 @@ def test_late_live_transcript_keeps_the_recap_visible_until_it_updates(client):
 
 
 
-def test_live_pause_setting_applies_without_delaying_uploaded_files(client, monkeypatch):
+def test_live_pause_is_fixed_at_five_minutes_and_uploaded_files_do_not_wait(client, monkeypatch):
     now = AT + timedelta(minutes=2, seconds=30)
     monkeypatch.setattr("omi_local.service.utc_now", lambda: now)
     uploaded = insert(client, AT - timedelta(hours=1), kind="manual_upload")
@@ -479,9 +483,15 @@ def test_live_pause_setting_applies_without_delaying_uploaded_files(client, monk
     assert initial["waiting_for_pause"] == 1
     assert client.patch("/v1/settings", json={"recap_quiet_minutes": 1}).status_code == 200
     refreshed = client.post("/v1/recaps/2026-10-16").json()
-    assert {source["id"] for source in refreshed["sources"]} == {uploaded, live}
-    assert refreshed["waiting_for_pause"] == 0
-    assert len(client.app.state.memory.inference.calls) == 4  # Reuse the uploaded file's notes.
+    assert {source["id"] for source in refreshed["sources"]} == {uploaded}
+    assert refreshed["waiting_for_pause"] == 1
+    quiet(client, AT + timedelta(minutes=2), duration=120)
+    quiet(client, AT + timedelta(minutes=4), duration=120)
+    now = AT + timedelta(minutes=6, seconds=30)
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: now)
+    ready = client.post("/v1/recaps/2026-10-16").json()
+    assert {source["id"] for source in ready["sources"]} == {uploaded, live}
+    assert ready["waiting_for_pause"] == 0
 
 
 def test_resumed_speech_restarts_the_live_pause_requirement(client, monkeypatch):

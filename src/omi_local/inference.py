@@ -182,7 +182,7 @@ class Inference(Transcription, InferenceUsage):
     ) -> str:
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
-        budgets = (tokens, min(tokens * 2, 8000))
+        budgets = (tokens, min(tokens * 2, 8000), min(tokens * 4, 16000))
         base_timeout = max(
             self.settings.inference_timeout_seconds, 300 if tokens >= 4000 else 0,
         )
@@ -191,10 +191,7 @@ class Inference(Transcription, InferenceUsage):
                 "llm",
                 f"{route.base_url}/chat/completions",
                 _usage_task=usage_task,
-                _timeout_seconds=(
-                    base_timeout if attempt == 0 else max(base_timeout,
-                                                         min(base_timeout * 2, 600))
-                ),
+                _timeout_seconds=max(base_timeout, min(base_timeout * (2 ** attempt), 900)),
                 headers={"Authorization": f"Bearer {token}"} if token else {},
                 json={
                     **self.llm_template_options,
@@ -215,14 +212,14 @@ class Inference(Transcription, InferenceUsage):
             try:
                 choice = response.json()["choices"][0]
                 if choice.get("finish_reason") == "length":
-                    if attempt == 0 and budgets[1] > budget:
+                    if attempt < len(budgets) - 1 and budgets[attempt + 1] > budget:
                         continue
                     raise InferenceTruncated("LLM output was truncated")
                 text = choice["message"]["content"]
                 break
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise InferenceError("Invalid LLM response") from exc
-        if not isinstance(text, str) or not text.strip() or len(text) > 30000:
+        if not isinstance(text, str) or not text.strip() or len(text) > 60000:
             raise InferenceError("Invalid LLM response")
         return text.strip()
 

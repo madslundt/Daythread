@@ -89,14 +89,14 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         assert "do not summarize" in payload["task"]
         return httpx.Response(200, json={"choices": [{
             "message": {"content": "Speaker 1: Hej.\nSpeaker 2: Hej."},
-            "finish_reason": "length" if truncated and len(budgets) == 1 else "stop",
+            "finish_reason": "length" if truncated and len(budgets) < 3 else "stop",
         }]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         inference = Inference(settings, http, task="chat")
         assert await inference.translate(original, "da") == "Speaker 1: Hej.\nSpeaker 2: Hej."
-    assert budgets == ([4000, 8000] if truncated else [4000])
-    assert timeouts == ([300, 600] if truncated else [300])
+    assert budgets == ([4000, 8000, 16000] if truncated else [4000])
+    assert timeouts == ([300, 600, 900] if truncated else [300])
 
 
 @pytest.mark.anyio
@@ -115,8 +115,8 @@ async def test_translation_still_fails_when_larger_retry_is_truncated(tmp_path):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         with pytest.raises(InferenceTruncated):
             await Inference(settings, http).translate("Transcript", "da")
-    assert budgets == [4000, 8000]
-    assert timeouts == [300, 600]
+    assert budgets == [4000, 8000, 16000]
+    assert timeouts == [300, 600, 900]
 
 
 @pytest.mark.anyio

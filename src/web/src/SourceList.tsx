@@ -90,7 +90,6 @@ function SourceRow({
   const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [transcriptOpen, setTranscriptOpen] = useState(!source.sections?.length || !!source.matches?.length);
   const [toolsOpen, setToolsOpen] = useState(false);
   useEffect(() => {
     setSaved(undefined);
@@ -282,10 +281,9 @@ function SourceRow({
             idPrefix={`${idPrefix}-alternate`} onCorrect={onCorrect} onDeleted={onDeleted} />
         </details> : null}
         {compact ? playback : null}
-        {compact && !editing ? <RecordingSections source={currentSource} compact /> : null}
         {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
-        <RecordingDisclosure enabled={compact} label={t("Full transcript")} className="recording-transcript" open={transcriptOpen} onToggle={setTranscriptOpen}>
+        <div className={compact ? "recording-transcript" : undefined}>
         {editing ? (
           <div className="transcript-editor">
             <label htmlFor={`edit-${idPrefix}-${source.id}`}>{t("Correct transcript")}</label>
@@ -317,7 +315,7 @@ function SourceRow({
         ) : (
           <>
             {!compact ? <RecordingSections source={currentSource} /> : null}
-            {open && (!compact || transcriptOpen) && text ? <TranscriptTranslation
+            {open && text ? <TranscriptTranslation
               key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
               sourceId={source.id} original={text}
             /> : <p className="transcript-text">
@@ -340,10 +338,10 @@ function SourceRow({
               {t("Correct transcript")}{" "}</button>
           </>
         )}
-        </RecordingDisclosure>
+        </div>
+        {compact && !editing ? <RecordingSections source={currentSource} compact /> : null}
         <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
           setDraft(text || "");
-          setTranscriptOpen(true);
           setEditing(true);
         }} />
         {error ? <ErrorState message={error} /> : null}

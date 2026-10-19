@@ -2,6 +2,7 @@ import { t } from "./i18n";
 import { useState } from "react";
 import { TranscriptPassage } from "./TranscriptTranslation";
 import { Icon } from "./Icon";
+import { audioUrl } from "./api";
 import type { Source } from "./types";
 
 export function RecordingSections({ source, compact = false }: { source: Source; compact?: boolean }) {
@@ -21,6 +22,9 @@ function RecordingSection({ source, section, index, compact }: {
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
     <summary>{compact ? <><span>{section.title}</span><Icon name="chevron-right" size={14} /></> : <><span className="caption">{index + 1}.</span> {section.title}</>}</summary>
+    {open && section.start_seconds !== undefined && source.audio_available !== false && source.audio_availability !== "missing"
+      ? <audio controls preload="metadata" aria-label={section.title}
+        src={`${audioUrl(source.id)}#t=${section.start_seconds},${section.end_seconds}`} /> : null}
     {open ? <TranscriptPassage source={source} section={section} /> : <p className="transcript-text">
       {Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("")}
     </p>}

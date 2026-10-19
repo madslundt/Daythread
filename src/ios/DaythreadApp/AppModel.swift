@@ -151,7 +151,7 @@ final class AppModel {
         importanceMarks = []; importanceLoaded = false; importanceError = nil; importanceRequest = nil; importanceSaving = []
         importanceRevision = UUID()
         labelRevision = ""; archiveRevision = ""
-        serverStatus = L10n.source("Not connected"); completenessStatus = .null
+        serverStatus = L10n.source("Not connected"); completenessStatus = .null; statusRefreshFailed = false
         error = nil; lastStatusCheck = .distantPast
         refreshLocal()
     }
@@ -239,6 +239,7 @@ final class AppModel {
     let meetingMinSeconds = 60
     var nextMarkAt: Date?
     var serverStatus = L10n.source("Not connected")
+    private(set) var statusRefreshFailed = false
     var serverTimeline: JSONValue = .null
     var completenessStatus: JSONValue = .null
     var queuedRecordings = 0
@@ -558,7 +559,7 @@ final class AppModel {
                 serverTimeZoneIdentifier = status["timezone"].text
                 UserDefaults.standard.set(serverTimeZoneIdentifier, forKey: (usesManagedHosting ? identity : address) + ".timezone")
             }
-            completenessStatus = status
+            completenessStatus = status; statusRefreshFailed = false
             serverStatus = status["worker_running"] == .bool(true) ? L10n.source("Home-core connected · worker running") : L10n.source("Home-core connected")
             let acknowledgedMeetingEvents = store?.items.filter { $0.destinationID == destinationIdentity && $0.resolvedProfileID == selectedProfileID && $0.acknowledged && $0.kind == .event && $0.action == .meetingToggle }.map { JSONValue.string($0.id.uuidString.lowercased()) } ?? []
             var timeline = try await backend.request("v1/timeline")
@@ -573,7 +574,7 @@ final class AppModel {
             try await publishObservation(using: backend)
             await loadImportance()
         } catch {
-            if backendGeneration == generation { serverStatus = L10n.error(error) }
+            if backendGeneration == generation { serverStatus = L10n.error(error); statusRefreshFailed = true }
         }
     }
     func loadImportance() async {
@@ -821,7 +822,7 @@ final class AppModel {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
-    func play(_ url: URL) {
+    func play(_ url: URL, startAt: TimeInterval = 0, rate: Float = 1) {
         guard microphone.active == nil else {
             error = L10n.source("Stop recording before playing audio."); return
         }
@@ -830,6 +831,9 @@ final class AppModel {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
             let audio = try AVAudioPlayer(contentsOf: url)
+            audio.enableRate = true
+            audio.rate = min(2, max(0.5, rate.isFinite ? rate : 1))
+            audio.currentTime = min(audio.duration, max(0, startAt.isFinite ? startAt : 0))
             audio.delegate = playbackDelegate; player = audio
             guard audio.prepareToPlay(), audio.play() else {
                 stopPlayback(); return

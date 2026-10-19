@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RecordingGroups, type RecordingGroup } from "./RecordingGroups";
+import { RecordingChapters } from "./RecordingChapters";
 
 const group: RecordingGroup = {
   id: "group", title: "Launch planning", started_at: "2026-10-16T09:00:00Z",
@@ -16,7 +17,7 @@ describe("compact recording sessions", () => {
     expect(html).toContain("Launch planning");
     expect(html).toContain("40 recordings");
     expect(html).toContain("09:00");
-    expect(html).toContain("09:40");
+    expect(html).toContain("40 min");
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("<details open");
   });
@@ -31,5 +32,15 @@ describe("compact recording sessions", () => {
   });
   it("identifies forwarded audio times as estimates", () => {
     expect(render([{ ...group, estimated_times: true }])).toContain("estimated times");
+  });
+  it("offers one subject entry spanning multiple audio parts without loading every transcript", () => {
+    const html = renderToStaticMarkup(<RecordingChapters chapters={[{
+      id: "chapter", title: "Launch review", started_at: group.started_at,
+      parts: [0, 1].map((index) => ({ source_id: `source-${index}`, source_index: index,
+        transcript_version: "version", start_offset: 0, end_offset: 100 })),
+    }]} timezone="UTC" onCorrect={() => {}} />);
+    expect(html.match(/<summary>Launch review<\/summary>/g)).toHaveLength(1);
+    expect(html).not.toContain("<audio");
+    expect(html).not.toContain("Loading recordings");
   });
 });

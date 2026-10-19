@@ -4,108 +4,192 @@ import OmiCore
 struct CaptureView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
+
     var body: some View {
         let _ = interfaceLocale
         List {
-            Section {
-                EditorialTitle(eyebrow: "Daythread", title: L10n.text("Keep the day."))
-                    .editorialRow()
-            }
             PhoneRecordingSection()
+            if let failure = model.captureFailure {
+                Section {
+                    Text(L10n.text("Capture stopped: \(L10n.key(failure)). Resume explicitly after resolving the failure."))
+                        .font(.callout).foregroundStyle(.red)
+                }
+            }
+            Section(L10n.text("Processing")) { RecordingProcessingActivity() }
+            syncSection
             Section {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: model.bluetooth.connected ? "waveform" : "antenna.radiowaves.left.and.right")
-                        .font(.title2).foregroundStyle(Theme.accent)
-                        .frame(width: 48, height: 48).background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(L10n.key(model.bluetooth.status)).font(.headline)
-                        Text(model.bluetooth.connected ? (!model.bluetooth.captureEnabled ? L10n.text("Recording is stopped on this iPhone.") : L10n.text("Audio is saved on this iPhone before uploading.")) : L10n.text("Keep your Omi nearby and powered on."))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }.fixedSize(horizontal: false, vertical: true)
-                }.padding(.vertical, 6)
-                if model.bluetooth.connected {
-                    DisclosureGroup(L10n.text("Pendant details")) {
-                        LabeledContent(L10n.text("Device"), value: model.bluetooth.name)
-                        LabeledContent(L10n.text("Battery"), value: model.bluetooth.battery.map { "\($0)%" } ?? L10n.text("Reading…"))
-                        LabeledContent(L10n.text("Format"), value: codecName)
+                NavigationLink {
+                    Form { RecordingScheduleSection() }
+                        .omiScreen().navigationTitle(L10n.text("Recording schedule"))
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    LabeledContent(L10n.text("Recording schedule"), value: scheduleSummary)
+                }.accessibilityIdentifier("capture.schedule")
+                NavigationLink { pendantControls } label: {
+                    LabeledContent(L10n.text("Omi pendant"), value: model.bluetooth.connected ? model.bluetooth.name : L10n.text("Not connected"))
+                }.accessibilityIdentifier("capture.pendant")
+                NavigationLink { uploadSettings } label: {
+                    Label(L10n.text("Upload settings"), systemImage: "arrow.up.circle")
+                }.accessibilityIdentifier("capture.uploadSettings")
+                DisclosureGroup { speechControls } label: {
+                    if model.meetingStart != nil {
+                        LabeledContent(L10n.text("Nearby speech"), value: L10n.text("Meeting hint active"))
+                    } else { Text(L10n.text("Nearby speech")) }
+                }
+            } header: { Text(L10n.text("Recording options")) }
+        }.listStyle(.insetGrouped).omiScreen()
+            .navigationTitle(L10n.text("Recording activity")).navigationBarTitleDisplayMode(.inline)
+            .refreshable { await model.refreshStatus() }
+            .task(id: model.archiveIdentity) { model.microphone.selectArchive(model.archiveIdentity) }
+    }
+
+    private var syncSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                LabeledContent(L10n.text("Waiting to sync"), value: L10n.text("\(model.queueCount) items · \(model.unsyncedMinutes.formatted(.number.locale(L10n.locale).precision(.fractionLength(1)))) min"))
+                if let upload = model.uploadFeedback {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.key(upload.title)).font(.subheadline)
+                        if let fraction = upload.fraction {
+                            ProgressView(value: fraction).accessibilityLabel(L10n.text("Current upload"))
+                        }
                     }
+                }
+                if let message = model.queueErrors.first {
+                    Text(L10n.key(message)).font(.caption).foregroundStyle(.red).lineLimit(2)
+                }
+            }.padding(.vertical, 4)
+            Button { model.checkpoint(); model.retryUploads(); Task { await model.refreshStatus() } } label: {
+                Label(L10n.text("Sync now"), systemImage: "arrow.triangle.2.circlepath")
+            }
+            NavigationLink(L10n.text("Capture & sync details")) { syncDetails }
+                .accessibilityIdentifier("capture.syncDetails")
+        } header: { Text(L10n.text("Sync")) }
+    }
+
+    private var pendantControls: some View {
+        List {
+            Section {
+                Label(L10n.key(model.bluetooth.status), systemImage: model.bluetooth.connected ? "waveform" : "antenna.radiowaves.left.and.right")
+                if model.bluetooth.connected {
+                    LabeledContent(L10n.text("Device"), value: model.bluetooth.name)
+                    LabeledContent(L10n.text("Battery"), value: model.bluetooth.battery.map { "\($0)%" } ?? L10n.text("Reading…"))
+                    LabeledContent(L10n.text("Format"), value: codecName)
                     Button {
                         if model.bluetooth.captureEnabled { model.disableMicrophone() }
                         else { model.startManualPendant() }
                     } label: {
                         Label(!model.bluetooth.captureEnabled ? L10n.text("Start recording") : L10n.text("Stop recording"), systemImage: !model.bluetooth.captureEnabled ? "record.circle" : "stop.circle")
                     }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("capture.toggle")
+                        .disabled(!model.hasSelectedProfile)
+                    if model.bluetooth.captureEnabled {
+                        Button { model.startManualRecording() } label: {
+                            Label(L10n.text("Record with iPhone"), systemImage: "mic")
+                        }.accessibilityIdentifier("recording.start")
+                            .disabled(model.microphone.requestingPermission || !model.hasSelectedProfile)
+                    }
                 } else {
-                    Button { model.bluetooth.scan() } label: { Label(L10n.text("Find Omi"), systemImage: "dot.radiowaves.left.and.right") }
-                        .buttonStyle(PrimaryActionStyle())
-                        .accessibilityIdentifier("pair.scan")
+                    Button { model.bluetooth.scan() } label: {
+                        Label(L10n.text("Find Omi"), systemImage: "dot.radiowaves.left.and.right")
+                    }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("pair.scan")
                     ForEach(model.bluetooth.devices, id: \.identifier) { device in
                         Button(device.name ?? L10n.text("Omi · \(device.identifier.uuidString.prefix(8))")) { model.bluetooth.connect(device) }
                     }
                     if model.bluetooth.scanning { ProgressView(L10n.text("Scanning for nearby pendants")) }
                 }
-            } header: { Text(L10n.text("Omi pendant · this iPhone")) } footer: {
+            } footer: {
                 Text(L10n.text("These controls affect recordings on this iPhone. Saved uploads and other devices continue."))
             }
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Omi pendant"))
+            .navigationBarTitleDisplayMode(.inline)
+            .onDisappear { model.bluetooth.stopScan() }
+    }
+
+    private var uploadSettings: some View {
+        @Bindable var model = model
+        return Form {
             Section {
-                Button { model.event(.mark) } label: {
-                    Label(markLabel, systemImage: "bookmark")
-                }.disabled(model.nextMarkAt.map { model.now < $0 } ?? false).accessibilityIdentifier("hint.mark")
-                Button { model.event(.meetingToggle) } label: {
-                    Label(model.meetingStart == nil ? L10n.text("Start meeting hint") : L10n.text("End meeting hint"), systemImage: "person.2")
-                }.accessibilityIdentifier("hint.meeting")
-                if model.meetingStart != nil {
-                    Text(model.meetingQualifiesAt.map { model.now < $0 } == true ? L10n.text("Provisional meeting · short meetings are ignored") : L10n.text("Meeting hint active"))
-                        .font(.callout).foregroundStyle(Theme.accent)
-                    Text(L10n.text("End the meeting anytime. Recording continues after the meeting marker ends."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if !model.notice.isEmpty { Text(L10n.key(model.notice)).font(.callout).foregroundStyle(.secondary) }
-            } header: { Text(L10n.text("Nearby speech")) } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.text("Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. \(model.gesture == .doubleClick ? L10n.text("Double-click") : L10n.text("Verified hold")) toggles a meeting."))
-                    Text(L10n.text("Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually."))
-                }
+                Toggle(L10n.text("Upload only on Wi-Fi"), isOn: $model.uploadWiFiOnly)
+                    .accessibilityIdentifier("settings.uploadWiFiOnly")
+            } footer: {
+                Text(L10n.text("Recordings wait on this iPhone until a permitted connection is available. Recording continues while uploads wait."))
             }
             Section {
+                Text(L10n.text("Record with this iPhone’s microphone. Audio stays on this iPhone until you upload it. Recordings stop automatically after two hours."))
+            }
+        }.omiScreen().navigationTitle(L10n.text("Upload settings")).navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder private var speechControls: some View {
+        Button { model.event(.mark) } label: {
+            Label(markLabel, systemImage: "bookmark")
+        }.disabled(model.nextMarkAt.map { model.now < $0 } ?? false).accessibilityIdentifier("hint.mark")
+        Button { model.event(.meetingToggle) } label: {
+            Label(model.meetingStart == nil ? L10n.text("Start meeting hint") : L10n.text("End meeting hint"), systemImage: "person.2")
+        }.accessibilityIdentifier("hint.meeting")
+        if model.meetingStart != nil {
+            Text(model.meetingQualifiesAt.map { model.now < $0 } == true ? L10n.text("Provisional meeting · short meetings are ignored") : L10n.text("Meeting hint active"))
+                .font(.callout).foregroundStyle(Theme.accent)
+        }
+        if !model.notice.isEmpty { Text(L10n.key(model.notice)).font(.callout).foregroundStyle(.secondary) }
+        Text(L10n.text("Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. \(model.gesture == .doubleClick ? L10n.text("Double-click") : L10n.text("Verified hold")) toggles a meeting."))
+            .font(.caption).foregroundStyle(.secondary)
+        Text(L10n.text("Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually."))
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var syncDetails: some View {
+        List {
+            Section {
                 Text(L10n.key(model.serverStatus)).font(.callout).textSelection(.enabled)
-                if statusStale { Text(L10n.text("Current backend state unknown; showing the last successful observation.")).font(.caption).foregroundStyle(.orange) }
-                if let failure = model.captureFailure { Text(L10n.text("Capture stopped: \(L10n.key(failure)). Resume explicitly after resolving the failure.")).font(.caption).foregroundStyle(.red) }
-                LabeledContent(L10n.text("Waiting to sync"), value: L10n.text("\(model.queueCount) items · \(model.unsyncedMinutes.formatted(.number.locale(L10n.locale).precision(.fractionLength(1)))) min"))
+                if statusStale {
+                    Text(L10n.text("Current backend state unknown; showing the last successful observation."))
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 if let upload = model.uploadFeedback {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L10n.key(upload.title)).font(.subheadline.weight(.medium))
                         if let fraction = upload.fraction {
-                            ProgressView(value: fraction)
-                                .accessibilityLabel(L10n.text("Current upload"))
+                            ProgressView(value: fraction).accessibilityLabel(L10n.text("Current upload"))
                             Text(L10n.text("Current item: \(Int(fraction * 100))% · \(bytes(upload.sentBytes)) of \(bytes(upload.totalBytes))"))
                                 .font(.caption).monospacedDigit()
                         }
-                        Text(L10n.text("\(bytes(upload.remainingBytes)) left in upload queue"))
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(L10n.text("\(bytes(upload.remainingBytes)) left in upload queue")).font(.caption).foregroundStyle(.secondary)
                         Text(upload.estimatedSeconds.map { L10n.text("About \(duration($0)) to upload queued items") } ?? L10n.text("Upload time estimate unavailable until transfer speed is measured."))
                             .font(.caption).foregroundStyle(.secondary)
                     }.accessibilityElement(children: .combine)
                 }
                 processingFeedback
+                let generation = model.completenessStatus["generation"]
+                if generation["queued"].integer > 0 || generation["running"].integer > 0 {
+                    Text(L10n.text("AI tasks: \(generation["queued"].integer) queued · \(generation["running"].integer) processing"))
+                        .font(.subheadline).monospacedDigit()
+                    ForEach(["summarizing", "organizing", "translating"], id: \.self) { stage in
+                        let count = generation["stages"][stage].integer
+                        if count > 0 { Text(stageName(stage) + " · " + String(count)).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+                ForEach(Array(model.queueErrors.enumerated()), id: \.offset) { _, message in
+                    Text(L10n.key(message)).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                }
+            } header: { Text(L10n.text("Your server")) }
+            Section {
                 LabeledContent(L10n.text("Phone storage"), value: "\(model.storageMB.formatted(.number.locale(L10n.locale).precision(.fractionLength(1)))) MB / \(model.storageBudgetMB) MB")
                 ProgressView(value: min(model.storageMB, Double(model.storageBudgetMB)), total: Double(model.storageBudgetMB))
-                    .accessibilityLabel(L10n.text("Phone storage used")).accessibilityValue(L10n.text("\(Int(model.storageMB)) of \(model.storageBudgetMB) megabytes"))
-                Button { model.checkpoint(); model.retryUploads(); Task { await model.refreshStatus() } } label: {
-                    Label(L10n.text("Sync now"), systemImage: "arrow.triangle.2.circlepath")
-                }
-                ForEach(Array(model.queueErrors.enumerated()), id: \.offset) { _, message in Text(L10n.key(message)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-                DisclosureGroup(L10n.text("Capture & sync details")) {
-                    Text(L10n.text("Backend observed: \(model.completenessStatus["as_of"].text.isEmpty ? L10n.text("not yet checked") : model.completenessStatus["as_of"].text)")).font(.caption)
-                    Text(L10n.text("Last server receipt: \(model.completenessStatus["ingestion"]["last_received_at"].text.isEmpty ? L10n.text("unknown") : model.completenessStatus["ingestion"]["last_received_at"].text)")).font(.caption)
-                    Text(L10n.text("\(model.completenessStatus["processing"]["queued"].integer) queued (\(model.completenessStatus["processing"]["retrying"].integer) retrying) · \(model.completenessStatus["processing"]["transcribing"].integer) transcribing · \(model.completenessStatus["processing"]["blocked"].integer) blocked")).font(.caption)
-                    LabeledContent(L10n.text("Last decoded audio"), value: model.lastDecodedAt?.formatted(.dateTime.locale(L10n.locale)) ?? L10n.text("Unknown this session"))
-                    LabeledContent(L10n.text("Last persisted audio"), value: model.lastPersistedAt?.formatted(.dateTime.locale(L10n.locale)) ?? L10n.text("Unknown this session"))
-                    Text(L10n.text("A saved archive or connection does not establish continuous capture. Backend values show the timestamp of the last successful check.")).font(.caption).foregroundStyle(.secondary)
-                }
-                NavigationLink(L10n.text("Feedback and repairs")) { FeedbackReviewView() }
-            } header: { Text(L10n.text("Your server")) } footer: { Text(L10n.text("Unsent audio stays on this iPhone. Synced audio remains available for local rewind for one hour. Capture stops if the storage budget fills.")) }
+                    .accessibilityLabel(L10n.text("Phone storage used"))
+                    .accessibilityValue(L10n.text("\(Int(model.storageMB)) of \(model.storageBudgetMB) megabytes"))
+            } footer: {
+                Text(L10n.text("Unsent audio stays on this iPhone. Synced audio remains available for local rewind for one hour. Capture stops if the storage budget fills."))
+            }
+            Section {
+                Text(L10n.text("Backend observed: \(model.completenessStatus["as_of"].text.isEmpty ? L10n.text("not yet checked") : model.completenessStatus["as_of"].text)"))
+                Text(L10n.text("Last server receipt: \(model.completenessStatus["ingestion"]["last_received_at"].text.isEmpty ? L10n.text("unknown") : model.completenessStatus["ingestion"]["last_received_at"].text)"))
+                Text(L10n.text("\(model.completenessStatus["processing"]["queued"].integer) queued (\(model.completenessStatus["processing"]["retrying"].integer) retrying) · \(model.completenessStatus["processing"]["transcribing"].integer) transcribing · \(model.completenessStatus["processing"]["blocked"].integer) blocked"))
+                LabeledContent(L10n.text("Last decoded audio"), value: model.lastDecodedAt?.formatted(.dateTime.locale(L10n.locale)) ?? L10n.text("Unknown this session"))
+                LabeledContent(L10n.text("Last persisted audio"), value: model.lastPersistedAt?.formatted(.dateTime.locale(L10n.locale)) ?? L10n.text("Unknown this session"))
+                Text(L10n.text("A saved archive or connection does not establish continuous capture. Backend values show the timestamp of the last successful check."))
+                    .foregroundStyle(.secondary)
+            }.font(.caption)
             if !model.recentGaps.isEmpty {
                 Section(L10n.text("Recent capture gaps")) {
                     ForEach(model.recentGaps) { gap in
@@ -116,14 +200,20 @@ struct CaptureView: View {
                     }
                 }
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Capture")).navigationBarTitleDisplayMode(.inline)
-            .onDisappear { model.bluetooth.stopScan() }
-            .refreshable { await model.refreshStatus() }
-            .task(id: model.archiveIdentity) { model.microphone.selectArchive(model.archiveIdentity) }
+            Section { NavigationLink(L10n.text("Feedback and repairs")) { FeedbackReviewView() } }
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Capture & sync details"))
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var scheduleSummary: String {
+        let policy = model.recordingSchedule
+        if !policy.scheduled { return L10n.text("Off") }
+        if !policy.enabled || policy.manualOverride { return L10n.text("Manual override") }
+        return L10n.text("On")
     }
     private var statusStale: Bool {
         guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }
-        return model.now.timeIntervalSince(at) > 120 || !model.serverStatus.hasPrefix(L10n.text("Home-core connected"))
+        return model.now.timeIntervalSince(at) > 120 || model.statusRefreshFailed
     }
     @ViewBuilder
     private var processingFeedback: some View {
@@ -142,12 +232,9 @@ struct CaptureView: View {
                         let total = item["total_chunks"].integer
                         let completed = max(0, min(total, item["completed_chunks"].integer))
                         if total > 0 {
-                            ProgressView(value: Double(completed), total: Double(total))
-                                .accessibilityLabel(stageName(item["stage"].text))
+                            ProgressView(value: Double(completed), total: Double(total)).accessibilityLabel(stageName(item["stage"].text))
                             Text(L10n.text("\(completed) of \(total) parts complete")).font(.caption).monospacedDigit()
-                        } else {
-                            ProgressView().controlSize(.small)
-                        }
+                        } else { ProgressView().controlSize(.small) }
                         if case .number(let elapsed) = item["elapsed_seconds"], elapsed > 0 {
                             Text(L10n.text("Running for \(duration(elapsed))")).font(.caption).foregroundStyle(.secondary)
                         }
@@ -155,8 +242,7 @@ struct CaptureView: View {
                 }
                 if !statusStale, model.completenessStatus["worker_running"] == .bool(true),
                    case .number(let seconds) = processing["estimated_remaining_seconds"], seconds >= 0, seconds.isFinite {
-                    Text(L10n.text("About \(duration(seconds)) to finish the processing queue"))
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("About \(duration(seconds)) to finish the processing queue")).font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text(L10n.text("Processing time estimate unavailable yet.")).font(.caption).foregroundStyle(.secondary)
                 }
@@ -182,6 +268,9 @@ struct CaptureView: View {
         case "transcribing": L10n.text("Transcribing audio")
         case "enhancing": L10n.text("Improving transcript")
         case "saving": L10n.text("Saving transcript")
+        case "summarizing": L10n.text("Summarizing")
+        case "organizing": L10n.text("Organizing recording topics")
+        case "translating": L10n.text("Translating")
         default: L10n.text("Processing audio")
         }
     }

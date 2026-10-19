@@ -323,7 +323,7 @@ def test_settings_are_validated_described_and_persisted(tmp_path):
         assert saved.status_code == 200
         for change in (
             {"stt_enhancement_mode": "unknown"}, {"stt_max_gain_db": 25},
-            {"stt_boundary_search_seconds": 1}, {"stt_enhancement_timeout_seconds": 0},
+            {"stt_boundary_search_seconds": 11}, {"stt_enhancement_timeout_seconds": 0},
         ):
             assert client.patch("/v1/configuration", json={
                 "revision": saved.json()["revision"], "changes": change,

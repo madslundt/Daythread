@@ -369,7 +369,7 @@
   .chat-index > .button { min-height: 44px; font-size: 13px; }
   .conversation-link { padding: 10px 12px; min-height: 52px; }
   .conversation-link span { font-size: 13px; }
-  .chat-form textarea { font-size: 16px; }
+  .chat-form textarea { font-size: 16px; min-height: 48px; max-height: 40dvh; resize: none; transition: min-height 160ms ease; }
   .settings-content fieldset { padding: 12px 18px 20px; }
   .settings-actions { bottom: calc(84px + env(safe-area-inset-bottom)); padding: 12px; }
   .settings-save-status { flex: 1 1 100%; }
@@ -396,7 +396,8 @@
   .chat-index-heading h2 { font-size: 21px; }
   .chat-index > .caption { margin-bottom: 0; }
   .chat-form { position: sticky; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface); padding: 12px 0 8px; }
-  .chat-form > .caption { font-size: 11px; }
+  .chat-form:focus-within textarea { min-height: 120px; }
+  .chat-form > .caption { display: none; }
   .chat-starters { margin-top: 16px; }
 }
 

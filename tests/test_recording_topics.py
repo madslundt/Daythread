@@ -73,6 +73,7 @@ def test_backfill_generates_three_titled_sections_without_changing_original(reco
     assert result["text"] == TEXT
     assert result["started_at"] == before["started_at"]
     assert result["source_version"] == before["source_version"]
+    assert all("start_seconds" not in section for section in result["sections"])
     assert client.get("/v1/transcripts").json()["items"][0]["title"] == OUTPUT["title"]
     assert not run(memory)
     assert memory.inference.calls == 1
@@ -225,3 +226,163 @@ def test_adjacent_matching_topics_merge_but_later_returns_stay_chronological(rec
     assert [section["title"] for section in result["sections"]] == ["Kakao", "Omi", "Kakao"]
     assert result["sections"][0]["end_offset"] == TEXT.index("Jeg har")
     assert "".join(text[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == text
+
+
+def multipart(recording, texts, *, total=None):
+    client, memory, original = recording
+    data = memory.store.read_audio(original)
+    client.delete(f"/v1/audio/{original}")
+    group, ids = str(uuid4()), []
+    at = datetime(2026, 10, 16, 12, tzinfo=UTC)
+    for index, text in enumerate(texts):
+        key = str(uuid4())
+        memory.store.ingest(
+            key, "manual-web", at + timedelta(seconds=120 * index), data, 120,
+            source_kind="manual_upload", source_metadata={
+                "recording_id": group, "part_index": index, "part_count": total or len(texts),
+            },
+        )
+        memory.store.complete(key, text)
+        ids.append(key)
+    return ids
+
+
+def test_subject_chapters_span_upload_parts_and_recap_uses_the_same_map(recording):
+    from omi_local.recaps import topic_sources
+
+    client, memory, _ = recording
+    texts = ["Project launch needs an October review.",
+             "We agreed on Friday. Now let's discuss the garden. The roses need water."]
+    ids = multipart(recording, texts)
+    memory.store.complete(ids[0], texts[0], [{"text": texts[0], "start": 0, "end": 120}])
+    memory.store.complete(ids[1], texts[1], [
+        {"text": "We agreed on Friday.", "start": 0, "end": 30},
+        {"text": "Now let's discuss the garden. The roses need water.", "start": 30, "end": 120},
+    ])
+
+    class Subjects:
+        def __init__(self):
+            self.calls, self.summaries = 0, []
+
+        async def generate_json(self, task, evidence):
+            self.calls += 1
+            assert evidence == "\n".join(texts)
+            return json.dumps({"title": "Launch review and garden", "sections": [
+                {"title": "Launch review", "start_quote": "Project launch needs"},
+                {"title": "Garden", "start_quote": "Now let's discuss the garden"},
+            ]})
+
+        async def summarize(self, sources, purpose):
+            self.summaries.append(sources)
+            return "\n".join(f"{source['text']} [{source['id']}]" for source in sources)
+
+    memory.inference = Subjects()
+    assert run(memory)
+    sources = [client.get(f"/v1/transcripts/{key}").json() for key in ids]
+    assert memory.inference.calls == 1
+    assert sources[0]["sections"][0]["chapter_id"] == sources[1]["sections"][0]["chapter_id"]
+    assert sources[1]["sections"][1]["start_offset"] == texts[1].index("Now let's")
+    assert sources[1]["sections"][1]["start_seconds"] == 30
+    for source in sources:
+        assert "".join(source["text"][s["start_offset"]:s["end_offset"]]
+                       for s in source["sections"]) == source["text"]
+    navigation = client.get(f"/v1/recording-groups/{ids[0]}/sources", params={
+        "day": "2026-10-16", "limit": 1,
+    }).json()
+    assert [chapter["title"] for chapter in navigation["chapters"]] == ["Launch review", "Garden"]
+    assert [part["source_id"] for part in navigation["chapters"][0]["parts"]] == ids
+    assert len(navigation["items"]) == 1  # Navigation covers chapters beyond the current page.
+    inputs = topic_sources(sources)
+    assert [source["subject_hint"] for source in inputs] == [
+        "Launch review", "Launch review", "Garden",
+    ]
+    assert "".join(source["text"] for source in inputs) == "".join(texts)
+    assert {source["id"] for source in inputs} == set(ids)
+    recap = client.post("/v1/recaps/2026-10-16").json()
+    assert recap["summary"]
+    assert [source["subject_hint"] for source in memory.inference.summaries[0]] == [
+        "Launch review", "Launch review", "Garden",
+    ]
+    assert memory.inference.calls == 1  # Recap reuses the existing chapter map.
+    assert not run(memory)
+    memory.store.correct_transcript(ids[1], texts[1].replace("Friday", "Tuesday"))
+    assert all(client.get(f"/v1/transcripts/{key}").json()["sections"] == [] for key in ids)
+
+
+def test_unfinished_multipart_recording_waits_for_all_parts(recording):
+    _, memory, _ = recording
+    multipart(recording, [TEXT], total=2)
+    memory.inference = Model()
+    assert not run(memory)
+    assert memory.inference.calls == 0
+
+
+def test_analysis_windows_keep_a_subject_even_when_its_title_changes(recording):
+    client, memory, key = recording
+    text = "\n".join(f"Launch review point {index}: keep discussing the project schedule."
+                     for index in range(500))
+    memory.store.correct_transcript(key, text)
+
+    class ContinuingSubject:
+        calls = 0
+
+        async def generate_json(self, task, evidence):
+            self.calls += 1
+            if self.calls > 1:
+                assert "previous_subject" in task and "previous_transcript_tail" in task
+            return json.dumps({
+                "title": f"Project review {self.calls}", "continues_previous": self.calls > 1,
+                "sections": [{"title": f"Project review {self.calls}",
+                              "start_quote": evidence[:100]}],
+            })
+
+    memory.inference = ContinuingSubject()
+    assert run(memory)
+    result = client.get(f"/v1/transcripts/{key}").json()
+    assert len(result["sections"]) == 1
+    assert result["sections"][0]["end_offset"] == len(text)
+    assert memory.inference.calls > 1
+
+
+@pytest.mark.parametrize("mutation", ["correct", "delete", "retime"])
+def test_sibling_change_during_analysis_rejects_every_part(recording, mutation):
+    client, memory, _ = recording
+    ids = multipart(recording, [TEXT, "The same discussion continues in this audio part."])
+
+    def change():
+        if mutation == "correct":
+            memory.store.correct_transcript(ids[1], "Corrected discussion")
+        elif mutation == "delete":
+            client.delete(f"/v1/audio/{ids[1]}")
+        else:
+            with memory.store.connect() as db:
+                db.execute("UPDATE audio SET segments=? WHERE id=?", (json.dumps([
+                    {"text": "Changed timing", "start": 0, "end": 10},
+                ]), ids[1]))
+
+    memory.inference = Model(during=change)
+    assert run(memory)
+    assert client.get(f"/v1/transcripts/{ids[0]}").json()["sections"] == []
+
+
+def test_live_chunks_share_context_and_late_transcripts_refresh_the_chapters(recording):
+    client, memory, _ = recording
+    ids = multipart(recording, [TEXT, "The Roadster discussion continues here."])
+    with memory.store.connect() as db:
+        db.execute("UPDATE audio SET device_id='omi',source_kind='',source_metadata='{}'")
+    memory.inference = Model()
+    assert run(memory)
+    first = client.get(f"/v1/transcripts/{ids[0]}").json()["sections"][-1]
+    continued = client.get(f"/v1/transcripts/{ids[1]}").json()["sections"][0]
+    assert first["chapter_id"] == continued["chapter_id"]
+    data = memory.store.read_audio(ids[0])
+    late = str(uuid4())
+    memory.store.ingest(late, "omi", datetime(2026, 10, 16, 12, 4, tzinfo=UTC), data, 60)
+    assert not run(memory)  # Do not analyze an incomplete incoming transcript.
+    memory.store.complete(late, "Another thought about the Roadster.")
+    assert run(memory)
+    assert memory.inference.calls == 2
+    assert client.get(f"/v1/transcripts/{late}").json()["sections"][0]["title"] == "Tesla Roadster"
+    client.delete(f"/v1/audio/{ids[1]}")
+    assert client.get(f"/v1/transcripts/{ids[0]}").json()["sections"] == []
+    assert client.get(f"/v1/transcripts/{late}").json()["sections"] == []

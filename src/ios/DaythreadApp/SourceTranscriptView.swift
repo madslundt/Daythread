@@ -61,36 +61,38 @@ struct SourceTranscriptView: View {
             Text(showingTranslation && hasTranslation ? translation["text"].text : originalText)
                 .textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
             if !source["text"].text.isEmpty && !originalText.isEmpty {
-                if loaded {
-                    MixedLanguageTranslationNotice(analysis: languageAnalysis, recommendedLanguage: recommendedLanguage,
-                        selectedLanguage: language, availableLanguages: availableLanguages, disabled: busy || editing) { generate(targetLanguage: $0) }
-                }
-                if !availableLanguages.isEmpty {
-                    Picker(L10n.text("Translate to"), selection: Binding(get: { language }, set: selectLanguage)) {
-                        ForEach(availableLanguages, id: \.self) { code in
-                            Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
-                        }
-                    }.disabled(editing).accessibilityIdentifier("source.translationTarget")
-                }
-                Button(language.isEmpty ? L10n.text("Translate") : L10n.text("Translate to \(languageName)"), systemImage: "translate") { generate() }
-                    .disabled(busy || editing || !loaded || !availableLanguages.contains(language) || alreadyInTargetLanguage || hasTranslation)
-                    .accessibilityIdentifier("source.translate")
-                if busy {
-                    ProgressView(generation == nil ? L10n.text("Checking translation…") : L10n.text("Translating…"))
-                } else if loaded && availableLanguages.isEmpty {
-                    Text(L10n.text("Choose translation languages in Settings to translate this transcript."))
-                        .font(.caption).foregroundStyle(.secondary)
-                    NavigationLink(L10n.text("Translation settings")) { SettingsView() }
-                } else if loaded && alreadyInTargetLanguage {
-                    Text(L10n.text("Transcript is already in \(languageName). Choose another translation language above."))
-                        .font(.caption).foregroundStyle(.secondary)
-                } else if loaded && !hasTranslation {
-                    Text(L10n.text("Translation is generated when requested and preserves the original transcription."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if error != nil {
-                    ErrorNote(message: error)
-                    if !loaded { Button(L10n.text("Retry translation lookup")) { refresh = UUID() }.disabled(busy || editing) }
+                DisclosureGroup(L10n.text("Translate")) {
+                    if loaded {
+                        MixedLanguageTranslationNotice(analysis: languageAnalysis, recommendedLanguage: recommendedLanguage,
+                            selectedLanguage: language, availableLanguages: availableLanguages, disabled: busy || editing) { generate(targetLanguage: $0) }
+                    }
+                    if !availableLanguages.isEmpty {
+                        Picker(L10n.text("Translate to"), selection: Binding(get: { language }, set: selectLanguage)) {
+                            ForEach(availableLanguages, id: \.self) { code in
+                                Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
+                            }
+                        }.disabled(editing).accessibilityIdentifier("source.translationTarget")
+                    }
+                    Button(language.isEmpty ? L10n.text("Translate") : L10n.text("Translate to \(languageName)"), systemImage: "translate") { generate() }
+                        .disabled(busy || editing || !loaded || !availableLanguages.contains(language) || alreadyInTargetLanguage || hasTranslation)
+                        .accessibilityIdentifier("source.translate")
+                    if busy {
+                        ProgressView(generation == nil ? L10n.text("Checking translation…") : L10n.text("Translating…"))
+                    } else if loaded && availableLanguages.isEmpty {
+                        Text(L10n.text("Choose translation languages in Settings to translate this transcript."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        NavigationLink(L10n.text("Translation settings")) { SettingsView() }
+                    } else if loaded && alreadyInTargetLanguage {
+                        Text(L10n.text("Transcript is already in \(languageName). Choose another translation language above."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if loaded && !hasTranslation {
+                        Text(L10n.text("Translation is generated when requested and preserves the original transcription."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if error != nil {
+                        ErrorNote(message: error)
+                        if !loaded { Button(L10n.text("Retry translation lookup")) { refresh = UUID() }.disabled(busy || editing) }
+                    }
                 }
             }
         }
@@ -201,8 +203,8 @@ struct SourceTranscriptView: View {
 struct SourceTranscriptTopicsView: View {
     let source: JSONValue
     let editing: Bool
+    var onPlayTopic: ((Double) -> Void)? = nil
     @State private var expandedTopics: Set<Int> = []
-    @State private var fullTranscriptExpanded = false
 
     private var sections: [JSONValue] {
         let length = source["text"].text.unicodeScalars.count
@@ -215,28 +217,30 @@ struct SourceTranscriptTopicsView: View {
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        if sections.isEmpty {
-            SourceTranscriptView(source: source, editing: editing)
-        } else {
-            ForEach(Array(sections.enumerated()), id: \.element["start_offset"].integer) { _, section in
-                let start = section["start_offset"].integer
-                DisclosureGroup(isExpanded: Binding(
-                    get: { expandedTopics.contains(start) },
-                    set: { expanded in
-                        if expanded { expandedTopics.insert(start) }
-                        else { expandedTopics.remove(start) }
+        SourceTranscriptView(source: source, editing: editing)
+        if !sections.isEmpty {
+            DisclosureGroup(L10n.text("Topics")) {
+                ForEach(Array(sections.enumerated()), id: \.element["start_offset"].integer) { _, section in
+                    let start = section["start_offset"].integer
+                    DisclosureGroup(isExpanded: Binding(
+                        get: { expandedTopics.contains(start) },
+                        set: { expanded in
+                            if expanded { expandedTopics.insert(start) }
+                            else { expandedTopics.remove(start) }
+                        }
+                    )) {
+                        if expandedTopics.contains(start) {
+                            if let onPlayTopic, case .number(let seconds) = section["start_seconds"] {
+                                Button { onPlayTopic(seconds) } label: { Label(L10n.text("Listen"), systemImage: "play.fill") }
+                                    .buttonStyle(.borderless)
+                            }
+                            SourceTranscriptView(source: source, editing: editing,
+                                                 startOffset: start, endOffset: section["end_offset"].integer)
+                        }
+                    } label: {
+                        Text(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text)
                     }
-                )) {
-                    if expandedTopics.contains(start) {
-                        SourceTranscriptView(source: source, editing: editing,
-                                             startOffset: start, endOffset: section["end_offset"].integer)
-                    }
-                } label: {
-                    Text(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text)
                 }
-            }
-            DisclosureGroup(L10n.text("Full transcript"), isExpanded: $fullTranscriptExpanded) {
-                if fullTranscriptExpanded { SourceTranscriptView(source: source, editing: editing) }
             }
         }
     }

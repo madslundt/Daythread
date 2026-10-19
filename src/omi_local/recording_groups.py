@@ -10,6 +10,7 @@ from .location_zones import zone_filter
 from .recording_locations import decorate_locations
 from .service import public_source
 from .source_matching import MANUAL_UPLOAD_SQL
+from .topic_context import chapter_navigation
 
 GAP_SECONDS = 5 * 60
 
@@ -63,6 +64,7 @@ def recording_groups(
         # Read lightweight metadata for grouping; load bodies only for the selected member page.
         rows = [dict(row) for row in db.execute(
             "SELECT id,device_id,started_at,ended_at,state,source_kind,source_metadata,"
+            "transcript_version,topic_details,"
             "json_extract(topic_details,'$.title') AS title,"
             "length(trim(coalesce(text,'')))>0 AS has_text,"
             "CASE WHEN " + MANUAL_UPLOAD_SQL + " THEN 'audio:' || digest || ':' || "
@@ -105,7 +107,8 @@ def recording_groups(
             if group is None:
                 raise KeyError("Recording group unavailable")
             members = group["members"]
-            return {"items": sources(members[offset:offset + limit]), "total": len(members)}
+            return {"items": sources(members[offset:offset + limit]), "total": len(members),
+                    "chapters": chapter_navigation(members)}
         items = []
         for group in groups[offset:offset + limit]:
             members = group["members"]
@@ -121,6 +124,7 @@ def recording_groups(
                 title += " …"
             items.append({key: group[key] for key in ("id", "started_at", "ended_at")} | {
                 "title": title, "recording_count": len(members),
+                "topic_count": len(chapter_navigation(members)),
                 "tags": list({
                     tag["id"]: tag for row in members
                     for tag in upload_tags[row["upload_key"]].values()

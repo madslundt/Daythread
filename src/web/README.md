@@ -43,10 +43,18 @@ share conversation matching and compatible transcription results, including lega
 changing transcription settings or correcting a transcript prevents recognition reuse.
 
 After transcription, the backend generates a descriptive recording title and topic sections using
-the local summary model. Open a recording in Today to expand each titled topic and read its
-original transcript passage. Existing recordings are analyzed automatically after upgrade. The
-original recording stays whole; topic boundaries do not claim exact audio timestamps. Corrections
+the local summary model. Open a recording in Today to read its full transcript directly below
+the audio player. Optional titled topics below the transcript expand to their original passages.
+Existing recordings are analyzed automatically after upgrade. The original recording stays whole;
+topic boundaries do not claim exact audio timestamps. Corrections
 clear old titles and sections until the updated transcript has been analyzed.
+
+Topic navigation spans the parts of an uploaded file or nearby live recordings. Open a session's
+**Topics** to read one subject across its audio parts, even beyond the current recordings page.
+Titles and boundaries follow sustained subject changes rather than upload duration. Long analyses
+carry the preceding subject into the next processing window. Validated STT timestamps allow audio
+to start at a topic; otherwise its original recording remains available alongside the exact text.
+Recaps use the same subject map and merge related discussions under descriptive topic headings.
 
 Saved recordings, meetings, person/project labels, day recaps and individual recap points/sections have a **Mark important** toggle. Marks are stored on home-core, shared with the iPhone companion, and can be removed later. Recap marks belong to the displayed saved version; they do not move to different text after regeneration. During-recording gesture hints remain separate.
 

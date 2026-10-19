@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     stt_filter_speech: bool = True
     stt_preserve_quiet: bool = True
     stt_max_gain_db: float = Field(default=12, ge=0, le=24)
-    stt_boundary_search_seconds: float = Field(default=0.5, ge=0, le=0.5)
+    stt_boundary_search_seconds: float = Field(default=5, ge=0, le=10)
     stt_enhancement_mode: Literal["off", "on_empty", "compare"] = "on_empty"
     stt_enhancement_timeout_seconds: float = Field(default=15, gt=0, le=60)
     stt_routes: dict[str, ModelRouteOverride] = Field(default_factory=dict)

@@ -94,6 +94,7 @@ class Memory:
         if isinstance(inference, Inference):
             inference.usage_recorder = self.usage.record
         self.recap_lock = asyncio.Lock()
+        self.topic_lock = asyncio.Lock()
         self.recaps = Recaps(self)
         self.translation_lock = asyncio.Lock()
         self.speakers = Speakers(self)

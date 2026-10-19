@@ -15,6 +15,7 @@ from .domain import EvidenceChanged, stamp, utc_now
 from .inference_errors import InferenceDisabled
 from .recording_topics import topic_fingerprint
 from .summary_translation import generate_summary_translation
+from .topic_context import topic_contexts
 from .translation import generate_translation
 
 logger = logging.getLogger(__name__)
@@ -132,13 +133,9 @@ class GenerationJobs:
                 "count(*) AS n FROM generation_jobs WHERE state IN ('queued','running') "
                 "GROUP BY kind,state,uses_llm"
             ).fetchall()
-            topics = db.execute(
-                "SELECT count(*) FROM audio WHERE state='done' "
-                "AND length(trim(coalesce(text,'')))>0 "
-                "AND (coalesce(json_extract(topic_details,'$.fingerprint'),'')!=? "
-                "OR json_extract(topic_details,'$.retry_at') IS NOT NULL)",
-                (topic_fingerprint(self.memory),),
-            ).fetchone()[0]
+            fingerprint = topic_fingerprint(self.memory)
+            topics = sum(context.ready and context.pending(fingerprint)
+                         for context in topic_contexts(db))
         for row in rows:
             if row["uses_llm"] and not self.memory.settings.llm_enabled:
                 paused += row["n"]

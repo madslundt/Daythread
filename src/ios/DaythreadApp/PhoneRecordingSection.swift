@@ -39,7 +39,7 @@ struct PhoneRecordingSection: View {
             ErrorNote(message: microphone.error)
             ErrorNote(message: microphone.recoveryWarning)
         } header: {
-            Text(model.bluetooth.connected && model.bluetooth.captureEnabled
+            Text(microphone.active == nil && model.bluetooth.connected && model.bluetooth.captureEnabled
                  ? L10n.text("Omi pendant") : L10n.text("This iPhone"))
         }
         let saved = microphone.recordings.filter { $0.id != microphone.active?.id }
@@ -47,48 +47,51 @@ struct PhoneRecordingSection: View {
             Section {
                 DisclosureGroup(isExpanded: $savedExpanded) {
                     ForEach(saved) { recording in
-                    VStack(alignment: .leading, spacing: 10) {
-                        if microphone.decisionID == recording.id {
-                            Text(L10n.text("Recording finished")).font(.headline)
-                        }
-                        Text(recording.startedAt.formatted(.dateTime.locale(L10n.locale).day().month().hour().minute()))
-                            .font(.subheadline)
-                        if let end = recording.endedAt {
-                            Text(elapsed(end.timeIntervalSince(recording.startedAt))).font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text(L10n.text("Recovered recording. Upload the audio captured before the interruption, or remove it."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if microphone.uploadingID == recording.id, let importer = microphone.importer {
-                            Text(L10n.key(importer.stage)).font(.caption)
-                            if importer.totalBytes > 0 {
-                                ProgressView(value: Double(importer.sentBytes), total: Double(importer.totalBytes))
-                                    .accessibilityLabel(L10n.text("Recording upload progress"))
-                            } else { ProgressView() }
-                        }
                         VStack(alignment: .leading, spacing: 10) {
-                            Button(L10n.text("Upload now")) { microphone.upload(recording, model: model) }
-                                .disabled(microphone.uploadingID != nil)
-                            HStack(spacing: 18) {
-                                if microphone.decisionID == recording.id {
-                                    Button(L10n.text("Upload later")) { microphone.decisionID = nil }
+                            if microphone.decisionID == recording.id {
+                                Text(L10n.text("Recording finished")).font(.headline)
+                            }
+                            Text(recording.startedAt.formatted(.dateTime.locale(L10n.locale).day().month().hour().minute()))
+                                .font(.subheadline)
+                            if let end = recording.endedAt {
+                                Text(elapsed(end.timeIntervalSince(recording.startedAt))).font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text(L10n.text("Recovered recording. Upload the audio captured before the interruption, or remove it."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if microphone.uploadingID == recording.id, let importer = microphone.importer {
+                                Text(L10n.key(importer.stage)).font(.caption)
+                                if importer.totalBytes > 0 {
+                                    ProgressView(value: Double(importer.sentBytes), total: Double(importer.totalBytes))
+                                        .accessibilityLabel(L10n.text("Recording upload progress"))
+                                } else { ProgressView() }
+                            }
+                            VStack(alignment: .leading, spacing: 10) {
+                                Button(L10n.text("Upload now")) { microphone.upload(recording, model: model) }
+                                    .disabled(microphone.uploadingID != nil)
+                                HStack(spacing: 18) {
+                                    if microphone.decisionID == recording.id {
+                                        Button(L10n.text("Upload later")) { microphone.decisionID = nil }
+                                            .disabled(microphone.uploadingID == recording.id)
+                                    }
+                                    Button(L10n.text("Listen")) { microphone.play(recording, model: model) }
+                                        .disabled(microphone.active != nil)
+                                    Button(L10n.text("Remove recording"), role: .destructive) { microphone.remove(recording) }
                                         .disabled(microphone.uploadingID == recording.id)
                                 }
-                                Button(L10n.text("Listen")) { microphone.play(recording, model: model) }
-                                    .disabled(microphone.active != nil)
-                                Button(L10n.text("Remove recording"), role: .destructive) { microphone.remove(recording) }
-                                    .disabled(microphone.uploadingID == recording.id)
-                            }
-                        }.buttonStyle(.borderless).font(.callout)
-                    }.padding(.vertical, 5)
+                            }.buttonStyle(.borderless).font(.callout)
+                        }.padding(.vertical, 5)
                     }
                 } label: {
                     LabeledContent(L10n.text("Saved recordings"), value: saved.count.formatted(.number.locale(L10n.locale)))
                 }
             }
-            .onAppear { savedExpanded = microphone.decisionID != nil }
+            .onAppear { savedExpanded = microphone.decisionID != nil || microphone.uploadingID != nil }
             .onChange(of: microphone.decisionID) { _, decision in
                 if decision != nil { savedExpanded = true }
+            }
+            .onChange(of: microphone.uploadingID) { _, uploading in
+                if uploading != nil { savedExpanded = true }
             }
         }
     }

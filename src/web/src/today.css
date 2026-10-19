@@ -15,6 +15,11 @@
 .day-main .recording-activity h2 { font: 500 16px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0 0 10px; }
 .recording-live { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .activity-counts { font-size: 14px; font-variant-numeric: tabular-nums; }
+.activity-processing { display: flex; align-items: flex-start; gap: 9px; }
+.activity-processing > div { min-width: 0; }
+.activity-processing .activity-counts { margin: 0 0 6px; }
+.processing-spinner { width: 14px; height: 14px; margin-top: 3px; flex: 0 0 auto; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: processing-spin .8s linear infinite; }
+@keyframes processing-spin { to { transform: rotate(360deg); } }
 .recording-activity .processing-progress { margin-top: 8px; }
 .recording-activity p { margin: 6px 0; }
 .recording-activity progress { max-width: 100%; }
@@ -233,7 +238,7 @@
 .source-row-compact .recording-sections details[open] > summary > svg, .recording-disclosure[open] > summary > svg { transform: rotate(90deg); }
 .source-row-compact .recording-sections summary:hover, .recording-disclosure > summary:hover { color: var(--accent); }
 .source-row-compact .recording-sections .transcript-text { padding: 0; margin: 0 0 16px; color: var(--secondary); font-size: 13px; line-height: 1.8; }
-.recording-transcript { border-top: 1px solid var(--line); }
+.recording-transcript { border-top: 1px solid var(--line); padding: 4px 0 16px; }
 .recording-disclosure-content { padding: 4px 0 16px; }
 .source-row-compact .transcript-text { font-size: 13px; line-height: 1.8; }
 .source-row-compact .transcript-translation .caption { font-size: 11px; }
@@ -277,6 +282,9 @@
 .recording-group > .source-row::before, .recording-group > .source-list > .source-row::before { display: none; }
 .recording-session > .source-detail { padding: 0 0 8px; }
 .recording-session > .source-detail > .source-list { margin-top: 12px; }
+.chapter-passages { padding: 4px 0 16px; }
+.chapter-passage + .chapter-passage { border-top: 1px solid var(--line); padding-top: 16px; }
+.chapter-passage audio { display: block; width: 100%; margin-bottom: 12px; }
 
 .recap-topic-summary { font-size: 13px; line-height: 1.7; color: var(--secondary); }
 .recap-topic-summary > .prose { font-size: inherit; }

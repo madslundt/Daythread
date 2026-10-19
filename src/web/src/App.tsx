@@ -21,7 +21,7 @@ import { Navigation, pages, type Page } from "./Navigation";
 import { dayFromPath, isDayPage, pageFromPath, pagePath, profileRoute, navigatePath, subscribeNavigation } from "./routing";
 import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { Loading, Notice } from "./UI";
+import { Notice } from "./UI";
 import { useInterfaceLanguage } from "./i18n";
 import { ManagedAccountBadge, ManagedAccountProvider, ManagedArchiveGate, useManagedAccount } from "./ManagedAccount";
 import { managedServiceUrl } from "./managedService";
@@ -51,9 +51,8 @@ function ArchiveApp() {
   function updated(profile: Profile) {
     directory.setData((current) => current ? { ...current, profiles: current.profiles.map((item) => item.id === profile.id ? profile : item) } : current);
   }
-  if (selected === undefined && !directory.error) return <div className="profile-loading">
-    <h1><img className="brand-icon" src="/icons/daythread-192.png?v=daythread-d-20261017" alt="" width="32" height="32" /> {t("Daythread")}</h1>
-    <Loading>{t("Loading profiles…")}</Loading>
+  if (selected === undefined && !directory.error) return <div className="app-initial-loading" role="status" aria-label={t("Loading profiles…")}>
+    <img src="/icons/daythread-192.png?v=daythread-d-20261017" alt="Daythread" width="64" height="64" />
   </div>;
   return <ImportanceProvider key={selected ?? "unselected"} enabled={Boolean(selected)}>
     <ProfileApp profiles={directory.data?.profiles ?? []} selected={selected ?? null} onSelect={choose}

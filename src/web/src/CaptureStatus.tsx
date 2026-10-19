@@ -192,6 +192,9 @@ export function RecordingActivity({ status, error }: { status?: Status; error?: 
   const waiting = phones.reduce((count, phone) => count + phone.pending_recordings, 0);
   const processing = status?.processing;
   const generation = status?.generation;
+  const audioActive = Math.max(processing?.transcribing || 0, processing?.active?.length || 0);
+  const aiActive = generation?.running || 0;
+  const activelyProcessing = !stale && (aiActive > 0 || (audioActive > 0 && status?.worker_running));
   const labels: Record<string, string> = {
     summarizing: t("Summarizing"), organizing: t("Organizing recording topics"), translating: t("Translating"),
   };
@@ -202,11 +205,19 @@ export function RecordingActivity({ status, error }: { status?: Status; error?: 
         <span className="status-dot online" aria-hidden="true" />
         {phone.capture_source === "omi" ? t("Recording from Omi") : phone.capture_source === "phone" ? t("Recording from phone microphone") : t("Recording in progress")}
       </p>) : <p className="caption">{stale && status ? t("Status needs a refresh") : phones.some((phone) => phone.capture_state === "paused") ? t("Recording stopped on iPhone") : t("Live capture unknown")}</p>}
-      {processing ? <p className="activity-counts">{t("Recordings: {queued} queued · {processing} processing", { queued: processing.queued, processing: processing.transcribing })}</p> : null}
+      {processing ? <div className="activity-processing">
+        {activelyProcessing ? <span className="processing-spinner" aria-hidden="true" /> : null}
+        <div>
+          <p className="activity-counts">{t("Recordings: {queued} queued · {processing} processing", { queued: processing.queued, processing: processing.transcribing })}</p>
+          {generation && (generation.queued > 0 || generation.running > 0) ? <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p> : null}
+        </div>
+      </div> : generation && (generation.queued > 0 || generation.running > 0) ? <div className="activity-processing">
+        {activelyProcessing ? <span className="processing-spinner" aria-hidden="true" /> : null}
+        <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p>
+      </div> : null}
       {waiting > 0 ? <p className="caption">{t("{count} recordings waiting to upload", { count: waiting })}</p> : null}
       {!stale && processing && status?.worker_running ? <ProcessingProgress processing={processing} /> : null}
       {generation && (generation.queued > 0 || generation.running > 0) ? <>
-        <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p>
         {!stale ? Object.entries(generation.stages).filter(([, count]) => count > 0).map(([stage, count]) =>
           <p className="caption" key={stage}>{labels[stage] || t("Processing")} · {count}</p>) : null}
       </> : null}

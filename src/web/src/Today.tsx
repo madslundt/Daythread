@@ -29,17 +29,24 @@ import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
 export function RecapSection({
   day,
   timezone,
+  status,
+  statusError,
   onUpload,
   onChat,
   compact = false,
 }: {
   day: string;
   timezone: string;
+  status?: Status;
+  statusError?: string;
   onUpload?: () => void;
   onChat: (scope: ChatScope, question?: string) => void;
   compact?: boolean;
 }) {
   const recap = useResource<Recap>(`/v1/recaps/${day}`, 15_000);
+  const statusAt = status?.as_of ? Date.parse(status.as_of) : NaN;
+  const summarizing = !statusError && Number.isFinite(statusAt) && Date.now() - statusAt <= 120_000 &&
+    (status?.generation?.stages.summarizing || 0) > 0;
   const [showVersions, setShowVersions] = useState(false);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", recap.refresh);
@@ -126,11 +133,11 @@ export function RecapSection({
           <span className="empty-symbol"><Icon name="diary" size={25} /></span>
           {compact ? <div>
             <h3>{t("Your recap comes together automatically.")}</h3>
-            <p>{emptyRecapMessage(recap.data)}</p>
+            <p>{emptyRecapMessage(recap.data, summarizing)}</p>
             {onUpload ? <button className="text-button recap-upload" onClick={onUpload}>{t("Add a recording")}</button> : null}
           </div> : <>
             <h3>{t("The story of your day starts here.")}</h3>
-            <p>{emptyRecapMessage(recap.data)}</p>
+            <p>{emptyRecapMessage(recap.data, summarizing)}</p>
             {onUpload ? <button className="button accent recap-upload" onClick={onUpload}><Icon name="upload" size={17} />{t("Add a recording")}</button> : null}
           </>}
         </div>
@@ -140,7 +147,8 @@ export function RecapSection({
   );
 }
 
-function emptyRecapMessage(recap?: Recap): string {
+function emptyRecapMessage(recap?: Recap, summarizing = false): string {
+  if (summarizing) return t("Your recap is being generated now. It will appear here when ready.");
   if (recap?.no_recap_content)
     return t("No useful recap content in transcribed recordings yet. Your recordings remain available.");
   if (recap?.waiting_for_pause)
@@ -218,7 +226,7 @@ export function Today({
     <div className="day-layout">
       <div className="day-main">
         {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
-        <RecapSection key={`recap-${day}`} day={day} timezone={timezone} onUpload={onUpload} onChat={onChat} compact />
+        <RecapSection key={`recap-${day}`} day={day} timezone={timezone} status={status} statusError={statusError} onUpload={onUpload} onChat={onChat} compact />
         <TranscriptTimeline
           key={`timeline-${day}`}
           day={day}
@@ -325,7 +333,7 @@ function TranscriptTimeline({
       <div className="section-heading">
         <div className="timeline-title">
           <h2>{t("Timeline")}</h2>
-          {resource.data ? <span className="caption">{resource.data.total_recordings} {submitted ? t("matching") : ""}{resource.data.total_recordings === 1 ? t("recording") : t("recordings")} · {resource.data.total} {resource.data.total === 1 ? t("group") : t("groups")}</span> : null}
+          {resource.data ? <span className="caption">{resource.data.total} {t("groups")}</span> : null}
         </div>
         {resource.data?.total ? (
           <button className="text-button" onClick={onUpload}>

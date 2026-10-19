@@ -157,7 +157,7 @@ class Inference(Transcription, InferenceUsage):
                            "Follow the task's output-language instruction.")
             if self.task == "summary" else SYSTEM
         )
-        return await self._generate(task, evidence, system, 1600)
+        return await self._generate(task, evidence, system, 4000)
 
     async def generate_json(self, task: str, evidence: str) -> str:
         return await self._generate(
@@ -380,6 +380,8 @@ class Inference(Transcription, InferenceUsage):
                     f"source_kind={source.get('source_kind', '')} "
                     f"important_hint={source.get('important', False)} "
                     f"meeting_hint_ids={source.get('meeting_hint_ids', [])} "
+                    + ("subject_hint=" + json.dumps(source["subject_hint"], ensure_ascii=False)
+                       + " (navigation label only) " if source.get("subject_hint") else "")
                     + text[offset : offset + 8000]
                     + (
                         "\nDiary recaps: "

@@ -22,6 +22,13 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=daythread-d-20261017" />
     <link rel="manifest" href="/site.webmanifest?v=daythread-d-20261017" />
     <title>Daythread</title>
+    <style>
+      html, body, #root { min-height: 100%; margin: 0; }
+      body { min-height: 100vh; background: #f7f5f0; }
+      html[data-theme="dark"] body { background: #171c21; }
+      .app-initial-loading { min-height: 100vh; display: grid; place-items: center; }
+      .app-initial-loading img { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; }
+    </style>
   </head>
-  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+  <body><div id="root"><div class="app-initial-loading" role="status" aria-label="Loading Daythread"><img src="/icons/daythread-192.png?v=daythread-d-20261017" alt="Daythread" width="64" height="64" /></div></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

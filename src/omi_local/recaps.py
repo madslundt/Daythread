@@ -12,7 +12,10 @@ from uuid import uuid4
 from .completion_events import publish_recap
 from .conversation_state import Conversation, activity, finished_file, manual_upload, recordings
 from .domain import EvidenceChanged, stamp
+from .embedding_chunking import topic_regions
 from .inference import InferenceError, validate_citations
+from .recording_topics import VERSION as TOPIC_VERSION
+from .recording_topics import ensure_topics
 from .summary_filter import NO_CONTENT
 from .summary_filter import VERSION as SUMMARY_FILTER_VERSION
 from .vendor_imports import transcript_import
@@ -21,8 +24,8 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = f"paused-live-conversations-7-source-language-{SUMMARY_FILTER_VERSION}"
-DAY_PROMPT_VERSION = "daily-topics-2-one-summary"
+PROMPT_VERSION = f"subject-chapters-8-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
+DAY_PROMPT_VERSION = "daily-topics-3-subject-continuity"
 BOUNDARY_NOTE = (
     "Uploaded recordings are included after transcription. Live conversations wait for the "
     "configured pause in recorded speech. Missing uploads do not count as silence. "
@@ -32,6 +35,17 @@ BOUNDARY_NOTE = (
 
 def digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def topic_sources(sources: list[dict]) -> list[dict]:
+    """Request copies share the transcript's subjects while retaining original UUIDs."""
+    result = []
+    for source in sources:
+        text, sections = source["text"] or "", source.get("sections") or []
+        for start, end, index in topic_regions(text, sections):
+            subject = sections[index]["title"] if index is not None else ""
+            result.append({**source, "text": text[start:end], "subject_hint": subject})
+    return result
 
 
 class Recaps:
@@ -166,12 +180,13 @@ class Recaps:
         cached = memory.store.recap_summary(key)
         if cached is not None:
             return cached
+        await ensure_topics(memory, {source["id"] for source in group.sources})
         sources = self.sources(group)
         if not sources:
             summary = NO_CONTENT
         else:
             summary = await memory.inference.summarize(
-                sources,
+                topic_sources(sources),
                 "notes from a finished upload or a live conversation followed by a long pause. "
                 "An uploaded file may contain only part of a conversation. "
                 "Preserve short meaningful answers in context, dates, "
@@ -184,6 +199,11 @@ class Recaps:
                 "and disclose conflicting readings instead of guessing. "
                 "Keep related details together by subject. A recording can cover several "
                 "subjects; preserve each without forcing event, decision or question categories. "
+                "Use specific subject headings (##) matching the supplied subject hints when "
+                "they fit the transcript. Hints are navigation labels, never additional facts. "
+                "A subject continuing across audio parts belongs in the same section, even "
+                "when its title is phrased differently. Split at sustained changes of subject, "
+                "never at upload boundaries, timestamps, speaker changes or language switches. "
                 "Do not repeat the same point in different categories or add empty placeholders. "
                 "Otherwise preserve original source UUID citations for every useful point",
             )
@@ -243,7 +263,10 @@ class Recaps:
                 "with one summary each, not extra category sections. "
                 "Group related discussions across recordings, rather than making a section "
                 "for each recording, utterance or minor detail. Use short, specific subject "
-                "headings (##). Write one coherent summary per topic: one concise paragraph, "
+                "headings (##) that make the subject recognizable when scanning. Merge continued "
+                "subjects even when the recording notes use different titles for them. "
+                "Upload boundaries, pauses and elapsed time alone do not define recap topics. "
+                "Write one coherent summary per topic: one concise paragraph, "
                 "or two when needed to retain important details. Do not create separate short "
                 "and long summaries, a preview followed by repeated bullet points, nested point "
                 "lists or subheadings. Each topic summary must contain only that topic's "

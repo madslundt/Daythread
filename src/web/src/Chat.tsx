@@ -359,7 +359,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             ref={composer}
             id="chat-question"
             placeholder={t("What would you like to remember?")}
-            rows={2}
+            rows={1}
             value={question}
             maxLength={2000}
             aria-describedby="chat-composer-hint"

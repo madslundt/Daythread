@@ -24,20 +24,22 @@ describe("recording topic sections", () => {
     expect(html).toContain("🚗 Tesla Roadster.");
     expect(html).toContain("Omi recorder");
   });
-  it("keeps topic recordings compact with playback before topics and a closed full transcript", () => {
+  it("reveals the transcript below playback without another disclosure, followed by optional topics", () => {
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[source]} />);
     expect(html).toContain("2 min · 3 topics");
-    expect(html.indexOf("<audio")).toBeLessThan(html.indexOf('class="recording-sections"'));
-    expect(html).toContain('<details class="recording-disclosure recording-transcript">');
+    expect(html.indexOf("<audio")).toBeLessThan(html.indexOf('class="transcript-translation"'));
+    expect(html.indexOf('class="transcript-translation"')).toBeLessThan(html.indexOf('class="recording-sections"'));
+    expect(html).not.toContain('<details class="recording-disclosure recording-transcript"');
     expect(html).toContain('<details class="recording-disclosure recording-utilities">');
     expect(html).toContain("Correct transcript");
     expect(html).toContain("Delete recording");
     expect(html).not.toContain('aria-label="Speakers"');
   });
-  it("opens the transcript for recordings without topics and for search matches", () => {
+  it("reveals the transcript directly for recordings without topics and for search matches", () => {
     for (const value of [{ ...source, sections: [] }, { ...source, matches: [{ text: "Cocoa", start_offset: 0, end_offset: 10, timing: "recording" }] }]) {
       const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[value]} />);
-      expect(html).toContain('<details class="recording-disclosure recording-transcript" open="">');
+      expect(html).toContain('class="transcript-translation"');
+      expect(html).not.toContain('<details class="recording-disclosure recording-transcript"');
     }
   });
   it("preserves the existing source presentation outside the timeline", () => {

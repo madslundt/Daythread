@@ -10,7 +10,8 @@ export type Source = {
   state: string;
   text: string | null;
   title?: string | null;
-  sections?: { title: string; start_offset: number; end_offset: number }[];
+  sections?: { title: string; start_offset: number; end_offset: number;
+    chapter_id?: string; start_seconds?: number; end_seconds?: number }[];
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;

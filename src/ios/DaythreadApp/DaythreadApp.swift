@@ -79,7 +79,7 @@ enum Theme {
 }
 
 enum SettingsDestination: Hashable { case settings, profiles, account }
-private enum RootTab: Hashable { case today, diary, capture, chat, more }
+private enum RootTab: Hashable { case today, capture, chat, more }
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -98,7 +98,6 @@ struct RootView: View {
                 selectedTab = model.hasSelectedProfile ? tab : .more
             })) {
                 NavigationStack { if model.hasSelectedProfile { DayView() } }.id(todayNavigationID).tabItem { Label(L10n.text("Today"), systemImage: "sun.max") }.tag(RootTab.today)
-                NavigationStack { if model.hasSelectedProfile { DiaryView() } }.tabItem { Label(L10n.text("Diary"), systemImage: "book.closed") }.tag(RootTab.diary)
                 NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label(L10n.text("Capture"), systemImage: "waveform") }.tag(RootTab.capture)
                 NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label(L10n.text("Chat"), systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
                 NavigationStack(path: $settingsPath) {
@@ -314,13 +313,23 @@ enum LocalCache {
 struct SourceList: View {
     let sources: [JSONValue]
     var onCorrect: (() -> Void)? = nil
+    var onSelect: ((JSONValue) -> Void)? = nil
     @Environment(AppModel.self) private var model
     @State private var selected: SourceSelection?
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
+        if let onSelect {
+            recordingRows(onSelect: onSelect)
+        } else {
+            recordingRows { source in selected = SourceSelection(source: source) }
+                .sheet(item: $selected) { selection in SourceDetail(source: selection.source, onCorrect: onCorrect) }
+        }
+    }
+
+    private func recordingRows(onSelect: @escaping (JSONValue) -> Void) -> some View {
         ForEach(Array(sources.enumerated()), id: \.element["id"].text) { _, source in
-            Button { selected = SourceSelection(source: source) } label: {
+            Button { onSelect(source) } label: {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "waveform").font(.body).foregroundStyle(Theme.sage)
                         .frame(width: 36, height: 42).background(Theme.sage.opacity(0.08), in: RoundedRectangle(cornerRadius: 11))
@@ -342,7 +351,6 @@ struct SourceList: View {
                 }.multilineTextAlignment(.leading).padding(.vertical, 8).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }
-        .sheet(item: $selected) { selection in SourceDetail(source: selection.source, onCorrect: onCorrect) }
     }
 
     private func title(_ source: JSONValue) -> String {
@@ -369,149 +377,6 @@ struct SourceList: View {
     }
 }
 struct SourceSelection: Identifiable { let id = UUID(); let source: JSONValue }
-struct SourceDetail: View {
-    let source: JSONValue
-    var onCorrect: (() -> Void)? = nil
-    @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dismiss) private var dismiss
-    @State private var fresh: JSONValue?
-    private var evidence: JSONValue { fresh ?? source }
-    private var transcriptDescription: String {
-        if evidence == .null { return L10n.text("Source removed") }
-        if evidence["state"].text == "expired" { return L10n.text("Transcript expired under your retention policy.") }
-        if !evidence["text"].text.isEmpty { return evidence["text"].text }
-        return evidence["state"].text == "done" ? L10n.text("No transcript text") : L10n.text("Transcription pending")
-    }
-    @State private var error: String?
-    @State private var loading = false
-    @State private var editing = false
-    @State private var draft = ""
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        NavigationStack {
-            List {
-                Section(L10n.text("Tags")) {
-                    if evidence["tags"].array.isEmpty { Text(L10n.text("No tags yet")).foregroundStyle(.secondary) }
-                    else { Text(evidence["tags"].array.map { $0["name"].text }.joined(separator: ", ")) }
-                    NavigationLink(evidence["tags"].array.isEmpty ? L10n.text("Add tag") : L10n.text("Edit tags")) {
-                        ConversationTagsView(sourceID: evidence["id"].text, onChanged: {
-                            onCorrect?(); Task { await refreshMetadata() }
-                        })
-                    }.disabled(evidence == .null || evidence["state"].text == "expired")
-                }
-                ConversationLocationView(location: evidence["source_metadata"]["location"],
-                    manualLocation: evidence["manual_location"], sourceID: evidence["id"].text,
-                    editable: evidence != .null && evidence["state"].text != "expired", onChanged: {
-                        onCorrect?(); Task { await refreshMetadata() }
-                    })
-                Section(L10n.text("Recorded evidence")) {
-                    NavigationLink(L10n.text("Report incorrect or missing information")) { FeedbackEditor(sourceID: evidence["id"].text) }
-                    Text(sourceDate).font(.caption).textSelection(.enabled)
-                    ImportanceButton(target: ImportanceTarget(kind: "source", id: source["id"].text), label: L10n.key("recording")).disabled(evidence == .null)
-                    SourceTranscriptTopicsView(source: evidence, editing: editing)
-                    Text(evidence["id"].text).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                }
-                if !source["alternate_sources"].array.isEmpty && evidence != .null {
-                    Section(L10n.text("Other uploads of this recording")) {
-                        SourceList(sources: source["alternate_sources"].array)
-                    }
-                }
-                NavigationLink { SourceLabelsView(sourceID: evidence["id"].text) } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }.disabled(evidence == .null)
-                NavigationLink {
-                    SpeakersView(kind: "source", conversationID: evidence["id"].text)
-                } label: { Label(L10n.text("Speakers · listen & name"), systemImage: "person.wave.2") }
-                    .disabled(evidence == .null).accessibilityIdentifier("source.speakers")
-                NavigationLink(L10n.text("Create decision from this source")) {
-                    SourceDecisionCreation(sourceID: evidence["id"].text)
-                }.disabled(evidence["text"].text.isEmpty)
-                Section(L10n.text("Transcript correction")) {
-                    if editing {
-                        TextEditor(text: $draft).frame(minHeight: 160).accessibilityLabel(L10n.text("Correct transcript"))
-                        Button(L10n.text("Save correction")) {
-                            let address = model.archiveIdentity
-                            loading = true
-                            Task {
-                                defer { loading = false }
-                                do {
-                                    guard model.archiveIdentity == address else { return }
-                                    let corrected = try await model.client().request("v1/transcripts/\(evidence["id"].text)", method: "PATCH", body: ["text": draft])
-                                    guard !Task.isCancelled, model.archiveIdentity == address else { return }
-                                    fresh = corrected
-                                    onCorrect?(); dismiss()
-                                } catch { self.error = L10n.error(error) }
-                            }
-                        }.disabled(loading || draft.unicodeScalars.count > 200000)
-                        Button(L10n.text("Cancel edit")) { editing = false }
-                    } else { Button(L10n.text("Correct transcript")) { draft = evidence["text"].text; editing = true } }
-                }
-                if evidence != .null {
-                    TranscriptionCleanupReviewView(source: evidence) { draft = evidence["text"].text; editing = true }
-                    SourceActionsView(source: evidence) { onCorrect?(); dismiss() }
-                }
-                if evidence["state"].text == "blocked" || !evidence["error_code"].text.isEmpty ||
-                    (evidence["state"].text == "done" && evidence["text"].text.isEmpty && evidence["audio_available"] != .bool(false) &&
-                     ["silence_gate", "empty_stt"].contains(evidence["transcription_outcome"].text)) {
-                    Button(L10n.text("Retry transcription after resolving the problem")) { Task {
-                        do { _ = try await model.client().request("v1/audio/\(evidence["id"].text)/retry", method: "POST"); error = nil }
-                        catch { self.error = L10n.error(error) }
-                    } }
-                }
-                if evidence["audio_availability"].text == "missing" { Text(L10n.text("The archive expects audio, but the file is missing.")).font(.caption) }
-                if evidence["audio_available"] == .bool(false) {
-                    Text(SourceProvenanceView.isTranscriptImport(evidence)
-                         ? L10n.text("Imported from \(SourceProvenanceView.vendorLabel(for: evidence)) · transcript only; original audio unavailable.")
-                         : L10n.text("Audio expired under retention; transcript remains available.")).font(.caption)
-                } else {
-                Button {
-                    loading = true
-                    Task {
-                        defer { loading = false }
-                        do {
-                            let identity = model.archiveIdentity
-                            let audio = try await model.client().download("v1/audio/\(evidence["id"].text)", query: [:])
-                            guard model.archiveIdentity == identity, !Task.isCancelled else { return }
-                            model.play(audio)
-                        }
-                        catch { self.error = L10n.error(error) }
-                    }
-                } label: { Label(loading ? L10n.text("Loading audio…") : L10n.text("Play original audio"), systemImage: "play.circle") }.disabled(loading || evidence["audio_availability"].text == "missing")
-                }
-                ErrorNote(message: error)
-            }.task(id: model.archiveRevision + model.archiveIdentity + String(describing: scenePhase)) {
-                guard scenePhase == .active else { return }
-                let identity = model.archiveIdentity
-                do {
-                    let result = try await model.client().request("v1/transcripts/\(source["id"].text)")
-                    guard !Task.isCancelled, model.archiveIdentity == identity else { return }
-                    fresh = result; error = nil
-                } catch {
-                    guard !Task.isCancelled, model.archiveIdentity == identity else { return }
-                    self.error = L10n.error(error)
-                    if (error as? BackendFailure)?.status == 404 { fresh = .null }
-                }
-            }.omiScreen().navigationTitle(L10n.text("Recording")).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Done")) { dismiss() } } }
-        }
-    }
-    private func refreshMetadata() async {
-        let identity = model.archiveIdentity
-        do {
-            let result = try await model.client().request("v1/sources/\(source["id"].text)")
-            guard !Task.isCancelled, identity == model.archiveIdentity else { return }
-            fresh = result
-        } catch { if identity == model.archiveIdentity { self.error = L10n.error(error) } }
-    }
-    private var sourceDate: String {
-        guard let date = AppModel.date(evidence["started_at"].text) else { return evidence["started_at"].text }
-        let formatter = DateFormatter(); formatter.locale = L10n.locale
-        formatter.timeZone = TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current
-        formatter.dateStyle = .medium; formatter.timeStyle = .short
-        return formatter.string(from: date) + " · " + formatter.timeZone.identifier
-    }
-}
-
 struct ImportanceTarget: Codable, Hashable {
     let kind: String
     let id: String

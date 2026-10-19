@@ -31,7 +31,9 @@ def transcription_chunks(
                     samples.byteswap()
                 # Quiet is only a boundary hint: even below-threshold speech is retained.
                 window = max(1, round(rate * 0.02))
+                minimum_quiet = rate * min(0.25, boundary_search_seconds / 4)
                 run, boundary = None, None
+                longest_quiet = 0
                 has_louder_audio = False
                 for index in range(0, len(samples), window):
                     frame = samples[index : index + window]
@@ -40,10 +42,13 @@ def transcription_chunks(
                             run = index
                     else:
                         has_louder_audio = True
-                        if run is not None and index - run >= rate * 0.1:
+                        quiet_length = index - run if run is not None else 0
+                        if quiet_length >= minimum_quiet and quiet_length >= longest_quiet:
+                            longest_quiet = quiet_length
                             boundary = start + (run + index) // 2
                         run = None
-                if run is not None and len(samples) - run >= rate * 0.1:
+                quiet_length = len(samples) - run if run is not None else 0
+                if quiet_length >= minimum_quiet and quiet_length >= longest_quiet:
                     boundary = start + (run + len(samples)) // 2
                 # An entirely faint window could be continuous quiet speech.
                 if has_louder_audio and boundary is not None and boundary > offset:

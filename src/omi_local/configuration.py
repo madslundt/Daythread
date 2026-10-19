@@ -102,8 +102,9 @@ DESCRIPTIONS = {
     "default 12; 0 disables). RMS and peak limits prevent clipping. "
     "Original playback is unchanged. "
     "Amplification also raises noise; it cannot separate simultaneous voices.",
-    "stt_boundary_search_seconds": "Look back up to 0.5 seconds for a quiet request boundary. "
-    "Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only.",
+    "stt_boundary_search_seconds": "Look back up to 10 seconds near the maximum request duration "
+    "and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed "
+    "boundaries. Applies inside an upload only.",
     "stt_enhancement_mode": "on_empty (default) creates a cleanup reading when the original "
     "transcript is empty; compare also checks nonempty chunks; off disables cleanup. Requires "
     "FFmpeg on home-core. Cleanup readings always need review before entering search or summaries; "

@@ -1,154 +1,105 @@
 import SwiftUI
 import OmiCore
 
-struct DiaryView: View {
+/// The date control for Today. Expanding it keeps date selection in context with the day view.
+struct DayCalendarPicker: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.goToToday) private var goToToday
+    @Binding var selectedDate: Date?
+    @State private var expanded = false
     @State private var month = Date()
-    @State private var selected = Date()
-    @State private var entries: [JSONValue] = []
     @State private var days: [String: CalendarDay] = [:]
-    @State private var error: String?
-    @State private var calendarError: String?
     @State private var loading = false
-    @State private var calendarLoading = false
-    @State private var loadedCalendarKey = ""
-    @State private var entryRequest = UUID()
-    @State private var calendarRequest = UUID()
-    @State private var path: [String] = []
+    @State private var error: String?
+    @State private var requestID = UUID()
 
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
+    private var visibleDate: Date { selectedDate ?? model.now }
     private var calendarKey: String { model.archiveIdentity + model.archiveRevision + diary.monthKey(month) + diary.calendar.timeZone.identifier }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        List {
-            Section {
-                EditorialTitle(eyebrow: L10n.text("Your diary"), title: L10n.text("Look back. See more.")).editorialRow()
-            }
-            Section {
-                NavigationLink { WeeklyReviewView() } label: {
-                    DestinationLabel(title: L10n.text("Weekly review"), subtitle: L10n.text("Patterns, decisions & what changed"), symbol: "calendar.badge.clock", color: Theme.sage)
+        VStack(spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if !expanded { month = diary.monthStart(visibleDate) }
+                    expanded.toggle()
                 }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(diary.label(visibleDate, template: "EEEE d MMMM")).font(.headline)
+                        Text(selectedDate == nil ? L10n.text("Today · Tap to choose a date") : L10n.text("Tap to choose a date"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            Section {
-                MonthCalendar(diary: diary, month: $month, day: selected, today: model.now, days: days) { date in
-                    selected = date
-                    path.append(diary.dayKey(date))
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("day.datePicker")
+
+            if expanded {
+                MonthCalendar(diary: diary, month: $month, day: visibleDate, today: model.now, days: days) { date in
+                    selectedDate = diary.dayKey(date) == diary.dayKey(model.now) ? nil : date
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded = false }
                 }
                 HStack(spacing: 6) {
                     Circle().fill(Theme.accent).frame(width: 6, height: 6)
                     Text(L10n.text("Saved recap")).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if calendarLoading { ProgressView().accessibilityLabel(L10n.text("Loading saved recap dates")) }
-                }
-                ErrorNote(message: calendarError)
-                if calendarError != nil { Button(L10n.text("Retry calendar")) { Task { await loadCalendar() } } }
-            } footer: { Text(L10n.text("Dates in \(diary.calendar.timeZone.identifier)")) }
-            Section(L10n.text("Saved days")) {
-                if loading && entries.isEmpty { ProgressView(L10n.text("Opening your diary…")) }
-                ErrorNote(message: error)
-                if error != nil { Button(L10n.text("Retry diary")) { Task { await load() } } }
-                if entries.isEmpty && !loading && error == nil {
-                    ContentUnavailableView(L10n.text("The start of your diary"), systemImage: "book.closed", description: Text(L10n.text("Completed daily recaps are saved here, ready to return to.")))
-                }
-                ForEach(Array(entries.enumerated()), id: \.element["day"].text) { _, entry in
-                    if let date = diary.date(for: entry["day"].text) {
-                        NavigationLink(value: entry["day"].text) {
-                            HStack(alignment: .top, spacing: 14) {
-                                VStack(spacing: 2) {
-                                    Text(diary.label(date, template: "MMM").uppercased()).font(.caption2.weight(.semibold))
-                                    Text(diary.label(date, template: "d")).font(.system(.title2, design: .serif))
-                                }.foregroundStyle(Theme.accent).frame(width: 48, height: 54)
-                                    .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(diary.label(date, template: "EEEE d MMM")).font(.headline)
-                                    Text(preview(entry["summary"].text)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                                }
-                            }.padding(.vertical, 6)
-                        }
+                    if loading { ProgressView().accessibilityLabel(L10n.text("Loading saved recap dates")) }
+                    if selectedDate != nil {
+                        Button(L10n.text("Today")) { selectedDate = nil; month = diary.monthStart(model.now) }
+                            .font(.caption.weight(.medium)).buttonStyle(.borderless).accessibilityIdentifier("day.goToToday")
                     }
                 }
-            }
-            Section {
-                NavigationLink { ChatView(initialScope: .all) } label: { Label(L10n.text("Chat across your diary"), systemImage: "bubble.left.and.bubble.right") }
-            }
-        }
-        .listStyle(.insetGrouped).omiScreen()
-        .navigationTitle(L10n.text("Diary")).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Today"), action: goToToday).accessibilityIdentifier("diary.today") } }
-        .navigationDestination(for: String.self) { day in
-            if let date = diary.date(for: day) { DayView(date: date) }
-        }
-        .navigationDestination(isPresented: Binding(get: { !path.isEmpty }, set: { if !$0 { path = [] } })) {
-            if let key = path.last, let date = diary.date(for: key) { DayView(date: date) }
-        }
-        .task(id: model.archiveIdentity + model.archiveRevision) { await load() }
-        .task(id: calendarKey) { await loadCalendar() }
-        .task(id: model.archiveIdentity + ".diary-poll." + String(describing: scenePhase)) {
-            guard scenePhase == .active else { return }
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                async let entries: Void = load()
-                async let dates: Void = loadCalendar()
-                _ = await (entries, dates)
+                ErrorNote(message: error)
+                if error != nil { Button(L10n.text("Retry calendar")) { Task { await loadCalendar() } }.font(.caption) }
+                Text(L10n.text("Dates in \(diary.calendar.timeZone.identifier)")).font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .refreshable {
-            async let entries: Void = load()
-            async let dates: Void = loadCalendar()
-            _ = await (entries, dates)
+        .task(id: expanded ? calendarKey : "") {
+            if expanded { await loadCalendar() }
         }
-        .onChange(of: model.serverTimeZoneIdentifier) { old, _ in
-            let previous = DiaryCalendar(timeZone: TimeZone(identifier: old ?? "") ?? .current)
-            month = diary.date(for: previous.dayKey(month)) ?? model.now
-            selected = diary.date(for: previous.dayKey(selected)) ?? model.now
+        .onChange(of: selectedDate) { _, value in
+            guard let value else { return }
+            month = diary.monthStart(value)
         }
-    }
-
-    private func preview(_ text: String) -> String {
-        let lines = text.components(separatedBy: .newlines)
-            .filter { !$0.hasPrefix("#") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        return lines.joined(separator: " ").replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "- ", with: "")
-    }
-
-    private func load() async {
-        let identity = model.archiveIdentity, token = UUID()
-        entryRequest = token; loading = true; error = nil
-        defer { if entryRequest == token { loading = false } }
-        do {
-            let response = try await model.client().request("v1/diary")
-            guard !Task.isCancelled, identity == model.archiveIdentity, entryRequest == token else { return }
-            entries = response["items"].array.sorted { $0["day"].text > $1["day"].text }
-        } catch {
-            if !Task.isCancelled, identity == model.archiveIdentity, entryRequest == token { self.error = L10n.error(error) }
+        .onChange(of: model.serverTimeZoneIdentifier) { _, _ in
+            month = diary.monthStart(visibleDate)
+            days = [:]
         }
     }
 
     private func loadCalendar() async {
-        let key = calendarKey, requestedMonth = diary.monthKey(month), token = UUID()
-        calendarRequest = token; calendarLoading = true; calendarError = nil
-        if loadedCalendarKey != key { days = [:] }
-        defer { if calendarRequest == token { calendarLoading = false } }
+        let key = calendarKey
+        let requestedMonth = diary.monthKey(month)
+        let token = UUID()
+        requestID = token
+        loading = true
+        error = nil
+        defer { if requestID == token { loading = false } }
         do {
             let response = try await model.client().request("v1/calendar", query: ["month": requestedMonth])
-            guard !Task.isCancelled, calendarRequest == token, calendarKey == key else { return }
-            guard response["month"].text == requestedMonth, case .array = response["days"] else { throw BackendFailure(message: L10n.text("The calendar response was invalid.")) }
-            days = [:]; loadedCalendarKey = key
+            guard !Task.isCancelled, requestID == token, calendarKey == key else { return }
+            guard response["month"].text == requestedMonth, case .array = response["days"] else {
+                throw BackendFailure(message: L10n.text("The calendar response was invalid."))
+            }
+            days = [:]
             for value in response["days"].array {
                 let entry = CalendarDay(value)
                 if entry.day.hasPrefix(requestedMonth + "-"), diary.date(for: entry.day) != nil { days[entry.day] = entry }
             }
         } catch {
-            if !Task.isCancelled, calendarRequest == token, calendarKey == key { calendarError = L10n.error(error) }
+            if !Task.isCancelled, requestID == token, calendarKey == key { self.error = L10n.error(error) }
         }
     }
 }
 
-/// Keep the complete day metadata so additional calendar annotations can share this model.
 private struct CalendarDay {
     let metadata: JSONValue
     init(_ metadata: JSONValue) { self.metadata = metadata }
@@ -181,17 +132,14 @@ private struct MonthCalendar: View {
                     .disabled(diary.monthKey(month) >= diary.monthKey(today)).accessibilityLabel(L10n.text("Next month"))
             }.buttonStyle(.borderless)
             if dynamicTypeSize >= .xxLarge {
-                ForEach(diary.cells(in: month).compactMap { $0 }, id: \.self) { date in
-                    accessibleDay(date)
-                }
+                ForEach(diary.cells(in: month).compactMap { $0 }, id: \.self) { date in accessibleDay(date) }
             } else {
                 LazyVGrid(columns: columns, spacing: 4) {
                     ForEach(Array(diary.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                         Text(symbol).font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity).accessibilityHidden(true)
                     }
                     ForEach(Array(diary.cells(in: month).enumerated()), id: \.offset) { _, date in
-                        if let date { cell(date) }
-                        else { Color.clear.frame(height: 44).accessibilityHidden(true) }
+                        if let date { cell(date) } else { Color.clear.frame(height: 44).accessibilityHidden(true) }
                     }
                 }
             }
@@ -230,4 +178,3 @@ private struct MonthCalendar: View {
             .accessibilityAddTraits(key == diary.dayKey(day) ? .isSelected : [])
     }
 }
-

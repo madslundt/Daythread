@@ -3,6 +3,7 @@ import { t } from "./i18n";
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { SourceList } from "./SourceList";
+import { RecordingChapters, type RecordingChapter } from "./RecordingChapters";
 import { ErrorState, Loading } from "./UI";
 import { timeLabel } from "./format";
 import type { Source, Timeline } from "./types";
@@ -14,6 +15,7 @@ export type RecordingGroup = {
   ended_at: string;
   title: string;
   recording_count: number;
+  topic_count?: number;
   estimated_times?: boolean;
   tags?: ConversationTag[];
   sources: Source[];
@@ -44,9 +46,9 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
     <summary>
-      <span className="source-time"><span>{timeLabel(group.started_at, timezone)}</span><span className="source-time-end">–{timeLabel(group.ended_at, timezone)}</span></span>
+      <span className="source-time"><span>{timeLabel(group.started_at, timezone)}</span><span className="source-time-end">{recordingDuration(group.started_at, group.ended_at)}</span></span>
       <span className="source-overview"><span className="source-preview">{group.title}</span>
-        <span className="source-glance">{group.recording_count} {t("recordings")}{group.estimated_times ? t("· estimated times") : ""}</span></span>
+        <span className="source-glance">{group.recording_count} {t("recordings")}{group.topic_count ? ` · ${group.topic_count} ${group.topic_count === 1 ? t("topic") : t("topics")}` : ""}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
@@ -56,6 +58,19 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
   </details>;
 }
 
+function recordingDuration(startedAt: string, endedAt: string): string {
+  const seconds = Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return t("Duration unavailable");
+  if (seconds < 60) return t("{value0} sec", { value0: seconds });
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60
+    ? t("{value0} min", { value0: minutes })
+    : t("{value0} hr{value1}", {
+      value0: Math.floor(minutes / 60),
+      value1: minutes % 60 ? t(" {value0} min", { value0: minutes % 60 }) : "",
+    });
+}
+
 function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
   group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
@@ -63,9 +78,10 @@ function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect,
   const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
   if (zoneID) params.set("zone_id", zoneID);
   if (tagID) params.set("tag_id", tagID);
-  const resource = useResource<{ items: Source[]; total: number }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
+  const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[] }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
+    <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />
     <p className="caption">{t("Nearby recordings, grouped for browsing. Each recording keeps its own audio and transcript.")}</p>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}

@@ -6,6 +6,7 @@ import { recapSourceSections } from "./recapItems";
 import { TranscriptPassage } from "./TranscriptTranslation";
 import { SourceList } from "./SourceList";
 import type { Source } from "./types";
+import { audioUrl } from "./api";
 
 // Topic passages stay separate from the optional complete recording.
 export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }: {
@@ -23,6 +24,9 @@ export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }
     <p className="caption">{sections.length ? t("Matching topic passages") : t("Original transcript · no specific topic passage identified. Open the full recording to inspect its context.")}</p>
     {sections.length ? sections.map((section) => <blockquote key={section.start_offset}>
       {sections.length > 1 ? <p className="caption">{section.title}</p> : null}
+      {section.start_seconds !== undefined && source.audio_available !== false && source.audio_availability !== "missing"
+        ? <audio controls preload="metadata" aria-label={section.title}
+          src={`${audioUrl(source.id)}#t=${section.start_seconds},${section.end_seconds}`} /> : null}
       <TranscriptPassage source={source} section={section} />
     </blockquote>) : null}
     <details className="recap-full-recording" onToggle={(event) => {

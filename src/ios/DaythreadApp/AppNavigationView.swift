@@ -25,6 +25,12 @@ struct MoreView: View {
             }
             if model.hasSelectedProfile {
                 Section(L10n.text("Your memory")) {
+                    NavigationLink { WeeklyReviewView() } label: {
+                        DestinationLabel(title: L10n.text("Weekly review"), subtitle: L10n.text("Patterns, decisions & what changed"), symbol: "calendar.badge.clock", color: Theme.sage)
+                    }
+                    NavigationLink { ChatView(initialScope: .all) } label: {
+                        DestinationLabel(title: L10n.text("Chat across your diary"), subtitle: L10n.text("Ask about your recorded days"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
+                    }
                     NavigationLink { CompletionNotificationsView() } label: {
                         DestinationLabel(title: L10n.text("Notifications"), subtitle: L10n.text("Your completed recaps, rewinds & translations"), symbol: "bell", color: Theme.accent)
                     }
@@ -100,18 +106,18 @@ struct DayQuickActions: View {
         let _ = interfaceLocale
         let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
         layout {
-            Button(action: importAudio) { tile(L10n.text("Add audio"), symbol: "plus", color: Theme.accent) }
-                .accessibilityIdentifier("day.import")
+            Button(action: importAudio) { tile(L10n.text("Add"), symbol: "plus", color: Theme.accent) }
+                .accessibilityLabel(L10n.text("Add audio")).accessibilityIdentifier("day.import")
             Button(action: rewind) { tile(L10n.text("Rewind"), symbol: "gobackward.10", color: Theme.sage) }
             Button(action: ask) {
-                tile(L10n.text("Ask your day"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
-            }.accessibilityIdentifier("day.chat")
+                tile(L10n.text("Chat"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
+            }.accessibilityLabel(L10n.text("Ask your day")).accessibilityIdentifier("day.chat")
         }.buttonStyle(.plain)
     }
 
     private func tile(_ title: String, symbol: String, color: Color) -> some View {
         Label(title, systemImage: symbol)
-            .font(.subheadline.weight(.medium)).foregroundStyle(color)
+            .font(.caption.weight(.semibold)).foregroundStyle(color)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, 6)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -128,14 +134,9 @@ struct CaptureGlance: View {
         if model.paused { return L10n.text("Capture paused") }
         return model.bluetooth.connected ? L10n.text("Omi connected") : L10n.text("Recording stopped on this iPhone")
     }
-    private var statusStale: Bool {
-        guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }
-        return model.now.timeIntervalSince(at) > 120 || !model.serverStatus.hasPrefix(L10n.source("Home-core connected"))
-    }
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        let processing = model.completenessStatus["processing"]
         NavigationLink { CaptureView() } label: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.text("Recording activity")).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
@@ -145,25 +146,9 @@ struct CaptureGlance: View {
                 if waiting > 0 {
                     Text(L10n.text("\(waiting) recordings waiting to upload")).font(.caption).foregroundStyle(.secondary)
                 }
-                if statusStale && model.completenessStatus != .null {
-                    Text(L10n.text("Last known counts; current activity is unknown.")).font(.caption).foregroundStyle(.secondary)
-                } else if !statusStale {
-                    let queued = processing["queued"].integer
-                    let active = processing["transcribing"].integer
-                    if queued + active > 0 {
-                        Text(L10n.text("Recordings: \(queued) queued · \(active) processing"))
-                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    if model.completenessStatus["worker_running"] == .bool(false), queued + active > 0 {
-                        Text(L10n.text("Processing is waiting for the worker to start.")).font(.caption).foregroundStyle(.orange)
-                    }
-                }
-                if processing["blocked"].integer > 0 {
-                    Text(L10n.text("\(processing["blocked"].integer) items need attention.")).font(.caption).foregroundStyle(.orange)
-                }
-            }.padding(.vertical, 4)
+                RecordingProcessingActivity()
+            }.padding(.vertical, 4).accessibilityIdentifier("day.recordingActivity")
         }.accessibilityIdentifier("day.captureStatus")
-            .accessibilityIdentifier("day.recordingActivity")
     }
 }
 
@@ -175,5 +160,83 @@ struct DayDecisionsView: View {
         List { DecisionsSection(day: day) }
             .listStyle(.insetGrouped).omiScreen()
             .navigationTitle(L10n.text("Decisions")).navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The same processing summary is visible on Today and in recording activity.
+struct RecordingProcessingActivity: View {
+    @Environment(AppModel.self) private var model
+    private var status: JSONValue { model.completenessStatus }
+    private var processing: JSONValue { status["processing"] }
+    private var generation: JSONValue { status["generation"] }
+    private var audioActive: Int { max(processing["transcribing"].integer, processing["active"].array.count) }
+    private var audioQueued: Int { processing["queued"].integer }
+    private var aiActive: Int { generation["running"].integer }
+    private var aiQueued: Int { generation["queued"].integer }
+    private var stale: Bool {
+        guard let at = AppModel.date(status["as_of"].text) else { return true }
+        return model.now.timeIntervalSince(at) > 120 || model.statusRefreshFailed
+    }
+    private var hasCounts: Bool { audioActive + audioQueued + aiActive + aiQueued > 0 }
+    private var stages: [String] {
+        var names = processing["active"].array.map { stageName($0["stage"].text) }
+        for stage in ["summarizing", "organizing", "translating"] where generation["stages"][stage].integer > 0 {
+            names.append(stageName(stage))
+        }
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if status == .null || processing == .null {
+                Label(L10n.text("Processing status unavailable"), systemImage: "questionmark.circle")
+                    .foregroundStyle(.secondary)
+            } else {
+                if hasCounts {
+                    HStack(alignment: .top, spacing: 8) {
+                        if !stale && (aiActive > 0 || (audioActive > 0 && status["worker_running"] == .bool(true))) {
+                            ProgressView().controlSize(.mini).accessibilityLabel(L10n.text("Processing"))
+                        } else { Image(systemName: "clock").accessibilityHidden(true) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            if audioActive + audioQueued > 0 {
+                                Text(L10n.text("Recordings: \(audioQueued) queued · \(audioActive) processing"))
+                            }
+                            if aiActive + aiQueued > 0 {
+                                Text(L10n.text("AI tasks: \(aiQueued) queued · \(aiActive) processing"))
+                            }
+                        }.monospacedDigit()
+                    }.foregroundStyle(.primary)
+                    if !stale && !stages.isEmpty {
+                        Text(stages.joined(separator: " · ")).foregroundStyle(.secondary)
+                    }
+                } else if !stale {
+                    Label(L10n.text("Nothing processing"), systemImage: "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                if stale {
+                    Text(L10n.text("Last known counts; current activity is unknown.")).foregroundStyle(.secondary)
+                } else if status["worker_running"] == .bool(false), audioActive + audioQueued > 0 {
+                    Text(L10n.text("Processing is waiting for the worker to start.")).foregroundStyle(.orange)
+                }
+                if processing["blocked"].integer > 0 {
+                    Text(L10n.text("\(processing["blocked"].integer) items need attention.")).foregroundStyle(.orange)
+                }
+            }
+        }.font(.caption).accessibilityElement(children: .combine)
+            .accessibilityIdentifier("recording.processingActivity")
+    }
+
+    private func stageName(_ stage: String) -> String {
+        switch stage {
+        case "analyzing": L10n.text("Analyzing audio")
+        case "transcribing": L10n.text("Transcribing audio")
+        case "enhancing": L10n.text("Improving transcript")
+        case "saving": L10n.text("Saving transcript")
+        case "summarizing": L10n.text("Summarizing")
+        case "organizing": L10n.text("Organizing recording topics")
+        case "translating": L10n.text("Translating")
+        default: L10n.text("Processing audio")
+        }
     }
 }

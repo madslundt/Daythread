@@ -9,7 +9,11 @@ struct DayView: View {
     @Environment(\.goToToday) private var goToToday
     private enum Destination: Hashable { case rewind, chat(String) }
     @State private var destination: Destination?
-    @State private var importing = false
+    private enum Sheet: String, Identifiable {
+        case importAudio, filters
+        var id: String { rawValue }
+    }
+    @State private var sheet: Sheet?
     @State private var recap: JSONValue = .null
     @State private var recordingGroups: [JSONValue] = []
     @State private var timeline: JSONValue = .null
@@ -46,13 +50,10 @@ struct DayView: View {
         let _ = interfaceLocale
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    EditorialTitle(eyebrow: diary.label(day, template: "EEEE d MMMM"), title: date == nil ? L10n.text("Your day, together.") : L10n.text("A day, remembered."))
-                    Text(L10n.text("The moments that matter, ready to return to."))
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }.editorialRow()
-                DayQuickActions(importAudio: { importing = true }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) })
-                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0)).editorialRow()
+                Text(diary.label(day, template: "EEEE d MMMM"))
+                    .font(.subheadline).foregroundStyle(.secondary).editorialRow()
+                DayQuickActions(importAudio: { sheet = .importAudio }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) })
+                    .editorialRow()
             }
             if date == nil { Section { CaptureGlance() } }
             if cached {
@@ -61,31 +62,6 @@ struct DayView: View {
             }
             recapSection
             Section {
-                Picker(L10n.text("Tag"), selection: $tagID) {
-                    Text(L10n.text("All tags")).tag("")
-                    if !tagID.isEmpty && !tags.contains(where: { $0.id == tagID }) {
-                        Text(L10n.text("Tag unavailable")).tag(tagID)
-                    }
-                    ForEach(tags) { tag in Text(tag.name).tag(tag.id) }
-                }.accessibilityIdentifier("day.tagFilter")
-                if let tagError { Text(tagError).font(.caption).foregroundStyle(.secondary) }
-                if !tagID.isEmpty {
-                    Text(L10n.text("Tag and location filters apply together to recordings. The day recap still covers the whole day."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Picker(L10n.text("Location zone"), selection: $zoneID) {
-                    Text(L10n.text("All locations")).tag("")
-                    if !zoneID.isEmpty && !zones.contains(where: { $0.id == zoneID }) {
-                        Text(L10n.text("Zone unavailable")).tag(zoneID)
-                    }
-                    ForEach(zones) { zone in Text(zone.name).tag(zone.id) }
-                }.accessibilityIdentifier("day.zoneFilter")
-                NavigationLink(L10n.text("Manage zones")) { LocationZonesView() }
-                if let zoneError { Text(zoneError).font(.caption).foregroundStyle(.secondary) }
-                if !zoneID.isEmpty {
-                    Text(L10n.text("Filters recordings located inside this zone. The day recap still covers the whole day."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
@@ -98,10 +74,10 @@ struct DayView: View {
                 if loading { ProgressView(L10n.text("Finding your recordings…")) }
                 if recordingGroups.isEmpty && !loading && error == nil {
                     VStack(alignment: .leading, spacing: 12) {
-                        Label(query.isEmpty && zoneID.isEmpty && tagID.isEmpty ? L10n.text("Every day starts somewhere.") : L10n.text("No matching recordings"), systemImage: query.isEmpty ? "waveform" : "magnifyingglass").font(.headline)
+                        Label(query.isEmpty && zoneID.isEmpty && tagID.isEmpty ? L10n.text("No recordings yet") : L10n.text("No matching recordings"), systemImage: query.isEmpty ? "waveform" : "magnifyingglass").font(.headline)
                         Text(query.isEmpty && zoneID.isEmpty && tagID.isEmpty ? L10n.text("Add a recording from Files, or connect your Omi in Capture. Your recordings will appear here.") : L10n.text("Try another word, or choose a different day in Diary."))
                             .font(.subheadline).foregroundStyle(.secondary)
-                        if query.isEmpty && zoneID.isEmpty && tagID.isEmpty { Button(L10n.text("Add your first recording")) { importing = true }.buttonStyle(.borderless) }
+                        if query.isEmpty && zoneID.isEmpty && tagID.isEmpty { Button(L10n.text("Add your first recording")) { sheet = .importAudio }.buttonStyle(.borderless) }
                     }.padding(.vertical, 12)
                 }
                 TimelineRecordingGroups(groups: recordingGroups, day: dayKey, query: query, zoneID: zoneID, tagID: tagID, timeline: timeline, onCorrect: { Task { await loadTags(); await load() } })
@@ -109,12 +85,22 @@ struct DayView: View {
                     Button(L10n.text("Load more recordings")) { Task { await loadMore() } }.disabled(loading)
                 }
             } header: {
-                HStack { Text(L10n.text("Recordings")); Spacer(); if totalRecordings > 0 { Text("\(totalRecordings)").monospacedDigit() } }
+                HStack {
+                    Text(L10n.text("Recordings"))
+                    if totalRecordings > 0 { Text("\(totalRecordings)").monospacedDigit() }
+                    Spacer()
+                    Button { sheet = .filters } label: {
+                        Label(activeFilterCount == 0 ? L10n.text("Filters") : L10n.text("Filters · \(activeFilterCount)"),
+                              systemImage: activeFilterCount == 0 ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }.textCase(nil).accessibilityIdentifier("day.filters")
+                }
             }
             Section(L10n.text("Follow through")) {
-                InboxLink()
-                NavigationLink { DayDecisionsView(day: dayKey) } label: { Label(L10n.text("Decisions from this day"), systemImage: "arrow.triangle.branch") }
-                NavigationLink { LabelsView() } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }
+                DisclosureGroup(L10n.text("Inbox, decisions & people")) {
+                    InboxLink()
+                    NavigationLink { DayDecisionsView(day: dayKey) } label: { Label(L10n.text("Decisions from this day"), systemImage: "arrow.triangle.branch") }
+                    NavigationLink { LabelsView() } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }
+                }
             }
             if !dayMeetings.isEmpty || !dayMarkers.isEmpty || timelineError != nil {
                 Section {
@@ -155,7 +141,13 @@ struct DayView: View {
             case .chat(let selectedDay): ChatView(initialScope: .day(selectedDay)).id(selectedDay)
             }
         }
-        .sheet(isPresented: $importing) { AudioImportView(onImported: { Task { await load() } }) }
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .importAudio: AudioImportView(onImported: { Task { await load() } })
+            case .filters:
+                DayRecordingFilters(tagID: $tagID, zoneID: $zoneID, tags: tags, zones: zones, tagError: tagError, zoneError: zoneError)
+            }
+        }
         .task(id: model.archiveIdentity) {
             async let zones: Void = loadZones()
             async let tags: Void = loadTags()
@@ -186,11 +178,7 @@ struct DayView: View {
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await load() } })
                 NavigationLink { RecapHistoryView(day: dayKey) } label: { Label(L10n.text("Saved versions & export"), systemImage: "clock.arrow.circlepath") }
             } else if recapError == nil {
-                VStack(alignment: .leading, spacing: 12) {
-                    Image(systemName: "text.book.closed").font(.title2).foregroundStyle(Theme.accent).accessibilityHidden(true)
-                    Text(L10n.text("A little perspective on your day.")).font(.system(.title3, design: .serif))
-                    Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
-                }.padding(.vertical, 12)
+                Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }
             if recap != .null {
                 DisclosureGroup(L10n.text("About this recap")) {
@@ -210,12 +198,14 @@ struct DayView: View {
         }
     }
 
+    private var activeFilterCount: Int { (tagID.isEmpty ? 0 : 1) + (zoneID.isEmpty ? 0 : 1) }
+
     private var recapEmptyMessage: String {
         if recap["no_recap_content"] == .bool(true) { return L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.") }
         if recap["waiting_for_pause"].integer > 0 { return L10n.text("Live conversations are waiting for a longer pause before being summarized.") }
         if recap["pending_upload_sources"].integer > 0 { return L10n.text("Some recordings are awaiting upload or transcription.") }
         if recap["pending_chunks"].integer > 0 { return L10n.text("Some recordings are awaiting upload or transcription.") }
-        return L10n.text("Uploaded recordings are summarized after transcription. Live conversations wait for a longer pause.")
+        return L10n.text("No recap yet")
     }
 
     private var dayMarkers: [JSONValue] {
@@ -444,5 +434,49 @@ private struct TimelineRecordingSession: View {
             values["meeting_hint_ids"] = .array(meetings.filter(overlaps).map { $0["id"] })
         }
         return .object(values)
+    }
+}
+
+private struct DayRecordingFilters: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var tagID: String
+    @Binding var zoneID: String
+    let tags: [ManualTag]
+    let zones: [LocationZone]
+    let tagError: String?
+    let zoneError: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker(L10n.text("Tag"), selection: $tagID) {
+                        Text(L10n.text("All tags")).tag("")
+                        if !tagID.isEmpty && !tags.contains(where: { $0.id == tagID }) {
+                            Text(L10n.text("Tag unavailable")).tag(tagID)
+                        }
+                        ForEach(tags) { tag in Text(tag.name).tag(tag.id) }
+                    }.accessibilityIdentifier("day.tagFilter")
+                    if let tagError { Text(tagError).font(.caption).foregroundStyle(.secondary) }
+                    Picker(L10n.text("Location zone"), selection: $zoneID) {
+                        Text(L10n.text("All locations")).tag("")
+                        if !zoneID.isEmpty && !zones.contains(where: { $0.id == zoneID }) {
+                            Text(L10n.text("Zone unavailable")).tag(zoneID)
+                        }
+                        ForEach(zones) { zone in Text(zone.name).tag(zone.id) }
+                    }.accessibilityIdentifier("day.zoneFilter")
+                    if let zoneError { Text(zoneError).font(.caption).foregroundStyle(.secondary) }
+                    NavigationLink(L10n.text("Manage zones")) { LocationZonesView() }
+                } footer: {
+                    Text(L10n.text("Tag and location filters apply together to recordings. The day recap still covers the whole day."))
+                }
+                if !tagID.isEmpty || !zoneID.isEmpty {
+                    Button(L10n.text("Clear filters")) { tagID = ""; zoneID = "" }
+                        .accessibilityIdentifier("day.clearFilters")
+                }
+            }
+            .navigationTitle(L10n.text("Filters")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Done")) { dismiss() } } }
+        }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 public enum RecordingTimeReference: String, CaseIterable, Identifiable, Sendable {
     case end, start
@@ -71,6 +72,45 @@ public enum RecordingImport {
     public static func suggestedEnd(modifiedAt: Date?, now: Date = Date()) -> Date? {
         guard let modifiedAt, modifiedAt.timeIntervalSince1970 > 0, modifiedAt <= now else { return nil }
         return modifiedAt
+    }
+
+    /// Returns a recording timestamp embedded in the audio container, when present.
+    /// Audio exporters often preserve this even when the exported file's filesystem
+    /// dates are reset to the time of export or sharing.
+    public static func embeddedRecordingDate(in url: URL) async -> Date? {
+        let asset = AVURLAsset(url: url)
+        guard let metadata = try? await asset.load(.commonMetadata) else { return nil }
+        for item in metadata {
+            let commonKey = item.commonKey?.rawValue.lowercased() ?? ""
+            let identifier = item.identifier?.rawValue.lowercased() ?? ""
+            guard commonKey.contains("creationdate") || identifier.contains("creationdate")
+                    || identifier.contains("recordingtime") || identifier.hasSuffix("/tdrc")
+                    || identifier.hasSuffix("/tyer") else { continue }
+            if let date = try? await item.load(.dateValue), suggestedEnd(modifiedAt: date) != nil { return date }
+            if let value = try? await item.load(.stringValue), let date = parseMetadataDate(value),
+               suggestedEnd(modifiedAt: date) != nil { return date }
+        }
+        return nil
+    }
+
+    private static func parseMetadataDate(_ value: String) -> Date? {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: text) { return date }
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: text) { return date }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: text) { return date }
+        }
+        return nil
     }
 
     public static func uploadURL(base: URL, id: UUID, query: [String: String]) -> URL {

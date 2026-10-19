@@ -11,9 +11,16 @@ struct AudioImportView: View {
     @State private var vendors: [VendorDefinition] = [.manual]
     @State private var vendorError: String?
     @State private var vendorRevision = 0
+    @State private var availableTags: [ManualTag] = []
+    @State private var locationZones: [LocationZone] = []
+    @State private var locationChoice = ""
+    @State private var currentLocation: CaptureLocation?
+    @State private var locations = PhoneLocation()
+    @State private var optionsError: String?
+    @State private var locationError: String?
     var onImported: () -> Void = {}
     var conversationSourceID: String? = nil
-    var sharedURL: URL? = nil
+    var sharedURLs: [URL] = []
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -55,6 +62,41 @@ struct AudioImportView: View {
                 }
                 ForEach($importer.recordings) { $recording in
                     recordingSection($recording)
+                }
+                if !importer.recordings.isEmpty {
+                    Section {
+                        DisclosureGroup(L10n.text("Tags")) {
+                            if availableTags.isEmpty {
+                                Text(L10n.text("No tags available yet.")).font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                ForEach(availableTags) { tag in
+                                    Toggle(tag.name, isOn: Binding(
+                                        get: { importer.selectedTagIDs.contains(tag.id) },
+                                        set: { selected in
+                                            if selected { importer.selectedTagIDs.insert(tag.id) }
+                                            else { importer.selectedTagIDs.remove(tag.id) }
+                                        }
+                                    ))
+                                }
+                            }
+                        }
+                        Picker(L10n.text("Location"), selection: $locationChoice) {
+                            Text(L10n.text("No location")).tag("")
+                            Text(L10n.text("Use current location")).tag("current")
+                            ForEach(locationZones) { zone in
+                                ForEach(zone.locations) { place in
+                                    Text(zone.name + " · " + place.label).tag(zone.id + ":" + place.id)
+                                }
+                            }
+                        }
+                        if let locationError { Text(locationError).font(.caption).foregroundStyle(.secondary) }
+                        if let optionsError { Text(optionsError).font(.caption).foregroundStyle(.secondary) }
+                    } header: {
+                        Text(L10n.text("Optional tags and location"))
+                    } footer: {
+                        Text(L10n.text("Leave these blank to import without tags or a location."))
+                    }
+                    .disabled(importer.locked)
                 }
                 if !importer.recordings.isEmpty {
                     Section {
@@ -117,11 +159,15 @@ struct AudioImportView: View {
                     vendorError = L10n.text("Recording brands could not be loaded. Other device uploads are still available.")
                 }
             }
+            await loadOptionalDetails()
         }
         .onAppear {
-            if let sharedURL, importer.recordings.isEmpty {
+            if !sharedURLs.isEmpty, importer.recordings.isEmpty {
                 run {
-                    do { await importer.add([sharedURL], client: try model.client()) }
+                    do {
+                        await importer.add(sharedURLs, client: try model.client())
+                        for url in sharedURLs { try? FileManager.default.removeItem(at: url) }
+                    }
                     catch { importer.error = L10n.error(error) }
                 }
             }
@@ -133,6 +179,40 @@ struct AudioImportView: View {
         .onDisappear { operation?.cancel() }
         .onChange(of: model.archiveIdentity) { _, _ in operation?.cancel(); dismiss() }
         .onChange(of: model.uploadWiFiOnly) { _, _ in operation?.cancel() }
+        .onChange(of: locationChoice) { _, choice in
+            if choice.isEmpty {
+                currentLocation = nil; importer.currentLocation = nil; importer.selectedPlace = nil; locationError = nil
+            } else if choice == "current" {
+                importer.selectedPlace = nil
+                Task {
+                    locationError = nil
+                    do {
+                        let fix = try await locations.currentLocation()
+                        currentLocation = fix; importer.currentLocation = fix
+                    } catch {
+                        locationChoice = ""; locationError = L10n.error(error)
+                    }
+                }
+            } else if let separator = choice.firstIndex(of: ":") {
+                currentLocation = nil; importer.currentLocation = nil
+                importer.selectedPlace = (String(choice[..<separator]), String(choice[choice.index(after: separator)...]))
+            }
+        }
+    }
+
+    private func loadOptionalDetails() async {
+        let client: BackendClient
+        do { client = try model.client() } catch { return }
+        do {
+            let directory: TagDirectory = try await client.decisionRequest("v1/tags")
+            try Task.checkCancellation()
+            availableTags = directory.items
+        } catch { if !Task.isCancelled { optionsError = L10n.error(error) } }
+        do {
+            let directory: ZoneDirectory = try await client.decisionRequest("v1/location-zones")
+            try Task.checkCancellation()
+            locationZones = directory.items
+        } catch { if !Task.isCancelled { optionsError = L10n.error(error) } }
     }
 
     @ViewBuilder

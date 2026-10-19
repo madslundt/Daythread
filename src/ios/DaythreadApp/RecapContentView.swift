@@ -32,10 +32,6 @@ struct RecapContentView: View {
                 RecapTopicView(group: group, day: day, version: version, sources: recap["sources"].array,
                                checks: $checks, onCheck: saveChecks, onCorrect: onCorrect)
             }
-            if groups.contains(where: \.hasActions) {
-                Text(L10n.text("Optional checkmarks are saved on this iPhone for this recap version. Inbox status is managed separately."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             if UUID(uuidString: version) != nil {
                 ImportanceButton(target: .init(kind: "recap", id: version), label: L10n.text("day recap"))
                     .font(.subheadline)

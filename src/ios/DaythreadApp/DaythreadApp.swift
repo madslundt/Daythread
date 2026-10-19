@@ -88,7 +88,7 @@ struct RootView: View {
     @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .today : .more
     @State private var settingsPath: [SettingsDestination] = []
     @State private var todayNavigationID = UUID()
-    @State private var incomingAudioURL: URL?
+    @State private var incomingAudio: ImportedAudio?
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
@@ -148,12 +148,21 @@ struct RootView: View {
         }
         .background(CompletionSceneOverlay(model: model, notifications: notifications))
         .onOpenURL { url in
+            if url.scheme == "daythread", url.host == "shared-audio" {
+                selectedTab = .today
+                receiveSharedAudio()
+                return
+            }
             guard url.isFileURL else { return }
-            incomingAudioURL = url
+            incomingAudio = ImportedAudio(urls: [url])
             selectedTab = .today
         }
-        .sheet(item: Binding(get: { incomingAudioURL.map(ImportedAudioURL.init) }, set: { incomingAudioURL = $0?.url })) { item in
-            AudioImportView(sharedURL: item.url)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { receiveSharedAudio() }
+        }
+        .onAppear { receiveSharedAudio() }
+        .sheet(item: $incomingAudio) { item in
+            AudioImportView(sharedURLs: item.urls)
         }
         .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.text("OK")) { model.error = nil }
@@ -162,9 +171,20 @@ struct RootView: View {
 
 }
 
-private struct ImportedAudioURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+private struct ImportedAudio: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
+private extension RootView {
+    func receiveSharedAudio() {
+        guard incomingAudio == nil,
+              let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.daythread.app")?.appendingPathComponent("SharedAudio", isDirectory: true),
+              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil),
+              !files.isEmpty else { return }
+        incomingAudio = ImportedAudio(urls: files.filter { !$0.lastPathComponent.hasPrefix(".") })
+        selectedTab = .today
+    }
 }
 
 struct ProfileEditorView: View {

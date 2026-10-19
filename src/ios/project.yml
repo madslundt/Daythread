@@ -14,6 +14,8 @@ targets:
     sources: [DaythreadApp]
     dependencies:
       - package: OmiCore
+      - target: DaythreadShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.daythread.app
@@ -34,6 +36,10 @@ targets:
       path: DaythreadApp/Info.plist
       properties:
         CFBundleDisplayName: Daythread
+        CFBundleURLTypes:
+          - CFBundleURLName: com.daythread.app
+            CFBundleURLSchemes: [daythread]
+        LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: Audio recording
             CFBundleTypeRole: Viewer
@@ -58,6 +64,37 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [com.daythread.sync]
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+  DaythreadShare:
+    type: app-extension
+    platform: iOS
+    sources: [DaythreadShare]
+    dependencies:
+      - package: OmiCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.daythread.app.share
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: DaythreadShare/DaythreadShare.entitlements
+        DEVELOPMENT_TEAM: QK69VT259D
+        APPLICATION_EXTENSION_API_ONLY: true
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    info:
+      path: DaythreadShare/Info.plist
+      properties:
+        CFBundleDisplayName: Daythread
+        NSLocationWhenInUseUsageDescription: Daythread uses your current location only if you choose to add it to a shared recording.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            daythread.home.arpa:
+              NSExceptionAllowsInsecureHTTPLoads: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: 'SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio").@count > 0).@count > 0'
 schemes:
   Daythread:
     build:

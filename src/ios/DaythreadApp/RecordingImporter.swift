@@ -44,6 +44,9 @@ final class RecordingImporter {
     var linking = false
     var conversationSourceID = ""
     var vendorID = "manual"
+    var selectedTagIDs: Set<String> = []
+    var selectedPlace: (zoneID: String, locationID: String)?
+    var currentLocation: CaptureLocation?
     private let workspace = ImportWorkspace()
     private var transferID = UUID()
 
@@ -143,7 +146,7 @@ final class RecordingImporter {
 
     private func upload(_ index: Int, client: BackendClient, wiFiOnly: Bool) async throws {
         stage = L10n.source("Checking for duplicates…")
-        if let match = try await duplicate(recordings[index].digest, client: client) {
+        if recordings[index].plan == nil, let match = try await duplicate(recordings[index].digest, client: client) {
             recordings[index].skipped = match
             return
         }
@@ -206,9 +209,44 @@ final class RecordingImporter {
             sentBytes = Int64(confirmedBytes)
             confirming = false
         }
+        try await applyOptionalDetails(plan, client: client)
         recordings[index].completed = true
         // The server has acknowledged every part; release temporary audio promptly.
         try? FileManager.default.removeItem(at: record.url.deletingLastPathComponent())
+    }
+
+    private func applyOptionalDetails(_ plan: RecordingUploadPlan, client: BackendClient) async throws {
+        guard !selectedTagIDs.isEmpty || selectedPlace != nil || currentLocation != nil else { return }
+        stage = L10n.source("Saving optional tags and location…")
+        for part in plan.parts {
+            let sourceID = part.id.uuidString.lowercased()
+            if !selectedTagIDs.isEmpty {
+                var selection = try await client.request("v1/sources/\(sourceID)/tags")
+                for tagID in selectedTagIDs.sorted() {
+                    selection = try await client.request("v1/sources/\(sourceID)/tags", method: "PUT", body: [
+                        "expected_revision": selection["revision"].text,
+                        "expected_membership": selection["membership"].text,
+                        "action": "add", "tag_id": tagID,
+                    ])
+                }
+            }
+            var location: [String: Any]?
+            if let selectedPlace {
+                location = ["zone_id": selectedPlace.zoneID, "location_id": selectedPlace.locationID]
+            } else if let currentLocation {
+                location = ["kind": "current", "latitude": currentLocation.latitude,
+                            "longitude": currentLocation.longitude,
+                            "horizontal_accuracy": currentLocation.horizontalAccuracy]
+            }
+            if let location {
+                let path = "v1/sources/\(sourceID)/location"
+                let existing = try await client.request(path)
+                _ = try await client.request(path, method: "PUT", body: [
+                    "expected_version": existing["version"].integer,
+                    "location": location,
+                ])
+            }
+        }
     }
 
     nonisolated private static func stage(_ source: URL, workspace: ImportWorkspace) async throws -> ImportRecording {
@@ -227,7 +265,9 @@ final class RecordingImporter {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: copy.path)
             try Task.checkCancellation()
             let digest = try RecordingAudioConverter.fileDigest(copy)
-            let suggested = RecordingImport.suggestedEnd(modifiedAt: values.contentModificationDate)
+            let embeddedDate = await RecordingImport.embeddedRecordingDate(in: source)
+            let suggested = RecordingImport.suggestedEnd(modifiedAt: embeddedDate)
+                ?? RecordingImport.suggestedEnd(modifiedAt: values.contentModificationDate)
             return ImportRecording(url: copy, name: source.lastPathComponent, size: values.fileSize ?? 0,
                                    digest: digest, suggestedEnd: suggested != nil, recordedAt: suggested ?? Date(), timeConfirmed: suggested != nil)
         } catch {

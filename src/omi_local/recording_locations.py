@@ -1,6 +1,7 @@
 """Editable recording places, kept separate from immutable capture observations."""
 
 import json
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response
@@ -26,13 +27,28 @@ class SavedLocation(BaseModel):
     location_id: UUID
 
 
+class CurrentLocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["current"]
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    horizontal_accuracy: float = Field(ge=0, le=1000)
+
+
 class LocationChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: int = Field(ge=0, strict=True)
-    location: SavedLocation | None
+    location: SavedLocation | CurrentLocation | None
 
 
 def saved_location(db, selection):
+    if isinstance(selection, CurrentLocation):
+        return {
+            "label": "Current location", "latitude": selection.latitude,
+            "longitude": selection.longitude,
+            "horizontal_accuracy": selection.horizontal_accuracy,
+            "kind": "current",
+        }
     zone = db.execute(
         "SELECT name,locations FROM location_zones WHERE id=?", (str(selection.zone_id),)
     ).fetchone()

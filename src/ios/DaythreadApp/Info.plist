@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>DaythreadManagedServiceURL</key>
-	<string>https://app.daythread.elcc.dk</string>
 	<key>APNSEnvironment</key>
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
@@ -14,6 +12,26 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Daythread</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio recording</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.mpeg-4-audio</string>
+				<string>public.mp3</string>
+				<string>com.microsoft.waveform-audio</string>
+				<string>org.xiph.flac</string>
+				<string>com.microsoft.windows-media-wma</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,9 +44,24 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.daythread.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>daythread</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>DaythreadManagedServiceURL</key>
+	<string>https://app.daythread.elcc.dk</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -47,10 +80,10 @@
 	<string>Daythread connects to your pendant to save audio and button hints on your iPhone and home-core.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Daythread sends recordings to your own home-core on your local network.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Daythread records audio when you start manually or enable a recording schedule. You choose when to upload or remove recordings.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Daythread uses your location to tag conversations when enabled and to choose a place for nearby reminders.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Daythread records audio when you start manually or enable a recording schedule. You choose when to upload or remove recordings.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.</string>
 	<key>UIApplicationSceneManifest</key>

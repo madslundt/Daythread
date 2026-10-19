@@ -4,6 +4,7 @@ import OmiCore
 struct PhoneRecordingSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
+    @State private var savedExpanded = false
     private var microphone: PhoneRecorder { model.microphone }
 
     var body: some View {
@@ -18,7 +19,15 @@ struct PhoneRecordingSection: View {
                 Button { model.disableMicrophone() } label: {
                     Label(L10n.text("Stop recording"), systemImage: "stop.circle.fill")
                 }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("recording.stop")
+            } else if model.bluetooth.connected && model.bluetooth.captureEnabled {
+                Label(L10n.key(model.bluetooth.status), systemImage: "waveform")
+                    .foregroundStyle(model.omiRecording ? Color.red : .secondary)
+                Button { model.disableMicrophone() } label: {
+                    Label(L10n.text("Stop recording"), systemImage: "stop.circle.fill")
+                }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("capture.toggle")
             } else {
+                Label(L10n.text("Recording stopped"), systemImage: "stop.circle")
+                    .foregroundStyle(.secondary)
                 Button {
                     model.startManualRecording()
                 } label: {
@@ -29,14 +38,15 @@ struct PhoneRecordingSection: View {
             }
             ErrorNote(message: microphone.error)
             ErrorNote(message: microphone.recoveryWarning)
-        } header: { Text(L10n.text("This iPhone")) } footer: {
-            Text(L10n.text("Record with this iPhone’s microphone. Audio stays on this iPhone until you upload it. Recordings stop automatically after two hours."))
+        } header: {
+            Text(model.bluetooth.connected && model.bluetooth.captureEnabled
+                 ? L10n.text("Omi pendant") : L10n.text("This iPhone"))
         }
-        RecordingScheduleSection()
         let saved = microphone.recordings.filter { $0.id != microphone.active?.id }
         if !saved.isEmpty {
             Section {
-                ForEach(saved) { recording in
+                DisclosureGroup(isExpanded: $savedExpanded) {
+                    ForEach(saved) { recording in
                     VStack(alignment: .leading, spacing: 10) {
                         if microphone.decisionID == recording.id {
                             Text(L10n.text("Recording finished")).font(.headline)
@@ -71,9 +81,14 @@ struct PhoneRecordingSection: View {
                             }
                         }.buttonStyle(.borderless).font(.callout)
                     }.padding(.vertical, 5)
+                    }
+                } label: {
+                    LabeledContent(L10n.text("Saved recordings"), value: saved.count.formatted(.number.locale(L10n.locale)))
                 }
-            } header: { Text(L10n.text("Saved recordings")) } footer: {
-                Text(L10n.text("Saved recordings remain available here after closing the app. Upload failures keep the original recording for retry."))
+            }
+            .onAppear { savedExpanded = microphone.decisionID != nil }
+            .onChange(of: microphone.decisionID) { _, decision in
+                if decision != nil { savedExpanded = true }
             }
         }
     }

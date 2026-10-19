@@ -164,6 +164,7 @@ final class AppModel {
         selectedProfileID = id
         locations.setCaptureActive(false)
         UserDefaults.standard.set(id, forKey: profilePreferenceKey)
+        syncShareImportConfiguration()
         store?.profileID = id
         bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         nextAudioDate = nil; disconnectedAt = nil
@@ -421,6 +422,7 @@ final class AppModel {
         profiles = []; nextAudioDate = nil; disconnectedAt = nil; lastDecodedAt = nil; lastPersistedAt = nil
         resetArchive(); bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         updateLocationCapture(); reconnectBackend()
+        syncShareImportConfiguration()
     }
     func useOwnBackend() async throws {
         flush()
@@ -508,6 +510,15 @@ final class AppModel {
         guard let data = try? JSONEncoder().encode(backendConfiguration) else { return }
         UserDefaults.standard.set(data, forKey: "backendEndpoints.v1")
         UserDefaults.standard.set(backendAddress, forKey: "backendURL")
+        syncShareImportConfiguration()
+    }
+
+    private func syncShareImportConfiguration() {
+        guard let shared = UserDefaults(suiteName: "group.com.daythread.app") else { return }
+        shared.set(try? JSONEncoder().encode(backendConfiguration), forKey: "backendEndpoints.v1")
+        shared.set(backendAddress, forKey: "backendURL")
+        shared.set(selectedProfileID, forKey: "selectedProfileID")
+        shared.set(usesManagedHosting || managedAccount.signedIn, forKey: "managedArchiveSelected")
     }
     func tick() async {
         now = Date(); applyRecordingSchedule(); uploader?.pump()

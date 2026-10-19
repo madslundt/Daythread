@@ -74,10 +74,12 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         llm_routes={"summary": {"model": "translator", "base_url": "http://summary.local/v1"}},
     )
     budgets = []
+    timeouts = []
 
     def handler(request):
         body = json.loads(request.content)
         budgets.append(body["max_tokens"])
+        timeouts.append(request.extensions["timeout"]["read"])
         assert str(request.url) == "http://summary.local/v1/chat/completions"
         assert body["model"] == "translator"
         assert "untrusted data" in body["messages"][0]["content"]
@@ -94,15 +96,18 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         inference = Inference(settings, http, task="chat")
         assert await inference.translate(original, "da") == "Speaker 1: Hej.\nSpeaker 2: Hej."
     assert budgets == ([4000, 8000] if truncated else [4000])
+    assert timeouts == ([120, 240] if truncated else [120])
 
 
 @pytest.mark.anyio
 async def test_translation_still_fails_when_larger_retry_is_truncated(tmp_path):
     settings = config(tmp_path)
     budgets = []
+    timeouts = []
 
     def handler(request):
         budgets.append(json.loads(request.content)["max_tokens"])
+        timeouts.append(request.extensions["timeout"]["read"])
         return httpx.Response(200, json={"choices": [{
             "message": {"content": "partial"}, "finish_reason": "length",
         }]})
@@ -111,6 +116,7 @@ async def test_translation_still_fails_when_larger_retry_is_truncated(tmp_path):
         with pytest.raises(InferenceTruncated):
             await Inference(settings, http).translate("Transcript", "da")
     assert budgets == [4000, 8000]
+    assert timeouts == [120, 240]
 
 
 @pytest.mark.anyio

@@ -119,6 +119,9 @@ class Inference(Transcription, InferenceUsage):
     async def post(self, provider: str, url: str, **kwargs) -> httpx.Response:
         self.settings.require_inference(provider)
         usage_task = kwargs.pop("_usage_task", None)
+        timeout_seconds = kwargs.pop(
+            "_timeout_seconds", self.settings.inference_timeout_seconds,
+        )
         seconds = 0
         if provider == "stt":
             audio = kwargs.get("files", {}).get("file")
@@ -133,9 +136,9 @@ class Inference(Transcription, InferenceUsage):
         )
         response = None
         try:
-            async with asyncio.timeout(self.settings.inference_timeout_seconds):
+            async with asyncio.timeout(timeout_seconds):
                 response = await self.client.post(
-                    url, timeout=self.settings.inference_timeout_seconds, **kwargs
+                    url, timeout=timeout_seconds, **kwargs
                 )
                 await check_inference_response(self, provider, response)
         except (httpx.HTTPError, TimeoutError) as exc:
@@ -185,6 +188,12 @@ class Inference(Transcription, InferenceUsage):
                 "llm",
                 f"{route.base_url}/chat/completions",
                 _usage_task=usage_task,
+                _timeout_seconds=(
+                    self.settings.inference_timeout_seconds if attempt == 0 else max(
+                        self.settings.inference_timeout_seconds,
+                        min(self.settings.inference_timeout_seconds * 2, 600),
+                    )
+                ),
                 headers={"Authorization": f"Bearer {token}"} if token else {},
                 json={
                     **self.llm_template_options,

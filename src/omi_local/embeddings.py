@@ -142,7 +142,9 @@ class Embeddings:
         return result
 
 
-async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
+async def index_one(
+    store: Store, embeddings: Embeddings, set_id: str, retain_routes: set[str] | None = None,
+) -> bool:
     if not embeddings.settings.embedding_enabled:
         return False
     job = await asyncio.to_thread(
@@ -151,6 +153,9 @@ async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
         embeddings.settings.embedding_passage_chars,
     )
     if not job:
+        await asyncio.to_thread(
+            store.prune_inactive_embeddings_if_ready, set_id, retain_routes
+        )
         return False
     if not embeddings.settings.embedding_enabled:
         await asyncio.to_thread(store.retry_embedding, job, paused=True)
@@ -161,7 +166,11 @@ async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
             for passage in job["passages"]
         ]
         vectors = await embeddings.embed(texts)
-        await asyncio.to_thread(store.finish_embedding_batch, job, vectors)
+        finished = await asyncio.to_thread(store.finish_embedding_batch, job, vectors)
+        if finished:
+            await asyncio.to_thread(
+                store.prune_inactive_embeddings_if_ready, set_id, retain_routes
+            )
     except asyncio.CancelledError:
         await asyncio.to_thread(store.retry_embedding, job)
         raise
@@ -174,12 +183,25 @@ async def index_one(store: Store, embeddings: Embeddings, set_id: str) -> bool:
     return True
 
 
-async def run_embedding_worker(store: Store, embeddings: Embeddings, set_id: str) -> None:
+async def run_embedding_worker(
+    store: Store, embeddings: Embeddings, set_id: str,
+    retain_routes: set[str] | None = None,
+) -> None:
     while True:
         try:
-            worked = await index_one(store, embeddings, set_id)
+            worked = await index_one(store, embeddings, set_id, retain_routes)
         except Exception as exc:
             # Do not log model payloads, text, credentials or provider bodies.
             logger.warning("Embedding worker will retry (%s)", type(exc).__name__)
             worked = False
         await asyncio.sleep(0.1 if worked else 2)
+
+
+async def run_embedding_workers(store: Store, adapters: dict, set_ids: dict) -> None:
+    """Backfill the default and language-specific indexes independently."""
+    async with asyncio.TaskGroup() as group:
+        for route, set_id in set_ids.items():
+            if set_id and route in adapters:
+                group.create_task(run_embedding_worker(
+                    store, adapters[route], set_id, set(set_ids)
+                ))

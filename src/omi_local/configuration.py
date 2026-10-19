@@ -14,7 +14,7 @@ from .settings import DEPLOYMENT_FIELDS, RUNTIME_FIELDS, Settings, validate_sett
 RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
     key for key in Settings.model_fields if key.startswith("embedding_")
 }
-ROUTE_FIELDS = {"stt_routes", "llm_routes"}
+ROUTE_FIELDS = {"stt_routes", "llm_routes", "embedding_routes"}
 RETIRED_FIELDS = {
     "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds",
     "meeting_quiet_minutes",
@@ -132,6 +132,12 @@ DESCRIPTIONS = {
     "omi_api_key": "Personal Omi developer API key for optional transcript import.",
     "audio_forwarding_token": "Separate receiver secret: 32–128 URL-safe letters, digits, _ or -.",
     "embedding_enabled": "Requires a model, immutable revision and positive output dimension.",
+    "embedding_routes": "Use a separate embedding model for selected transcript languages. "
+    "Every model needs its own immutable revision and vector dimension. Each language has its "
+    "own index; each model indexes all transcripts, and cross-language quality depends on that model, "
+    "vectors from different models are never compared. More routes increase indexing work and "
+    "storage. Model, endpoint, revision, dimension or prefix changes rebuild that route's index; "
+    "changing only its key does not. Previous vectors are removed after replacement coverage is complete.",
     "embedding_revision": "Change this when replacing embedding weights behind the same alias.",
     "llm_revision": "Change this when replacing model weights to invalidate derived caches.",
     "llm_enable_thinking": "Default uses the model's setting. Supported gateways can enable or "
@@ -225,14 +231,19 @@ class Configuration:
 
     def startup(self, initial: Settings) -> Settings:
         if initial.managed_hosting:
-            # Imported private preferences must not replace the operator's model
-            # contract, credentials, worker policy or archive location on restart.
+            # Hosted account owners may bring their own transcription and embedding
+            # providers. Operator-owned inference, worker, and storage policy remains fixed.
+            account_model_fields = {
+                "stt_base_url", "stt_api_key", "stt_model", "stt_routes",
+                *{key for key in Settings.model_fields if key.startswith("embedding_")},
+            }
             self.overrides = {
                 key: value for key, value in self.overrides.items()
-                if not key.startswith((
-                    "stt_", "llm_", "embedding_", "chat_", "inference_", "diarization_",
-                    "voice_recognition_", "audio_forwarding_",
-                )) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
+                if (
+                    key in account_model_fields
+                    or not key.startswith(("stt_", "llm_", "embedding_", "chat_", "inference_",
+                                          "diarization_", "voice_recognition_", "audio_forwarding_"))
+                ) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
             }
         try:
             return Settings.model_validate(initial.model_dump() | self.overrides)
@@ -282,7 +293,7 @@ class Configuration:
                 # Replacing route lists must not clear write-only tokens just because
                 # a client loaded the redacted configuration and edited a model name.
                 old = base[key].get(name.lower(), {})
-                routes[name] = {**({"token": old["token"]} if "token" in old else {}), **override}
+                routes[name] = {**old, **override}
             changes[key] = routes
         return Settings.model_validate(base | changes)
 

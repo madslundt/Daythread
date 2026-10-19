@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .settings import LLMTask, ModelRoute, Settings
+from .semantic_store import normalized
 
 MAX_RESPONSE_BYTES = 262_144
 CONNECTION_FIELDS = {
@@ -27,13 +28,18 @@ CONNECTION_FIELDS = {
     "inference_token",
     "stt_api_key",
     "llm_api_key",
+    "embedding_base_url",
+    "embedding_model",
+    "embedding_token",
+    "embedding_dimension",
+    "embedding_routes",
 }
 
 
 class ConnectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["stt", "llm"]
+    provider: Literal["stt", "llm", "embedding"]
     route: str | None = Field(default=None, max_length=32)
     changes: dict = Field(default_factory=dict)
 
@@ -43,16 +49,29 @@ class ConnectionRequest(BaseModel):
                 if not re.fullmatch(r"[A-Za-z-]{2,32}", self.route):
                     raise ValueError("Invalid transcription route")
                 route = settings.stt_route(self.route)
-            else:
+            elif self.provider == "llm":
                 if self.route not in get_args(LLMTask):
                     raise ValueError("Invalid language model route")
                 route = settings.llm_route(cast(LLMTask, self.route))
+            else:
+                if not re.fullmatch(r"[A-Za-z]{2,3}", self.route):
+                    raise ValueError("Invalid embedding language route")
+                effective = settings.embedding_route_settings(self.route)
+                route = ModelRoute(
+                    model=effective.embedding_model,
+                    base_url=effective.embedding_base_url,
+                    token=effective.embedding_token,
+                )
         else:
             # Defaults must remain independent of the auto/chat override rows.
+            token = (
+                settings.embedding_token if self.provider == "embedding"
+                else settings.model_api_key(self.provider)
+            )
             route = ModelRoute(
                 model=getattr(settings, f"{self.provider}_model"),
                 base_url=getattr(settings, f"{self.provider}_base_url"),
-                token=settings.model_api_key(self.provider),
+                token=token,
             )
         if require_model and (not route.model.strip() or len(route.model) > 200):
             raise ValueError("Invalid model name")
@@ -180,7 +199,7 @@ class ModelConnection:
                 valid = isinstance(message, dict) and any(
                     isinstance(message.get(key), str) for key in ("content", "reasoning_content")
                 )
-            else:
+            elif request.provider == "stt":
                 fields = {"model": self.route.model, "response_format": "json"}
                 if request.route and re.fullmatch(r"[a-z]{2,3}", request.route.lower()):
                     fields["language"] = request.route.lower()
@@ -191,6 +210,23 @@ class ModelConnection:
                     files={"file": ("connection-test.wav", synthetic_audio(), "audio/wav")},
                 )
                 valid = isinstance(payload.get("text"), str)
+            else:
+                payload = await self.request(
+                    "POST", "embeddings",
+                    json={"model": self.route.model, "input": ["connection check"],
+                          "encoding_format": "float"},
+                )
+                entries = payload.get("data")
+                valid = False
+                if isinstance(entries, list) and len(entries) == 1 and isinstance(entries[0], dict):
+                    try:
+                        dimension = self.settings.embedding_route_settings(
+                            request.route
+                        ).embedding_dimension
+                        normalized(entries[0]["embedding"], dimension)
+                        valid = True
+                    except (ValueError, KeyError, TypeError, OverflowError):
+                        valid = False
             if not valid:
                 raise ConnectionFailure("The server returned an invalid model response.")
             result = {

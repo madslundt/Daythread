@@ -392,12 +392,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     current.settings, current.inference.settings, current.retriever.settings,
                     current.retriever.embeddings.settings, current.notifications.settings,
                 ])
+                targets.extend(
+                    adapter.settings
+                    for adapter in getattr(current.retriever, "embedding_adapters", {}).values()
+                )
                 for kind in ("stt", "llm"):
                     if changes.get(kind + "_enabled") is False:
                         current.inference.health[kind] = {"state": "disabled"}
                 if changes.get("embedding_enabled") is False:
                     current.retriever.set_id = None
+                    current.retriever.route_set_ids = {}
                     current.retriever.embeddings.health = {"state": "disabled"}
+                    for adapter in getattr(current.retriever, "embedding_adapters", {}).values():
+                        adapter.health = {"state": "disabled"}
             for target in targets:
                 for key, value in changes.items():
                     if not value:

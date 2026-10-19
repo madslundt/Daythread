@@ -9,6 +9,7 @@ from typing import Literal
 from .embeddings import EmbeddingError, Embeddings
 from .settings import Settings
 from .store import Store
+from .translation import analyze_transcript_languages, detect_language_code
 
 
 def normalized_words(text: str) -> set[str]:
@@ -129,20 +130,44 @@ def bound_sources(
 class HybridRetriever:
     def __init__(self, store: Store, settings: Settings, embeddings: Embeddings | None = None):
         self.store, self.settings, self.embeddings = store, settings, embeddings
-        self.set_id = (
-            store.configure_embeddings(settings.embedding_manifest)
-            if settings.background_processing_enabled and settings.embedding_enabled else None
-        )
+        self.route_set_ids = {}
+        if settings.background_processing_enabled and settings.embedding_enabled:
+            self.set_id = store.configure_embeddings(settings.embedding_manifest)
+            for language in settings.embedding_languages:
+                self.route_set_ids[language] = store.configure_embeddings(
+                    settings.embedding_manifest_for(language)
+                )
+            store.reconcile_embedding_routes({"default", *settings.embedding_languages})
+        else:
+            self.set_id = None
+            if settings.background_processing_enabled:
+                # Disabling embeddings retains the established behavior of clearing
+                # semantic vectors when the archive restarts with embeddings off.
+                store.configure_embeddings(None)
 
-    def status(self, start: datetime | None = None, end: datetime | None = None) -> dict:
-        if not self.set_id:
+    def embedding_route(self, query: str) -> tuple[str, str | None]:
+        analysis = analyze_transcript_languages(query)
+        language = analysis["dominant_language"]
+        if not language or analysis["dominant_language_share"] < 0.7:
+            language = detect_language_code(query)
+        if language:
+            route = language.split("-")[0]
+            if route in self.route_set_ids:
+                return route, self.route_set_ids[route]
+        return "default", self.set_id
+
+    def status(self, start: datetime | None = None, end: datetime | None = None,
+               route: str = "default") -> dict:
+        set_id = self.set_id if route == "default" else self.route_set_ids.get(route)
+        if not set_id:
             return {"state": "disabled", "set_id": None, "total": 0, "indexed": 0}
-        coverage = self.store.embedding_coverage(self.set_id, start, end)
-        health = self.embeddings.health if self.embeddings else {"state": "unavailable"}
+        coverage = self.store.embedding_coverage(set_id, start, end)
+        adapter = getattr(self, "embedding_adapters", {}).get(route, self.embeddings)
+        health = adapter.health if adapter else {"state": "unavailable"}
         state = health["state"]
         if state == "ready" and coverage["indexed"] < coverage["total"]:
             state = "partial"
-        return coverage | {"state": state, "set_id": self.set_id}
+        return coverage | {"state": state, "set_id": set_id}
 
     async def retrieve(
         self,
@@ -154,6 +179,10 @@ class HybridRetriever:
         mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
     ) -> tuple[list[dict], dict]:
         details = {"mode": "keyword", "fallback_reason": None}
+        if mode != "keyword":
+            route, route_set_id = await asyncio.to_thread(self.embedding_route, question)
+        else:
+            route, route_set_id = "default", self.set_id
 
         async def lexical_candidates():
             return (
@@ -163,15 +192,16 @@ class HybridRetriever:
             )
 
         async def semantic_candidates():
-            if not self.set_id or mode == "keyword":
+            if not route_set_id or mode == "keyword":
                 return []
             try:
-                if self.embeddings is None:
+                adapter = getattr(self, "embedding_adapters", {}).get(route, self.embeddings)
+                if adapter is None:
                     raise EmbeddingError("No adapter")
-                vector = (await self.embeddings.embed([question], query=True))[0]
+                vector = (await adapter.embed([question], query=True))[0]
                 semantic = await asyncio.to_thread(
                     self.store.semantic_candidates,
-                    self.set_id,
+                    route_set_id,
                     vector,
                     self.settings.embedding_min_score,
                     50,
@@ -190,9 +220,9 @@ class HybridRetriever:
         lexical, semantic = lexical_task.result(), semantic_task.result()
         if mode == "semantic" and details["fallback_reason"]:
             lexical = await asyncio.to_thread(self.store.search, query, 50, start, end)
-        status = await asyncio.to_thread(self.status, start, end)
+        status = await asyncio.to_thread(self.status, start, end, route)
         details["embedding"] = status
-        if self.set_id and status["indexed"] < status["total"]:
+        if route_set_id and status["indexed"] < status["total"]:
             details["partial"] = True
         rows = {row["id"]: row for row in lexical}
         scores, matches = {}, {}

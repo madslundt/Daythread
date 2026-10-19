@@ -81,6 +81,13 @@ class LLMRouteOverride(ModelRouteOverride):
     revision: str | None = Field(default=None, max_length=200)
 
 
+class EmbeddingRouteOverride(ModelRouteOverride):
+    revision: str | None = Field(default=None, min_length=1, max_length=200)
+    dimension: int | None = Field(default=None, ge=1, le=8192)
+    query_prefix: str | None = Field(default=None, max_length=1000)
+    document_prefix: str | None = Field(default=None, max_length=1000)
+
+
 class ModelRoute(BaseModel):
     model: str
     base_url: str
@@ -173,6 +180,7 @@ class Settings(BaseSettings):
     embedding_max_input_chars: int = Field(default=4000, ge=200, le=20000)
     embedding_query_prefix: str = Field(default="", max_length=1000)
     embedding_document_prefix: str = Field(default="", max_length=1000)
+    embedding_routes: dict[str, EmbeddingRouteOverride] = Field(default_factory=dict)
     embedding_timeout_seconds: int = Field(default=10, ge=1, le=60)
     embedding_query_timeout_seconds: float = Field(default=2, gt=0, le=60)
     embedding_query_cache_size: int = Field(default=128, ge=0, le=4096)
@@ -253,6 +261,21 @@ class Settings(BaseSettings):
         language = language.lower()
         return self.stt_routes.get(language) or self.stt_routes.get(language.split("-")[0])
 
+    @field_validator("embedding_routes", mode="before")
+    @classmethod
+    def valid_embedding_languages(cls, value):
+        if not isinstance(value, dict):
+            raise ValueError("Embedding routes must map language codes to overrides")
+        routes = {}
+        for language, override in value.items():
+            if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,3}", language):
+                raise ValueError("Use a base language code such as da or en for embedding routes")
+            normalized = language.lower()
+            if normalized in routes:
+                raise ValueError("Duplicate embedding language route")
+            routes[normalized] = override
+        return routes
+
     def stt_route(self, language: str) -> ModelRoute:
         override = self.stt_override(language) or ModelRouteOverride()
         return ModelRoute(
@@ -299,6 +322,26 @@ class Settings(BaseSettings):
             self.embedding_max_input_chars
         ):
             raise ValueError("Embedding passage and prefix exceed input character ceiling")
+        for language in self.embedding_routes:
+            override = self.embedding_routes[language]
+            if (override.model is not None or override.base_url is not None) and (
+                override.revision is None or override.dimension is None
+            ):
+                raise ValueError(
+                    f"Embedding route {language} needs its own revision and dimension"
+                )
+            route = self.embedding_route_settings(language)
+            if route.embedding_enabled and not (
+                route.embedding_model.strip() and route.embedding_revision.strip()
+                and route.embedding_dimension > 0
+            ):
+                raise ValueError(
+                    f"Enabled embedding route {language} requires model, revision and dimension"
+                )
+            if route.embedding_passage_chars + len(route.embedding_document_prefix) > (
+                route.embedding_max_input_chars
+            ):
+                raise ValueError(f"Embedding route {language} exceeds input character ceiling")
         return self
 
     @property
@@ -317,6 +360,45 @@ class Settings(BaseSettings):
             # A different endpoint may resolve the same alias to a different model.
             "endpoint": self.embedding_base_url,
         }
+
+    def embedding_route_settings(self, language: str | None = None) -> "Settings":
+        """Return the effective embedding contract for a language, falling back to default."""
+        override = None
+        if language:
+            language = language.lower()
+            override = self.embedding_routes.get(language) or self.embedding_routes.get(
+                language.split("-")[0]
+            )
+            if override is None:
+                override = next((value for name, value in sorted(self.embedding_routes.items())
+                                 if name.split("-")[0] == language.split("-")[0]), None)
+        if override is None:
+            return self
+        return self.model_copy(update={
+            "embedding_model": override.model or self.embedding_model,
+            "embedding_base_url": override.base_url or self.embedding_base_url,
+            "embedding_token": override.token if override.token is not None else self.embedding_token,
+            "embedding_revision": override.revision or self.embedding_revision,
+            "embedding_dimension": override.dimension or self.embedding_dimension,
+            "embedding_query_prefix": (
+                self.embedding_query_prefix if override.query_prefix is None else override.query_prefix
+            ),
+            "embedding_document_prefix": (
+                self.embedding_document_prefix if override.document_prefix is None
+                else override.document_prefix
+            ),
+        })
+
+    @property
+    def embedding_languages(self) -> list[str]:
+        return sorted({language.split("-")[0] for language in self.embedding_routes})
+
+    def embedding_manifest_for(self, language: str | None = None) -> dict | None:
+        effective = self.embedding_route_settings(language)
+        manifest = effective.embedding_manifest
+        if manifest:
+            manifest = manifest | {"route_name": language.split("-")[0] if language else "default"}
+        return manifest
 
     @property
     def hint_policy(self) -> HintPolicy:

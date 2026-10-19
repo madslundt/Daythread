@@ -7,8 +7,8 @@ import { useResource } from "./useResource";
 import { ModelPicker } from "./ModelPicker";
 import {
   advancedConfigurationFields, canRebaseConfiguration, configurationChanges, configurationDraft, configurationIsDirty,
-  keepSecret, matchingConfigurationFields, tasks,
-  type ConfigurationData, type ConfigurationDraft, type ConfigurationField,
+  keepSecret, matchingConfigurationFields, routeChanges, routeRows, tasks,
+  type ConfigurationData, type ConfigurationDraft, type ConfigurationField, type ModelOverride,
   type RouteRow, type SecretEdit,
 } from "./configurationModel";
 
@@ -40,6 +40,7 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
   connectionDraft: ConfigurationDraft; revision: string;
 }) {
   const llm = field.key === "llm_routes";
+  const embedding = field.key === "embedding_routes";
   function update(id: string, changes: Partial<RouteRow>) {
     onChange(rows.map((row) => row.id === id ? { ...row, ...changes } : row));
   }
@@ -59,18 +60,38 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
           <input type="url" value={row.base_url || ""} placeholder={t("Use default endpoint")}
             onChange={(event) => update(row.id, { base_url: event.target.value })} />
         </label>
-        {llm ? <label className="setting-field"><span>{t("Revision override")}</span>
+        {llm || embedding ? <label className="setting-field"><span>{t("Revision override")}</span>
           <input value={row.revision || ""} placeholder={t("Use default revision")}
             onChange={(event) => update(row.id, { revision: event.target.value })} />
         </label> : null}
+        {embedding ? <label className="setting-field"><span>{t("Vector dimension override")}</span>
+          <input type="number" min={1} max={8192} value={row.dimension || ""} placeholder={t("Use default dimension")}
+            onChange={(event) => update(row.id, { dimension: event.target.value ? Number(event.target.value) : null })} />
+        </label> : null}
+        {embedding ? <>
+          <label className="setting-field"><span>{t("Query prefix override")}</span>
+            <input value={row.query_prefix || ""} placeholder={t("Use default prefix")}
+              onChange={(event) => update(row.id, { query_prefix: event.target.value })} />
+          </label>
+          <label className="setting-field"><span>{t("Document prefix override")}</span>
+            <input value={row.document_prefix || ""} placeholder={t("Use default prefix")}
+              onChange={(event) => update(row.id, { document_prefix: event.target.value })} />
+          </label>
+        </> : null}
         <SecretControl id={`route-key-${row.id}`} label={t("Route key")} route
           configured={Boolean(secrets[`${field.key}.${row.name.toLowerCase()}.token`])}
           edit={row.secret} onChange={(secret) => update(row.id, { secret })} />
         <ModelPicker id={`route-model-${row.id}`} label={t("Model for {value0}", { value0: row.name || t("route {value0}", { value0: index + 1 }) })}
-          value={row.model || ""} provider={llm ? "llm" : "stt"} draft={connectionDraft} row={row}
-          revision={revision} onChange={(model) => update(row.id, { model })} />
+          value={row.model || ""} provider={embedding ? "embedding" : llm ? "llm" : "stt"}
+          draft={connectionDraft} row={row} revision={revision}
+          onChange={(model) => update(row.id, { model })} />
       </div>
-      <button className="text-button" type="button" onClick={() => onChange(rows.filter((value) => value.id !== row.id))}>
+      <button className="text-button" type="button" onClick={() => {
+        if (embedding && !window.confirm(t(
+          "After restart, this language will use the default embedding model. Vectors from the removed model cannot be reused or mixed with default-model vectors; the default index backfills any missing transcripts, and the removed index is cleaned up afterward. Remove this route?",
+        ))) return;
+        onChange(rows.filter((value) => value.id !== row.id));
+      }}>
         {t("Remove route")}{" "}{row.name || index + 1}
       </button>
     </fieldset>)}
@@ -92,11 +113,12 @@ const groupDescriptions: Record<string, string> = {
 };
 
 const modelConnections = [
-  { provider: "stt", title: source("Transcription"), description: source("Transcribes your recordings into text.") },
-  { provider: "llm", title: source("Summaries & chat"), description: source("Answers questions and generates summaries.") },
+  { provider: "stt", key: "stt_api_key", title: source("Transcription"), description: source("Transcribes your recordings into text.") },
+  { provider: "llm", key: "llm_api_key", title: source("Summaries & chat"), description: source("Answers questions and generates summaries.") },
+  { provider: "embedding", key: "embedding_token", title: source("Semantic search"), description: source("Finds related conversations using your embedding model.") },
 ] as const;
-const connectionKeys = modelConnections.flatMap(({ provider }) =>
-  [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]);
+const connectionKeys = modelConnections.flatMap(({ provider, key }) =>
+  [`${provider}_base_url`, key, `${provider}_model`]);
 const optionsTitle = (group: string) => group === "Transcription" ? t("Transcription options & language routes") :
   group === "Language models & chat" ? t("Language model options & task routes") : group;
 
@@ -173,6 +195,26 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
     try {
       const changes = configurationChanges(baseline, draft, hiddenFields);
       if (!Object.keys(changes).length) return;
+      const rebuildKeys = new Set([
+        "embedding_enabled",
+        "embedding_model", "embedding_base_url", "embedding_revision", "embedding_dimension",
+        "embedding_query_prefix", "embedding_document_prefix", "embedding_passage_chars",
+      ]);
+      const routeContract = (routes: Record<string, object>) => JSON.stringify(
+        Object.fromEntries(Object.entries(routes).sort(([a], [b]) => a.localeCompare(b)).map(([name, route]) =>
+          [name, Object.fromEntries(Object.entries(route).filter(([key]) => key !== "token"))])),
+      );
+      const oldRoutes = routeChanges(routeRows(
+        (baseline.values.embedding_routes || {}) as Record<string, ModelOverride>,
+      ), false, true);
+      const newRoutes = routeChanges(draft.routes.embedding_routes || [], false, true);
+      const rebuildRequired = Object.keys(changes).some((key) => rebuildKeys.has(key)) ||
+        routeContract(oldRoutes) !== routeContract(newRoutes);
+      const disablingEmbeddings = baseline.values.embedding_enabled === true &&
+        changes.embedding_enabled === false;
+      if (rebuildRequired && !window.confirm(t(disablingEmbeddings
+        ? "Turning off embeddings deletes the stored search vectors and disables semantic search. If you enable embeddings later, transcripts need to be embedded again because vectors from different models cannot be compared safely. Turn off embeddings?"
+        : "Changing an embedding model or route requires rebuilding its search index. Vectors from different models cannot be compared safely. After restart, search uses the new model's growing index with keyword results while background indexing runs; the previous vectors stay stored separately until the rebuild finishes. Save these changes?"))) return;
       setBusy(true);
       const result = await request<ConfigurationData>("/v1/configuration", {
         method: "PATCH", body: JSON.stringify({ revision: baseline.revision, changes }),
@@ -193,9 +235,9 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
   }
   function control(field: ConfigurationField) {
     const id = `config-${field.key}`;
-    if (field.key === "stt_model" || field.key === "llm_model") return <ModelPicker
+    if (["stt_model", "llm_model", "embedding_model"].includes(field.key)) return <ModelPicker
       id={id} label={t(field.label)} description={t(field.description)} value={String(draft!.values[field.key] || "")}
-      provider={field.key === "stt_model" ? "stt" : "llm"} draft={draft!} revision={baseline!.revision}
+      provider={field.key === "stt_model" ? "stt" : field.key === "llm_model" ? "llm" : "embedding"} draft={draft!} revision={baseline!.revision}
       onChange={(value) => update(field.key, value)} />;
     if (field.kind === "routes") return <ModelRoutes field={field} rows={draft!.routes[field.key] || []}
       secrets={baseline!.secrets} connectionDraft={draft!} revision={baseline!.revision} onChange={(rows) => {
@@ -254,8 +296,8 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         t("{value0} matching server {value1}.", { value0: fields.length, value1: fields.length === 1 ? t("setting") : t("settings") }) :
         t("No server settings match your search. Try a model name, connection, or storage setting.")}</p> : null}
       <div className="model-connections">
-        {modelConnections.map(({ provider, title, description }) => {
-          const connectionFields = [`${provider}_base_url`, `${provider}_api_key`, `${provider}_model`]
+        {modelConnections.map(({ provider, key, title, description }) => {
+          const connectionFields = [`${provider}_base_url`, key, `${provider}_model`]
             .flatMap((key) => fields.filter((field) => field.key === key));
           if (!connectionFields.length) return null;
           return <fieldset key={provider} disabled={busy} className="model-connection">

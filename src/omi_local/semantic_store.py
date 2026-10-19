@@ -92,7 +92,16 @@ class SemanticStore:
         key = hashlib.sha256(serialized.encode()).hexdigest() if serialized else None
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("UPDATE embedding_sets SET active=0")
+            if manifest is None:
+                db.execute("DELETE FROM retrieval_passages")
+                db.execute("DELETE FROM embedding_jobs")
+                db.execute("DELETE FROM embedding_sets")
+                return None
+            route_name = (manifest or {}).get("route_name", "default")
+            for row in list(db.execute("SELECT id,manifest FROM embedding_sets WHERE active=1")):
+                previous = json.loads(row["manifest"])
+                if previous.get("route_name", "default") == route_name and row["id"] != key:
+                    db.execute("UPDATE embedding_sets SET active=0 WHERE id=?", (row["id"],))
             if key:
                 db.execute(
                     "INSERT INTO embedding_sets VALUES(?,?,1) "
@@ -110,17 +119,54 @@ class SemanticStore:
                     "WHERE state='done' AND length(trim(text))>0",
                     (key,),
                 )
-            # Replaced model contracts are derived data, never archive history. Remove
-            # their vectors and jobs atomically so provider changes cannot accumulate
-            # unbounded storage or let an old worker restore an inactive index.
-            if db.execute("SELECT 1 FROM embedding_sets WHERE active=0 LIMIT 1").fetchone():
-                for table in ("retrieval_passages", "embedding_jobs"):
-                    db.execute(
-                        f"DELETE FROM {table} WHERE set_id IN "
-                        "(SELECT id FROM embedding_sets WHERE active=0)"
-                    )
-                db.execute("DELETE FROM embedding_sets WHERE active=0")
         return key
+
+    def reconcile_embedding_routes(self, route_names: set[str]) -> None:
+        """Mark removed language routes inactive so they can be reclaimed after backfill."""
+        with self.connect() as db:
+            for row in list(db.execute("SELECT id,manifest FROM embedding_sets WHERE active=1")):
+                manifest = json.loads(row["manifest"])
+                if manifest.get("route_name", "default") not in route_names:
+                    db.execute("UPDATE embedding_sets SET active=0 WHERE id=?", (row["id"],))
+
+    def prune_inactive_embeddings_if_ready(
+        self, set_id: str, retain_routes: set[str] | None = None,
+    ) -> bool:
+        """Keep the previous index until the replacement covers every current transcript."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            active = db.execute(
+                "SELECT 1 FROM embedding_sets WHERE id=? AND active=1", (set_id,)
+            ).fetchone()
+            if not active:
+                return False
+            coverage = db.execute(
+                "SELECT count(*) AS total,coalesce(sum(j.state='done'),0) AS indexed "
+                "FROM audio a LEFT JOIN embedding_jobs j ON j.audio_id=a.id AND j.set_id=? "
+                "AND j.version=a.transcript_version WHERE a.state='done' "
+                "AND length(trim(a.text))>0",
+                (set_id,),
+            ).fetchone()
+            if coverage["total"] != coverage["indexed"]:
+                return False
+            active_manifest = json.loads(db.execute(
+                "SELECT manifest FROM embedding_sets WHERE id=?", (set_id,)
+            ).fetchone()[0])
+            route_name = active_manifest.get("route_name", "default")
+            inactive = [row["id"] for row in db.execute(
+                "SELECT id,manifest FROM embedding_sets WHERE active=0"
+            ) if (
+                json.loads(row["manifest"]).get("route_name", "default") == route_name
+                or (retain_routes is not None and json.loads(row["manifest"]).get(
+                    "route_name", "default"
+                ) not in retain_routes)
+            )]
+            if inactive:
+                marks = ",".join("?" for _ in inactive)
+                db.execute(f"DELETE FROM retrieval_passages WHERE set_id IN ({marks})", inactive)
+                db.execute(f"DELETE FROM embedding_jobs WHERE set_id IN ({marks})", inactive)
+                db.execute(f"DELETE FROM embedding_sets WHERE id IN ({marks})", inactive)
+            return True
 
     def embedding_coverage(
         self, set_id: str, start: datetime | None = None, end: datetime | None = None

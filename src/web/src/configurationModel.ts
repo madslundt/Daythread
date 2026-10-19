@@ -17,6 +17,9 @@ export type ModelOverride = {
   base_url?: string | null;
   revision?: string | null;
   token?: string | null;
+  dimension?: number | null;
+  query_prefix?: string | null;
+  document_prefix?: string | null;
 };
 export type ConfigurationData = {
   fields: ConfigurationField[];
@@ -71,9 +74,9 @@ export function configurationChanges(
       changes[field.key] = value;
       continue;
     } else if (field.kind === "routes") {
-      value = routeChanges(draft.routes[field.key] || [], field.key === "llm_routes");
+      value = routeChanges(draft.routes[field.key] || [], field.key === "llm_routes", field.key === "embedding_routes");
       previous = routeChanges(Object.entries(previous as Record<string, ModelOverride>)
-        .map(([name, route]) => ({ ...route, name, secret: keepSecret() })), field.key === "llm_routes");
+        .map(([name, route]) => ({ ...route, name, secret: keepSecret() })), field.key === "llm_routes", field.key === "embedding_routes");
     } else if (field.nullable && (value === "" || value == null)) {
       value = null;
     } else if (field.kind === "number" || field.kind === "integer") {
@@ -122,6 +125,7 @@ const advancedKeys = new Set([
   "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
   "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
   "embedding_dimension", "embedding_timeout_seconds", "embedding_min_score",
+  "embedding_routes",
   "diarization_enabled", "diarization_base_url", "diarization_timeout_seconds",
   "voice_recognition_enabled", "voice_recognition_report", "omi_api_key", "pocket_api_key",
   "audio_forwarding_token", "worker_enabled",
@@ -162,18 +166,24 @@ export function secretChange(edit: SecretEdit): string | null | undefined {
   return edit.value;
 }
 
-export function routeChanges(rows: Omit<RouteRow, "id">[], llm: boolean): Record<string, ModelOverride> {
+export function routeChanges(rows: Omit<RouteRow, "id">[], llm: boolean, embedding = false): Record<string, ModelOverride> {
   const routes: Record<string, ModelOverride> = {};
   for (const row of rows) {
     const name = row.name.trim().toLowerCase();
-    if (!/^[a-z-]{2,32}$/.test(name) || (llm && !tasks.includes(name)))
-      throw new Error(t("Enter a language code/name for every STT route, or select an LLM task."));
+    if ((embedding ? !/^[a-z]{2,3}$/.test(name) : !/^[a-z-]{2,32}$/.test(name)) ||
+        (llm && !tasks.includes(name)))
+      throw new Error(t("Enter a valid language code for each embedding route, a language code/name for each STT route, or select an LLM task."));
     if (Object.hasOwn(routes, name)) throw new Error(t("The {value0} route is listed twice.", { value0: name }));
     const token = secretChange(row.secret);
     routes[name] = {
       model: row.model?.trim() || null,
       base_url: row.base_url?.trim() || null,
-      ...(llm ? { revision: row.revision?.trim() || null } : {}),
+      ...(llm || embedding ? { revision: row.revision?.trim() || null } : {}),
+      ...(embedding && row.dimension ? { dimension: Number(row.dimension) } : {}),
+      ...(embedding ? {
+        query_prefix: row.query_prefix === undefined ? null : row.query_prefix.trim(),
+        document_prefix: row.document_prefix === undefined ? null : row.document_prefix.trim(),
+      } : {}),
       ...(token !== undefined ? { token } : {}),
     };
   }

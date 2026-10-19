@@ -154,6 +154,22 @@ def language_profiles() -> DetectorFactory:
     return factory
 
 
+def detect_language_code(text: str) -> str | None:
+    """Best-effort language for a short search query, using bundled offline profiles."""
+    text = " ".join(text.split())[:1000]
+    if len(re.findall(r"[^\W\d_]", text, flags=re.UNICODE)) < 12:
+        return None
+    detector = language_profiles().create()
+    detector.append(text)
+    try:
+        probabilities = detector.get_probabilities()
+    except LangDetectException:
+        return None
+    if not probabilities or probabilities[0].prob < 0.7:
+        return None
+    return probabilities[0].lang.split("-")[0]
+
+
 class LanguageAnalysis(TypedDict):
     dominant_language: str | None
     dominant_language_share: float

@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .embeddings import Embeddings, run_embedding_worker
+from .embeddings import Embeddings, run_embedding_workers
 from .generation_jobs import GenerationJobs
 from .inference import Inference
 from .notifications import NotificationService
@@ -148,17 +148,22 @@ class Profiles:
         memory = Memory(store, settings, Inference(settings, self.client))
         memory.notifications = NotificationService(store, settings, profile_id)
         jobs = GenerationJobs(memory)
-        memory.retriever.embeddings = Embeddings(settings, self.client)
+        adapters = {"default": Embeddings(settings, self.client)}
+        for language in settings.embedding_languages:
+            adapters[language] = Embeddings(
+                settings.embedding_route_settings(language), self.client
+            )
+        memory.retriever.embeddings = adapters["default"]
+        memory.retriever.embedding_adapters = adapters
         weekly = WeeklyReviews(memory)
         worker = embedding_worker = None
         if settings.worker_enabled and settings.background_processing_enabled:
             store.recover()
             worker = asyncio.create_task(run_worker(memory))
-            if memory.retriever.set_id:
+            set_ids = {"default": memory.retriever.set_id, **memory.retriever.route_set_ids}
+            if any(set_ids.values()):
                 embedding_worker = asyncio.create_task(
-                    run_embedding_worker(
-                        store, memory.retriever.embeddings, memory.retriever.set_id
-                    )
+                    run_embedding_workers(store, adapters, set_ids)
                 )
         runtime = ProfileRuntime(
             memory,

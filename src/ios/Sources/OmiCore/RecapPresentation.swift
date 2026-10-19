@@ -120,6 +120,14 @@ public enum RecapPresentation {
         }
     }
 
+    /// A labelled topic has its own heading in the UI; keep its original parts unchanged.
+    public static func topicSummary(_ group: Group) -> String {
+        guard let title = group.title?.replacingOccurrences(of: "**", with: ""), !title.isEmpty else { return group.text }
+        let prefix = #"^\*\*"# + NSRegularExpression.escapedPattern(for: title) + #"\*\*\s*(?:[—–:]\s*)?"#
+        return group.text.replacingOccurrences(of: prefix, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public static func sources(for text: String, in sources: [Source]) -> Matches {
         let ids = Set(allMatches("(?i)\\b" + uuid + "\\b", text).map { $0.lowercased() })
         if !ids.isEmpty { return Matches(ids: sources.filter { ids.contains($0.id.lowercased()) }.map(\.id), basis: .citation) }

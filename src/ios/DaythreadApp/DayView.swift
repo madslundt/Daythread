@@ -30,12 +30,8 @@ struct DayView: View {
     @State private var tags: [ManualTag] = []
     @State private var tagRevision = ""
     @State private var tagError: String?
-    private var filterQuery: [String: String] {
-        var result: [String: String] = [:]
-        if !zoneID.isEmpty { result["zone_id"] = zoneID }
-        if !tagID.isEmpty { result["tag_id"] = tagID }
-        return result
-    }
+    private var filters: DayFilterScope { DayFilterScope(tagID: tagID, zoneID: zoneID) }
+    private var filterQuery: [String: String] { filters.query }
     @State private var error: String?
     @State private var recapError: String?
     @State private var timelineError: String?
@@ -44,32 +40,45 @@ struct DayView: View {
     @State private var total = 0
     @State private var totalRecordings = 0
     @State private var requestID = UUID()
+    @State private var loadedScope = ""
+    @State private var loadedRecordingKey = ""
+    @State private var membershipRevision = 0
 
-    init(date: Date? = nil) {
+    init(date: Date? = nil, filters: DayFilterScope = .init()) {
         _selectedDate = State(initialValue: date)
+        _tagID = State(initialValue: filters.tagID)
+        _zoneID = State(initialValue: filters.zoneID)
     }
 
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var day: Date { selectedDate ?? model.now }
     private var dayKey: String { diary.dayKey(day) }
-    private var cacheKey: String { model.archiveIdentity + ".day-recording-groups." + dayKey + "." + query + "." + zoneID + "." + String(zones.first { $0.id == zoneID }?.version ?? 0) + "." + tagID + "." + tagRevision }
+    private var scopeKey: String {
+        let values = [model.archiveIdentity, model.archiveRevision, dayKey, filters.identity,
+                      String(zones.first { $0.id == zoneID }?.version ?? 0), tagRevision, String(membershipRevision)]
+        return try! JSONEncoder().encode(values).base64EncodedString()
+    }
+    private var cacheKey: String { model.archiveIdentity + ".day-content.v2." + scopeKey + "." + Data(query.utf8).base64EncodedString() }
+    private var currentRecap: JSONValue { loadedScope == scopeKey ? recap : .null }
+    private var currentGroups: [JSONValue] { loadedRecordingKey == cacheKey ? recordingGroups : [] }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
         List {
             Section {
-                DayQuickActions(importAudio: { sheet = .importAudio }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) })
+                DayQuickActions(importAudio: { sheet = .importAudio }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) }, showsDayChat: !filters.isFiltered)
                     .editorialRow()
                 CaptureGlance().editorialRow()
             }
             Section { DayCalendarPicker(selectedDate: $selectedDate) }
-            if cached {
+            DayFilterSection(scope: filters, tags: tags, zones: zones, open: { sheet = .filters }, clear: { tagID = ""; zoneID = "" })
+            if cached && loadedRecordingKey == cacheKey {
                 Label(L10n.text("Saved on this iPhone · pull to refresh"), systemImage: "internaldrive")
                     .font(.caption).foregroundStyle(.secondary).editorialRow()
             }
             recapSection
-            DayAtGlanceSections(day: dayKey)
+            DayAtGlanceSections(day: dayKey, filters: filters).id(scopeKey)
             Section {
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
                     HStack(spacing: 10) {
@@ -81,7 +90,7 @@ struct DayView: View {
                 ErrorNote(message: error)
                 if error != nil { Button(L10n.text("Retry recordings")) { Task { await load() } } }
                 if loading { ProgressView(L10n.text("Finding your recordings…")) }
-                if recordingGroups.isEmpty && !loading && error == nil {
+                if currentGroups.isEmpty && !loading && error == nil && loadedRecordingKey == cacheKey {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(query.isEmpty && zoneID.isEmpty && tagID.isEmpty ? L10n.text("No recordings yet") : L10n.text("No matching recordings"), systemImage: query.isEmpty ? "waveform" : "magnifyingglass").font(.headline)
                         Text(query.isEmpty && zoneID.isEmpty && tagID.isEmpty ? L10n.text("Add a recording from Files, or connect your Omi in Capture. Your recordings will appear here.") : L10n.text("Try another word, or choose a different date above."))
@@ -90,23 +99,18 @@ struct DayView: View {
                     }.padding(.vertical, 12)
                 }
                 TimelineRecordingGroups(
-                    groups: recordingGroups, day: dayKey, query: query, zoneID: zoneID, tagID: tagID,
+                    groups: currentGroups, day: dayKey, query: query, zoneID: zoneID, tagID: tagID,
                     timeline: timeline,
-                    onCorrect: { Task { await loadTags(); await load() } },
+                    onCorrect: { Task { await reloadMembership() } },
                     onSelect: { sheet = .source(SourceSelection(source: $0)) }
-                )
-                if recordingGroups.count < total {
+                ).id(scopeKey + query)
+                if loadedRecordingKey == cacheKey && recordingGroups.count < total {
                     Button(L10n.text("Load more recordings")) { Task { await loadMore() } }.disabled(loading)
                 }
             } header: {
                 HStack {
                     Text(L10n.text("Recordings"))
-                    if total > 0 { Text("\(total)").monospacedDigit() }
-                    Spacer()
-                    Button { sheet = .filters } label: {
-                        Label(activeFilterCount == 0 ? L10n.text("Filters") : L10n.text("Filters · \(activeFilterCount)"),
-                              systemImage: activeFilterCount == 0 ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                    }.frame(minHeight: 44).textCase(nil).accessibilityIdentifier("day.filters")
+                    if loadedRecordingKey == cacheKey && total > 0 { Text("\(total)").monospacedDigit() }
                 }
             }
             Section {
@@ -115,7 +119,7 @@ struct DayView: View {
                     NavigationLink { LabelsView() } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }
                 }
             }
-            if !dayMeetings.isEmpty || !dayMarkers.isEmpty || timelineError != nil {
+            if !filters.isFiltered && (!dayMeetings.isEmpty || !dayMarkers.isEmpty || timelineError != nil) {
                 Section {
                     ErrorNote(message: timelineError)
                     ForEach(Array(dayMarkers.enumerated()), id: \.element["event_id"].text) { _, marker in
@@ -151,30 +155,31 @@ struct DayView: View {
             case .chat(let selectedDay): ChatView(initialScope: .day(selectedDay)).id(selectedDay)
             }
         }
-        .sheet(item: $sheet) { destination in
+        .sheet(item: $sheet, onDismiss: { Task { await reloadMembership() } }) { destination in
             switch destination {
             case .importAudio: AudioImportView(onImported: { Task { await load() } })
             case .filters:
-                DayRecordingFilters(tagID: $tagID, zoneID: $zoneID, tags: tags, zones: zones, tagError: tagError, zoneError: zoneError)
+                DayRecordingFilters(tagID: $tagID, zoneID: $zoneID, tags: tags, zones: zones, tagError: tagError, zoneError: zoneError,
+                    onDirectoriesChanged: { Task { await loadTags(); await loadZones() } })
             case .source(let selection):
-                SourceDetail(source: selection.source, onCorrect: { Task { await loadTags(); await load() } })
+                SourceDetail(source: selection.source, onCorrect: { Task { await reloadMembership() } })
             }
         }
-        .task(id: model.archiveIdentity) {
+        .task(id: model.archiveIdentity + model.archiveRevision) {
             async let zones: Void = loadZones()
             async let tags: Void = loadTags()
             _ = await (zones, tags)
         }
         .onChange(of: model.archiveIdentity) { _, _ in zones = []; zoneID = ""; tags = []; tagID = ""; tagRevision = "" }
-        .task(id: cacheKey + model.archiveRevision) {
+        .task(id: cacheKey) {
             if !query.isEmpty { do { try await Task.sleep(for: .milliseconds(300)) } catch { return } }
             await load()
         }
-        .task(id: cacheKey + model.archiveRevision + ".poll." + String(describing: scenePhase)) {
+        .task(id: cacheKey + ".poll." + String(describing: scenePhase)) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                if !loading { await refresh() }
+                if !loading { await loadTags(); await loadZones(); await refresh() }
             }
         }
         .refreshable { await load() }
@@ -182,18 +187,28 @@ struct DayView: View {
     }
 
     private var recapSection: some View {
-        Section(L10n.text("Day recap")) {
-            ErrorNote(message: recapError)
-            if recapError != nil { Button(L10n.text("Retry recap")) { Task { await refresh() } } }
-            if loading && recap == .null { ProgressView(L10n.text("Bringing your day together…")) }
-            else if !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty }) {
-                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await load() } }, emptyMessage: recapEmptyMessage)
-            } else if recapError == nil {
+        let recap = currentRecap
+        let hasContent = !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty })
+        return Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day recap")) {
+            ErrorNote(message: loadedScope == scopeKey ? recapError : nil)
+            if loadedScope == scopeKey && recapError != nil { Button(L10n.text("Retry recap")) { Task { await retryRecap() } } }
+            if recap["generation_state"].text == "failed" {
+                if !hasContent { Text(L10n.text("The filtered recap could not be generated.")).font(.caption).foregroundStyle(.secondary) }
+                ErrorNote(message: recap["generation_error"].text.isEmpty ? nil : L10n.key(recap["generation_error"].text))
+                Button(L10n.text("Retry recap")) { Task { await retryRecap() } }
+            }
+            if loadedScope != scopeKey || (loading && recap == .null) {
+                ProgressView(filters.isFiltered ? L10n.text("Loading filtered recap…") : L10n.text("Bringing your day together…"))
+            }
+            if !hasContent && ["queued", "running"].contains(recap["generation_state"].text) { ProgressView(L10n.text("Preparing a recap for the selected filters…")) }
+            if hasContent {
+                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters).id(scopeKey + recap["scope_fingerprint"].text)
+            } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }
             if recap != .null {
                 DisclosureGroup(L10n.text("About this recap")) {
-                    if !recap["summary"].text.isEmpty {
+                    if !filters.isFiltered && !recap["summary"].text.isEmpty {
                         NavigationLink { RecapHistoryView(day: dayKey) } label: { Label(L10n.text("Saved versions & export"), systemImage: "clock.arrow.circlepath") }
                     }
                     if recap["stale"] == .bool(true) { Text(L10n.text("New or changed evidence is available. This recap will update automatically.")).font(.caption).foregroundStyle(Theme.accent) }
@@ -204,7 +219,7 @@ struct DayView: View {
                     if recap["pending_upload_sources"].integer > 0 || recap["pending_chunks"].integer > 0 { Text(L10n.text("Some recordings are awaiting upload or transcription.")).font(.caption) }
                     if !recap["boundary_note"].text.isEmpty { Text(L10n.key(recap["boundary_note"].text)).font(.caption) }
                     CompletenessView(value: recap["completeness"])
-                    if !recap["summary"].text.isEmpty {
+                    if !filters.isFiltered && !recap["summary"].text.isEmpty {
                         EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
                     }
                 }.font(.subheadline).foregroundStyle(.secondary)
@@ -212,9 +227,11 @@ struct DayView: View {
         }
     }
 
-    private var activeFilterCount: Int { (tagID.isEmpty ? 0 : 1) + (zoneID.isEmpty ? 0 : 1) }
-
     private var recapEmptyMessage: String {
+        let recap = currentRecap
+        if recap["generation_state"].text == "failed" { return L10n.text("The filtered recap could not be generated.") }
+        if ["queued", "running"].contains(recap["generation_state"].text) { return L10n.text("Preparing a recap for the selected filters…") }
+        if recap["no_matching_sources"] == .bool(true) { return L10n.text("No recordings match the selected filters for this day.") }
         if recap["no_recap_content"] == .bool(true) { return L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.") }
         if recap["waiting_for_pause"].integer > 0 { return L10n.text("Live conversations are waiting for a longer pause before being summarized.") }
         if recap["pending_upload_sources"].integer > 0 { return L10n.text("Some recordings are awaiting upload or transcription.") }
@@ -253,12 +270,23 @@ struct DayView: View {
         } catch { if !Task.isCancelled, identity == model.archiveIdentity { zoneError = L10n.error(error) } }
     }
 
+    private func reloadMembership() async {
+        membershipRevision += 1
+        requestID = UUID(); recap = .null; loadedScope = ""; recordingGroups = []; loadedRecordingKey = ""
+        async let tags: Void = loadTags()
+        async let zones: Void = loadZones()
+        _ = await (tags, zones)
+        await load()
+    }
+
     private func load() async {
         let key = cacheKey, token = UUID()
         requestID = token; loading = true; error = nil; recapError = nil; timelineError = nil; cached = false
-        recap = .null; recordingGroups = []; timeline = .null; total = 0; totalRecordings = 0
-        if let saved = LocalCache.load(key) {
-            recap = saved["recap"]; recordingGroups = saved["recording_groups"].array
+        if loadedScope != scopeKey { recap = .null; loadedScope = scopeKey }
+        loadedRecordingKey = key; recordingGroups = []; timeline = .null; total = 0; totalRecordings = 0
+        if !filters.isFiltered, let saved = LocalCache.load(key) {
+            if !filters.isFiltered && recap == .null { recap = saved["recap"] }
+            recordingGroups = saved["recording_groups"].array
             timeline = saved["timeline"]; total = saved["total"].integer; totalRecordings = saved["total_recordings"].integer; cached = true
         }
         defer { if requestID == token { loading = false } }
@@ -274,15 +302,30 @@ struct DayView: View {
             async let groupsTask: Void = fetchGroups(client, day: requestedDay, search: search, key: key, token: token, limit: limit)
             async let timelineTask: Void = fetchTimeline(client, day: requestedDay, key: key, token: token)
             _ = await (recapTask, groupsTask, timelineTask)
-            if current(key, token) { cached = error != nil || recapError != nil; save(key) }
+            if current(key, token) { cached = !filters.isFiltered && (error != nil || recapError != nil); save(key) }
         } catch { if current(key, token) { self.error = L10n.error(error); recapError = L10n.error(error) } }
     }
 
     private func fetchRecap(_ client: BackendClient, day: String, key: String, token: UUID) async {
         do {
-            let result = try await client.request("v1/recaps/\(day)")
+            let selectedFilters = filters
+            let result = try await client.request("v1/recaps/\(day)", query: selectedFilters.query)
             guard current(key, token) else { return }
+            let responseScope: [String: String]? = result["scope"] == .null ? nil : ["tag_id": result["scope"]["tag_id"].text, "zone_id": result["scope"]["zone_id"].text]
+            guard selectedFilters.matchesResponseScope(responseScope), !selectedFilters.isFiltered || !result["scope_fingerprint"].text.isEmpty else {
+                throw BackendFailure(message: L10n.text("The recap does not match the selected filters. Refresh and try again."))
+            }
             recap = result; recapError = nil
+        } catch { if current(key, token) { recapError = L10n.error(error) } }
+    }
+
+    private func retryRecap() async {
+        guard filters.isFiltered else { await refresh(); return }
+        let key = cacheKey, token = requestID, selectedFilters = filters
+        do {
+            _ = try await model.client().request("v1/jobs", method: "POST", body: ["id": UUID().uuidString.lowercased(), "kind": "recap", "parameters": ["day": dayKey].merging(selectedFilters.query) { _, new in new }])
+            guard current(key, token) else { return }
+            await refresh()
         } catch { if current(key, token) { recapError = L10n.error(error) } }
     }
 
@@ -323,256 +366,7 @@ struct DayView: View {
     }
 
     private func save(_ key: String) {
+        guard !filters.isFiltered else { return }
         LocalCache.save(.object(["recap": recap, "recording_groups": .array(recordingGroups), "timeline": timeline, "total": .number(Double(total)), "total_recordings": .number(Double(totalRecordings))]), key: key)
-    }
-}
-
-struct TimelineRecordingGroups: View {
-    let groups: [JSONValue]
-    let day: String
-    var query = ""
-    var zoneID = ""
-    var tagID = ""
-    var timeline: JSONValue = .null
-    var onCorrect: (() -> Void)? = nil
-    var onSelect: ((JSONValue) -> Void)? = nil
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        ForEach(Array(groups.enumerated()), id: \.element["id"].text) { _, group in
-            if group["recording_count"].integer == 1 {
-                SourceList(sources: sourcesWithHints(group["sources"].array, timeline: timeline), onCorrect: onCorrect, onSelect: onSelect)
-            } else {
-                TimelineRecordingSession(group: group, day: day, query: query, zoneID: zoneID, tagID: tagID, timeline: timeline, onCorrect: onCorrect, onSelect: onSelect)
-            }
-        }
-    }
-}
-
-private struct TimelineRecordingSession: View {
-    let group: JSONValue
-    let day: String
-    var query = ""
-    var zoneID = ""
-    var tagID = ""
-    var timeline: JSONValue = .null
-    var onCorrect: (() -> Void)? = nil
-    var onSelect: ((JSONValue) -> Void)? = nil
-    @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var expanded = false
-    @State private var requestID = UUID()
-    @State private var sources: [JSONValue] = []
-    @State private var chapters: [JSONValue] = []
-    @State private var total = 0
-    @State private var busy = false
-    @State private var error: String?
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        DisclosureGroup(isExpanded: $expanded) {
-            NavigationLink(L10n.text("Conversation tags")) {
-                ConversationTagsView(groupID: group["id"].text, day: day, onChanged: onCorrect)
-            }
-            if !chapters.isEmpty {
-                DisclosureGroup(L10n.text("Topics")) {
-                    ForEach(Array(chapters.enumerated()), id: \.element["id"].text) { _, chapter in
-                        NavigationLink {
-                            List {
-                                ForEach(Array(chapter["parts"].array.enumerated()), id: \.offset) { _, part in
-                                    RecordingChapterPassage(chapterID: chapter["id"].text, part: part, onCorrect: onCorrect)
-                                }
-                            }.omiScreen().navigationTitle(chapter["title"].text)
-                        } label: { Text(chapter["title"].text) }
-                    }
-                }
-            }
-            SourceList(
-                sources: sourcesWithHints(sources, timeline: timeline),
-                onCorrect: { Task { await load(reset: true) }; onCorrect?() },
-                onSelect: onSelect
-            )
-            if busy { ProgressView(L10n.text("Loading recordings…")) }
-            ErrorNote(message: error)
-            if error != nil || sources.count < total {
-                Button(error == nil ? L10n.text("Load more recordings") : L10n.text("Retry recordings")) {
-                    Task { await load(reset: false) }
-                }.disabled(busy)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(group["title"].text).font(.body.weight(.medium)).foregroundStyle(.primary)
-                let topicCount = group["topic_count"].integer
-                Text(L10n.text("\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · \(group["recording_count"].integer) recordings") + (topicCount > 0 ? " · " + L10n.text("\(topicCount) topics") : ""))
-                    .font(.caption).foregroundStyle(.secondary)
-                if group["estimated_times"] == .bool(true) {
-                    Text(L10n.text("Estimated times")).font(.caption).foregroundStyle(.secondary)
-                }
-            }.padding(.vertical, 5)
-        }
-        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(group["recording_count"].integer)") {
-            if expanded { await load(reset: true) }
-        }
-        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(scenePhase).poll") {
-            guard expanded, scenePhase == .active else { return }
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                if !busy { await load(reset: true) }
-            }
-        }
-        .onDisappear { requestID = UUID() }
-    }
-
-    private func time(_ value: String) -> String {
-        AppModel.date(value).map { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label($0, template: "HHmm") } ?? value
-    }
-
-    private func load(reset: Bool) async {
-        guard reset || !busy else { return }
-        let token = UUID(); requestID = token
-        busy = true; error = nil
-        defer { if requestID == token { busy = false } }
-        do {
-            let client = try model.client(), count = reset ? max(30, sources.count) : 30
-            let firstOffset = reset ? 0 : sources.count
-            var incoming: [JSONValue] = [], result: JSONValue = .null
-            for offset in stride(from: 0, to: count, by: 200) {
-                result = try await client.request("v1/recording-groups/\(group["id"].text)/sources", query: [
-                    "day": day, "q": query, "limit": "\(min(200, count - offset))", "offset": "\(firstOffset + offset)"
-                ].merging(zoneID.isEmpty ? [:] : ["zone_id": zoneID]) { _, new in new }
-                    .merging(tagID.isEmpty ? [:] : ["tag_id": tagID]) { _, new in new })
-                guard !Task.isCancelled, requestID == token else { return }
-                incoming += result["items"].array
-                if firstOffset + incoming.count >= result["total"].integer || result["items"].array.isEmpty { break }
-            }
-            var known = Set(reset ? [] : sources.map { $0["id"].text })
-            sources = (reset ? [] : sources) + incoming.filter { known.insert($0["id"].text).inserted }
-            total = result["total"].integer
-            chapters = result["chapters"].array
-        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
-    }
-}
-
-private struct RecordingChapterPassage: View {
-    let chapterID: String
-    let part: JSONValue
-    let onCorrect: (() -> Void)?
-    @Environment(AppModel.self) private var model
-    @State private var source: JSONValue = .null
-    @State private var selected: SourceSelection?
-    @State private var error: String?
-    @State private var refresh = UUID()
-    @State private var loading = true
-    private var identity: String { model.archiveIdentity + model.archiveRevision + part["source_id"].text + refresh.uuidString }
-    private var section: JSONValue? {
-        guard source["transcript_version"] == part["transcript_version"] else { return nil }
-        return source["sections"].array.first {
-            let id = $0["chapter_id"].text.isEmpty ? source["id"].text + ":" + String($0["start_offset"].integer) : $0["chapter_id"].text
-            return id == chapterID && $0["start_offset"] == part["start_offset"] && $0["end_offset"] == part["end_offset"]
-        }
-    }
-    private var startAt: TimeInterval? {
-        guard let section, case .number(let seconds) = section["start_seconds"] else { return nil }
-        return seconds
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if loading { ProgressView(L10n.text("Loading recordings…")) }
-            else if let section {
-                SourceTranscriptView(source: source, editing: false,
-                    startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer)
-                Button { selected = SourceSelection(source: source) } label: {
-                    Label(L10n.text("Full recording & tools"), systemImage: "waveform")
-                }.buttonStyle(.borderless)
-            } else if error == nil {
-                Text(L10n.text("Recorded evidence changed or expired; reload and review it"))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            ErrorNote(message: error)
-            if !loading && (error != nil || section == nil) {
-                Button(L10n.text("Retry recordings")) { refresh = UUID(); onCorrect?() }
-            }
-        }
-        .sheet(item: $selected) { selection in
-            SourceDetail(source: selection.source, onCorrect: { refresh = UUID(); onCorrect?() }, startAt: startAt)
-        }
-        .task(id: identity) {
-            let requested = identity
-            loading = true; source = .null; error = nil
-            defer { if requested == identity { loading = false } }
-            do {
-                let result = try await model.client().request("v1/transcripts/\(part["source_id"].text)")
-                guard !Task.isCancelled, requested == identity else { return }
-                source = result
-            } catch {
-                guard !Task.isCancelled, requested == identity else { return }
-                self.error = L10n.error(error)
-            }
-        }
-    }
-}
-
-@MainActor private func sourcesWithHints(_ sources: [JSONValue], timeline: JSONValue) -> [JSONValue] {
-    sources.map { source in
-        guard case .object(var values) = source,
-              let start = AppModel.date(source["started_at"].text),
-              let end = AppModel.date(source["ended_at"].text) else { return source }
-        @MainActor func overlaps(_ hint: JSONValue) -> Bool {
-            guard let lower = AppModel.date(hint["context_start"].text),
-                  let upper = AppModel.date(hint["context_end"].text) else { return false }
-            return start < upper && end > lower
-        }
-        if timeline["markers"].array.contains(where: overlaps) { values["important"] = .bool(true) }
-        if case .array(let meetings) = timeline["meetings"] {
-            values["meeting_hint_ids"] = .array(meetings.filter(overlaps).map { $0["id"] })
-        }
-        return .object(values)
-    }
-}
-
-private struct DayRecordingFilters: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var tagID: String
-    @Binding var zoneID: String
-    let tags: [ManualTag]
-    let zones: [LocationZone]
-    let tagError: String?
-    let zoneError: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker(L10n.text("Tag"), selection: $tagID) {
-                        Text(L10n.text("All tags")).tag("")
-                        if !tagID.isEmpty && !tags.contains(where: { $0.id == tagID }) {
-                            Text(L10n.text("Tag unavailable")).tag(tagID)
-                        }
-                        ForEach(tags) { tag in Text(tag.name).tag(tag.id) }
-                    }.accessibilityIdentifier("day.tagFilter")
-                    if let tagError { Text(tagError).font(.caption).foregroundStyle(.secondary) }
-                    Picker(L10n.text("Location zone"), selection: $zoneID) {
-                        Text(L10n.text("All locations")).tag("")
-                        if !zoneID.isEmpty && !zones.contains(where: { $0.id == zoneID }) {
-                            Text(L10n.text("Zone unavailable")).tag(zoneID)
-                        }
-                        ForEach(zones) { zone in Text(zone.name).tag(zone.id) }
-                    }.accessibilityIdentifier("day.zoneFilter")
-                    if let zoneError { Text(zoneError).font(.caption).foregroundStyle(.secondary) }
-                    NavigationLink(L10n.text("Manage zones")) { LocationZonesView() }
-                } footer: {
-                    Text(L10n.text("Tag and location filters apply together to recordings. The day recap still covers the whole day."))
-                }
-                if !tagID.isEmpty || !zoneID.isEmpty {
-                    Button(L10n.text("Clear filters")) { tagID = ""; zoneID = "" }
-                        .accessibilityIdentifier("day.clearFilters")
-                }
-            }
-            .navigationTitle(L10n.text("Filters")).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Done")) { dismiss() } } }
-        }
     }
 }

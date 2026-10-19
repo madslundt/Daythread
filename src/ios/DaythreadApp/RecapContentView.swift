@@ -6,10 +6,17 @@ struct RecapContentView: View {
     let day: String
     var onCorrect: (() -> Void)? = nil
     var emptyMessage: String? = nil
+    var filters = DayFilterScope()
+    private var effectiveFilters: DayFilterScope {
+        filters.isFiltered ? filters : .init(tagID: recap["scope"]["tag_id"].text, zoneID: recap["scope"]["zone_id"].text)
+    }
     @State private var exploring = false
     @State private var query = ""
     @Environment(\.locale) private var interfaceLocale
-    private var groups: [RecapPresentation.Group] { RecapPresentation.groups(recap["summary"].text, day: day) }
+    private var groups: [RecapPresentation.Group] {
+        RecapPresentation.topics(recap["summary"].text, day: day) +
+        RecapPresentation.groups(recap["summary"].text, day: day).filter(\.hasActions)
+    }
     private var topics: [RecapPresentation.Group] { RecapPresentation.topics(recap["summary"].text, day: day, query: query) }
     private var originalTopics: [RecapOriginalTopics.Topic] {
         let sources = recap["sources"].array
@@ -40,24 +47,13 @@ struct RecapContentView: View {
                 if recap["summary"].text.isEmpty {
                     Text(emptyMessage ?? L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.")).font(.subheadline).foregroundStyle(.secondary)
                 } else {
-                SummaryTranslationView(output: recap) {
-                    VStack(alignment: .leading, spacing: 20) {
-                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                            VStack(alignment: .leading, spacing: 8) {
-                                if group.hasActions {
-                                    Text(L10n.text("Follow-ups mentioned in the recap")).font(.headline)
-                                } else if let title = group.title {
-                                    Text(RecapPresentation.readingText(title).replacingOccurrences(of: "**", with: "")).font(.headline)
-                                }
-                                Text(.init(group.text)).textSelection(.enabled)
-                                if group.hasActions { Text(L10n.text("Review and manage these in the overview below.")).font(.caption).foregroundStyle(.secondary) }
-                            }
-                        }
+                    if effectiveFilters.isFiltered { RecapGroupSummaries(groups: groups) }
+                    else { SummaryTranslationView(output: recap) { RecapGroupSummaries(groups: groups) } }
+                }
+                if !effectiveFilters.isFiltered {
+                    NavigationLink { ChatView(initialScope: .day(day)) } label: {
+                        Label(L10n.text("Ask about this day"), systemImage: "bubble.left.and.bubble.right")
                     }
-                }
-                }
-                NavigationLink { ChatView(initialScope: .day(day)) } label: {
-                    Label(L10n.text("Ask about this day"), systemImage: "bubble.left.and.bubble.right")
                 }
                 Button { exploring = true } label: {
                     Label(L10n.text("Explore topics"), systemImage: "text.magnifyingglass")
@@ -77,17 +73,17 @@ struct RecapContentView: View {
             }
             ForEach(Array(topics.enumerated()), id: \.offset) { _, group in
                 NavigationLink {
-                    RecapTopicDetail(group: group, sources: recap["sources"].array, day: day, onCorrect: onCorrect)
+                    RecapTopicDetail(group: group, sources: recap["sources"].array, day: day, onCorrect: onCorrect, filters: effectiveFilters, scopeFingerprint: recap["scope_fingerprint"].text)
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text((group.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "")).font(.headline).foregroundStyle(.primary)
-                        Text(group.text.replacingOccurrences(of: "**", with: "")).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                        Text(RecapPresentation.topicSummary(group).replacingOccurrences(of: "**", with: "")).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
                     }.padding(.vertical, 6)
                 }
             }
             ForEach(originals) { topic in
                 NavigationLink {
-                    RecapOriginalTopicDetail(topic: topic, day: day, onCorrect: onCorrect)
+                    RecapOriginalTopicDetail(topic: topic, day: day, onCorrect: onCorrect, filters: effectiveFilters, scopeFingerprint: recap["scope_fingerprint"].text)
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(topic.title).font(.headline).foregroundStyle(.primary)
@@ -99,11 +95,31 @@ struct RecapContentView: View {
     }
 }
 
+private struct RecapGroupSummaries: View {
+    let groups: [RecapPresentation.Group]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                VStack(alignment: .leading, spacing: 8) {
+                    if group.hasActions { Text(L10n.text("Follow-ups mentioned in the recap")).font(.headline) }
+                    else if let title = group.title {
+                        Text(RecapPresentation.readingText(title).replacingOccurrences(of: "**", with: "")).font(.headline)
+                    }
+                    RecapSummaryText(text: RecapPresentation.topicSummary(group))
+                    if group.hasActions { Text(L10n.text("Review and manage these in the overview below.")).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+        }
+    }
+}
+
 private struct RecapTopicDetail: View {
     let group: RecapPresentation.Group
     let sources: [JSONValue]
     let day: String
     let onCorrect: (() -> Void)?
+    let filters: DayFilterScope
+    let scopeFingerprint: String
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -111,43 +127,54 @@ private struct RecapTopicDetail: View {
     @State private var loading = false
     @State private var error: String?
     @State private var refresh = UUID()
+    @State private var showingOriginals = false
+    @State private var validatedKey = ""
     private var title: String { (group.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "") }
     private var point: String { group.parts.map(\.text).joined(separator: "\n") }
     private var related: RecapPresentation.Matches {
         RecapPresentation.sources(for: "**\(title)**\n\(point)", in: sources.map { .init(id: $0["id"].text, text: $0["text"].text) })
     }
+    private var verifiedSources: [JSONValue] { validatedKey == loadKey ? currentSources : [] }
     private var passages: [InboxTopicPassage] {
-        currentSources.flatMap { source in
+        verifiedSources.flatMap { source in
             RecapPresentation.sections(for: point, topic: title, text: source["text"].text,
                 sections: source["sections"].array.map { .init(title: $0["title"].text, start: $0["start_offset"].integer, end: $0["end_offset"].integer) })
                 .map { InboxTopicPassage(sourceID: source["id"].text, start: $0.start, end: $0.end) }
         }
     }
-    private var loadKey: String { model.archiveIdentity + model.archiveRevision + refresh.uuidString + related.ids.joined() }
+    private var loadKey: String { model.archiveIdentity + model.archiveRevision + filters.identity + scopeFingerprint + refresh.uuidString + related.ids.joined() }
 
     var body: some View {
         let _ = interfaceLocale
         List {
             Section(L10n.text("Topic recap")) {
-                Text(.init(group.text)).textSelection(.enabled)
+                if !filters.isFiltered || validatedKey == loadKey {
+                    RecapSummaryText(text: RecapPresentation.topicSummary(group))
+                }
+                if !filters.isFiltered {
                 NavigationLink {
                     ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + title)
                 } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
                 Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section(L10n.text("Revisit the conversation")) {
-                Text(related.basis == .citation ? L10n.text("Cited recordings · check the original context.") : L10n.text("Possible matching recordings · relevance is inferred from shared words."))
-                    .font(.caption).foregroundStyle(.secondary)
                 if loading { ProgressView(L10n.text("Checking original evidence…")) }
                 ErrorNote(message: error)
                 if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
                 if related.ids.isEmpty { Text(L10n.text("No linked or matching recordings for this topic.")).foregroundStyle(.secondary) }
-                ForEach(currentSources, id: \.["id"].text) { source in
-                    RecapEvidenceView(source: source, point: point, topic: title, onCorrect: { refresh = UUID(); onCorrect?() })
+                if !verifiedSources.isEmpty {
+                    DisclosureGroup(showingOriginals ? L10n.text("Hide original passages") : L10n.text("Show original passages"), isExpanded: $showingOriginals) {
+                        Text(related.basis == .citation ? L10n.text("Cited recordings · check the original context.") : L10n.text("Possible matching recordings · relevance is inferred from shared words."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(verifiedSources, id: \.["id"].text) { source in
+                            RecapEvidenceView(source: source, point: point, topic: title, onCorrect: { currentSources = []; refresh = UUID(); onCorrect?() })
+                        }
+                    }.accessibilityIdentifier("recap.originalPassages")
                 }
             }
-            if !loading && error == nil && !related.ids.isEmpty {
-                DayAtGlanceSections(day: day, topicSources: Set(currentSources.map { $0["id"].text }), topicPassages: passages, topicVersions: Dictionary(uniqueKeysWithValues: currentSources.map { ($0["id"].text, $0["source_version"].text) }))
+            if !loading && error == nil && validatedKey == loadKey && !related.ids.isEmpty {
+                DayAtGlanceSections(day: day, topicSources: Set(verifiedSources.map { $0["id"].text }), topicPassages: passages, topicVersions: Dictionary(uniqueKeysWithValues: verifiedSources.map { ($0["id"].text, $0["source_version"].text) }), filters: filters)
             }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .disclosureGroupStyle(RecapDisclosureStyle())
@@ -158,15 +185,58 @@ private struct RecapTopicDetail: View {
 
     private func loadSources() async {
         let key = loadKey
-        loading = true; error = nil; currentSources = []
+        loading = true; error = nil; currentSources = []; validatedKey = ""
         defer { if key == loadKey { loading = false } }
         do {
+            let client = try model.client()
+            try await filters.validateSources(Set(related.ids), day: day, fingerprint: scopeFingerprint, client: client)
             var incoming: [JSONValue] = []
-            for id in related.ids { incoming.append(try await model.client().request("v1/transcripts/\(id)")) }
+            for id in related.ids { incoming.append(try await client.request("v1/transcripts/\(id)")) }
             guard !Task.isCancelled, key == loadKey else { return }
-            currentSources = incoming
+            currentSources = incoming; validatedKey = key
         } catch { if !Task.isCancelled, key == loadKey { self.error = L10n.error(error) } }
     }
+}
+
+/// Summary expansion never changes the independent original-passage disclosure.
+private struct RecapSummaryText: View {
+    let text: String
+    @State private var expanded = false
+    @State private var fullHeight: CGFloat = 0
+    @State private var previewHeight: CGFloat = 0
+    private var summary: Text { Text(.init(text)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            summary.lineLimit(expanded ? nil : 3).textSelection(.enabled)
+                .background(alignment: .topLeading) {
+                    summary.lineLimit(3).fixedSize(horizontal: false, vertical: true).hidden()
+                        .background(GeometryReader { proxy in Color.clear.preference(key: RecapPreviewHeight.self, value: proxy.size.height) })
+                }
+                .overlay(alignment: .topLeading) {
+                    summary.fixedSize(horizontal: false, vertical: true).hidden()
+                        .background(GeometryReader { proxy in Color.clear.preference(key: RecapFullHeight.self, value: proxy.size.height) })
+                        .accessibilityHidden(true).allowsHitTesting(false)
+                }
+            if expanded || fullHeight > previewHeight + 1 {
+                Button(expanded ? L10n.text("Show less") : L10n.text("Read more")) { expanded.toggle() }
+                    .font(.subheadline.weight(.semibold)).accessibilityIdentifier("recap.summaryExpansion")
+            }
+        }
+        .onPreferenceChange(RecapFullHeight.self) { fullHeight = $0 }
+        .onPreferenceChange(RecapPreviewHeight.self) { previewHeight = $0 }
+        .onChange(of: text) { _, _ in expanded = false }
+    }
+}
+
+private struct RecapFullHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct RecapPreviewHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct RecapEvidenceView: View {
@@ -242,7 +312,7 @@ private struct RecapEvidenceView: View {
     }
 }
 
-private struct RecapDisclosureStyle: DisclosureGroupStyle {
+struct RecapDisclosureStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {

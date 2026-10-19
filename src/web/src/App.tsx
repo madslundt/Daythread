@@ -261,7 +261,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
           <a className="text-link" href={managedServiceUrl("/account")}>{t("Manage account")}</a>
         </Notice> : null}
         {selected ? <BrowserRecorder key={recordingOwner} owner={recordingOwner} timezone={timezone}
-          visible={page === "today" && !prepOpen} onUploaded={uploaded} /> : null}
+          visible={page === "today" && !prepOpen} onUpload={() => setUploadFiles([])} onUploaded={uploaded} /> : null}
         {timeline.data?.active_meeting ? (
           <ActiveMeeting captureDeviceID={timeline.data.active_meeting.meeting_capture_device_id} />
         ) : null}

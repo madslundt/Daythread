@@ -274,7 +274,10 @@ class Memory:
             ).encode()
         ).hexdigest()
 
-    def cached_recap(self, day: date) -> dict:
+    def cached_recap(self, day: date, tag_id=None, zone_id=None) -> dict:
+        if tag_id or zone_id:
+            from .scoped_recaps import ScopedRecaps
+            return ScopedRecaps(self, tag_id, zone_id).cached(day, utc_now())
         return self.recaps.cached(day, utc_now())
 
     def cached_recaps(self, days: list[date]) -> list[dict]:
@@ -284,10 +287,15 @@ class Memory:
         groups = self.recaps.groups(now)
         return [self.recaps.cached(day, now, groups) for day in days]
 
-    async def recap(self, day: date) -> dict:
+    async def recap(self, day: date, tag_id=None, zone_id=None, expected_fingerprint=None) -> dict:
         self.settings.require_inference("llm")
         async with self.recap_lock:
             with self.processing_activity("summarizing"):
+                if tag_id or zone_id:
+                    from .scoped_recaps import ScopedRecaps
+                    return await ScopedRecaps(self, tag_id, zone_id).generate(
+                        day, utc_now(), expected_fingerprint,
+                    )
                 return await self.recaps.generate(day, utc_now())
 
     def timeline(self) -> dict:

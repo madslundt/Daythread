@@ -35,6 +35,10 @@ struct CompletionResultView: View {
     @State private var playing = false
     private var result: JSONValue { job["result"] }
     private var parameters: JSONValue { job["parameters"] }
+    private var recapFilters: DayFilterScope {
+        .init(tagID: parameters["tag_id"].text.isEmpty ? result["scope"]["tag_id"].text : parameters["tag_id"].text,
+              zoneID: parameters["zone_id"].text.isEmpty ? result["scope"]["zone_id"].text : parameters["zone_id"].text)
+    }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
 
     @Environment(\.locale) private var interfaceLocale
@@ -46,6 +50,11 @@ struct CompletionResultView: View {
                     WeeklyReviewView(week: week, version: event.target.versionID ?? "")
                 } else if let day = event.target.day, event.target.jobID == nil, let date = diary.date(for: day) {
                     DayView(date: date)
+                } else if job["kind"].text == "recap", job["state"].text == "completed", recapFilters.isFiltered,
+                          let date = diary.date(for: parameters["day"].text) {
+                    // Scoped jobs are snapshots. Reopen the current scope so edits to
+                    // tags, zones or original evidence cannot expose a stale narrative.
+                    DayView(date: date, filters: recapFilters)
                 } else {
                     savedResult
                 }

@@ -4,6 +4,7 @@ import { DecisionDetail } from "./Decisions";
 import type { DecisionExtraction, DecisionList } from "./decisionModels";
 import { decisionMatchesTopic } from "./dayHighlights";
 import { dateTimeLabel } from "./format";
+import { allDayFilters, dayFilterKey, dayFilterParams, hasDayFilters, type DayFilters } from "./dayFilters";
 import { t } from "./i18n";
 import { profileScope } from "./profiles";
 import type { RecapFocus } from "./recapItems";
@@ -13,8 +14,10 @@ import { useHighlightList } from "./useHighlightList";
 
 type ExtractionCommand = { request_id: string; day?: string; run_id?: string };
 
-export function DecisionHighlights({ day, timezone, focus }: { day: string; timezone: string; focus?: RecapFocus }) {
-  const resource = useHighlightList<DecisionList>(`/v1/decisions?${new URLSearchParams({ day, limit: "200", offset: "0" })}`, "omi:decisions-changed");
+export function DecisionHighlights({ day, timezone, focus, filters = allDayFilters }: { day: string; timezone: string; focus?: RecapFocus; filters?: DayFilters }) {
+  const filtered = hasDayFilters(filters);
+  const scopeKey = dayFilterKey(filters);
+  const resource = useHighlightList<DecisionList>(`/v1/decisions?${new URLSearchParams({ day, limit: "200", offset: "0", ...dayFilterParams(filters) })}`, "omi:decisions-changed");
   const [selected, setSelected] = useState<string>();
   const [visible, setVisible] = useState(5);
   const [busy, setBusy] = useState(false);
@@ -23,11 +26,11 @@ export function DecisionHighlights({ day, timezone, focus }: { day: string; time
   const active = useRef<AbortController | undefined>(undefined);
   const command = useRef<ExtractionCommand | undefined>(undefined);
   useEffect(() => {
-    command.current = undefined; setSelected(undefined); setProgress(undefined); setError(""); setBusy(false);
+    command.current = undefined; setSelected(undefined); setVisible(5); setProgress(undefined); setError(""); setBusy(false);
     const invalidate = () => { active.current?.abort(); command.current = undefined; setSelected(undefined); setProgress(undefined); setBusy(false); };
     window.addEventListener("omi:archive-changed", invalidate);
     return () => { active.current?.abort(); window.removeEventListener("omi:archive-changed", invalidate); };
-  }, [day]);
+  }, [day, scopeKey]);
   async function find() {
     if (busy) return;
     const controller = new AbortController(), scope = profileScope(); active.current = controller;
@@ -49,10 +52,11 @@ export function DecisionHighlights({ day, timezone, focus }: { day: string; time
   const decisions = resource.items.filter((item) => item.content && !item.successor_id && item.review_status !== "dismissed" && item.evidence_condition !== "removed" && (!focus || decisionMatchesTopic(item, focus)));
   return <section className="highlight-group decision-highlights" aria-label={t("Decisions")}>
     <div className="highlight-group-heading"><h3>{t("Decisions")}</h3><span className="caption">{decisions.length}</span>
-      <button type="button" className="text-button" disabled={busy} onClick={() => void find()}>{busy ? t("Finding decisions…") : t("Find decisions")}</button>
+      {!filtered ? <button type="button" className="text-button" disabled={busy} onClick={() => void find()}>{busy ? t("Finding decisions…") : t("Find decisions")}</button> : null}
     </div>
     <p className="caption">{t("Recorded choices, including tentative decisions. Review the evidence before confirming.")}</p>
-    {resource.error || error ? <ErrorState message={resource.error || error} retry={resource.refresh} /> : null}
+    {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
+    {error ? <ErrorState message={error} retry={() => void find()} /> : null}
     {resource.loading && !resource.data || resource.loadingMore ? <Loading>{t("Loading decisions…")}</Loading> : null}
     {progress && busy ? <p className="caption" role="status">{t("Reviewed {value0} of {value1} recordings.", { value0: progress.processed_sources, value1: progress.total_sources })}</p> : null}
     {progress && !busy && !error && progress.pending_chunks ? <p className="caption">{t("Some recordings are still awaiting transcription.")}</p> : null}

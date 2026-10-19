@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from .decision_export import day_bounds
 from .domain import stamp, utc_now
 from .inbox_domain import Mutation
+from .source_scope import matching_source_ids
 
 
 class InboxConflict(ValueError):
@@ -101,8 +102,12 @@ class InboxStore:
         day: date | None = None,
         q: str = "",
         timezone: str = "UTC",
+        tag_id: str | None = None,
+        zone_id: str | None = None,
     ) -> dict:
         with self.archive.connect() as db:
+            db.execute("BEGIN")
+            selected = matching_source_ids(db, tag_id, zone_id)
             rows = db.execute(
                 "SELECT * FROM inbox_items WHERE status=? ORDER BY created_at DESC,id", (status,)
             ).fetchall()
@@ -133,10 +138,19 @@ class InboxStore:
                 )
             now = utc_now()
 
+            def matches_sources(spans):
+                # Never present a mixed title/owner/deadline as belonging to only one
+                # side of its evidence. Check complete cards before counting/paging.
+                return selected is None or (
+                    bool(spans) and all(span["source_id"] in selected for span in spans)
+                )
+
             def matches(item):
                 if kind and item["kind"] != kind:
                     return False
                 spans = evidence.get(item["id"], [])
+                if not matches_sources(spans):
+                    return False
                 if day and not any(
                     datetime.fromisoformat(span["started_at"]).astimezone(zone).date() == day
                     for span in spans
@@ -184,11 +198,14 @@ class InboxStore:
             )
             bounds = day_bounds(day.isoformat(), timezone) if day else ()
             source_scope = " AND a.started_at>=? AND a.started_at<?" if day else ""
+            if selected is not None:
+                source_scope += " AND a.id IN (SELECT value FROM json_each(?))"
+                bounds = (*bounds, json.dumps(sorted(selected)))
             job_scope = (
                 " WHERE EXISTS (SELECT 1 FROM inbox_dependencies d "
                 "JOIN audio a ON a.id=d.source_id "
                 "WHERE d.job_id=j.id" + source_scope + ")"
-                if day
+                if day or selected is not None
                 else ""
             )
             jobs = dict(
@@ -200,6 +217,16 @@ class InboxStore:
             pending = db.execute(
                 "SELECT count(*) FROM inbox_items WHERE status='pending'"
             ).fetchone()[0]
+            if selected is not None:
+                pending_evidence = {}
+                for row in db.execute(
+                    "SELECT o.item_id,o.evidence FROM inbox_occurrences o "
+                    "JOIN inbox_items i ON i.id=o.item_id WHERE i.status='pending'"
+                ):
+                    pending_evidence.setdefault(row["item_id"], []).extend(
+                        json.loads(row["evidence"])
+                    )
+                pending = sum(matches_sources(spans) for spans in pending_evidence.values())
             recent = [
                 dict(r)
                 for r in db.execute(

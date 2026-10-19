@@ -4,6 +4,8 @@ import json
 import sqlite3
 from collections.abc import Callable
 
+from .scoped_recap_cache import SCHEMA as SCOPED_RECAP_SCHEMA
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS recap_activity (
  source_id TEXT PRIMARY KEY, digest TEXT NOT NULL, activity TEXT NOT NULL
@@ -20,6 +22,7 @@ WHEN OLD.text IS NOT NULL AND OLD.text IS NOT NEW.text BEGIN
  DELETE FROM recap_summaries;
 END;
 """
+SCHEMA += SCOPED_RECAP_SCHEMA
 
 
 class RecapStore:

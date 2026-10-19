@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
@@ -20,16 +20,16 @@ type Props = {
 
 export function RecapTopic({ title, parts, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, onFocus }: Props) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const passageId = useId();
   const text = recapTopicText(parts);
   const plain = text.replace(/\*\*/g, "");
   const heading = title.replace(/\*\*/g, "");
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
-  const evidence = originalPassages ? <OriginalTopicEvidence title={title} passages={originalPassages}
-    timezone={timezone} onCorrect={onCorrect} onFocus={onFocus} /> : related.sources.length ? related.sources.map((source) => (
+  const evidence = related.sources.length ? related.sources.map((source) => (
     <CurrentTopicEvidence key={source.id} id={source.id} point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
   const body = <>
-    {text ? <div className="recap-topic-summary"><RichText text={text} /></div> : null}
+    {text ? <RecapSummary text={text} /> : null}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
         t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: heading }))}>
@@ -37,12 +37,14 @@ export function RecapTopic({ title, parts, sources, timezone, onCorrect, compact
       </button> : null}
       {text ? <CopySummary text={`${heading}\n\n${plain}`} context={heading} /> : null}
     </div> : null}
-    {onExplore ? null : expanded ? <div className="recap-topic-passages"><h4>{t("Original passages")}</h4>{evidence}</div> : <details className="recap-topic-evidence" onToggle={(event) => {
-      if (event.target === event.currentTarget) setShowEvidence(event.currentTarget.open);
-    }}>
-      <summary>{t("Original passages")}</summary>
-      {showEvidence ? evidence : null}
-    </details>}
+    {onExplore ? null : <div className="recap-topic-evidence">
+      <button type="button" className="text-button" aria-expanded={showEvidence} aria-controls={passageId}
+        onClick={() => setShowEvidence((value) => !value)}>{showEvidence ? t("Hide original passages") : t("Show original passages")}</button>
+      <div id={passageId} hidden={!showEvidence}>
+        {originalPassages ? <OriginalTopicEvidence title={title} passages={originalPassages} visible={showEvidence}
+          timezone={timezone} onCorrect={onCorrect} onFocus={onFocus} /> : showEvidence ? evidence : null}
+      </div>
+    </div>}
   </>;
   return compact ? <details className="recap-group">
     <summary>
@@ -58,10 +60,39 @@ export function RecapTopic({ title, parts, sources, timezone, onCorrect, compact
   </section>;
 }
 
+export function RecapSummary({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(text.length > 240 || text.includes("\n\n"));
+  const content = useRef<HTMLDivElement>(null);
+  const id = useId();
+  useEffect(() => {
+    setExpanded(false);
+    const prose = content.current?.firstElementChild as HTMLElement | null;
+    if (!prose) return;
+    const measure = () => {
+      const lineHeight = Number.parseFloat(window.getComputedStyle(prose).lineHeight);
+      if (Number.isFinite(lineHeight) && lineHeight > 0) setOverflows(prose.scrollHeight > lineHeight * 3 + 1);
+    };
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(measure);
+      observer.observe(prose);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [text]);
+  return <>
+    <div id={id} ref={content} className={`recap-topic-summary${expanded ? "" : " is-collapsed"}`}><RichText text={text} /></div>
+    {overflows ? <button type="button" className="text-button recap-summary-toggle" aria-expanded={expanded} aria-controls={id}
+      onClick={() => setExpanded((value) => !value)}>{expanded ? t("Show less") : t("Read more")}</button> : null}
+  </>;
+}
+
 type OriginalEvidenceResult = { passage: OriginalRecapPassage; source?: Source; error?: string };
 
-function OriginalTopicEvidence({ title, passages, timezone, onCorrect, onFocus }: {
-  title: string; passages: OriginalRecapPassage[]; timezone: string; onCorrect: () => void;
+function OriginalTopicEvidence({ title, passages, timezone, onCorrect, onFocus, visible }: {
+  title: string; passages: OriginalRecapPassage[]; timezone: string; onCorrect: () => void; visible: boolean;
   onFocus?: (focus?: RecapFocus) => void;
 }) {
   const [results, setResults] = useState<OriginalEvidenceResult[]>();
@@ -96,6 +127,7 @@ function OriginalTopicEvidence({ title, passages, timezone, onCorrect, onFocus }
       });
     return () => controller.abort();
   }, [title, passages, revision, onFocus]);
+  if (!visible) return null;
   if (!results) return <Loading>{t("Loading recordings…")}</Loading>;
   return <>{results.map(({ passage, source, error }) => <div key={`${passage.source_id}:${passage.section.start_offset}`}>
     {source ? <RecapEvidence source={source} point="" sections={source.sections} timezone={timezone} onCorrect={() => {

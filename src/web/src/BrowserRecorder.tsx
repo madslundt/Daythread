@@ -17,8 +17,8 @@ if (typeof window !== "undefined") window.addEventListener("beforeunload", (even
   if (pendingSaves.size || unloadWarnings.size) { event.preventDefault(); event.returnValue = ""; }
 });
 
-export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
-  owner: string; timezone: string; visible: boolean; onUploaded: () => void;
+export function BrowserRecorder({ owner, timezone, visible, onUpload, onUploaded }: {
+  owner: string; timezone: string; visible: boolean; onUpload: () => void; onUploaded: () => void;
 }) {
   const scope = useRef(profileScope()).current;
   const store = useRef<BrowserRecordingStore | undefined>(undefined);
@@ -146,11 +146,14 @@ export function BrowserRecorder({ owner, timezone, visible, onUploaded }: {
   return <section className="browser-recorder" hidden={!visible && !active && !unsaved && !saving} aria-label={t("Record audio")}>
     <div className="section-heading">
       <h2>{t("Record audio")}</h2>
-      {active ? <div className="button-row">
-        <span className="recording-clock" role="timer">{t("Recording · {time}", { time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` })}</span>
-        <button className="button dark" onClick={() => capture.current?.stop()}>{t("Stop recording")}</button>
-      </div> : <button className="button accent" disabled={starting || saving || !!unsaved || !!busy || !microphoneAvailable()}
-        onClick={() => void start()}><Icon name="mic" />{starting ? t("Opening microphone…") : t("Start recording")}</button>}
+      <div className="button-row">
+        {active ? <>
+          <span className="recording-clock" role="timer">{t("Recording · {time}", { time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` })}</span>
+          <button className="button dark" onClick={() => capture.current?.stop()}>{t("Stop recording")}</button>
+        </> : <button className="button accent" disabled={starting || saving || !!unsaved || !!busy || !microphoneAvailable()}
+          onClick={() => void start()}><Icon name="mic" />{starting ? t("Opening microphone…") : t("Start recording")}</button>}
+        <button className="button" onClick={onUpload}><Icon name="upload" />{t("Upload recordings")}</button>
+      </div>
     </div>
     <p className="caption" role="status">{active ? t("Recording on this device") : t("Recording stopped on this device")}</p>
     <p className="caption">{microphoneAvailable()

@@ -24,7 +24,6 @@ export function ZoneFilter({ value, onChange }: { value: string; onChange: (valu
       {zones.data?.items.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
     </select></label>{" "}<a href="/settings/locations">{t("Manage zones")}</a>
     {zones.error ? <ErrorState message={zones.error} retry={zones.refresh} /> : null}
-    {value ? <p className="caption">{t("Filters recordings located inside this zone. The day recap still covers the whole day.")}</p> : null}
   </div>;
 }
 

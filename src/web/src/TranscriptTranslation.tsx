@@ -153,7 +153,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
   const language = active !== "original" ? translationLanguageLabel(active) : "";
   const translation = !loading && active === data?.language ? data.translation : null;
   const placeholder = active !== "original" && !translation;
-  const tabs = ["original", ...(target ? [target] : [])];
+  const tabs = ["original", ...(content === "summary" ? available : target ? [target] : [])];
   const analysis = data?.language_analysis;
   const recommendation = data?.recommended_language;
   const offer = !loading && active === "original" && recommendation && available.includes(recommendation)
@@ -187,7 +187,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
         {code === "original" ? t("Original") : translationLanguageLabel(code)}
       </button>)}
     </div>
-    {offer ? <div className="notice">
+    {content !== "summary" && offer ? <div className="notice">
       <span>{t("Mixed languages · {value0} is dominant (about {value1}%).", {
         value0: translationLanguageLabel(recommendation),
         value1: Math.floor(analysis.dominant_language_share * 100),
@@ -197,7 +197,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
         {t("Translate to {value0}", { value0: translationLanguageLabel(recommendation) })}
       </button>
     </div> : null}
-    {available.length ? <div className="translation-language-picker">
+    {content !== "summary" && available.length ? <div className="translation-language-picker">
       <label htmlFor={`${id}-language-search`}>{t("Translate to")}</label>
       <input id={`${id}-language-search`} type="search" placeholder={t("Find a language…")}
         aria-label={t("Find a translation language")} value={languageSearch} disabled={generating}

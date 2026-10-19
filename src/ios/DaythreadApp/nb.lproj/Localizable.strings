@@ -2675,3 +2675,30 @@
 "Selection criterion does not match candidate kind" = "Utvalgskriteriet samsvarer ikke med forslagets type";
 
 "Selection evidence must include the candidate's own point" = "Kildebelegget for utvalget må inkludere forslagets eget punkt";
+
+"Read more" = "Les mer";
+"Show less" = "Vis mindre";
+"Show original passages" = "Vis opprinnelige passasjer";
+"Hide original passages" = "Skjul opprinnelige passasjer";
+"Follow-up extraction" = "Uthenting av oppfølginger";
+"Some follow-ups or notes could not be extracted." = "Noen oppfølginger eller notater kunne ikke hentes ut.";
+"Retry follow-up extraction" = "Prøv å hente ut oppfølginger på nytt";
+
+"All recordings" = "Alle opptak";
+"Day filters" = "Dagsfiltre";
+"Filtered recap" = "Filtrert sammendrag";
+"Filters apply to the recap, highlights, topics, and timeline." = "Filtrene gjelder for sammendraget, viktige punkter, emner og tidslinjen.";
+"Loading filtered recap…" = "Laster filtrert sammendrag…";
+"No recordings match the selected filters for this day." = "Ingen opptak samsvarer med de valgte filtrene for denne dagen.";
+"Only recordings matching every selected filter are included." = "Bare opptak som samsvarer med alle valgte filtre, er inkludert.";
+"Preparing a recap for the selected filters…" = "Forbereder et sammendrag for de valgte filtrene…";
+"Retry whole day" = "Prøv hele dagen på nytt";
+"Scan whole day" = "Skann hele dagen";
+"The filtered recap could not be generated." = "Det filtrerte sammendraget kunne ikke genereres.";
+"The recap does not match the selected filters. Refresh and try again." = "Sammendraget samsvarer ikke med de valgte filtrene. Oppdater og prøv igjen.";
+"Chat and quick rewind use the whole day." = "Chat og hurtig tilbakespoling bruker hele dagen.";
+
+"Recording filter changed before recap generation; retry" = "Opptaksfilteret ble endret før sammendraget ble generert; prøv på nytt";
+"Recording filter or selected evidence changed; retry the recap" = "Opptaksfilteret eller det valgte kildebelegget er endret; prøv sammendraget på nytt";
+
+"A filtered recap requires a tag or location filter" = "Et filtrert sammendrag krever et merke- eller stedsfilter";

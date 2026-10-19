@@ -2677,3 +2677,30 @@
 "Selection criterion does not match candidate kind" = "Udvælgelseskriteriet matcher ikke forslagets type";
 
 "Selection evidence must include the candidate's own point" = "Kildebelægget for udvælgelsen skal omfatte forslagets eget punkt";
+
+"Read more" = "Læs mere";
+"Show less" = "Vis mindre";
+"Show original passages" = "Vis originale passager";
+"Hide original passages" = "Skjul originale passager";
+"Follow-up extraction" = "Udledning af opfølgninger";
+"Some follow-ups or notes could not be extracted." = "Nogle opfølgninger eller noter kunne ikke udledes.";
+"Retry follow-up extraction" = "Prøv udledning af opfølgninger igen";
+
+"All recordings" = "Alle optagelser";
+"Day filters" = "Filtre for dagen";
+"Filtered recap" = "Filtreret opsummering";
+"Filters apply to the recap, highlights, topics, and timeline." = "Filtrene gælder for opsummeringen, vigtige punkter, emner og tidslinjen.";
+"Loading filtered recap…" = "Indlæser filtreret opsummering…";
+"No recordings match the selected filters for this day." = "Ingen optagelser matcher de valgte filtre for denne dag.";
+"Only recordings matching every selected filter are included." = "Kun optagelser, der matcher alle valgte filtre, er medtaget.";
+"Preparing a recap for the selected filters…" = "Forbereder en opsummering for de valgte filtre…";
+"Retry whole day" = "Prøv hele dagen igen";
+"Scan whole day" = "Scan hele dagen";
+"The filtered recap could not be generated." = "Den filtrerede opsummering kunne ikke genereres.";
+"The recap does not match the selected filters. Refresh and try again." = "Opsummeringen matcher ikke de valgte filtre. Opdater og prøv igen.";
+"Chat and quick rewind use the whole day." = "Chat og hurtigt tilbageblik bruger hele dagen.";
+
+"Recording filter changed before recap generation; retry" = "Optagelsesfilteret er ændret, før opsummeringen blev genereret; prøv igen";
+"Recording filter or selected evidence changed; retry the recap" = "Optagelsesfilteret eller det valgte kildebelæg er ændret; prøv opsummeringen igen";
+
+"A filtered recap requires a tag or location filter" = "En filtreret opsummering kræver et tag- eller placeringsfilter";

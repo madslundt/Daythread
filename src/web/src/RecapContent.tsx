@@ -3,15 +3,16 @@ import { t } from "./i18n";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
 import { recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus } from "./recapItems";
-import { RecapTopic } from "./RecapTopic";
+import { RecapSummary, RecapTopic } from "./RecapTopic";
 import type { ChatScope, Source } from "./types";
 import { RichText } from "./UI";
 
-export function RecapContent({ text, day, sources, timezone, onChat, onCorrect, compact = false, onFocus }: {
+export function RecapContent({ text, day, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage }: {
   text: string; day: string; version: string; sources: Source[]; timezone: string;
   onChat?: (scope: ChatScope, question?: string) => void;
   onCorrect: () => void; compact?: boolean;
   onFocus?: (focus?: RecapFocus) => void;
+  emptyMessage?: string;
 }) {
   const [view, setView] = useState<"day" | "topics">("day");
   const [query, setQuery] = useState("");
@@ -38,10 +39,10 @@ export function RecapContent({ text, day, sources, timezone, onChat, onCorrect, 
       <button type="button" aria-pressed={view === "topics"} onClick={() => changeView("topics")}>{t("Explore topics")}</button>
     </div>
     {view === "day" ? <div className="recap-overview">
-      {introduction.length ? <div className="recap-introduction"><RichText text={recapTopicText(introduction)} /></div> : null}
+      {introduction.length ? <div className="recap-introduction"><RecapSummary text={recapTopicText(introduction)} /></div> : null}
       {topics.map((topic, index) => <RecapTopic key={`${index}:${topic.title}`} {...topic} day={day} sources={sources}
         timezone={timezone} onChat={onChat} onCorrect={onCorrect} compact={false} onExplore={() => explore(browserTopics[index])} />)}
-      {!text.trim() ? <p className="caption">{t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
+      {!text.trim() ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
       {followups.length ? <details className="recap-recorded-followups"><summary>{t("Follow-ups mentioned in the recap")}</summary>
         <RichText text={followups.map((part) => `- ${recapReadingText(part.text)}`).join("\n")} />
         <p className="caption">{t("Review and manage these in the overview below.")}</p>

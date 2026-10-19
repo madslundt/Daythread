@@ -55,6 +55,7 @@ from .notification_api import notification_routes
 from .omi_api import ImportRequest, OmiAPIError
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
+from .recap_api import recap_routes
 from .recording_groups import recording_groups
 from .recording_locations import recording_location_routes
 from .recording_uploads import recording_upload_routes
@@ -192,6 +193,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(summary_translation_routes(memory))
     app.include_router(notification_routes(memory))
     app.include_router(generation_routes(lambda: runtime().jobs))
+    app.include_router(recap_routes(memory, lambda: runtime().jobs))
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
@@ -766,14 +768,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             media_type="audio/wav",
             headers={"X-Omi-Audio-Gaps": str(len(gaps)), "Cache-Control": "no-store"},
         )
-
-    @app.post("/v1/recaps/{day}")
-    async def recap(day: date) -> dict:
-        return await memory().recap(day)
-
-    @app.get("/v1/recaps/{day}")
-    def cached_recap(day: date) -> dict:
-        return memory().cached_recap(day)
 
     @app.get("/v1/diary")
     def diary() -> dict:

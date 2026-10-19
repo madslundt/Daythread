@@ -30,6 +30,8 @@ def decision_routes(memory: Callable[[], Memory]) -> APIRouter:
     def listing(
         response: Response,
         day: date | None = None,
+        tag_id: UUID | None = None,
+        zone_id: UUID | None = None,
         q: str = Query(default="", max_length=200),
         include_dismissed: bool = False,
         review_status: Literal["proposed", "confirmed", "dismissed"] | None = None,
@@ -46,7 +48,10 @@ def decision_routes(memory: Callable[[], Memory]) -> APIRouter:
             else (None, None)
         )
         return call(
-            memory().store.decisions, start, end, q, include_dismissed, review_status, limit, offset
+            memory().store.decisions,
+            start, end, q, include_dismissed, review_status, limit, offset,
+            tag_id=str(tag_id) if tag_id else None,
+            zone_id=str(zone_id) if zone_id else None,
         )
 
     @router.post("/decisions")

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from .decisions import Anchor, DecisionContent, DecisionCreate, DecisionEvent
 from .domain import EvidenceChanged, stamp, utc_now
+from .source_scope import matching_source_ids
 
 DECISION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS decisions (
@@ -218,6 +219,9 @@ class DecisionStore:
         review_status: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        *,
+        tag_id: str | None = None,
+        zone_id: str | None = None,
     ) -> dict:
         clauses, args = ["evidence_condition!='removed'"], []
         if not include_dismissed:
@@ -233,8 +237,24 @@ class DecisionStore:
             args.append(
                 "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
             )
-        where = " AND ".join(clauses)
         with self.connect() as db:
+            db.execute("BEGIN")
+            selected = matching_source_ids(db, tag_id, zone_id)
+            where = " AND ".join(clauses)
+            if selected is not None:
+                # Context/rationale may cite other recordings than the choice itself.
+                # Keep the complete decision inside the selected evidence boundary.
+                items = []
+                for row in db.execute(
+                    "SELECT * FROM decisions WHERE " + where + " ORDER BY started_at DESC,id", args
+                ):
+                    item = view(row)
+                    if item["content"] and all(
+                        str(anchor.source_id) in selected
+                        for anchor in DecisionContent.model_validate(item["content"]).anchors()
+                    ):
+                        items.append(item)
+                return {"items": items[offset:offset + limit], "total": len(items)}
             total = db.execute("SELECT count(*) FROM decisions WHERE " + where, args).fetchone()[0]
             rows = db.execute(
                 "SELECT * FROM decisions WHERE "

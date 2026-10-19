@@ -1,214 +1,22 @@
 import { TagFilter } from "./ConversationTags";
 import { ZoneFilter } from "./LocationZones";
 import { t } from "./i18n";
-import { profileResourceUrl } from "./profiles";
 import { ImportanceButton } from "./Importance";
-import { useEffect, useState, type ReactNode } from "react";
-import { dateTimeLabel, localDay, timeLabel } from "./format";
+import { useEffect, useState } from "react";
+import { allDayFilters, dayFilterKey, dayFiltersForProfile, hasDayFilters, rememberDayFilters, type DayFilters } from "./dayFilters";
+import { localDay, timeLabel } from "./format";
 import { CaptureStatus, RecordingActivity } from "./CaptureStatus";
 export { CaptureStatus } from "./CaptureStatus";
 import { Icon } from "./Icon";
-import {
-  CompletenessDetails,
-  EvidenceFeedback,
-  FeedbackReview,
-} from "./CompletenessFeedback";
+import { FeedbackReview } from "./CompletenessFeedback";
 import { InboxEntry } from "./Inbox";
-import { ActionPoints } from "./ActionPoints";
-import { recapBrowserTopics, type RecapFocus } from "./recapItems";
-import { SourceList } from "./SourceList";
 import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
-import { RecapContent } from "./RecapContent";
-import { SummaryTranslation } from "./SummaryTranslation";
-import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
+import { RecapSection } from "./RecapSection";
+export { RecapSection, RecapCoverage } from "./RecapSection";
+import type { ChatScope, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
-
-export function RecapSection({
-  day,
-  timezone,
-  status,
-  statusError,
-  onUpload,
-  onChat,
-  compact = false,
-}: {
-  day: string;
-  timezone: string;
-  status?: Status;
-  statusError?: string;
-  onUpload?: () => void;
-  onChat: (scope: ChatScope, question?: string) => void;
-  compact?: boolean;
-}) {
-  const recap = useResource<Recap>(`/v1/recaps/${day}`, 15_000);
-  const statusAt = status?.as_of ? Date.parse(status.as_of) : NaN;
-  const summarizing = !statusError && Number.isFinite(statusAt) && Date.now() - statusAt <= 120_000 &&
-    (status?.generation?.stages.summarizing || 0) > 0;
-  const [showVersions, setShowVersions] = useState(false);
-  const [focus, setFocus] = useState<RecapFocus>();
-  const hasOriginalTopics = recapBrowserTopics([], recap.data?.sources || []).length > 0;
-  useEffect(() => { setFocus(undefined); }, [day, recap.data?.summary, recap.data?.output_id]);
-  useEffect(() => {
-    window.addEventListener("omi:archive-changed", recap.refresh);
-    return () =>
-      window.removeEventListener("omi:archive-changed", recap.refresh);
-  }, [recap.refresh]);
-  return (
-    <section className="recap-section">
-      <div className="section-heading">
-        <div>
-          <h2>{t("Day recap")}</h2>
-        </div>
-      </div>
-      {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
-      {recap.data?.stale ? (
-        <Notice>
-          {t("New or changed evidence is available. This recap will update automatically.")}{" "}</Notice>
-      ) : null}
-      {recap.data ? <RecapCoverage recap={recap.data.summary ? { ...recap.data, boundary_note: undefined } : recap.data} timezone={timezone} /> : null}
-      {!compact ? <CompletenessDetails value={recap.data?.completeness} /> : null}
-      {recap.loading && !recap.data ? (
-        <Loading>{t("Loading recap…")}</Loading>
-      ) : recap.data && (recap.data.summary || hasOriginalTopics) ? (
-        <div className="recap-content">
-          {recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}>
-            <RecapContent
-              key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
-              text={recap.data.summary}
-              day={day}
-              version={recap.data.output_id || recap.data.generated_at || "unversioned"}
-              sources={recap.data.sources || []}
-              timezone={timezone}
-              onCorrect={recap.refresh}
-              onChat={onChat}
-              onFocus={setFocus}
-              compact={compact}
-            />
-          </SummaryTranslation> : <RecapContent
-            key={`${day}:original-topics`} text="" day={day} version="originals"
-            sources={recap.data.sources || []} timezone={timezone} onCorrect={recap.refresh} onChat={onChat}
-            onFocus={setFocus} compact={compact} />}
-          <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} focus={focus && recap.data.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={onChat} />
-          {recap.data.pending_chunks ? (
-            <p className="caption">
-              {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>
-          ) : null}
-          {recap.data.summary ? <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
-          {recap.data.boundary_note ? <p className="caption">{t(recap.data.boundary_note)}</p> : null}
-          <EvidenceFeedback outputId={recap.data.output_id} evidence={recap.data.evidence} outputText={recap.data.summary} />
-          <div className="recap-footer">
-            {recap.data.generated_at ? (
-              <span className="caption">
-                {t("Generated at")}{" "}{timeLabel(recap.data.generated_at, timezone)}
-              </span>
-            ) : null}
-            <a
-              className="text-link caption"
-              href={profileResourceUrl(`/v1/diary/${day}.md`)}
-              download
-            >
-              <Icon name="download" size={14} />
-              {t("Export Markdown")}{" "}</a>
-            <button
-              className="text-button"
-              onClick={() => setShowVersions((value) => !value)}
-            >
-              {showVersions ? t("Hide saved versions") : t("Saved versions")}
-            </button>
-          </div>
-          {showVersions ? (
-            <RecapVersions day={day} timezone={timezone} />
-          ) : null}
-          {recap.data.sources?.length ? (
-            <details className="recap-sources">
-              <summary>
-                {t("View")}{" "}{recap.data.sources.length} {t("source recording(s)")}{" "}</summary>
-              <SourceList
-                sources={recap.data.sources}
-                timezone={timezone}
-                onCorrect={recap.refresh}
-              />
-            </details>
-          ) : null}
-          {compact ? <CompletenessDetails value={recap.data.completeness} /> : null}
-          </RecapUtilities> : null}
-        </div>
-      ) : (
-        <div className="recap-empty">
-          <span className="empty-symbol"><Icon name="diary" size={25} /></span>
-          {compact ? <div>
-            <h3>{t("Your recap comes together automatically.")}</h3>
-            <p>{emptyRecapMessage(recap.data, summarizing)}</p>
-            {onUpload ? <button className="text-button recap-upload" onClick={onUpload}>{t("Add a recording")}</button> : null}
-          </div> : <>
-            <h3>{t("The story of your day starts here.")}</h3>
-            <p>{emptyRecapMessage(recap.data, summarizing)}</p>
-            {onUpload ? <button className="button accent recap-upload" onClick={onUpload}><Icon name="upload" size={17} />{t("Add a recording")}</button> : null}
-          </>}
-        </div>
-      )}
-      {compact && !recap.data?.summary ? <CompletenessDetails value={recap.data?.completeness} /> : null}
-      {!recap.data?.summary && !hasOriginalTopics ? <ActionPoints key={`actions-${day}`} day={day} timezone={timezone}
-        focus={focus && recap.data?.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={onChat} /> : null}
-    </section>
-  );
-}
-
-function emptyRecapMessage(recap?: Recap, summarizing = false): string {
-  if (summarizing) return t("Your recap is being generated now. It will appear here when ready.");
-  if (recap?.no_recap_content)
-    return t("No useful recap content in transcribed recordings yet. Your recordings remain available.");
-  if (recap?.waiting_for_pause)
-    return t("Live conversations are waiting for a longer pause before being summarized.");
-  if (recap?.deferred_sources || recap?.pending_chunks)
-    return t("Some recordings are awaiting upload or transcription.");
-  return t("Uploaded recordings are summarized after transcription. Live conversations wait for a longer pause.");
-}
-
-export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: string }) {
-  return <div className="recap-coverage caption" role="status">
-    {recap.included_through ? <p>{t("Includes transcribed recordings through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
-      : recap.included_through === null ? <p>{t("No transcribed recordings included yet.")}</p> : null}
-    {recap.waiting_for_pause ? <p>{t("Live conversations are waiting for a longer pause before being summarized.")}</p> : null}
-    {recap.pending_upload_sources || recap.pending_chunks || (!recap.waiting_for_pause && recap.deferred_sources)
-      ? <p>{t("Some recordings are awaiting upload or transcription.")}</p> : null}
-    {recap.boundary_note ? <p>{t(recap.boundary_note)}</p> : null}
-  </div>;
-}
-
-function RecapUtilities({ compact, generatedAt, timezone, children }: { compact: boolean; generatedAt?: string; timezone: string; children: ReactNode }) {
-  return compact ? <details className="recap-utilities">
-    <summary><span>{t("Sources, export & history")}</span>{generatedAt ? <span>{t("Generated at")}{" "}{timeLabel(generatedAt, timezone)}</span> : null}</summary>
-    {children}
-  </details> : <>{children}</>;
-}
-
-function RecapVersions({ day, timezone }: { day: string; timezone: string }) {
-  const resource = useResource<{
-    items: { id: string; created_at: string; content: Recap }[];
-  }>(`/v1/diary/${day}/versions`);
-  return (
-    <div className="recap-history">
-      {resource.error ? (
-        <ErrorState message={resource.error} retry={resource.refresh} />
-      ) : resource.loading ? (
-        <Loading>{t("Loading saved versions…")}</Loading>
-      ) : resource.data?.items.length ? (
-        resource.data.items.map((version) => (
-          <details key={version.id}>
-            <summary>{dateTimeLabel(version.created_at, timezone)}</summary>
-            {version.content.summary ? <SummaryTranslation outputId={version.id} original={version.content.summary} />
-              : <RichText text={t("No summary in this version.")} />}
-          </details>
-        ))
-      ) : (
-        <p className="caption">{t("No previous versions saved.")}</p>
-      )}
-    </div>
-  );
-}
+import { EmptyState, ErrorState, Loading } from "./UI";
 
 export function Today({
   day,
@@ -231,21 +39,45 @@ export function Today({
   onRewind: (minutes: number) => void;
   onChat: (scope: ChatScope, question?: string) => void;
 }) {
+  const [filters, setFilters] = useState(dayFiltersForProfile);
+  const [membershipVersion, setMembershipVersion] = useState(0);
+  const filtered = hasDayFilters(filters);
+  const scopeKey = `${day}:${dayFilterKey(filters)}:${membershipVersion}`;
+  function changeFilters(next: DayFilters) { rememberDayFilters(next); setFilters(next); }
+  useEffect(() => {
+    const refresh = () => setMembershipVersion((value) => value + 1);
+    const events = ["omi:tags-changed", "omi:zones-changed", "omi:locations-changed", "omi:archive-changed"];
+    for (const event of events) window.addEventListener(event, refresh);
+    return () => { for (const event of events) window.removeEventListener(event, refresh); };
+  }, []);
   return (
     <div className="day-layout">
       <div className="day-main">
         {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
-        <RecapSection key={`recap-${day}`} day={day} timezone={timezone} status={status} statusError={statusError} onUpload={onUpload} onChat={onChat} compact />
+        <section className="day-filters" aria-label={t("Day filters")}>
+          <div className="section-heading"><h2>{t("Day filters")}</h2>
+            {filtered ? <button type="button" className="text-button" onClick={() => changeFilters(allDayFilters)}>{t("Clear filters")}</button> : null}
+          </div>
+          <div className="timeline-filters">
+            <TagFilter value={filters.tagID} onChange={(tagID) => changeFilters({ ...filters, tagID })} />
+            <ZoneFilter value={filters.zoneID} onChange={(zoneID) => changeFilters({ ...filters, zoneID })} />
+          </div>
+          <p className="caption">{t("Filters apply to the recap, highlights, topics, and timeline.")}</p>
+          {filtered ? <p className="caption" role="status">{t("Only recordings matching every selected filter are included.")}</p> : null}
+        </section>
+        <RecapSection key={`recap-${scopeKey}`} day={day} timezone={timezone} status={status} statusError={statusError} onUpload={onUpload} onChat={onChat} filters={filters} compact />
         <TranscriptTimeline
-          key={`timeline-${day}`}
+          key={`timeline-${scopeKey}`}
           day={day}
           timezone={timezone}
           timeline={timeline}
           onUpload={onUpload}
           onChat={onChat}
+          filters={filters}
         />
       </div>
       <aside className="day-rail" aria-label={t("Day tools and capture")}>
+        {filtered ? <p className="caption day-whole-day-tools">{t("Chat and quick rewind use the whole day.")}</p> : null}
         <QuickRewind onRewind={onRewind} />
         <section className="day-tools">
           <h2>{t("Day tools")}</h2>
@@ -299,17 +131,18 @@ function TranscriptTimeline({
   timeline,
   onUpload,
   onChat,
+  filters,
 }: {
   day: string;
   timezone: string;
   timeline?: Timeline;
   onUpload: () => void;
   onChat: (scope: ChatScope) => void;
+  filters: DayFilters;
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
-  const [zoneID, setZoneID] = useState("");
-  const [tagID, setTagID] = useState("");
+  const { zoneID, tagID } = filters;
   const [page, setPage] = useState(0);
   const params = new URLSearchParams({
     day,
@@ -323,16 +156,12 @@ function TranscriptTimeline({
     `/v1/recording-groups?${params}`,
     15_000,
   );
-  useEffect(() => {
-    window.addEventListener("omi:tags-changed", resource.refresh);
-    return () => window.removeEventListener("omi:tags-changed", resource.refresh);
-  }, [resource.refresh]);
   const markers =
-    timeline?.markers.filter(
+    !hasDayFilters(filters) && timeline?.markers.filter(
       (mark) => localDay(timezone, new Date(mark.occurred_at)) === day,
     ) || [];
   const meetings =
-    timeline?.meetings.filter(
+    !hasDayFilters(filters) && timeline?.meetings.filter(
       (meeting) => localDay(timezone, new Date(meeting.started_at)) === day,
     ) || [];
   const groups = resource.data?.items || [];
@@ -389,10 +218,6 @@ function TranscriptTimeline({
             {t("Hints guide interpretation of nearby speech; these are approximate times.")}{" "}</p>
         </div>
       ) : null}
-      <div className="timeline-filters">
-        <TagFilter value={tagID} onChange={(value) => { setTagID(value); setPage(0); }} />
-        <ZoneFilter value={zoneID} onChange={(value) => { setZoneID(value); setPage(0); }} />
-      </div>
       {resource.data?.total || submitted || zoneID || tagID ? (
         <form
           className="search-form"

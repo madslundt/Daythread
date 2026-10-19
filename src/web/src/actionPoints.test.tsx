@@ -8,9 +8,9 @@ import { selectProfile } from "./profiles";
 import type { Decision } from "./decisionModels";
 import { decisionMatchesTopic, highlightCompletionLabel, highlightGroups, orderedHighlights } from "./dayHighlights";
 
-const data = vi.hoisted(() => ({ item: undefined as InboxItem | undefined, completed: [] as InboxItem[], decisions: [] as Decision[] }));
-vi.mock("./useResource", () => ({ useResource: (path: string) => ({ data: path.startsWith("/v1/decisions?") ? { items: data.decisions, total: data.decisions.length } : data.item ? {
-  items: path.includes("status=completed") ? data.completed : [data.item], total: path.includes("status=completed") ? data.completed.length : 1, pending: 1, coverage: { jobs: { done: 1 }, unscanned_sources: 0 },
+const data = vi.hoisted(() => ({ item: undefined as InboxItem | undefined, completed: [] as InboxItem[], decisions: [] as Decision[], jobs: undefined as Record<string, number> | undefined }));
+vi.mock("./useResource", () => ({ useResource: (path: string) => ({ data: path.startsWith("/v1/decisions?") ? { items: data.decisions, total: data.decisions.length } : data.item || data.jobs ? {
+  items: path.includes("status=completed") ? data.completed : data.item ? [data.item] : [], total: path.includes("status=completed") ? data.completed.length : data.item ? 1 : 0, pending: data.item ? 1 : 0, coverage: { jobs: data.jobs || { done: 1 }, unscanned_sources: 0 },
 } : undefined, loading: false, error: "", refresh: () => {}, setData: () => {} }) }));
 
 const fields = { title: "Buy cocoa", kind: "commitment" as const, owner: null, deadline: null };
@@ -21,7 +21,7 @@ const item: InboxItem = { ...fields, id: "action", status: "pending", health: "c
 };
 const suggestion: DecisionFollowup = { kind: "reminder", title: "Buy cocoa", notes: "", reason: "Agreed errand",
   start_at: null, end_at: null, due_at: null, all_day: false, location: "" };
-afterEach(() => { data.item = undefined; data.completed = []; data.decisions = []; vi.unstubAllGlobals(); selectProfile("default"); });
+afterEach(() => { data.item = undefined; data.completed = []; data.decisions = []; data.jobs = undefined; vi.unstubAllGlobals(); selectProfile("default"); });
 
 describe("recap actions", () => {
   it("uses current passage boundaries rather than a shared source alone", () => {
@@ -135,5 +135,23 @@ describe("recap actions", () => {
     expect(html).not.toContain("Buy cocoa");
     expect(html).toContain("Keep the access instructions");
     expect(html).toContain("Evidence changed — review required");
+  });
+  it("labels failed Inbox extraction separately before Decisions and offers a day retry", () => {
+    data.jobs = { failed: 1 };
+    const html = renderToStaticMarkup(<ActionPoints day="2026-10-19" timezone="UTC" />);
+    const statusIndex = html.indexOf('aria-label="Follow-up extraction"');
+    const decisionsIndex = html.indexOf('aria-label="Decisions"');
+    expect(statusIndex).toBeGreaterThan(-1);
+    expect(statusIndex).toBeLessThan(decisionsIndex);
+    expect(html.slice(statusIndex, decisionsIndex)).toContain("Some follow-ups or notes could not be extracted.");
+    expect(html.slice(statusIndex, decisionsIndex)).toContain("Retry follow-up extraction");
+    expect(html.slice(decisionsIndex)).not.toContain("Some extraction failed.");
+    expect(html).not.toContain("No open follow-ups or notes found in this view.");
+  });
+  it("does not hide a partial extraction failure when other follow-ups have been found", () => {
+    data.item = item; data.jobs = { done: 1, failed: 1 };
+    const html = renderToStaticMarkup(<ActionPoints day="2026-10-19" timezone="UTC" />);
+    expect(html).toContain("Buy cocoa");
+    expect(html).toContain("Some follow-ups or notes could not be extracted.");
   });
 });

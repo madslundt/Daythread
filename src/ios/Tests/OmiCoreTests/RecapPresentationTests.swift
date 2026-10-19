@@ -38,6 +38,18 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertEqual(RecapPresentation.groups(markdown, day: "2026-10-16").last?.parts.first?.text, "Book a service")
     }
 
+    func testTopicSummaryOmitsOnlyItsRepeatedHeadingWithoutChangingOriginalParts() throws {
+        let markdown = "## Highlights\n- **Café (home)** — Discussed **cocoa** [\(sourceID)].\n  Kept the original evidence.\n- **Roadster**: Book a service."
+        let topics = RecapPresentation.topics(markdown, day: "2026-10-16")
+        let cafe = try XCTUnwrap(topics.first)
+        XCTAssertEqual(RecapPresentation.topicSummary(cafe), "Discussed **cocoa**. Kept the original evidence.")
+        XCTAssertTrue(cafe.parts[0].text.contains("[\(sourceID)]"))
+        XCTAssertTrue(cafe.text.hasPrefix("**Café (home)**"))
+        XCTAssertEqual(RecapPresentation.topicSummary(topics[1]), "Book a service.")
+        let plain = try XCTUnwrap(RecapPresentation.topics("## A heading\nA useful **detail**.", day: "2026-10-16").first)
+        XCTAssertEqual(RecapPresentation.topicSummary(plain), "A useful **detail**.")
+    }
+
     func testCitationsOutrankWordsAndNeverFallBackWhenDeleted() {
         let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "Gym workout"), .init(id: "22222222-2222-4222-8222-222222222222", text: "Work prototype")]
         let cited = RecapPresentation.sources(for: "Work prototype [\(sourceID)]", in: sources)

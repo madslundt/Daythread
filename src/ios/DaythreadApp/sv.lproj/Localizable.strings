@@ -2675,3 +2675,30 @@
 "Selection criterion does not match candidate kind" = "Urvalskriteriet matchar inte förslagets typ";
 
 "Selection evidence must include the candidate's own point" = "Källstödet för urvalet måste innehålla förslagets egen punkt";
+
+"Read more" = "Läs mer";
+"Show less" = "Visa mindre";
+"Show original passages" = "Visa ursprungliga passager";
+"Hide original passages" = "Dölj ursprungliga passager";
+"Follow-up extraction" = "Extrahering av uppföljningar";
+"Some follow-ups or notes could not be extracted." = "Vissa uppföljningar eller anteckningar kunde inte extraheras.";
+"Retry follow-up extraction" = "Försök extrahera uppföljningar igen";
+
+"All recordings" = "Alla inspelningar";
+"Day filters" = "Dagsfilter";
+"Filtered recap" = "Filtrerad sammanfattning";
+"Filters apply to the recap, highlights, topics, and timeline." = "Filtren gäller för sammanfattningen, viktiga punkter, ämnen och tidslinjen.";
+"Loading filtered recap…" = "Läser in filtrerad sammanfattning…";
+"No recordings match the selected filters for this day." = "Inga inspelningar matchar de valda filtren för den här dagen.";
+"Only recordings matching every selected filter are included." = "Endast inspelningar som matchar alla valda filter ingår.";
+"Preparing a recap for the selected filters…" = "Förbereder en sammanfattning för de valda filtren…";
+"Retry whole day" = "Försök igen för hela dagen";
+"Scan whole day" = "Skanna hela dagen";
+"The filtered recap could not be generated." = "Den filtrerade sammanfattningen kunde inte genereras.";
+"The recap does not match the selected filters. Refresh and try again." = "Sammanfattningen matchar inte de valda filtren. Uppdatera och försök igen.";
+"Chat and quick rewind use the whole day." = "Chatten och snabbspolningen bakåt använder hela dagen.";
+
+"Recording filter changed before recap generation; retry" = "Inspelningsfiltret ändrades innan sammanfattningen skapades; försök igen";
+"Recording filter or selected evidence changed; retry the recap" = "Inspelningsfiltret eller det valda källstödet har ändrats; försök skapa sammanfattningen igen";
+
+"A filtered recap requires a tag or location filter" = "En filtrerad sammanfattning kräver ett tagg- eller platsfilter";

@@ -24,13 +24,17 @@ def inbox_router(memory) -> APIRouter:
         kind: Kind | None = None,
         due: Literal["overdue", "upcoming", "unknown"] | None = None,
         day: date | None = None,
+        tag_id: UUID | None = None,
+        zone_id: UUID | None = None,
         q: str = Query(default="", max_length=200),
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
     ) -> dict:
         response.headers["Cache-Control"] = "no-store"
         return InboxStore(memory().store).listing(
-            status, kind, due, limit, offset, day=day, q=q, timezone=memory().settings.timezone
+            status, kind, due, limit, offset, day=day, q=q, timezone=memory().settings.timezone,
+            tag_id=str(tag_id) if tag_id else None,
+            zone_id=str(zone_id) if zone_id else None,
         )
 
     @router.post("/{key}/suggestions")

@@ -2677,3 +2677,30 @@
 "Selection criterion does not match candidate kind" = "Selection criterion does not match candidate kind";
 
 "Selection evidence must include the candidate's own point" = "Selection evidence must include the candidate's own point";
+
+"Read more" = "Read more";
+"Show less" = "Show less";
+"Show original passages" = "Show original passages";
+"Hide original passages" = "Hide original passages";
+"Follow-up extraction" = "Follow-up extraction";
+"Some follow-ups or notes could not be extracted." = "Some follow-ups or notes could not be extracted.";
+"Retry follow-up extraction" = "Retry follow-up extraction";
+
+"All recordings" = "All recordings";
+"Day filters" = "Day filters";
+"Filtered recap" = "Filtered recap";
+"Filters apply to the recap, highlights, topics, and timeline." = "Filters apply to the recap, highlights, topics, and timeline.";
+"Loading filtered recap…" = "Loading filtered recap…";
+"No recordings match the selected filters for this day." = "No recordings match the selected filters for this day.";
+"Only recordings matching every selected filter are included." = "Only recordings matching every selected filter are included.";
+"Preparing a recap for the selected filters…" = "Preparing a recap for the selected filters…";
+"Retry whole day" = "Retry whole day";
+"Scan whole day" = "Scan whole day";
+"The filtered recap could not be generated." = "The filtered recap could not be generated.";
+"The recap does not match the selected filters. Refresh and try again." = "The recap does not match the selected filters. Refresh and try again.";
+"Chat and quick rewind use the whole day." = "Chat and quick rewind use the whole day.";
+
+"Recording filter changed before recap generation; retry" = "Recording filter changed before recap generation; retry";
+"Recording filter or selected evidence changed; retry the recap" = "Recording filter or selected evidence changed; retry the recap";
+
+"A filtered recap requires a tag or location filter" = "A filtered recap requires a tag or location filter";

@@ -62,7 +62,7 @@ export function RecordingLocation({ source, timezone, onChanged }: { source: Sou
         <a href={`/settings/locations?latitude=${location.latitude}&longitude=${location.longitude}`}>{t("Save as zone location")}</a>
       </p></details> : null}
     {open ? <div id={editorID}><RecordingLocationEditor sourceID={source.id} onCancel={close} onSaved={(result) => {
-      setSaved(result); close(); onChanged?.();
+      setSaved(result); close(); onChanged?.(); window.dispatchEvent(new Event("omi:locations-changed"));
     }} /></div> : null}
   </section>;
 }

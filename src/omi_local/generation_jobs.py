@@ -14,6 +14,7 @@ from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference_errors import InferenceDisabled
 from .recording_topics import topic_fingerprint
+from .scoped_recap_jobs import fingerprint, invalidate_changed, scoped, validate_result
 from .summary_translation import generate_summary_translation
 from .topic_context import topic_contexts
 from .translation import generate_translation
@@ -60,6 +61,8 @@ class RewindParameters(Parameters):
 
 class RecapParameters(Parameters):
     day: date
+    tag_id: UUID | None = None
+    zone_id: UUID | None = None
 
 
 class TranslationParameters(Parameters):
@@ -115,7 +118,10 @@ class GenerationJobs:
 
     def get(self, job_id: str) -> dict:
         with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM generation_jobs WHERE id=?", (job_id,)).fetchone()
+            if row is not None:
+                row = invalidate_changed(self.memory, row, db)
         if row is None:
             raise HTTPException(404, "Generation job not found")
         return dict(row) | {
@@ -167,6 +173,8 @@ class GenerationJobs:
     def enqueue(self, body: GenerationRequest) -> dict:
         try:
             params = PARAMETERS[body.kind].model_validate(body.parameters).model_dump(mode="json")
+            if body.kind == "recap":
+                params = {key: value for key, value in params.items() if value is not None}
         except ValidationError as exc:
             raise HTTPException(422, "Invalid generation parameters") from exc
         if body.kind != "rewind" or params["summarize"]:
@@ -179,17 +187,23 @@ class GenerationJobs:
             ).fetchone()
             if existing:
                 previous = json.loads(existing["parameters"])
+                if body.kind == "recap" and scoped(params):
+                    params["scope_fingerprint"] = previous.get("scope_fingerprint")
                 # Freeze relative rewind time at first submission, including retries.
                 if body.kind == "rewind" and params["end"] is None:
                     params["end"] = previous.get("end")
                 if existing["kind"] != body.kind or previous != params:
                     raise HTTPException(409, "Request ID already has different parameters")
             else:
+                if body.kind == "recap" and scoped(params):
+                    params["scope_fingerprint"] = fingerprint(self.memory, params, db)
                 if body.kind == "rewind" and params["end"] is None:
                     params["end"] = stamp(utc_now())
                 db.execute(
-                    "INSERT INTO generation_jobs(id,kind,parameters,created_at) VALUES(?,?,?,?)",
-                    (job_id, body.kind, json.dumps(params, sort_keys=True), stamp(utc_now())),
+                    "INSERT INTO generation_jobs(id,kind,parameters,created_at,notified) "
+                    "VALUES(?,?,?,?,?)",
+                    (job_id, body.kind, json.dumps(params, sort_keys=True), stamp(utc_now()),
+                     int(body.kind == "recap" and scoped(params))),
                 )
         return self.get(job_id)
 
@@ -203,6 +217,11 @@ class GenerationJobs:
                 kind="rewind",
             )
         if kind == "recap":
+            if scoped(params):
+                return await memory.recap(
+                    date.fromisoformat(params["day"]), params.get("tag_id"), params.get("zone_id"),
+                    expected_fingerprint=params["scope_fingerprint"],
+                )
             return await memory.recap(date.fromisoformat(params["day"]))
         if kind == "summary_translation":
             return await generate_summary_translation(
@@ -232,6 +251,8 @@ class GenerationJobs:
                         "transcript_version": translation.get("transcript_version")}]
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if job["kind"] == "recap" and scoped(job["parameters"]):
+                validate_result(self.memory, job["parameters"], result, db)
             if job["kind"] == "summary_translation":
                 source = self.store._summary_source(db, job["parameters"]["output_id"])
                 if source["summary_version"] != result["summary_version"]:

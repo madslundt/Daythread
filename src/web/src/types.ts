@@ -140,6 +140,12 @@ export type MemoryWindow = {
 };
 export type Recap = Partial<MemoryWindow> & {
   day: string;
+  scope?: { tag_id: string | null; zone_id: string | null };
+  scope_fingerprint?: string;
+  no_matching_sources?: boolean;
+  generation_job_id?: string | null;
+  generation_state?: string | null;
+  generation_error?: string | null;
   summary: string | null;
   generated_at?: string;
   stale?: boolean;

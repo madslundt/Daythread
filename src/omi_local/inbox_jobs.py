@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from .domain import stamp, utc_now
 from .inbox_domain import validate_candidates
+from .inbox_retry import retire_replaced_failures
 from .inbox_split import split_job
 from .inbox_store import InboxStore
 from .inference import InferenceTruncated, for_task
@@ -189,10 +190,11 @@ class InboxJobs:
                         for part in inputs:
                             db.execute(
                                 "UPDATE inbox_jobs SET state='queued',attempts=0,retry_at='',"
-                                "error=NULL WHERE state='failed' AND id IN "
+                                "error=NULL WHERE state='failed' AND model=? AND prompt_version=? "
+                                "AND timezone=? AND id IN "
                                 "(SELECT job_id FROM inbox_dependencies WHERE source_id=? "
                                 "AND revision=?)",
-                                (part["id"], part["revision"]),
+                                (model, PROMPT_VERSION, timezone, part["id"], part["revision"]),
                             )
                     elif retry_failed and old["state"] == "failed":
                         db.execute(
@@ -201,6 +203,8 @@ class InboxJobs:
                             "WHERE id=?",
                             (key,),
                         )
+                    elif retry_failed and old["state"] == "done":
+                        retire_replaced_failures(db, key, PROMPT_VERSION)
                     ids.append(key)
                 db.execute(
                     "UPDATE inbox_sources SET scanned_revision=revision WHERE source_id=?",
@@ -312,6 +316,7 @@ class InboxJobs:
                         "WHERE id=?",
                         (stamp(utc_now()), job["id"]),
                     )
+                    retire_replaced_failures(db, job["id"], PROMPT_VERSION)
                 elif current:
                     db.execute(
                         "UPDATE inbox_jobs SET state='superseded',claim=NULL WHERE id=?",

@@ -2675,3 +2675,30 @@
 "Selection criterion does not match candidate kind" = "Das Auswahlkriterium passt nicht zur Art des Vorschlags";
 
 "Selection evidence must include the candidate's own point" = "Die Auswahlbelege müssen den eigenen Punkt des Vorschlags enthalten";
+
+"Read more" = "Mehr lesen";
+"Show less" = "Weniger anzeigen";
+"Show original passages" = "Originalpassagen anzeigen";
+"Hide original passages" = "Originalpassagen ausblenden";
+"Follow-up extraction" = "Ermittlung von Folgeaktionen";
+"Some follow-ups or notes could not be extracted." = "Einige Folgeaktionen oder Notizen konnten nicht ermittelt werden.";
+"Retry follow-up extraction" = "Folgeaktionen erneut ermitteln";
+
+"All recordings" = "Alle Aufnahmen";
+"Day filters" = "Tagesfilter";
+"Filtered recap" = "Gefilterte Zusammenfassung";
+"Filters apply to the recap, highlights, topics, and timeline." = "Die Filter gelten für Zusammenfassung, wichtige Punkte, Themen und Zeitleiste.";
+"Loading filtered recap…" = "Gefilterte Zusammenfassung wird geladen…";
+"No recordings match the selected filters for this day." = "Für diesen Tag entsprechen keine Aufnahmen den ausgewählten Filtern.";
+"Only recordings matching every selected filter are included." = "Es werden nur Aufnahmen berücksichtigt, die allen ausgewählten Filtern entsprechen.";
+"Preparing a recap for the selected filters…" = "Eine Zusammenfassung für die ausgewählten Filter wird erstellt…";
+"Retry whole day" = "Gesamten Tag erneut prüfen";
+"Scan whole day" = "Gesamten Tag analysieren";
+"The filtered recap could not be generated." = "Die gefilterte Zusammenfassung konnte nicht erstellt werden.";
+"The recap does not match the selected filters. Refresh and try again." = "Die Zusammenfassung entspricht nicht den ausgewählten Filtern. Aktualisiere die Ansicht und versuche es erneut.";
+"Chat and quick rewind use the whole day." = "Chat und schnelles Zurückspulen verwenden den ganzen Tag.";
+
+"Recording filter changed before recap generation; retry" = "Der Aufnahmefilter wurde vor der Erstellung der Zusammenfassung geändert; erneut versuchen";
+"Recording filter or selected evidence changed; retry the recap" = "Der Aufnahmefilter oder die ausgewählten Belege haben sich geändert; Zusammenfassung erneut erstellen";
+
+"A filtered recap requires a tag or location filter" = "Eine gefilterte Zusammenfassung erfordert einen Markierungs- oder Ortsfilter";

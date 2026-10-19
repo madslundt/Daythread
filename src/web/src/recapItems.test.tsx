@@ -75,13 +75,54 @@ describe("day recap interactions", () => {
     expect(recapGroupSummary(recapParts(text).slice(1))).toBe("A test with dark chocolate.");
     expect(recapGroupSummary(recapParts(`- Cocoa [${sources[0].id}].`))).toBe("Cocoa.");
     const html = renderToStaticMarkup(<RecapTopic title="Cocoa" parts={recapParts(text).slice(1)} day="2026-10-16" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact={false} expanded />);
-    expect(html).toContain('class="recap-topic-summary"');
+    expect(html).toContain('class="recap-topic-summary is-collapsed"');
     expect(html).toContain('A test with dark chocolate.');
     expect(html).not.toContain("1 point");
     expect(html).not.toContain("recap-item-button");
     expect(html).toContain('aria-label="Copy summary: Cocoa"');
-    expect(html).toContain("Original passages");
+    expect(html).toContain("Show original passages");
+    expect(html).not.toContain("Loading recordings…");
     expect(html).toContain("Milk frother and cocoa.");
+  });
+
+  it("starts each long day summary collapsed with its own prose-only expansion control", () => {
+    const prose = "A detailed account of the relevant conversation and its useful context. ".repeat(7);
+    const html = renderToStaticMarkup(<RecapContent text={`## Cocoa\n${prose}\n## Garden\n${prose}`}
+      day="2026-10-16" version="test" sources={sources} timezone="UTC" onCorrect={() => {}} />);
+    const controls = [...html.matchAll(/class="text-button recap-summary-toggle" aria-expanded="false" aria-controls="([^"]+)"/g)];
+    expect(controls).toHaveLength(2);
+    expect(new Set(controls.map((match) => match[1])).size).toBe(2);
+    expect(html.match(/recap-topic-summary is-collapsed/g)).toHaveLength(2);
+    expect(html.match(/>Read more<\/button>/g)).toHaveLength(2);
+    expect(html).not.toContain("Show original passages");
+    expect(html).not.toContain("Loading recordings…");
+    expect(html).not.toContain('<article class="recap-evidence">');
+    expect(html).not.toContain("<audio");
+  });
+
+  it.each([false, true])("keeps original passages optional independently of summary/detail expansion (detail=%s)", (expanded) => {
+    const text = "The useful outcome needs some explanation and context. ".repeat(8);
+    const html = renderToStaticMarkup(<RecapTopic title="Cocoa" parts={[{ kind: "text", text }]}
+      day="2026-10-16" sources={sources} timezone="UTC" onCorrect={() => {}} compact={false} expanded={expanded} />);
+    expect(html).toContain("Read more");
+    expect(html).toContain("Show original passages");
+    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+">Show original passages/);
+    expect(html).toMatch(/<div id="[^"]+" hidden="">/);
+    expect(html).not.toContain("Loading recordings…");
+    expect(html).not.toContain('<article class="recap-evidence">');
+    expect(html).not.toContain("<audio");
+  });
+
+  it("does not mount passage UI for a selected original-only topic until explicitly requested", () => {
+    const source: Source = { ...sources[0], text: "No.", sections: [{ title: "Reply", start_offset: 0, end_offset: 3, start_seconds: 1, end_seconds: 2 }] };
+    const original = recapBrowserTopics([], [source])[0];
+    const html = renderToStaticMarkup(<RecapTopic {...original} day="2026-10-16" sources={[source]} timezone="UTC"
+      onCorrect={() => {}} compact={false} expanded onFocus={() => {}} />);
+    expect(html).toContain("Show original passages");
+    expect(html).not.toContain("Loading recordings…");
+    expect(html).not.toContain("No.");
+    expect(html).not.toContain("recap-topic-summary");
+    expect(html).not.toContain("<audio");
   });
 
   it("copies the complete topic text, removing citations and exact repeated paragraphs", () => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, newId, post, request } from "./api";
 import { dateTimeLabel } from "./format";
+import { allDayFilters, dayFilterKey, dayFilterParams, hasDayFilters, type DayFilters } from "./dayFilters";
 import { t } from "./i18n";
 import { InboxEditor } from "./InboxEditor";
 import { deadlineLabel, type InboxItem, type InboxPage, type InboxStatus } from "./inboxTypes";
@@ -13,8 +14,9 @@ import { DecisionHighlights } from "./DecisionHighlights";
 import { actionableKind, actionMatchesTopic, highlightCompletionLabel, highlightGroups, highlightReviewLabel, orderedHighlights, type HighlightCategory } from "./dayHighlights";
 export { actionMatchesTopic } from "./dayHighlights";
 
-export function ActionPoints({ day, timezone, focus, onChat }: {
+export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFilters }: {
   day: string; timezone: string; focus?: RecapFocus;
+  filters?: DayFilters;
   onChat?: (scope: ChatScope, question?: string) => void;
 }) {
   const [status, setStatus] = useState<InboxStatus>("pending");
@@ -23,9 +25,12 @@ export function ActionPoints({ day, timezone, focus, onChat }: {
   const [selected, setSelected] = useState<string>();
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
-  const params = new URLSearchParams({ day, status: "pending", limit: "200", offset: "0" });
+  const filtered = hasDayFilters(filters);
+  const scopeKey = dayFilterKey(filters);
+  const params = new URLSearchParams({ day, status: "pending", limit: "200", offset: "0", ...dayFilterParams(filters) });
   const resource = useHighlightList<InboxPage>(`/v1/inbox?${params}`, "omi:inbox-changed");
-  const reviewed = useHighlightList<InboxPage>(`/v1/inbox?${new URLSearchParams({ day, status: "completed", limit: "200", offset: "0" })}`, "omi:inbox-changed");
+  const reviewed = useHighlightList<InboxPage>(`/v1/inbox?${new URLSearchParams({ day, status: "completed", limit: "200", offset: "0", ...dayFilterParams(filters) })}`, "omi:inbox-changed");
+  useEffect(() => { setSelected(undefined); setVisible({}); setCategory("all"); setStatus("pending"); setScanError(""); }, [day, scopeKey]);
   const refresh = () => { resource.refresh(); reviewed.refresh(); };
   useEffect(() => {
     const close = () => setSelected(undefined);
@@ -43,12 +48,15 @@ export function ActionPoints({ day, timezone, focus, onChat }: {
   const items = orderedHighlights([...latest.values()].filter((item) => item.health !== "withdrawn"
     && (!actionableKind(item.kind) || item.status === status) && (!focus || actionMatchesTopic(item, focus))));
   const coverage = resource.data?.coverage;
+  const showFollowups = category !== "decisions";
+  const extracting = Boolean(coverage?.jobs.running || coverage?.jobs.queued);
+  const extractionFailed = Boolean(coverage?.jobs.failed);
   const groups = highlightGroups.map((group) => ({ ...group, items: items.filter((item) => new Set<string>(group.kinds).has(item.kind)) }));
   const shown = groups.filter((group) => category === "all" || category === group.id);
   const renderGroup = (group: typeof groups[number]) => !group.items.length ? null : <section className="highlight-group" key={group.id} aria-label={t(group.title)}>
     <div className="highlight-group-heading"><h3>{t(group.title)}</h3><span className="caption">{group.items.length}</span></div>
     {group.items.slice(0, visible[group.id] || 5).map((item) => <ActionPointRow key={`${item.id}:${item.version}`} item={item} timezone={timezone}
-      onReview={() => setSelected(item.id)} onChanged={refresh} onChat={onChat ? () => onChat({ kind: "day", day }, item.kind === "question"
+      onReview={() => setSelected(item.id)} onChanged={refresh} onChat={!filtered && onChat ? () => onChat({ kind: "day", day }, item.kind === "question"
         ? t("Help me answer this question from this day: {value0}", { value0: item.title })
         : t("Help me think through this topic from this day: {value0}", { value0: item.title })) : undefined} />)}
     {group.items.length > (visible[group.id] || 5) ? <button type="button" className="text-button highlight-show-more" onClick={() => setVisible((current) => ({ ...current, [group.id]: (current[group.id] || 5) + 10 }))}>{t("Show more")}</button> : null}
@@ -63,22 +71,26 @@ export function ActionPoints({ day, timezone, focus, onChat }: {
         <option value="decisions">{t("Decisions")}</option>
         {highlightGroups.slice(3).map((group) => <option key={group.id} value={group.id}>{t(group.title)}</option>)}
       </select></label>
-      <button type="button" className="text-button" disabled={scanning} onClick={() => void scan()}>{scanning ? t("Queuing…") : t("Find highlights")}</button>
+      {showFollowups && !filtered ? <button type="button" className="text-button" disabled={scanning} onClick={() => void scan()}>{scanning ? t("Queuing…") : t("Find highlights")}</button> : null}
     </div>
     {!["decisions", "reflections", "notes"].includes(category) ? <div className="action-point-filters" aria-label={t("Follow-up status")}>
       <span className="caption">{t("Follow-ups")}</span>
       <button type="button" className="text-button" aria-pressed={status === "pending"} onClick={() => setStatus("pending")}>{t("Open")}</button>
       <button type="button" className="text-button" aria-pressed={status === "completed"} onClick={() => setStatus("completed")}>{t("Reviewed / done")}</button>
     </div> : null}
-    {resource.error || reviewed.error || scanError ? <ErrorState message={resource.error || reviewed.error || scanError} retry={refresh} /> : null}
-    {category !== "decisions" && (resource.loading && !resource.data || resource.loadingMore || reviewed.loading && !reviewed.data || reviewed.loadingMore) ? <Loading>{t("Loading highlights…")}</Loading> : null}
+    {showFollowups && (resource.error || reviewed.error || scanError) ? <ErrorState message={resource.error || reviewed.error || scanError} retry={refresh} /> : null}
+    {showFollowups && (extracting || extractionFailed) ? <section className="highlight-extraction-status" aria-label={t("Follow-up extraction")}>
+      <h3>{t("Follow-up extraction")}</h3>
+      {extracting ? <p className="caption" role="status">{t("Highlights are being extracted from your recordings.")}</p> : null}
+      {extractionFailed ? <><p className="caption">{t("Some follow-ups or notes could not be extracted.")}</p>
+        <div className="recap-topic-actions">{!filtered ? <button type="button" className="text-button" disabled={scanning} onClick={() => void scan()}>{scanning ? t("Queuing…") : t("Retry follow-up extraction")}</button> : null}
+          <a className="text-link" href="/inbox">{t("Open Inbox")}</a></div></> : null}
+    </section> : null}
+    {showFollowups && (resource.loading && !resource.data || resource.loadingMore || reviewed.loading && !reviewed.data || reviewed.loadingMore) ? <Loading>{t("Loading highlights…")}</Loading> : null}
     {shown.filter((group) => group.id !== "reflections" && group.id !== "notes").map(renderGroup)}
-    {category === "all" || category === "decisions" ? <DecisionHighlights day={day} timezone={timezone} focus={focus} /> : null}
+    {category === "all" || category === "decisions" ? <DecisionHighlights day={day} timezone={timezone} focus={focus} filters={filters} /> : null}
     {shown.filter((group) => group.id === "reflections" || group.id === "notes").map(renderGroup)}
-    {category !== "decisions" && resource.data && reviewed.data && !resource.loadingMore && !reviewed.loadingMore && !shown.some((group) => group.items.length) ? <p className="action-points-empty">{coverage?.jobs.running || coverage?.jobs.queued
-      ? t("Highlights are being extracted from your recordings.") : coverage?.jobs.failed
-        ? t("Some extraction failed. Open Inbox to retry the affected days.")
-        : focus ? t("No matching follow-ups or notes found in this topic.")
+    {showFollowups && !extracting && !extractionFailed && resource.data && reviewed.data && !resource.loadingMore && !reviewed.loadingMore && !shown.some((group) => group.items.length) ? <p className="action-points-empty">{focus ? t("No matching follow-ups or notes found in this topic.")
         : status === "completed" ? t("No reviewed or completed items in this view.") : t("No open follow-ups or notes found in this view.")}</p> : null}
     <p className="caption action-point-note">{t("Saved across your devices. Your answers and notes stay separate from recorded evidence.")}</p>
     {selected ? <InboxEditor key={selected} id={selected} timezone={timezone} onClose={() => { setSelected(undefined); refresh(); }} /> : null}

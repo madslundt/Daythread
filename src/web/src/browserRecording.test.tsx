@@ -148,12 +148,14 @@ describe("microphone capture lifecycle", () => {
   });
   it("shows recording and secure-origin guidance in English and Danish", () => {
     vi.stubGlobal("navigator", {});
-    const props = { owner: "owner", timezone: "UTC", visible: true, onUploaded: vi.fn() };
+    const props = { owner: "owner", timezone: "UTC", visible: true, onUpload: vi.fn(), onUploaded: vi.fn() };
     expect(renderToStaticMarkup(<BrowserRecorder {...props} />)).toContain("Start recording");
+    expect(renderToStaticMarkup(<BrowserRecorder {...props} />)).toContain("Upload recordings");
     expect(renderToStaticMarkup(<BrowserRecorder {...props} />)).toContain("HTTPS or localhost");
     setLanguagePreference("da");
     const html = renderToStaticMarkup(<BrowserRecorder {...props} />);
     expect(html).toContain("Start optagelse");
+    expect(html).toContain("Upload optagelser");
     expect(html).toContain("HTTPS eller localhost");
   });
 });

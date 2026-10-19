@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Recap } from "./types";
 import { localDay } from "./format";
-import { RecapSection } from "./Today";
+import { RecapSection, Today } from "./Today";
+import { allDayFilters, rememberDayFilters, type DayFilters } from "./dayFilters";
 
 const resource = vi.hoisted(() => ({ data: undefined as Recap | undefined, useResource: vi.fn() }));
 vi.mock("./useResource", () => ({
@@ -12,12 +13,13 @@ vi.mock("./useResource", () => ({
       loading: false, error: "", refresh: () => {}, setData: () => {} };
   },
 }));
-function render(day = "2026-10-15", compact = false) {
-  return renderToStaticMarkup(<RecapSection day={day} timezone="Europe/Copenhagen" compact={compact} onChat={() => {}} />);
+function render(day = "2026-10-15", compact = false, filters: DayFilters = allDayFilters) {
+  return renderToStaticMarkup(<RecapSection day={day} timezone="Europe/Copenhagen" compact={compact} filters={filters} onChat={() => {}} />);
 }
 beforeEach(() => {
   resource.data = { day: "2026-10-15", summary: null };
   resource.useResource.mockClear();
+  rememberDayFilters(allDayFilters);
 });
 describe("transcribed recording recap display", () => {
   it("offers summary translation without replacing the original topic controls", () => {
@@ -100,5 +102,57 @@ describe("transcribed recording recap display", () => {
     resource.useResource.mockClear();
     render("2020-01-01");
     expect(resource.useResource).toHaveBeenCalledWith("/v1/recaps/2020-01-01", 15_000);
+  });
+
+  it("uses the same tag/location intersection for recap, pending/reviewed highlights and decisions", () => {
+    const filters = { tagID: "tag", zoneID: "zone" };
+    resource.data = { ...resource.data!, summary: "## Work\nOnly matching evidence.", scope: { tag_id: "tag", zone_id: "zone" } };
+    const html = render("2026-10-15", true, filters);
+    const paths = resource.useResource.mock.calls.map(([path]) => String(path));
+    for (const prefix of ["/v1/recaps/", "/v1/inbox?", "/v1/decisions?"]) {
+      const matching = paths.filter((path) => path.startsWith(prefix));
+      expect(matching.length).toBeGreaterThan(0);
+      for (const path of matching) {
+        const query = new URLSearchParams(path.split("?")[1]);
+        expect(query.get("tag_id")).toBe("tag");
+        expect(query.get("zone_id")).toBe("zone");
+      }
+    }
+    expect(html).toContain("Only matching evidence.");
+    for (const unscoped of ["Export Markdown", "Saved versions", "Summary language", "Chat with this day", "Find highlights", "Find decisions"])
+      expect(html).not.toContain(unscoped);
+  });
+
+  it("never displays a full-day narrative as the response to a filtered recap request", () => {
+    resource.data = { ...resource.data!, summary: "Private excluded full-day narrative." };
+    const html = render("2026-10-15", false, { tagID: "tag", zoneID: "" });
+    expect(html).not.toContain("Private excluded full-day narrative.");
+    expect(html).toContain("The recap does not match the selected filters.");
+  });
+
+  it("hides invalidated scoped prose while its separate recap is being prepared", () => {
+    resource.data = { ...resource.data!, summary: "Previous membership narrative.", stale: true,
+      scope: { tag_id: "tag", zone_id: null }, generation_state: "queued" };
+    const html = render("2026-10-15", false, { tagID: "tag", zoneID: "" });
+    expect(html).not.toContain("Previous membership narrative.");
+    expect(html).toContain("Preparing a recap for the selected filters…");
+  });
+
+  it("places one global filter bar above recap and timeline and preserves its selection on another day", () => {
+    rememberDayFilters({ tagID: "tag", zoneID: "zone" });
+    resource.data = { ...resource.data!, scope: { tag_id: "tag", zone_id: "zone" }, no_matching_sources: true };
+    const props = { timezone: "UTC", onUpload: () => {}, onPrepare: () => {}, onRewind: () => {}, onChat: () => {} };
+    for (const day of ["2026-10-15", "2026-10-14"]) {
+      const html = renderToStaticMarkup(<Today {...props} day={day} />);
+      expect(html.indexOf('aria-label="Day filters"')).toBeLessThan(html.indexOf('class="recap-section"'));
+      expect(html.indexOf('aria-label="Day filters"')).toBeLessThan(html.indexOf('class="timeline-section"'));
+      expect(html.match(/<select/g)?.length).toBe(4); // Tag, location, highlight category and quick rewind.
+      expect(html).toContain("Clear filters");
+      expect(html).toContain("No recordings match the selected filters for this day.");
+      expect(html).not.toContain("The day recap still covers the whole day.");
+      const timelinePath = resource.useResource.mock.calls.map(([path]) => String(path)).reverse().find((path) => path.startsWith("/v1/recording-groups?"))!;
+      const query = new URLSearchParams(timelinePath.split("?")[1]);
+      expect(query.get("day")).toBe(day); expect(query.get("tag_id")).toBe("tag"); expect(query.get("zone_id")).toBe("zone"); expect(query.get("offset")).toBe("0");
+    }
   });
 });

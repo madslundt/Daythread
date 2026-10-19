@@ -26,6 +26,7 @@ struct InboxView: View {
     let day: String?
     let topicSources: Set<String>?
     let topicPassages: [InboxTopicPassage]
+    let filters: DayFilterScope
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var status = "pending"
@@ -40,10 +41,10 @@ struct InboxView: View {
     @State private var end = Date()
     @State private var message: String?
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
-    private var queryKey: String { "\(model.archiveIdentity)|\(model.archiveRevision)|\(day ?? "")|\(status)|\(kind)|\(due)|\(offset)|\(topicSources?.sorted().joined() ?? "")|\(topicPassages)" }
+    private var queryKey: String { "\(model.archiveIdentity)|\(model.archiveRevision)|\(day ?? "")|\(filters.identity)|\(status)|\(kind)|\(due)|\(offset)|\(topicSources?.sorted().joined() ?? "")|\(topicPassages)" }
 
-    init(day: String? = nil, topicSources: Set<String>? = nil, topicPassages: [InboxTopicPassage] = []) {
-        self.day = day; self.topicSources = topicSources; self.topicPassages = topicPassages
+    init(day: String? = nil, topicSources: Set<String>? = nil, topicPassages: [InboxTopicPassage] = [], filters: DayFilterScope = .init()) {
+        self.day = day; self.topicSources = topicSources; self.topicPassages = topicPassages; self.filters = filters
     }
 
     @Environment(\.locale) private var interfaceLocale
@@ -53,6 +54,7 @@ struct InboxView: View {
             Section {
                 EditorialTitle(eyebrow: L10n.text("Follow through"), title: L10n.text("Keep things moving.")).editorialRow()
                 if let day { Text(day).font(.subheadline).foregroundStyle(.secondary) }
+                if filters.isFiltered { Text(L10n.text("Only recordings matching every selected filter are included.")).font(.caption).foregroundStyle(.secondary) }
             }
             Section {
                 Picker(L10n.text("Show"), selection: $status) {
@@ -104,13 +106,13 @@ struct InboxView: View {
                         Label(page.coverage.jobs["failed", default: 0] > 0 ? L10n.text("Scan coverage · \(page.coverage.jobs["failed", default: 0]) failed") : L10n.text("Scan status & coverage"), systemImage: "checkmark.shield")
                     }
                 }
-                DisclosureGroup(L10n.text("Scan earlier recordings / retry")) {
+                if !filters.isFiltered { DisclosureGroup(L10n.text("Scan earlier recordings / retry")) {
                     DatePicker(L10n.text("From"), selection: $start, displayedComponents: .date)
                     DatePicker(L10n.text("Through"), selection: $end, displayedComponents: .date)
                     Text(L10n.text("Up to 31 days in \(diary.calendar.timeZone.identifier). New transcripts scan automatically. The local worker must be running."))
                         .font(.caption).foregroundStyle(.secondary)
                     Button(L10n.text("Scan / retry failed work")) { Task { await scan() } }.disabled(busy)
-                }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone)
+                }.environment(\.calendar, diary.calendar).environment(\.timeZone, diary.calendar.timeZone) }
             } header: { Text(L10n.text("Recording coverage")) } footer: {
                 Text(L10n.text("Proposals come from your recorded conversations and need your review."))
             }
@@ -143,7 +145,7 @@ struct InboxView: View {
     private func load() async {
         let key = queryKey
         do {
-            var query = ["status": status, "limit": topicSources == nil ? "50" : "200", "offset": topicSources == nil ? "\(offset)" : "0"]
+            var query = ["status": status, "limit": topicSources == nil ? "50" : "200", "offset": topicSources == nil ? "\(offset)" : "0"].merging(filters.query) { _, new in new }
             if let day { query["day"] = day }
             if !kind.isEmpty { query["kind"] = kind }
             if !due.isEmpty { query["due"] = due }

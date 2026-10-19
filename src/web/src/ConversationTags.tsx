@@ -25,7 +25,6 @@ export function TagFilter({ value, onChange }: { value: string; onChange: (id: s
       {directory.data?.items.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
     </select></label>
     {directory.error ? <ErrorState message={directory.error} retry={directory.refresh} /> : null}
-    {value ? <p className="caption">{t("Tag and location filters apply together to recordings. The day recap still covers the whole day.")}</p> : null}
   </div>;
 }
 

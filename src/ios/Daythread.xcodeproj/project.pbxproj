@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DA7C0A160000000000000001 /* DayFiltersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A160000000000000002 /* DayFiltersView.swift */; };
+		DA7C0A150000000000000001 /* DayTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A150000000000000002 /* DayTimelineView.swift */; };
 		DA7C0A140000000000000001 /* RecapOriginalTopicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */; };
 		DA7C0A130000000000000001 /* DayAtGlanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A130000000000000002 /* DayAtGlanceView.swift */; };
 		DA7C0A120000000000000001 /* InboxFollowUpsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A120000000000000002 /* InboxFollowUpsView.swift */; };
@@ -102,6 +104,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DA7C0A160000000000000002 /* DayFiltersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayFiltersView.swift; sourceTree = "<group>"; };
+		DA7C0A150000000000000002 /* DayTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTimelineView.swift; sourceTree = "<group>"; };
 		DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapOriginalTopicsView.swift; sourceTree = "<group>"; };
 		DA7C0A130000000000000002 /* DayAtGlanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAtGlanceView.swift; sourceTree = "<group>"; };
 		DA7C0A120000000000000002 /* InboxFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFollowUpsView.swift; sourceTree = "<group>"; };
@@ -243,6 +247,8 @@
 				2721B9908BFBD82A5D7663D7 /* DaythreadApp.swift */,
 				71A187A0A53A548A61D917AB /* DaythreadLicense.txt */,
 				18BD1FFD6D04485108E8C274 /* DayView.swift */,
+				DA7C0A160000000000000002 /* DayFiltersView.swift */,
+				DA7C0A150000000000000002 /* DayTimelineView.swift */,
 				DA7C0A130000000000000002 /* DayAtGlanceView.swift */,
 				2971E2A1230492061E3C7FBA /* DecisionEditor.swift */,
 				08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */,
@@ -455,6 +461,8 @@
 				F0D86B200F8B37090F349894 /* ConversationPrepView.swift in Sources */,
 				A6AB75ADE8A4F593CC1B638A /* ConversationTagsView.swift in Sources */,
 				5F58C435E7754AE9BAC1A1C7 /* DayView.swift in Sources */,
+				DA7C0A160000000000000001 /* DayFiltersView.swift in Sources */,
+				DA7C0A150000000000000001 /* DayTimelineView.swift in Sources */,
 				DA7C0A130000000000000001 /* DayAtGlanceView.swift in Sources */,
 				40EC2BCFE8A3EF97AAB11402 /* DaythreadApp.swift in Sources */,
 				7755AE4258FFBAB63F9358A7 /* DecisionEditor.swift in Sources */,

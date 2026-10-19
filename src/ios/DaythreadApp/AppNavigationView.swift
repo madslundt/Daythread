@@ -99,6 +99,7 @@ struct DayQuickActions: View {
     let importAudio: () -> Void
     let rewind: () -> Void
     let ask: () -> Void
+    var showsDayChat = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Environment(\.locale) private var interfaceLocale
@@ -109,9 +110,9 @@ struct DayQuickActions: View {
             Button(action: importAudio) { tile(L10n.text("Add"), symbol: "plus", color: Theme.accent) }
                 .accessibilityLabel(L10n.text("Add audio")).accessibilityIdentifier("day.import")
             Button(action: rewind) { tile(L10n.text("Rewind"), symbol: "gobackward.10", color: Theme.sage) }
-            Button(action: ask) {
+            if showsDayChat { Button(action: ask) {
                 tile(L10n.text("Chat"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
-            }.accessibilityLabel(L10n.text("Ask your day")).accessibilityIdentifier("day.chat")
+            }.accessibilityLabel(L10n.text("Ask your day")).accessibilityIdentifier("day.chat") }
         }.buttonStyle(.plain)
     }
 

@@ -7,6 +7,7 @@ struct DayAtGlanceSections: View {
     var topicSources: Set<String>? = nil
     var topicPassages: [InboxTopicPassage] = []
     var topicVersions: [String: String] = [:]
+    var filters = DayFilterScope()
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -15,8 +16,10 @@ struct DayAtGlanceSections: View {
     @State private var coverage: InboxCoverage?
     @State private var inboxError: String?
     @State private var decisionError: String?
-    @State private var scanError: String?
-    @State private var scanMessage: String?
+    @State private var inboxScanError: String?
+    @State private var inboxScanMessage: String?
+    @State private var decisionScanError: String?
+    @State private var decisionScanMessage: String?
     @State private var loading = false
     @State private var scanning = false
     @State private var findingDecisions = false
@@ -27,9 +30,11 @@ struct DayAtGlanceSections: View {
     @State private var visibleDecisions = 5
     @State private var category = ""
     private var scope: String {
-        model.archiveIdentity + day + (topicSources?.sorted().joined() ?? "day") + String(describing: topicPassages) + topicVersions.sorted { $0.key < $1.key }.map { $0.key + $0.value }.joined()
+        model.archiveIdentity + day + filters.identity + (topicSources?.sorted().joined() ?? "day") + String(describing: topicPassages) + topicVersions.sorted { $0.key < $1.key }.map { $0.key + $0.value }.joined()
     }
     private var key: String { scope + model.archiveRevision + refresh.uuidString }
+    private var scopedItems: [InboxItem] { loadedScope == scope ? items : [] }
+    private var scopedDecisions: [DecisionRecord] { loadedScope == scope ? decisions : [] }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
 
     var body: some View {
@@ -37,7 +42,7 @@ struct DayAtGlanceSections: View {
         Section {
             Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM") } ?? day).font(.subheadline).foregroundStyle(.secondary)
             Text(L10n.text("Proposals come from your recorded conversations and need your review.")).font(.caption).foregroundStyle(.secondary)
-            if loading { ProgressView(L10n.text("Loading action points…")) }
+            if loading || loadedScope != scope { ProgressView(L10n.text("Loading action points…")) }
             ErrorNote(message: inboxError)
             if inboxError != nil { Button(L10n.text("Retry")) { refresh = UUID() } }
             Picker(L10n.text("Show"), selection: $category) {
@@ -70,10 +75,10 @@ struct DayAtGlanceSections: View {
         if topicSources == nil { scanSection }
     }
 
-    private var scopedInbox: some View { InboxView(day: day, topicSources: topicSources, topicPassages: topicPassages) }
+    private var scopedInbox: some View { InboxView(day: day, topicSources: topicSources, topicPassages: topicPassages, filters: filters) }
 
     private func inboxGroup(_ intent: InboxIntent) -> some View {
-        let relevant = items.filter { $0.intent == intent }.enumerated().sorted {
+        let relevant = scopedItems.filter { $0.intent == intent }.enumerated().sorted {
             if ($0.element.overdue == true) != ($1.element.overdue == true) { return $0.element.overdue == true }
             let lhs = $0.element.health != "current", rhs = $1.element.health != "current"
             return lhs == rhs ? $0.offset < $1.offset : lhs
@@ -82,7 +87,7 @@ struct DayAtGlanceSections: View {
             ForEach(relevant.prefix(5)) { item in
                 NavigationLink { InboxDetail(id: item.id) } label: { InboxOverviewRow(item: item) }
             }
-            if relevant.isEmpty && !loading && inboxError == nil {
+            if relevant.isEmpty && !loading && inboxError == nil && loadedScope == scope {
                 Text(L10n.text("No items in this group yet. Scans may still be incomplete.")).font(.caption).foregroundStyle(.secondary)
             }
             if relevant.count > 5 { NavigationLink(L10n.text("Review all items")) { scopedInbox } }
@@ -93,7 +98,7 @@ struct DayAtGlanceSections: View {
         Section {
             ErrorNote(message: decisionError)
             if decisionError != nil { Button(L10n.text("Refresh decisions")) { refresh = UUID() } }
-            ForEach(decisions.prefix(visibleDecisions)) { record in
+            ForEach(scopedDecisions.prefix(visibleDecisions)) { record in
                 NavigationLink { DecisionDetail(id: record.id) } label: {
                     VStack(alignment: .leading, spacing: 7) {
                         DecisionRow(record: record)
@@ -101,32 +106,38 @@ struct DayAtGlanceSections: View {
                     }
                 }
             }
-            if decisions.count > visibleDecisions {
+            if scopedDecisions.count > visibleDecisions {
                 Button(L10n.text("Load more decisions")) { visibleDecisions += 10 }
             }
-            if decisions.isEmpty && !loading && decisionError == nil {
+            if scopedDecisions.isEmpty && !loading && decisionError == nil && loadedScope == scope {
                 Text(topicSources == nil ? L10n.text("No decision records for this day.") : L10n.text("No current decision choices linked to an identified passage in this topic."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Text(L10n.text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final."))
                 .font(.caption).foregroundStyle(.secondary)
+            if topicSources == nil {
+                Button { Task { await scanDecisions() } } label: { Label(filters.isFiltered ? L10n.text("Scan whole day") : L10n.text("Find decisions"), systemImage: "arrow.triangle.branch") }.disabled(findingDecisions)
+                if findingDecisions { ProgressView(L10n.text("Finding earlier decisions…")) }
+                if let decisionScanMessage { Text(decisionScanMessage).font(.caption).foregroundStyle(.secondary) }
+                ErrorNote(message: decisionScanError)
+            }
         } header: { Text(L10n.text("Decisions")) }
 
     }
 
     private var scanSection: some View {
         Section {
-            Button { Task { await scanDay() } } label: { Label(L10n.text("Find items from this day"), systemImage: "text.magnifyingglass") }.disabled(scanning)
-            Button { Task { await scanDecisions() } } label: { Label(L10n.text("Find decisions"), systemImage: "arrow.triangle.branch") }.disabled(findingDecisions)
-            if scanning || findingDecisions { ProgressView(L10n.text("Finding follow-ups")) }
-            if let scanMessage { Text(scanMessage).font(.caption).foregroundStyle(.secondary) }
-            ErrorNote(message: scanError)
+            Button { Task { await scanDay() } } label: { Label(filters.isFiltered ? L10n.text("Scan whole day") : L10n.text("Find items from this day"), systemImage: "text.magnifyingglass") }.disabled(scanning)
+            if scanning { ProgressView(L10n.text("Finding follow-ups")) }
+            if let inboxScanMessage { Text(inboxScanMessage).font(.caption).foregroundStyle(.secondary) }
+            ErrorNote(message: inboxScanError)
             if let coverage {
                 if coverage.jobs["queued", default: 0] + coverage.jobs["running", default: 0] > 0 {
                     Text(L10n.text("Action points are being extracted from your recordings.")).font(.caption).foregroundStyle(.secondary)
                 }
                 if coverage.jobs["failed", default: 0] > 0 {
-                    Text(L10n.text("Some action extraction failed. Open Inbox to retry the affected days.")).font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("Some follow-ups or notes could not be extracted.")).font(.caption).foregroundStyle(.secondary)
+                    Button(filters.isFiltered ? L10n.text("Retry whole day") : L10n.text("Retry follow-up extraction")) { Task { await scanDay() } }.disabled(scanning)
                 }
                 DisclosureGroup(L10n.text("Scan status & coverage")) {
                     Text(L10n.text("\(coverage.jobs["done", default: 0]) scanned · \(coverage.jobs["queued", default: 0]) waiting · \(coverage.jobs["running", default: 0]) extracting · \(coverage.jobs["failed", default: 0]) failed · \(coverage.unscanned_sources) unscanned sources"))
@@ -134,7 +145,7 @@ struct DayAtGlanceSections: View {
                 }
             }
             InboxLink()
-        } header: { Text(L10n.text("Recording coverage")) }
+        } header: { Text(L10n.text("Follow-up extraction")) }
     }
 
     private func load() async {
@@ -170,7 +181,7 @@ struct DayAtGlanceSections: View {
     }
 
     private func fetchInbox(_ client: BackendClient, status: String, requested: String) async throws -> (items: [InboxItem], coverage: InboxCoverage) {
-        var query = ["day": day, "status": status, "limit": "200", "offset": "0"]
+        var query = ["day": day, "status": status, "limit": "200", "offset": "0"].merging(filters.query) { _, new in new }
         let page = try await client.decoded("v1/inbox", query: query, as: InboxPage.self)
         var incoming = page.items
         while incoming.count < page.total {
@@ -186,7 +197,7 @@ struct DayAtGlanceSections: View {
     private func loadDecisions(_ requested: String) async {
         do {
             let client = try model.client()
-            var query = ["day": day, "include_dismissed": "false", "limit": "200", "offset": "0"]
+            var query = ["day": day, "include_dismissed": "false", "limit": "200", "offset": "0"].merging(filters.query) { _, new in new }
             let page: DecisionList = try await client.decisionRequest("v1/decisions", query: query)
             var incoming = page.items
             while incoming.count < page.total {
@@ -206,22 +217,23 @@ struct DayAtGlanceSections: View {
     }
 
     private func invalidateScans() {
-        scanID = UUID(); decisionScanID = UUID(); scanning = false; findingDecisions = false; scanMessage = nil; scanError = nil
+        scanID = UUID(); decisionScanID = UUID(); scanning = false; findingDecisions = false
+        inboxScanMessage = nil; inboxScanError = nil; decisionScanMessage = nil; decisionScanError = nil
     }
     private func scanDay() async {
         let requested = scope, token = UUID(), selectedDay = day
-        scanID = token; scanning = true; scanError = nil
+        scanID = token; scanning = true; inboxScanError = nil; inboxScanMessage = nil
         defer { if scanID == token { scanning = false } }
         do {
             let result = try await model.client().request("v1/inbox/extractions", method: "POST", body: ["start_day": selectedDay, "end_day": selectedDay, "retry_failed": true])
             guard !Task.isCancelled, scope == requested, scanID == token else { return }
-            scanMessage = L10n.text("\(result["total"].integer) windows queued or already scanned.")
+            inboxScanMessage = L10n.text("\(result["total"].integer) windows queued or already scanned.")
             await load()
-        } catch { if !Task.isCancelled, scope == requested, scanID == token { scanError = L10n.error(error) } }
+        } catch { if !Task.isCancelled, scope == requested, scanID == token { inboxScanError = L10n.error(error) } }
     }
     private func scanDecisions() async {
         let requested = scope, token = UUID(), selectedDay = day
-        decisionScanID = token; findingDecisions = true; scanError = nil; scanMessage = nil
+        decisionScanID = token; findingDecisions = true; decisionScanError = nil; decisionScanMessage = nil
         defer { if decisionScanID == token { findingDecisions = false } }
         do {
             let client = try model.client()
@@ -230,15 +242,15 @@ struct DayAtGlanceSections: View {
                 let result: DecisionExtraction = try await client.decisionRequest("v1/decision-extractions", method: "POST", body: request)
                 guard !Task.isCancelled, scope == requested, decisionScanID == token else { return }
                 guard result.status != "stale", result.status != "removed" else {
-                    scanMessage = nil
+                    decisionScanMessage = nil
                     throw BackendFailure(message: L10n.text("Recorded evidence changed. Refresh this day before finding decisions again."))
                 }
-                scanMessage = L10n.text("Decision scan: \(result.processed_sources) of \(result.total_sources) recordings")
+                decisionScanMessage = L10n.text("Decision scan: \(result.processed_sources) of \(result.total_sources) recordings")
                 guard let next = result.next_run_id else { break }
                 request = DecisionExtractionRequest(run_id: next)
             }
             await load()
-        } catch { if !Task.isCancelled, scope == requested, decisionScanID == token { scanError = L10n.error(error) } }
+        } catch { if !Task.isCancelled, scope == requested, decisionScanID == token { decisionScanError = L10n.error(error) } }
     }
 }
 

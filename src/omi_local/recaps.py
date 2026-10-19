@@ -189,16 +189,16 @@ class Recaps:
     ) -> str:
         memory = self.memory
         key = self.group_key(group)
-        cached = memory.store.recap_summary(key)
+        cached = self.group_summary(key)
         if cached is not None:
             return cached
-        await ensure_topics(memory, {source["id"] for source in group.sources})
+        await self.prepare_topics(group)
         sources = self.sources(group)
         if not sources:
             summary = NO_CONTENT
         else:
             summary = await memory.inference.summarize(
-                topic_sources(sources),
+                self.note_sources(sources),
                 "notes from a finished upload or a live conversation followed by a long pause. "
                 "An uploaded file may contain only part of a conversation. " + RELEVANCE +
                 "Preserve short meaningful answers in context, dates, "
@@ -225,8 +225,20 @@ class Recaps:
             if summary != NO_CONTENT and not any(s["id"].lower() in summary.lower()
                                                  for s in sources):
                 raise InferenceError("Conversation notes require original source citations")
-        memory.store.save_recap_summary(key, summary, sources, guard)
+        self.save_group_summary(key, summary, sources, guard)
         return summary
+
+    def group_summary(self, key):
+        return self.memory.store.recap_summary(key)
+
+    def save_group_summary(self, key, summary, sources, guard):
+        self.memory.store.save_recap_summary(key, summary, sources, guard)
+
+    async def prepare_topics(self, group):
+        await ensure_topics(self.memory, {source["id"] for source in group.sources})
+
+    def note_sources(self, sources):
+        return topic_sources(sources)
 
     async def prepare(self, now: datetime) -> None:
         groups = self.groups(now)
@@ -251,8 +263,20 @@ class Recaps:
         existing = memory.store.diary(day.isoformat())
         if existing and existing["fingerprint"] == key:
             return self.cached(day, now)
+        result = await self.synthesize(
+            day, now, groups, guard, memory.window_data(start, end) | self.status(groups)
+        )
+        if any(group.ready for group in groups) or existing:
+            memory.store.save_diary(day.isoformat(), key, result, guard=guard)
+            publish_recap(memory, result, key, guard=guard)
+            return self.cached(day, now)
+        return result
+
+    async def synthesize(self, day, now, groups, guard, result):
+        """Share the grounded preparation/synthesis pipeline across independent recap scopes."""
+        memory = self.memory
+        start, end = memory.day_window(day)
         ready = [g for g in groups if g.ready]
-        result = memory.window_data(start, end) | self.status(groups)
         blocked = sum(r["state"] == "blocked" for r in result["sources"])
         sources, inputs = [], []
         for group in ready:
@@ -324,13 +348,10 @@ class Recaps:
                 counts = {"eligible_transcripts": len(sources),
                           "pending_chunks": result["pending_chunks"],
                           "blocked_chunks": blocked,
-                          "selection_observed_at": result["completeness"]["as_of"]}
+                          "selection_observed_at": (result.get("completeness") or {}).get(
+                              "as_of", stamp(now))}
                 result["evidence"] = memory.evidence_metadata(
                     sources, result["summary"], "transcribed_recordings", start, end,
                     result["completeness"], trace, counts, kind="recap",
                 )
-        if ready or existing:
-            memory.store.save_diary(day.isoformat(), key, result, guard=guard)
-            publish_recap(memory, result, key, guard=guard)
-            return self.cached(day, now)
         return result

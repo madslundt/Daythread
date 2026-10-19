@@ -1,0 +1,81 @@
+{
+  "kind": "synthetic_exact_vector_scan_no_model_quality_claim",
+  "python": "3.15.0",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "dot_product": "math.sumprod; exact float32 vectors, extended-precision accumulation",
+  "seed": 20261019,
+  "scope": "entire disposable synthetic corpus",
+  "memory_note": "tracemalloc measures Python allocations, not native SQLite/RSS",
+  "seeding_note": "direct synthetic vector inserts; not model indexing throughput",
+  "runs": [
+    {
+      "passages": 1000,
+      "recordings": 100,
+      "dimension": 1024,
+      "candidate_limit": 50,
+      "max_passages_per_source": 3,
+      "returned_passages": 50,
+      "returned_recordings": 49,
+      "seeding_seconds": 0.104,
+      "seeded_passages_per_second": 9631.0,
+      "sqlite_on_disk_bytes": 6643712,
+      "first_scan_ms": 28.874,
+      "warm_scan_samples_ms": [
+        28.81,
+        28.848,
+        28.188
+      ],
+      "warm_scan_median_ms": 28.81,
+      "warm_scan_p95_ms": 28.848,
+      "traced_scan_ms": 644.909,
+      "traced_python_current_bytes": 111446,
+      "traced_python_peak_bytes": 368509
+    },
+    {
+      "passages": 10000,
+      "recordings": 1000,
+      "dimension": 1024,
+      "candidate_limit": 50,
+      "max_passages_per_source": 3,
+      "returned_passages": 50,
+      "returned_recordings": 50,
+      "seeding_seconds": 0.671,
+      "seeded_passages_per_second": 14907.5,
+      "sqlite_on_disk_bytes": 58245120,
+      "first_scan_ms": 273.406,
+      "warm_scan_samples_ms": [
+        274.321,
+        272.217,
+        384.347
+      ],
+      "warm_scan_median_ms": 274.321,
+      "warm_scan_p95_ms": 384.347,
+      "traced_scan_ms": 6493.985,
+      "traced_python_current_bytes": 111366,
+      "traced_python_peak_bytes": 368429
+    },
+    {
+      "passages": 100000,
+      "recordings": 10000,
+      "dimension": 1024,
+      "candidate_limit": 50,
+      "max_passages_per_source": 3,
+      "returned_passages": 50,
+      "returned_recordings": 50,
+      "seeding_seconds": 4.298,
+      "seeded_passages_per_second": 23267.0,
+      "sqlite_on_disk_bytes": 574382080,
+      "first_scan_ms": 2713.358,
+      "warm_scan_samples_ms": [
+        2706.773,
+        2950.741,
+        3096.376
+      ],
+      "warm_scan_median_ms": 2950.741,
+      "warm_scan_p95_ms": 3096.376,
+      "traced_scan_ms": 66158.04,
+      "traced_python_current_bytes": 111398,
+      "traced_python_peak_bytes": 368461
+    }
+  ]
+}

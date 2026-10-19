@@ -40,6 +40,7 @@ public final class MainActivity extends Activity {
     private boolean updatingPolicyUI;
     private Runnable permissionAction;
     private ValueCallback<Uri[]> chooser;
+    private final ArrayList<Uri> sharedAudio = new ArrayList<>();
     private BluetoothLeScanner scanner;
     private ScanCallback scanCallback;
     private AlertDialog scanDialog;
@@ -77,6 +78,7 @@ public final class MainActivity extends Activity {
         navigation = new LinearLayout(this); navigation.setPadding(dp(12), 0, dp(12), dp(8)); root.addView(navigation);
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         configureWeb();
+        receiveSharedAudio(getIntent());
         io.execute(() -> {
             try { AppState.outbox(this); UploadJob.schedule(this); UploadJob.pump(this); }
             catch (Exception e) { AppState.error(this, e.getMessage()); }
@@ -94,7 +96,19 @@ public final class MainActivity extends Activity {
         if (resumed && screen.equals("archive")) { web.onResume(); web.resumeTimers(); }
         else { web.onPause(); web.pauseTimers(); }
     }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); if (intent.getBooleanExtra("capture", false)) showCapture(); }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); if (intent.getBooleanExtra("capture", false)) showCapture(); else if (receiveSharedAudio(intent)) showArchive(); }
+    private boolean receiveSharedAudio(Intent intent) {
+        if (intent == null || !(Intent.ACTION_SEND.equals(intent.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction()))) return false;
+        sharedAudio.clear();
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (uri != null) sharedAudio.add(uri);
+        } else {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris != null) sharedAudio.addAll(uris);
+        }
+        return !sharedAudio.isEmpty();
+    }
     @Override protected void onSaveInstanceState(Bundle out) { out.putString("screen", screen); super.onSaveInstanceState(out); }
     private boolean configured() { try { AppState.destination(this); return true; } catch (RuntimeException e) { return false; } }
     private void selectScreen(String selected) {
@@ -430,6 +444,9 @@ public final class MainActivity extends Activity {
             @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (chooser != null) chooser.onReceiveValue(null);
+                if (!sharedAudio.isEmpty()) {
+                    callback.onReceiveValue(sharedAudio.toArray(new Uri[0])); sharedAudio.clear(); return true;
+                }
                 chooser = callback;
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/*", "text/plain", "application/x-subrip", "application/json", "text/calendar", "application/zip"});

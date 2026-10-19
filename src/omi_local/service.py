@@ -487,8 +487,14 @@ class Memory:
                     else {}
                 )
         if query:
-            sources, truncated = bound_sources(list(sources.values()), query, limit)
-            details.update(evidence_mode="bounded_excerpts", evidence_character_budget=12000)
+            sources, truncated = bound_sources(
+                list(sources.values()), query, limit,
+                character_budget=self.settings.retrieval_evidence_character_budget,
+            )
+            details.update(
+                evidence_mode="bounded_excerpts",
+                evidence_character_budget=self.settings.retrieval_evidence_character_budget,
+            )
         else:
             details["recordings_sampled"] |= len(sources) > limit
             sources, _ = bound_sources(list(sources.values()), query, limit, full_transcripts=True)

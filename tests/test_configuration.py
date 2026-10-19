@@ -27,7 +27,7 @@ def settings(tmp_path):
     )
 
 
-def test_hosted_startup_ignores_restored_model_and_worker_overrides(settings):
+def test_hosted_startup_preserves_account_providers_and_ignores_operator_overrides(settings):
     settings.data_dir.mkdir()
     (settings.data_dir / ".private-settings.json").write_text(json.dumps({"overrides": {
         "stt_base_url": "https://external.example.com/v1",
@@ -60,17 +60,28 @@ def test_hosted_startup_ignores_restored_model_and_worker_overrides(settings):
     configuration = Configuration(initial)
     active = configuration.startup(initial)
     for key in (
-        "stt_base_url", "stt_routes", "llm_routes", "inference_token", "embedding_enabled",
-        "embedding_model", "embedding_revision", "embedding_dimension", "embedding_token",
+        "llm_routes", "inference_token",
         "chat_query_expansion", "worker_enabled", "diarization_enabled",
         "voice_recognition_enabled", "audio_forwarding_enabled", "data_dir",
     ):
         assert getattr(active, key) == getattr(initial, key)
+    assert active.stt_base_url == "https://external.example.com/v1"
+    assert active.stt_routes["da"].model == "unauthorized"
+    assert not active.embedding_enabled
+    assert active.embedding_model == "unauthorized"
+    assert active.embedding_revision == "other-revision"
+    assert active.embedding_dimension == 2
+    assert active.embedding_token.get_secret_value() == "imported-key"
     assert active.summary_language == "da"
     assert active.translation_languages == ["da", "en"]
     assert configuration.desired(active) == active
     assert configuration.overrides == {
-        "summary_language": "da", "translation_languages": ["da", "en"]
+        "summary_language": "da", "translation_languages": ["da", "en"],
+        "stt_base_url": "https://external.example.com/v1",
+        "stt_routes": {"da": {"model": "unauthorized"}},
+        "embedding_enabled": False, "embedding_model": "unauthorized",
+        "embedding_revision": "other-revision", "embedding_dimension": 2,
+        "embedding_token": "imported-key",
     }
 
 

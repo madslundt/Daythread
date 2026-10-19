@@ -88,6 +88,7 @@ struct RootView: View {
     @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .today : .more
     @State private var settingsPath: [SettingsDestination] = []
     @State private var todayNavigationID = UUID()
+    @State private var incomingAudioURL: URL?
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
@@ -146,11 +147,24 @@ struct RootView: View {
             if phase == .active { model.applyRecordingSchedule(); model.reconnectBackend() }
         }
         .background(CompletionSceneOverlay(model: model, notifications: notifications))
+        .onOpenURL { url in
+            guard url.isFileURL else { return }
+            incomingAudioURL = url
+            selectedTab = .today
+        }
+        .sheet(item: Binding(get: { incomingAudioURL.map(ImportedAudioURL.init) }, set: { incomingAudioURL = $0?.url })) { item in
+            AudioImportView(sharedURL: item.url)
+        }
         .alert("Daythread", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.text("OK")) { model.error = nil }
         } message: { Text(L10n.key(model.error ?? "")) }
     }
 
+}
+
+private struct ImportedAudioURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
 
 struct ProfileEditorView: View {

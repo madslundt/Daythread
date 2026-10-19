@@ -12,7 +12,7 @@ from pydantic import SecretStr, ValidationError
 from .settings import DEPLOYMENT_FIELDS, RUNTIME_FIELDS, Settings, validate_setting_changes
 
 RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
-    key for key in Settings.model_fields if key.startswith("embedding_")
+    key for key in Settings.model_fields if key.startswith(("embedding_", "reranker_"))
 }
 ROUTE_FIELDS = {"stt_routes", "llm_routes", "embedding_routes"}
 RETIRED_FIELDS = {
@@ -50,7 +50,7 @@ def group(key: str) -> str:
         "summary_language", "translation_languages"
     }:
         return "Language models & chat"
-    if key.startswith("embedding_"):
+    if key.startswith(("embedding_", "retrieval_", "reranker_")):
         return "Semantic search"
     if key in {"inference_token", "inference_timeout_seconds"}:
         return "Local inference"
@@ -134,11 +134,41 @@ DESCRIPTIONS = {
     "embedding_enabled": "Requires a model, immutable revision and positive output dimension.",
     "embedding_routes": "Use a separate embedding model for selected transcript languages. "
     "Every model needs its own immutable revision and vector dimension. Each language has its "
-    "own index; each model indexes all transcripts, and cross-language quality depends on that model, "
+    "own index; each model indexes all transcripts, and cross-language quality depends on that "
+    "model, "
     "vectors from different models are never compared. More routes increase indexing work and "
     "storage. Model, endpoint, revision, dimension or prefix changes rebuild that route's index; "
-    "changing only its key does not. Previous vectors are removed after replacement coverage is complete.",
+    "changing only its key does not. Previous vectors are removed after replacement coverage "
+    "is complete.",
     "embedding_revision": "Change this when replacing embedding weights behind the same alias.",
+    "embedding_chunking_strategy": "Topic-aware token chunks use validated transcript offsets. "
+    "Missing or invalid topics use deterministic sentence-aware chunks. Changes rebuild the index.",
+    "embedding_tokenizer": "Absolute local tokenizer.json file for the selected model; install "
+    "the tokenization extra. utf8 uses a conservative byte-level BPE upper bound (Qwen3), "
+    "so chunks may be smaller. No tokenizer is downloaded automatically.",
+    "embedding_tokenizer_revision": "Immutable tokenizer revision. Local file content is also "
+    "fingerprinted; changing it rebuilds the index after restart.",
+    "embedding_target_tokens": "Target 320 tokens; complete sentences may approach the maximum.",
+    "embedding_max_tokens": "Hard passage token ceiling, also bounded by prefixed input limits.",
+    "embedding_overlap_tokens": "Overlap within one topic/source only; initial value 48.",
+    "embedding_max_input_tokens": "Endpoint model input limit including prefixes and specials. "
+    "Requests exceeding this limit fail safely instead of being truncated.",
+    "embedding_special_tokens": "Reserved model-added tokens (BOS/EOS/template). "
+    "Must cover the selected endpoint's exact template overhead.",
+    "embedding_query_format": "auto recognizes Qwen3-Embedding and E5. Other models use plain "
+    "text. Explicit nonempty query/document prefixes override model formatting.",
+    "embedding_query_instruction": "English retrieval instruction used only by Qwen3 formatting.",
+    "embedding_send_dimensions": "Send the optional dimensions API parameter only when the "
+    "endpoint supports it. Response dimensions are always strictly validated.",
+    "embedding_min_score": "Default -1 keeps all ranked cosine candidates. Calibrate any "
+    "rejection threshold against held-out positive and negative queries for the chosen model.",
+    "retrieval_evidence_character_budget": "Total transcript excerpt budget sent to answer "
+    "generation for topical searches; source diversity is allocated before extra passages.",
+    "reranker_enabled": "Optional bounded passage reranking via a configured /rerank service. "
+    "Disabled by default pending real-model measurements; failures preserve fused ranking.",
+    "reranker_base_url": "Explicit compatible /rerank provider base URL. Local HTTP(S) or "
+    "hosted HTTPS; selected transcript passages and query are sent to this provider.",
+    "reranker_token": "Reranking provider key; stays on the backend and is never returned.",
     "llm_revision": "Change this when replacing model weights to invalidate derived caches.",
     "llm_enable_thinking": "Default uses the model's setting. Supported gateways can enable or "
     "disable reasoning explicitly.",
@@ -242,7 +272,8 @@ class Configuration:
                 if (
                     key in account_model_fields
                     or not key.startswith(("stt_", "llm_", "embedding_", "chat_", "inference_",
-                                          "diarization_", "voice_recognition_", "audio_forwarding_"))
+                                          "diarization_", "voice_recognition_",
+                                          "audio_forwarding_"))
                 ) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
             }
         try:

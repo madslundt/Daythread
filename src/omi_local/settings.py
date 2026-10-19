@@ -180,13 +180,43 @@ class Settings(BaseSettings):
     embedding_max_input_chars: int = Field(default=4000, ge=200, le=20000)
     embedding_query_prefix: str = Field(default="", max_length=1000)
     embedding_document_prefix: str = Field(default="", max_length=1000)
+    embedding_chunking_strategy: Literal[
+        "characters-overlap-v1", "token-sentence-v1", "topic-token-v1"
+    ] = "topic-token-v1"
+    embedding_target_tokens: int = Field(default=320, ge=16, le=8192)
+    embedding_max_tokens: int = Field(default=512, ge=16, le=8192)
+    embedding_overlap_tokens: int = Field(default=48, ge=0, le=2048)
+    embedding_max_input_tokens: int = Field(default=8192, ge=32, le=131072)
+    embedding_special_tokens: int = Field(default=8, ge=0, le=1024)
+    embedding_tokenizer: str = Field(default="utf8", min_length=1, max_length=4096)
+    embedding_tokenizer_revision: str = Field(default="utf8-byte-bound-v1", max_length=200)
+    embedding_query_format: Literal["auto", "plain", "qwen3", "e5"] = "auto"
+    embedding_query_instruction: str = Field(
+        default="Retrieve relevant personal conversation passages that answer the query",
+        min_length=1, max_length=800,
+    )
+    embedding_send_dimensions: bool = False
     embedding_routes: dict[str, EmbeddingRouteOverride] = Field(default_factory=dict)
     embedding_timeout_seconds: int = Field(default=10, ge=1, le=60)
     embedding_query_timeout_seconds: float = Field(default=2, gt=0, le=60)
     embedding_query_cache_size: int = Field(default=128, ge=0, le=4096)
     embedding_query_cache_seconds: int = Field(default=300, ge=0, le=3600)
     embedding_query_retry_seconds: float = Field(default=15, ge=0, le=300)
-    embedding_min_score: float = Field(default=0.5, ge=-1, le=1)
+    embedding_min_score: float = Field(default=-1, ge=-1, le=1)
+    retrieval_candidate_limit: int = Field(default=50, ge=1, le=200)
+    retrieval_rrf_k: int = Field(default=60, ge=1, le=1000)
+    retrieval_lexical_weight: float = Field(default=1, ge=0, le=10)
+    retrieval_semantic_weight: float = Field(default=1, ge=0, le=10)
+    retrieval_matches_per_source: int = Field(default=3, ge=1, le=8)
+    retrieval_evidence_character_budget: int = Field(default=12000, ge=1000, le=100000)
+    reranker_enabled: bool = False
+    reranker_base_url: str = "http://127.0.0.1:4000/v1"
+    reranker_model: str = Field(default="", max_length=200)
+    reranker_token: SecretStr = SecretStr("")
+    reranker_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    reranker_max_candidates: int = Field(default=30, ge=1, le=100)
+    reranker_max_passage_chars: int = Field(default=2000, ge=100, le=8000)
+    reranker_max_query_chars: int = Field(default=2000, ge=100, le=8000)
     summary_language: str = Field(
         default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
     )
@@ -322,6 +352,19 @@ class Settings(BaseSettings):
             self.embedding_max_input_chars
         ):
             raise ValueError("Embedding passage and prefix exceed input character ceiling")
+        if not self.embedding_overlap_tokens < self.embedding_target_tokens <= (
+            self.embedding_max_tokens
+        ):
+            raise ValueError("Embedding overlap must be below target and target at most maximum")
+        if self.embedding_special_tokens >= self.embedding_max_input_tokens:
+            raise ValueError("Embedding special tokens exhaust input budget")
+        if not self.retrieval_lexical_weight and not self.retrieval_semantic_weight:
+            raise ValueError("At least one retrieval weight must be positive")
+        if self.reranker_enabled and not self.reranker_model.strip():
+            raise ValueError("Enabled reranker requires a model")
+        from .embedding_config import validate_input_contract
+
+        validate_input_contract(self)
         for language in self.embedding_routes:
             override = self.embedding_routes[language]
             if (override.model is not None or override.base_url is not None) and (
@@ -342,52 +385,25 @@ class Settings(BaseSettings):
                 route.embedding_max_input_chars
             ):
                 raise ValueError(f"Embedding route {language} exceeds input character ceiling")
+            validate_input_contract(route)
         return self
 
     @property
     def embedding_manifest(self) -> dict | None:
-        if not self.embedding_enabled:
-            return None
-        return {
-            "model": self.embedding_model,
-            "revision": self.embedding_revision,
-            "dimension": self.embedding_dimension,
-            "metric": "cosine-float32-v1",
-            "splitter": "characters-overlap-v1",
-            "passage_chars": self.embedding_passage_chars,
-            "query_prefix": self.embedding_query_prefix,
-            "document_prefix": self.embedding_document_prefix,
-            # A different endpoint may resolve the same alias to a different model.
-            "endpoint": self.embedding_base_url,
-        }
+        from .embedding_config import embedding_manifest
 
-    def embedding_route_settings(self, language: str | None = None) -> "Settings":
+        return embedding_manifest(self)
+
+    def embedding_prefix(self, *, query: bool) -> str:
+        from .embedding_config import embedding_prefix
+
+        return embedding_prefix(self, query=query)
+
+    def embedding_route_settings(self, language: str | None = None) -> Settings:
         """Return the effective embedding contract for a language, falling back to default."""
-        override = None
-        if language:
-            language = language.lower()
-            override = self.embedding_routes.get(language) or self.embedding_routes.get(
-                language.split("-")[0]
-            )
-            if override is None:
-                override = next((value for name, value in sorted(self.embedding_routes.items())
-                                 if name.split("-")[0] == language.split("-")[0]), None)
-        if override is None:
-            return self
-        return self.model_copy(update={
-            "embedding_model": override.model or self.embedding_model,
-            "embedding_base_url": override.base_url or self.embedding_base_url,
-            "embedding_token": override.token if override.token is not None else self.embedding_token,
-            "embedding_revision": override.revision or self.embedding_revision,
-            "embedding_dimension": override.dimension or self.embedding_dimension,
-            "embedding_query_prefix": (
-                self.embedding_query_prefix if override.query_prefix is None else override.query_prefix
-            ),
-            "embedding_document_prefix": (
-                self.embedding_document_prefix if override.document_prefix is None
-                else override.document_prefix
-            ),
-        })
+        from .embedding_config import embedding_route_settings
+
+        return embedding_route_settings(self, language)
 
     @property
     def embedding_languages(self) -> list[str]:
@@ -415,7 +431,7 @@ class Settings(BaseSettings):
             raise ValueError("Use an IANA timezone such as Europe/Copenhagen") from exc
         return value
 
-    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url")
+    @field_validator("stt_base_url", "llm_base_url", "embedding_base_url", "reranker_base_url")
     @classmethod
     def valid_inference_endpoint(cls, value: str) -> str:
         return inference_endpoint(value)

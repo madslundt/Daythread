@@ -9,6 +9,7 @@ from time import monotonic
 import httpx
 
 from .domain import stamp, utc_now
+from .embedding_chunking import input_fits
 from .semantic_store import normalized
 from .settings import Settings
 from .store import Store
@@ -23,6 +24,7 @@ class EmbeddingError(Exception):
 class Embeddings:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings, self.client = settings, client
+        self.manifest = settings.embedding_manifest
         self.health = {"state": "unknown" if settings.embedding_enabled else "disabled"}
         self._queries = OrderedDict()
         self._pending = {}
@@ -32,6 +34,11 @@ class Embeddings:
     async def embed(self, texts: list[str], *, query: bool = False) -> list[list[float]]:
         if not self.settings.embedding_enabled:
             raise EmbeddingError("Embeddings disabled")
+        try:
+            if self.settings.embedding_manifest != self.manifest:
+                raise EmbeddingError("Embedding contract changed; restart required")
+        except (OSError, ImportError, ValueError) as exc:
+            raise EmbeddingError("Embedding tokenizer unavailable") from exc
         if not query:
             return await self._embed(texts, query=False)
         # Only query vectors are cached. Documents and retrieval results always read current
@@ -85,17 +92,15 @@ class Embeddings:
         return vectors
 
     async def _embed(self, texts: list[str], *, query: bool) -> list[list[float]]:
-        prefix = (
-            self.settings.embedding_query_prefix
-            if query
-            else self.settings.embedding_document_prefix
-        )
+        prefix = self.settings.embedding_prefix(query=query)
         inputs = [prefix + text for text in texts]
         try:
+            manifest = self.settings.embedding_manifest
             if (
                 not inputs
                 or len(inputs) > 16
-                or any(len(text) > self.settings.embedding_max_input_chars for text in inputs)
+                or any(not isinstance(text, str) or not text.strip() for text in texts)
+                or any(not input_fits(text, manifest) for text in inputs)
             ):
                 raise ValueError("Embedding input exceeds configured contract")
             token = self.settings.embedding_token.get_secret_value()
@@ -108,6 +113,8 @@ class Embeddings:
                         "model": self.settings.embedding_model,
                         "input": inputs,
                         "encoding_format": "float",
+                        **({"dimensions": self.settings.embedding_dimension}
+                           if self.settings.embedding_send_dimensions else {}),
                     },
                     timeout=self.settings.embedding_timeout_seconds,
                     follow_redirects=False,
@@ -118,7 +125,10 @@ class Embeddings:
                         body.extend(part)
                         if len(body) > 8_000_000:
                             raise ValueError("Embedding response exceeds budget")
-            data = json.loads(body)["data"]
+            payload = json.loads(body)
+            if "model" in payload and payload["model"] != self.settings.embedding_model:
+                raise ValueError("Unexpected embedding response model")
+            data = payload["data"]
             if not isinstance(data, list) or len(data) != len(inputs):
                 raise ValueError("Invalid embedding count")
             ordered = {}
@@ -135,6 +145,8 @@ class Embeddings:
             KeyError,
             TypeError,
             OverflowError,
+            OSError,
+            ImportError,
         ) as exc:
             self.health = {"state": "unavailable", "checked_at": stamp(utc_now())}
             raise EmbeddingError("Local embeddings unavailable or invalid") from exc
@@ -165,7 +177,10 @@ async def index_one(
             job["text"][passage["start_offset"] : passage["end_offset"]]
             for passage in job["passages"]
         ]
-        vectors = await embeddings.embed(texts)
+        unique = list(dict.fromkeys(texts))
+        embedded = await embeddings.embed(unique)
+        by_text = dict(zip(unique, embedded, strict=True))
+        vectors = [by_text[text] for text in texts]
         finished = await asyncio.to_thread(store.finish_embedding_batch, job, vectors)
         if finished:
             await asyncio.to_thread(

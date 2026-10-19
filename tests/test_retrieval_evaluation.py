@@ -256,3 +256,163 @@ async def test_correction_while_query_is_embedding_never_returns_stale_lexical_s
 
     with pytest.raises(EvidenceChanged):
         await memory.search("invoice", 12)
+
+
+def evaluator():
+    return runpy.run_path(str(Path(__file__).parents[1] / "scripts/evaluate_retrieval.py"))
+
+
+def test_extended_metrics_deduplicate_passages_and_ignore_zero_relevance():
+    measured = evaluator()["metrics"](["wrong", "a", "a"], {"a": 3, "negative": 0})
+    assert measured["recall_at_10"] == 1
+    assert measured["precision_at_5"] == 0.2
+    assert measured["retrieval_precision"] == 0.5
+    assert measured["evidence_coverage_at_10"] == 1
+    assert evaluator()["aggregate"]([])["latency_p95_ms"] is None
+
+
+def test_exact_evidence_coverage_requires_all_distant_spans():
+    coverage = evaluator()["span_coverage"]
+    required = [
+        {"source": "a", "start_offset": 10, "end_offset": 20},
+        {"source": "a", "start_offset": 100, "end_offset": 120},
+    ]
+    sources = [{"id": "uuid", "matches": [{"start_offset": 0, "end_offset": 50}]}]
+    assert coverage(sources, required, {"uuid": "a"}) == {
+        "passage_evidence_coverage": 0.5,
+        "all_passage_evidence": 0,
+    }
+    sources[0]["matches"] += [
+        {"start_offset": 90, "end_offset": 110},
+        {"start_offset": 110, "end_offset": 130},
+    ]
+    assert coverage(sources, required, {"uuid": "a"})["all_passage_evidence"] == 1
+
+
+def test_conversation_fixture_has_valid_sections_spans_and_heldout_labels():
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/retrieval_eval_conversations.json").read_text()
+    )
+    documents = {row["id"]: row for row in fixture["documents"]}
+    for query in fixture["queries"]:
+        for key in query["relevance"]:
+            assert documents[key]["split"] == query["split"]
+        for span in query.get("required_spans", []):
+            assert span["source"] in query["relevance"]
+            text = documents[span["source"]]["text"]
+            assert 0 <= span["start_offset"] < span["end_offset"] <= len(text)
+    for document in documents.values():
+        previous = 0
+        for section in document["sections"]:
+            assert not document["text"][previous : section["start_offset"]].strip()
+            assert section["end_offset"] > section["start_offset"]
+            previous = section["end_offset"]
+        assert previous == len(document["text"])
+
+
+@pytest.mark.anyio
+async def test_evaluator_never_contacts_services_by_default_or_accepts_owner_paths(tmp_path):
+    functions = evaluator()
+    fixture = {
+        "documents": [{"id": "a", "day": "2026-10-01", "text": "Aurora invoice"}],
+        "queries": [
+            {
+                "id": "q",
+                "category": "exact",
+                "split": "dev",
+                "question": "Aurora invoice",
+                "relevance": {"a": 3},
+            }
+        ],
+    }
+
+    def unexpected(request):
+        pytest.fail("Keyword evaluation must never contact inference")
+
+    report = await functions["evaluate"](
+        fixture,
+        False,
+        ["keyword"],
+        transport=httpx.MockTransport(unexpected),
+    )
+    assert report["live_embeddings"] is False
+    assert report["answer_quality_tested"] is False
+    assert report["results"]["keyword"]["overall"]["recall_at_10"] == 1
+    with pytest.raises(ValueError, match="only configure"):
+        functions["evaluation_settings"](str(tmp_path), False, {"data_dir": "/owner/archive"})
+    with pytest.raises(ValueError, match="explicit"):
+        await functions["evaluate"](fixture, False, ["semantic"])
+
+
+@pytest.mark.anyio
+async def test_mock_endpoint_evaluation_is_labeled_and_checks_coverage():
+    functions = evaluator()
+    fixture = {
+        "documents": [{"id": "a", "day": "2026-10-01", "text": "Aurora invoice"}],
+        "queries": [
+            {
+                "id": "q",
+                "category": "exact",
+                "split": "dev",
+                "question": "Aurora invoice",
+                "relevance": {"a": 3},
+            }
+        ],
+    }
+    report = await functions["evaluate"](
+        fixture,
+        True,
+        ["keyword", "semantic", "hybrid"],
+        {"embedding_model": "fictional", "embedding_revision": "test", "embedding_dimension": 2},
+        transport=httpx.MockTransport(handler),
+    )
+    assert report["run_kind"] == "mock_adapter"
+    assert report["live_embeddings"] is False
+    assert report["coverage"]["indexed"] == 1
+    assert report["indexed_passages"] >= 1
+    assert report["indexing_passages_per_second"] > 0
+
+
+@pytest.mark.anyio
+async def test_evaluator_refuses_incomplete_embedding_or_failed_reranking_results():
+    fixture = {
+        "documents": [{"id": "a", "day": "2026-10-01", "text": "Aurora invoice"}],
+        "queries": [
+            {
+                "id": "q",
+                "category": "exact",
+                "split": "dev",
+                "question": "Aurora invoice",
+                "relevance": {"a": 3},
+            }
+        ],
+    }
+    overrides = {
+        "embedding_model": "fictional",
+        "embedding_revision": "test",
+        "embedding_dimension": 2,
+    }
+    with pytest.raises(RuntimeError, match="backfill incomplete"):
+        await evaluator()["evaluate"](
+            fixture,
+            True,
+            ["hybrid"],
+            overrides,
+            transport=httpx.MockTransport(lambda request: httpx.Response(503)),
+        )
+
+    def failing_reranker(request):
+        return httpx.Response(503) if request.url.path.endswith("/rerank") else handler(request)
+
+    with pytest.raises(RuntimeError, match="Reranking incomplete"):
+        await evaluator()["evaluate"](
+            fixture,
+            True,
+            ["hybrid"],
+            overrides
+            | {
+                "reranker_enabled": True,
+                "reranker_model": "fictional-reranker",
+            },
+            transport=httpx.MockTransport(failing_reranker),
+        )

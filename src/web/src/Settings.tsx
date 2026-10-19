@@ -346,7 +346,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
       )}
       {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {!managed ? <div hidden={!showServer}>
-        <Configuration search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
+        <Configuration selectedProfile={selectedProfile} search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}
           onSearchResults={onSearchResults}
           onSaved={() => { setConnectionRevision((value) => value + 1); onSaved(); }}
           hiddenFields={serverHiddenFields} />

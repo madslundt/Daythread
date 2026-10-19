@@ -13,8 +13,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .settings import LLMTask, ModelRoute, Settings
 from .semantic_store import normalized
+from .settings import LLMTask, ModelRoute, Settings
 
 MAX_RESPONSE_BYTES = 262_144
 CONNECTION_FIELDS = {

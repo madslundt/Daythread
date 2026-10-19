@@ -5,6 +5,7 @@ import { ApiError, errorMessage, newId, request } from "./api";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
 import { ModelPicker } from "./ModelPicker";
+import { EmbeddingStatus } from "./EmbeddingStatus";
 import {
   advancedConfigurationFields, canRebaseConfiguration, configurationChanges, configurationDraft, configurationIsDirty,
   keepSecret, matchingConfigurationFields, routeChanges, routeRows, tasks,
@@ -123,7 +124,8 @@ const optionsTitle = (group: string) => group === "Transcription" ? t("Transcrip
   group === "Language models & chat" ? t("Language model options & task routes") : group;
 
 export function Configuration({ onSaved, hiddenFields = [], search: controlledSearch,
-  onSearchResults, onDirtyChange, refreshRevision = 0 }: {
+  onSearchResults, onDirtyChange, refreshRevision = 0, selectedProfile = null }: {
+  selectedProfile?: string | null;
   onSaved: () => void;
   hiddenFields?: readonly string[];
   search?: string;
@@ -199,6 +201,10 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
         "embedding_enabled",
         "embedding_model", "embedding_base_url", "embedding_revision", "embedding_dimension",
         "embedding_query_prefix", "embedding_document_prefix", "embedding_passage_chars",
+        "embedding_chunking_strategy", "embedding_target_tokens", "embedding_max_tokens",
+        "embedding_overlap_tokens", "embedding_max_input_tokens", "embedding_special_tokens",
+        "embedding_tokenizer", "embedding_tokenizer_revision", "embedding_query_format",
+        "embedding_query_instruction", "embedding_send_dimensions",
       ]);
       const routeContract = (routes: Record<string, object>) => JSON.stringify(
         Object.fromEntries(Object.entries(routes).sort(([a], [b]) => a.localeCompare(b)).map(([name, route]) =>
@@ -295,6 +301,8 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
       {search.trim() ? <p className="caption" role="status">{fields.length ?
         t("{value0} matching server {value1}.", { value0: fields.length, value1: fields.length === 1 ? t("setting") : t("settings") }) :
         t("No server settings match your search. Try a model name, connection, or storage setting.")}</p> : null}
+      {!search.trim() || fields.some((field) => field.group === "Semantic search") ?
+        <EmbeddingStatus key={selectedProfile || "none"} profileSelected={Boolean(selectedProfile)} /> : null}
       <div className="model-connections">
         {modelConnections.map(({ provider, key, title, description }) => {
           const connectionFields = [`${provider}_base_url`, key, `${provider}_model`]

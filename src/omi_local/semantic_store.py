@@ -6,6 +6,7 @@ import json
 import math
 import struct
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from .domain import stamp, utc_now
 
@@ -93,6 +94,7 @@ class SemanticStore:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if manifest is None:
+                db.execute("DELETE FROM embedding_staging_passages")
                 db.execute("DELETE FROM retrieval_passages")
                 db.execute("DELETE FROM embedding_jobs")
                 db.execute("DELETE FROM embedding_sets")
@@ -108,9 +110,11 @@ class SemanticStore:
                     "ON CONFLICT(id) DO UPDATE SET active=1",
                     (key, serialized),
                 )
-                # Resume leases after restart. Only one archive process is supported.
+                # Startup may supersede interrupted work. Every attempt has a distinct
+                # token, so a slow pre-restart worker cannot publish into its replacement.
                 db.execute(
-                    "UPDATE embedding_jobs SET state='pending' WHERE set_id=? AND state='working'",
+                    "UPDATE embedding_jobs SET state='pending',lease_token='',lease_until='' "
+                    "WHERE set_id=? AND state='working'",
                     (key,),
                 )
                 db.execute(
@@ -120,6 +124,20 @@ class SemanticStore:
                     (key,),
                 )
         return key
+
+    def rebuild_embeddings(self, set_ids: list[str]) -> None:
+        """Requeue active contracts without removing their usable, current vectors."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for set_id in set_ids:
+                db.execute("DELETE FROM embedding_staging_passages WHERE set_id=?", (set_id,))
+                db.execute("DELETE FROM embedding_jobs WHERE set_id=?", (set_id,))
+                db.execute(
+                    "INSERT INTO embedding_jobs(audio_id,set_id,version,force_reembed) "
+                    "SELECT a.id,s.id,a.transcript_version,1 FROM audio a "
+                    "JOIN embedding_sets s ON s.id=? AND s.active=1 "
+                    "WHERE a.state='done' AND length(trim(a.text))>0", (set_id,),
+                )
 
     def reconcile_embedding_routes(self, route_names: set[str]) -> None:
         """Mark removed language routes inactive so they can be reclaimed after backfill."""
@@ -163,6 +181,9 @@ class SemanticStore:
             )]
             if inactive:
                 marks = ",".join("?" for _ in inactive)
+                db.execute(
+                    f"DELETE FROM embedding_staging_passages WHERE set_id IN ({marks})", inactive
+                )
                 db.execute(f"DELETE FROM retrieval_passages WHERE set_id IN ({marks})", inactive)
                 db.execute(f"DELETE FROM embedding_jobs WHERE set_id IN ({marks})", inactive)
                 db.execute(f"DELETE FROM embedding_sets WHERE id IN ({marks})", inactive)
@@ -183,107 +204,172 @@ class SemanticStore:
             ).fetchone()
             return dict(row)
 
+    def _prepare_embedding_passages(self, db, job: dict, manifest: dict, size: int) -> None:
+        from .embedding_chunking import chunk_passages
+        from .semantic_metadata import json_object, passage_metadata, prepare_source_provenance
+
+        db.execute(
+            "DELETE FROM embedding_staging_passages WHERE audio_id=? AND set_id=?",
+            (job["audio_id"], job["set_id"]),
+        )
+        # Populate fingerprints for indexes made before this additive migration.
+        for old in db.execute(
+            "SELECT id,start_offset,end_offset FROM retrieval_passages "
+            "WHERE audio_id=? AND set_id=? AND version=? AND content_hash=''",
+            (job["audio_id"], job["set_id"], job["version"]),
+        ).fetchall():
+            content = job["text"][old["start_offset"]:old["end_offset"]]
+            db.execute(
+                "UPDATE retrieval_passages SET content_hash=? WHERE id=?",
+                (hashlib.sha256(content.encode()).hexdigest(), old["id"]),
+            )
+        details = json_object(job.get("topic_details") or "{}")
+        spans = chunk_passages(
+            job["text"], {"passage_chars": size} | manifest, topics=details.get("sections")
+        )
+        spans = [span for span in spans
+                 if job["text"][span["start_offset"]:span["end_offset"]].strip()]
+        provenance = prepare_source_provenance(job)
+        for ordinal, span in enumerate(spans):
+            start, end = span["start_offset"], span["end_offset"]
+            content_hash = hashlib.sha256(job["text"][start:end].encode()).hexdigest()
+            key = hashlib.sha256(
+                f"{job['audio_id']}:{job['set_id']}:{job['version']}:{ordinal}".encode()
+            ).hexdigest()
+            metadata = passage_metadata(job, span, manifest, provenance) | {"chunk_index": ordinal}
+            db.execute(
+                "INSERT INTO embedding_staging_passages "
+                "(id,audio_id,set_id,version,ordinal,start_offset,end_offset,vector,"
+                "content_hash,topic_id,metadata) VALUES(?,?,?,?,?,?,?,"
+                "(SELECT vector FROM retrieval_passages WHERE audio_id=? AND set_id=? "
+                "AND version=? AND content_hash=? AND vector IS NOT NULL AND ?=0 LIMIT 1),?,?,?)",
+                (key, job["audio_id"], job["set_id"], job["version"], ordinal, start, end,
+                 job["audio_id"], job["set_id"], job["version"], content_hash, job["force_reembed"],
+                 content_hash,
+                 metadata.get("topic_id"), json.dumps(metadata, sort_keys=True)),
+            )
+        db.execute(
+            "UPDATE embedding_jobs SET prepared=1 WHERE audio_id=? AND set_id=?",
+            (job["audio_id"], job["set_id"]),
+        )
+
+    @staticmethod
+    def _publish_embedding_passages(db, audio_id: str, set_id: str) -> None:
+        db.execute(
+            "DELETE FROM retrieval_passages WHERE audio_id=? AND set_id=?", (audio_id, set_id)
+        )
+        db.execute(
+            "INSERT INTO retrieval_passages "
+            "(id,audio_id,set_id,version,ordinal,start_offset,end_offset,vector,"
+            "content_hash,topic_id,metadata) SELECT "
+            "id,audio_id,set_id,version,ordinal,start_offset,end_offset,vector,"
+            "content_hash,topic_id,metadata FROM embedding_staging_passages "
+            "WHERE audio_id=? AND set_id=?", (audio_id, set_id),
+        )
+        db.execute(
+            "DELETE FROM embedding_staging_passages WHERE audio_id=? AND set_id=?",
+            (audio_id, set_id),
+        )
+        db.execute(
+            "UPDATE embedding_jobs SET state='done',attempts=0,retry_at='',"
+            "lease_token='',lease_until='' WHERE audio_id=? AND set_id=?", (audio_id, set_id)
+        )
+
     def claim_embedding_batch(self, set_id: str, size: int) -> dict | None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            job = db.execute(
-                "SELECT j.*,a.text FROM embedding_jobs j JOIN audio a ON a.id=j.audio_id "
-                "AND a.transcript_version=j.version JOIN embedding_sets s ON s.id=j.set_id "
-                "WHERE j.set_id=? AND s.active=1 AND j.state='pending' AND j.retry_at<=? "
-                "AND a.state='done' ORDER BY j.retry_at,a.started_at,a.id LIMIT 1",
-                (set_id, stamp(utc_now())),
-            ).fetchone()
-            if not job:
-                return None
-            job = dict(job)
-            if job["cursor"] == 0:
-                db.execute(
-                    "DELETE FROM retrieval_passages WHERE audio_id=? AND set_id=?",
-                    (job["audio_id"], set_id),
-                )
-                spans = (
-                    (start, end) for start, end in passages(job["text"], size)
-                    if job["text"][start:end].strip()
-                )
-                for ordinal, (start, end) in enumerate(spans):
-                    key = hashlib.sha256(
-                        f"{job['audio_id']}:{set_id}:{job['version']}:{ordinal}".encode()
-                    ).hexdigest()
-                    db.execute(
-                        "INSERT INTO retrieval_passages VALUES(?,?,?,?,?,?,?,NULL)",
-                        (key, job["audio_id"], set_id, job["version"], ordinal, start, end),
-                    )
-            batch = db.execute(
-                "SELECT * FROM retrieval_passages WHERE audio_id=? AND set_id=? "
-                "AND ordinal>=? ORDER BY ordinal LIMIT 16",
-                (job["audio_id"], set_id, job["cursor"]),
-            ).fetchall()
+            now = utc_now()
             db.execute(
-                "UPDATE embedding_jobs SET state='working',attempts=attempts+1 "
-                "WHERE audio_id=? AND set_id=?",
-                (job["audio_id"], set_id),
+                "UPDATE embedding_jobs SET state='pending',lease_token='',lease_until='' "
+                "WHERE set_id=? AND state='working' AND lease_until<=?", (set_id, stamp(now)),
             )
-            return job | {"passages": [dict(row) for row in batch]}
+            while True:
+                job = db.execute(
+                    "SELECT j.*,a.text,a.topic_details,a.source_metadata,a.started_at,a.ended_at,"
+                    "a.segments,a.source_version,"
+                    "s.manifest FROM embedding_jobs j JOIN audio a ON a.id=j.audio_id "
+                    "AND a.transcript_version=j.version JOIN embedding_sets s ON s.id=j.set_id "
+                    "WHERE j.set_id=? AND s.active=1 AND j.state='pending' AND j.retry_at<=? "
+                    "AND a.state='done' ORDER BY j.retry_at,a.started_at,a.id LIMIT 1",
+                    (set_id, stamp(now)),
+                ).fetchone()
+                if not job:
+                    return None
+                job = dict(job)
+                manifest = json.loads(job["manifest"])
+                if not job["prepared"]:
+                    self._prepare_embedding_passages(db, job, manifest, size)
+                batch = db.execute(
+                    "SELECT * FROM embedding_staging_passages WHERE audio_id=? AND set_id=? "
+                    "AND vector IS NULL ORDER BY ordinal LIMIT 16", (job["audio_id"], set_id),
+                ).fetchall()
+                if not batch:
+                    # Boundary/title-only changes often reuse the complete index. No
+                    # provider request is needed, but provenance is still refreshed.
+                    self._publish_embedding_passages(db, job["audio_id"], set_id)
+                    continue
+                token, until = uuid4().hex, stamp(now + timedelta(minutes=5))
+                db.execute(
+                    "UPDATE embedding_jobs SET state='working',attempts=attempts+1,"
+                    "lease_token=?,lease_until=? WHERE audio_id=? AND set_id=?",
+                    (token, until, job["audio_id"], set_id),
+                )
+                return job | {
+                    "lease_token": token, "lease_until": until,
+                    "passages": [dict(row) for row in batch],
+                }
 
     def finish_embedding_batch(self, job: dict, vectors: list[list[float]]) -> bool:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             current = db.execute(
-                "SELECT 1 FROM audio a JOIN embedding_sets s ON s.id=? AND s.active=1 "
+                "SELECT s.manifest FROM audio a JOIN embedding_sets s ON s.id=? AND s.active=1 "
                 "JOIN embedding_jobs j ON j.audio_id=a.id AND j.set_id=s.id "
                 "WHERE a.id=? AND a.transcript_version=? AND j.version=a.transcript_version "
-                "AND j.state='working' AND j.cursor=? AND a.state='done'",
-                (job["set_id"], job["audio_id"], job["version"], job["cursor"]),
+                "AND j.state='working' AND j.cursor=? AND j.lease_token=? AND a.state='done'",
+                (job["set_id"], job["audio_id"], job["version"], job["cursor"], job["lease_token"]),
             ).fetchone()
             if not current:
                 return False
-            manifest = json.loads(
-                db.execute(
-                    "SELECT manifest FROM embedding_sets WHERE id=?",
-                    (job["set_id"],),
-                ).fetchone()[0]
-            )
+            manifest = json.loads(current["manifest"])
             if len(vectors) != len(job["passages"]):
                 raise ValueError("Invalid embedding count")
             for passage, vector in zip(job["passages"], vectors, strict=True):
                 vector = normalized(vector, manifest["dimension"])
                 db.execute(
-                    "UPDATE retrieval_passages SET vector=? WHERE id=? AND version=?",
-                    (struct.pack(f"<{len(vector)}f", *vector), passage["id"], job["version"]),
+                    "UPDATE embedding_staging_passages SET vector=? "
+                    "WHERE audio_id=? AND set_id=? AND version=? AND content_hash=?",
+                    (struct.pack(f"<{len(vector)}f", *vector), job["audio_id"], job["set_id"],
+                     job["version"], passage["content_hash"]),
                 )
-            cursor = job["cursor"] + len(vectors)
             remaining = db.execute(
-                "SELECT 1 FROM retrieval_passages WHERE audio_id=? AND set_id=? AND ordinal>=?",
-                (job["audio_id"], job["set_id"], cursor),
+                "SELECT min(ordinal) AS ordinal FROM embedding_staging_passages "
+                "WHERE audio_id=? AND set_id=? AND vector IS NULL",
+                (job["audio_id"], job["set_id"]),
             ).fetchone()
-            db.execute(
-                "UPDATE embedding_jobs SET cursor=?,state=?,attempts=0,retry_at='' "
-                "WHERE audio_id=? AND set_id=? AND version=?",
-                (
-                    cursor,
-                    "pending" if remaining else "done",
-                    job["audio_id"],
-                    job["set_id"],
-                    job["version"],
-                ),
+            cursor = remaining["ordinal"] if remaining["ordinal"] is not None else (
+                job["cursor"] + len(vectors)
             )
-            return True
+            db.execute(
+                "UPDATE embedding_jobs SET cursor=?,state='pending',attempts=0,retry_at='',"
+                "lease_token='',lease_until='' WHERE audio_id=? AND set_id=?",
+                (cursor, job["audio_id"], job["set_id"]),
+            )
+            if remaining["ordinal"] is None:
+                self._publish_embedding_passages(db, job["audio_id"], job["set_id"])
+        self.prune_inactive_embeddings_if_ready(job["set_id"])
+        return True
 
     def retry_embedding(self, job: dict, *, paused: bool = False) -> None:
         with self.connect() as db:
             db.execute(
-                "UPDATE embedding_jobs SET state='pending',retry_at=?,attempts=? "
-                "WHERE audio_id=? AND set_id=? AND version=? AND state='working'",
-                (
-                    job["retry_at"] if paused else
-                    stamp(
-                        utc_now() + timedelta(seconds=min(300, 2 ** min(job["attempts"] + 1, 8)))
-                    ),
-                    job["attempts"] + (0 if paused else 1),
-                    job["audio_id"],
-                    job["set_id"],
-                    job["version"],
-                ),
+                "UPDATE embedding_jobs SET state='pending',retry_at=?,attempts=?,"
+                "lease_token='',lease_until='' "
+                "WHERE audio_id=? AND set_id=? AND version=? AND state='working' AND lease_token=?",
+                (job["retry_at"] if paused else stamp(utc_now() + timedelta(
+                    seconds=min(300, 2 ** min(job["attempts"] + 1, 8))
+                )), job["attempts"] + (0 if paused else 1),
+                 job["audio_id"], job["set_id"], job["version"], job["lease_token"]),
             )
 
     def semantic_candidates(
@@ -294,13 +380,16 @@ class SemanticStore:
         limit: int,
         start: datetime | None,
         end: datetime | None,
+        max_per_source: int = 3,
     ) -> list[dict]:
-        """Exact scoped scan, streamed by recording; memory is bounded by candidate count."""
+        """Exact scoped passage scan with bounded source diversity and memory use."""
+        if limit <= 0 or max_per_source <= 0:
+            return []
         scope = " AND a.started_at<? AND a.ended_at>?" if start and end else ""
         args = (set_id, stamp(end), stamp(start)) if start and end else (set_id,)
         heap = []
         with self.connect() as db:
-            rows = db.execute(
+            rows = getattr(db, "iterate", db.execute)(
                 "SELECT p.* FROM retrieval_passages p JOIN canonical_audio a ON a.id=p.audio_id "
                 "AND a.transcript_version=p.version JOIN embedding_sets s ON s.id=p.set_id "
                 "WHERE p.set_id=? AND s.active=1 AND p.vector IS NOT NULL AND a.state='done'"
@@ -308,22 +397,33 @@ class SemanticStore:
                 + " ORDER BY p.audio_id,p.ordinal",
                 args,
             )
-            previous, best = None, None
+            previous, source_heap = None, []
             for row in rows:
-                if row["audio_id"] != previous and best:
-                    self._push_candidate(heap, best, limit)
-                    best = None
+                if row["audio_id"] != previous:
+                    for entry in source_heap:
+                        self._push_candidate(heap, entry, limit)
+                    source_heap = []
                 previous = row["audio_id"]
                 try:
                     values = struct.unpack(f"<{len(vector)}f", row["vector"])
                 except struct.error:
                     continue  # Corrupt/incompatible derived data never becomes evidence.
-                score = sum(a * b for a, b in zip(vector, values, strict=True))
-                if math.isfinite(score) and score >= minimum and (not best or score > best[0]):
-                    best = (score, row["audio_id"], row["id"], dict(row))
-            if best:
-                self._push_candidate(heap, best, limit)
-        return [entry[3] | {"score": entry[0]} for entry in sorted(heap, reverse=True)]
+                score = math.sumprod(vector, values)
+                if math.isfinite(score) and score >= minimum:
+                    self._push_candidate(
+                        source_heap, (score, row["audio_id"], row["id"], dict(row)),
+                        min(limit, max_per_source),
+                    )
+            for entry in source_heap:
+                self._push_candidate(heap, entry, limit)
+        result = []
+        from .semantic_metadata import json_object
+
+        for score, _, _, row in sorted(heap, reverse=True):
+            row.pop("vector", None)
+            row["metadata"] = json_object(row["metadata"])
+            result.append(row | {"score": score})
+        return result
 
     @staticmethod
     def _push_candidate(heap: list, entry: tuple, limit: int) -> None:

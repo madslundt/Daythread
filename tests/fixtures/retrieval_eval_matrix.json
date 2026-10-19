@@ -1,0 +1,29 @@
+{
+  "characters": {
+    "embedding_chunking_strategy": "characters-overlap-v1"
+  },
+  "sentences-320-48": {
+    "embedding_chunking_strategy": "token-sentence-v1",
+    "embedding_target_tokens": 320,
+    "embedding_max_tokens": 512,
+    "embedding_overlap_tokens": 48
+  },
+  "topics-320-48": {
+    "embedding_chunking_strategy": "topic-token-v1",
+    "embedding_target_tokens": 320,
+    "embedding_max_tokens": 512,
+    "embedding_overlap_tokens": 48
+  },
+  "topics-256-40": {
+    "embedding_chunking_strategy": "topic-token-v1",
+    "embedding_target_tokens": 256,
+    "embedding_max_tokens": 384,
+    "embedding_overlap_tokens": 40
+  },
+  "topics-384-56": {
+    "embedding_chunking_strategy": "topic-token-v1",
+    "embedding_target_tokens": 384,
+    "embedding_max_tokens": 512,
+    "embedding_overlap_tokens": 56
+  }
+}

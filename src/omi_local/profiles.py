@@ -18,6 +18,7 @@ from .inference import Inference
 from .notifications import NotificationService
 from .omi_api import OmiAPI
 from .pocket_api import PocketAPI
+from .reranking import Reranker
 from .service import Memory
 from .settings import Settings
 from .store import Store
@@ -155,6 +156,7 @@ class Profiles:
             )
         memory.retriever.embeddings = adapters["default"]
         memory.retriever.embedding_adapters = adapters
+        memory.retriever.reranker = Reranker(settings, self.client)
         weekly = WeeklyReviews(memory)
         worker = embedding_worker = None
         if settings.worker_enabled and settings.background_processing_enabled:

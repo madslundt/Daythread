@@ -94,6 +94,11 @@ async def test_query_vectors_are_cached_coalesced_and_invalidated_by_model_revis
         await embeddings.embed(["invoice"], query=True)
         assert len(calls) == 1
         settings.embedding_revision = "v2"
+        with pytest.raises(EmbeddingError):
+            await embeddings.embed(["invoice"], query=True)
+        # Production changes configure a new set and adapter on restart. An old
+        # adapter must never send a changed vector space into its previous set.
+        embeddings = Embeddings(settings, http)
         await embeddings.embed(["invoice"], query=True)
         assert len(calls) == 2
         await embeddings.embed(["invoice"])

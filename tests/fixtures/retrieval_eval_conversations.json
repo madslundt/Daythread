@@ -1,0 +1,349 @@
+{
+  "description": "Fictional multilingual personal-memory conversations. Human-authored relevance is a target, not measured semantic quality. Synthetic topic boundaries and exact evidence spans; no real people or archive data.",
+  "documents": [
+    {
+      "id": "d01",
+      "split": "dev",
+      "day": "2026-10-05",
+      "text": "Peter: Varmepumpen bliver dyrere end forventet. Maria: Vi beholder gasfyret denne vinter, fordi isoleringen skal forbedres først. Peter: Jeg indhenter tilbud på loftisolering inden fredag.\n\nMaria: Til vores bryllupsdag anbefalede Anne restauranten Havglimt i Køge. Hun nævnte deres vegetariske menu. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. \n\nPeter: Tilbage til varmen. Når loftet er isoleret, vurderer vi en luft til vand varmepumpe igen i marts. Maria: Det er den forudsætning, vi aftalte.",
+      "sections": [
+        {
+          "title": "Heating decision",
+          "start_offset": 0,
+          "end_offset": 188
+        },
+        {
+          "title": "Restaurant",
+          "start_offset": 190,
+          "end_offset": 2172
+        },
+        {
+          "title": "Heating follow-up",
+          "start_offset": 2174,
+          "end_offset": 2322
+        }
+      ]
+    },
+    {
+      "id": "d02",
+      "split": "dev",
+      "day": "2026-10-06",
+      "text": "Peter Hansen: The office heat pump has already been ordered. This is the office, not Maria and Peter Jensens home.\n\nThe Havglimt team dinner was cancelled. No home insulation contractor was booked.",
+      "sections": [
+        {
+          "title": "Other Peter",
+          "start_offset": 0,
+          "end_offset": 114
+        },
+        {
+          "title": "Restaurant cancellation",
+          "start_offset": 116,
+          "end_offset": 197
+        }
+      ]
+    },
+    {
+      "id": "d03",
+      "split": "dev",
+      "day": "2026-10-09",
+      "text": "Peter Jensen: Jeg fik to tilbud på loftisolering. NordTag tager 28000 kroner. Vi har ikke valgt endnu. Maria: Lad os få fugtmålingen før bestilling.",
+      "sections": [
+        {
+          "title": "Insulation quotes",
+          "start_offset": 0,
+          "end_offset": 148
+        }
+      ]
+    },
+    {
+      "id": "d04",
+      "split": "dev",
+      "day": "2026-10-12",
+      "text": "Maria: Projekt Lysbro skal styre lyset lokalt over Zigbee. Internet må ikke være nødvendigt. Peter: Jeg tester bevægelsessensoren i entréen på søndag.\n\nPeter: Den blå bil er værkstedets lånebil. Vi har endnu ikke besluttet at købe en bil.",
+      "sections": [
+        {
+          "title": "Home automation",
+          "start_offset": 0,
+          "end_offset": 150
+        },
+        {
+          "title": "Car ambiguity",
+          "start_offset": 152,
+          "end_offset": 238
+        }
+      ]
+    },
+    {
+      "id": "h01",
+      "split": "heldout",
+      "day": "2026-10-13",
+      "text": "Lea: Vi køber ikke elbilen nu. Jonas: Enig, fordi der mangler en ladeplads hjemme, og vores nuværende bil virker stadig.\n\nLea: Jeg henter Alma fra skole tirsdag. Jonas: Jeg tager onsdag. Skolefesten er fredag. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. \n\nJonas: Om bilen igen: Vi genåbner beslutningen, når ejerforeningen godkender ladepladsen. Lea: Ja, jeg spørger bestyrelsen senest den 20. oktober.",
+      "sections": [
+        {
+          "title": "Car rationale",
+          "start_offset": 0,
+          "end_offset": 120
+        },
+        {
+          "title": "School logistics",
+          "start_offset": 122,
+          "end_offset": 2082
+        },
+        {
+          "title": "Car conditions",
+          "start_offset": 2084,
+          "end_offset": 2230
+        }
+      ]
+    },
+    {
+      "id": "h02",
+      "split": "heldout",
+      "day": "2026-10-14",
+      "text": "Jonas Madsen: I bought an electric company car because the office charger is ready. Lea Sørensens household car is a different discussion.",
+      "sections": [
+        {
+          "title": "Other car",
+          "start_offset": 0,
+          "end_offset": 138
+        }
+      ]
+    },
+    {
+      "id": "h03",
+      "split": "heldout",
+      "day": "2026-10-15",
+      "text": "Aisha: For project NORD-47 we chose SQLite rather than PostgreSQL because the cabin device must work offline. Erik: I will write the migration notes by Thursday.\n\nErik: My bicycle needs new tyres. The Thursday race starts at six. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. We discussed table arrangements and checked ordinary practical details. \n\nAisha: Back to NORD-47: encrypted backups are required before the pilot. Erik: I also promised to verify restore on the spare device.",
+      "sections": [
+        {
+          "title": "Project decision",
+          "start_offset": 0,
+          "end_offset": 161
+        },
+        {
+          "title": "Unrelated sports",
+          "start_offset": 163,
+          "end_offset": 2102
+        },
+        {
+          "title": "Project constraint",
+          "start_offset": 2104,
+          "end_offset": 2237
+        }
+      ]
+    },
+    {
+      "id": "h04",
+      "split": "heldout",
+      "day": "2026-10-16",
+      "text": "Aisha: NORD-74 uses PostgreSQL on the office server. Erik suggested a migration, but nobody committed to it. NORD-47 is the separate offline cabin project.",
+      "sections": [
+        {
+          "title": "Earlier project",
+          "start_offset": 0,
+          "end_offset": 155
+        }
+      ]
+    },
+    {
+      "id": "h05",
+      "split": "heldout",
+      "day": "2026-10-17",
+      "text": "Erik: NORD-47 migration notes are ready. The spare-device restore test failed because the encryption key was missing. Aisha: Keep the pilot on hold until restore passes.",
+      "sections": [
+        {
+          "title": "Follow-up",
+          "start_offset": 0,
+          "end_offset": 169
+        }
+      ]
+    },
+    {
+      "id": "h06",
+      "split": "heldout",
+      "day": "2026-10-18",
+      "text": "Nora: Min laptop charger ligger hos Malik. Malik: I will return it tomorrow before the demo. Nora: Tak, printerens strømforsyning bliver på kontoret.",
+      "sections": [
+        {
+          "title": "Mixed language",
+          "start_offset": 0,
+          "end_offset": 149
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "v2q01",
+      "category": "cross_language",
+      "split": "dev",
+      "question": "Why did Maria and Peter Jensen postpone replacing the home heating system, and when will they reconsider?",
+      "relevance": {
+        "d01": 3
+      },
+      "required_spans": [
+        {
+          "source": "d01",
+          "start_offset": 90,
+          "end_offset": 128
+        },
+        {
+          "source": "d01",
+          "start_offset": 2254,
+          "end_offset": 2277
+        }
+      ]
+    },
+    {
+      "id": "v2q02",
+      "category": "multi_source",
+      "split": "dev",
+      "question": "Hvad aftalte Peter Jensen om loftisolering, og hvilke tilbud kom senere?",
+      "relevance": {
+        "d01": 2,
+        "d03": 3
+      }
+    },
+    {
+      "id": "v2q03",
+      "category": "exact_entity",
+      "split": "dev",
+      "question": "Lysbro Zigbee internet",
+      "relevance": {
+        "d04": 3
+      }
+    },
+    {
+      "id": "v2q04",
+      "category": "time_scope",
+      "split": "dev",
+      "question": "Hvad lovede Peter om loftisolering?",
+      "day": "2026-10-05",
+      "relevance": {
+        "d01": 3
+      }
+    },
+    {
+      "id": "v2q05",
+      "category": "hard_negative",
+      "split": "dev",
+      "question": "Who booked the NordTag insulation contractor?",
+      "relevance": {}
+    },
+    {
+      "id": "v2q06",
+      "category": "cross_language",
+      "split": "dev",
+      "question": "Which vegetarian restaurant did Anne recommend for the anniversary?",
+      "relevance": {
+        "d01": 3
+      },
+      "required_spans": [
+        {
+          "source": "d01",
+          "start_offset": 235,
+          "end_offset": 263
+        }
+      ]
+    },
+    {
+      "id": "v2q07",
+      "category": "distant_passages",
+      "split": "heldout",
+      "question": "Why did Lea and Jonas delay buying an electric car, and what must happen before they reconsider?",
+      "relevance": {
+        "h01": 3
+      },
+      "required_spans": [
+        {
+          "source": "h01",
+          "start_offset": 44,
+          "end_offset": 81
+        },
+        {
+          "source": "h01",
+          "start_offset": 2132,
+          "end_offset": 2172
+        }
+      ]
+    },
+    {
+      "id": "v2q08",
+      "category": "multi_source",
+      "split": "heldout",
+      "question": "Hvad lovede Erik om NORD-47 og hvad er stadig blokeret?",
+      "relevance": {
+        "h03": 3,
+        "h05": 3
+      },
+      "required_spans": [
+        {
+          "source": "h03",
+          "start_offset": 123,
+          "end_offset": 160
+        },
+        {
+          "source": "h03",
+          "start_offset": 2202,
+          "end_offset": 2236
+        },
+        {
+          "source": "h05",
+          "start_offset": 58,
+          "end_offset": 116
+        }
+      ]
+    },
+    {
+      "id": "v2q09",
+      "category": "hard_entity_contrast",
+      "split": "heldout",
+      "question": "Which database did Aisha choose for NORD-47 and why?",
+      "relevance": {
+        "h03": 3
+      }
+    },
+    {
+      "id": "v2q10",
+      "category": "time_scope",
+      "split": "heldout",
+      "question": "NORD-47 restore pilot",
+      "start_day": "2026-10-15",
+      "end_day": "2026-10-15",
+      "relevance": {
+        "h03": 3
+      }
+    },
+    {
+      "id": "v2q11",
+      "category": "mixed_cross_language",
+      "split": "heldout",
+      "question": "Hvornår giver Malik laptop charger tilbage?",
+      "relevance": {
+        "h06": 3
+      }
+    },
+    {
+      "id": "v2q12",
+      "category": "hard_negative",
+      "split": "heldout",
+      "question": "Did Erik successfully restore NORD-47 before the pilot?",
+      "day": "2026-10-12",
+      "relevance": {}
+    },
+    {
+      "id": "v2q13",
+      "category": "hard_negative",
+      "split": "heldout",
+      "question": "What is the NORD-47 encryption key?",
+      "relevance": {}
+    },
+    {
+      "id": "v2q14",
+      "category": "commitment_contrast",
+      "split": "heldout",
+      "question": "Who accepted the NORD-74 migration task?",
+      "relevance": {}
+    }
+  ]
+}

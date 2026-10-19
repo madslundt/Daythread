@@ -438,6 +438,16 @@ class PostgresConnection:
         for parameters in values:
             self.execute(statement, parameters)
 
+    def iterate(self, statement, parameters, batch_size=128):
+        """Stream large read-only scans instead of buffering the complete archive."""
+        from uuid import uuid4
+
+        sql = _parameters(self._translate(statement))
+        with self.connection.cursor(name="archive_" + uuid4().hex) as cursor:
+            cursor.execute(sql, parameters)
+            while rows := cursor.fetchmany(batch_size):
+                yield from rows
+
     def executescript(self, script):
         self._write_lock()
         for statement in _statements(script):

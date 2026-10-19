@@ -269,6 +269,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         }
 
+    @app.post("/v1/embeddings/rebuild")
+    async def rebuild_embeddings() -> dict:
+        retriever = memory().retriever
+        set_ids = [key for key in (retriever.set_id, *retriever.route_set_ids.values()) if key]
+        if not set_ids or not config.background_processing_enabled:
+            raise HTTPException(409, "Enable embeddings and restart before rebuilding")
+        await asyncio.to_thread(memory().store.rebuild_embeddings, set_ids)
+        return await asyncio.to_thread(retriever.status)
+
     @app.put("/v1/phones/{phone_id}/status")
     def phone_status(phone_id: UUID, body: PhoneObservation) -> dict:
         try:

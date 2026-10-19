@@ -207,6 +207,11 @@ async def test_neighbor_context_preserves_split_commitment_and_ranked_slots(conf
     store = Store(config.data_dir)
     hit = insert(store, "Who can pay the invoice?")
     neighbor = insert(store, "Søren will handle it.", AT + timedelta(seconds=30))
+    with store.connect() as db:
+        db.execute(
+            "UPDATE audio SET source_metadata=? WHERE id IN (?,?)",
+            (json.dumps({"recording_id": str(uuid4())}), hit, neighbor),
+        )
     memory = Memory(store, config, None)
     result = await memory.search("invoice", 3)
     sources = result["sources"]
@@ -220,6 +225,16 @@ async def test_neighbor_context_preserves_split_commitment_and_ranked_slots(conf
     other_hit = insert(store, "Another invoice due", AT + timedelta(minutes=4))
     ranked = await memory.search("invoice", 2)
     assert {source["id"] for source in ranked["sources"]} == {hit, other_hit}
+
+
+@pytest.mark.anyio
+async def test_neighbor_proximity_and_pronouns_do_not_prove_same_conversation(config):
+    store = Store(config.data_dir)
+    hit = insert(store, "Who can pay the invoice?")
+    insert(store, "Søren will handle it.", AT + timedelta(seconds=30))
+    result = await Memory(store, config, None).search("invoice", 3)
+    assert [source["id"] for source in result["sources"]] == [hit]
+    assert result["retrieval_details"]["context_sources"] == []
 
 
 @pytest.mark.anyio

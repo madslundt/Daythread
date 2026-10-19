@@ -37,6 +37,7 @@ from .recording_locations import RecordingLocationStore, decorate_locations
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
 from .recording_uploads import SCHEMA as RECORDING_UPLOADS_SCHEMA
 from .recording_uploads import RecordingUploadStore
+from .semantic_schema import migrate_semantic_schema
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
 from .source_matching import MATCH_VERSION, SourceMatchingStore, UploadGrouping
@@ -183,6 +184,7 @@ class Store(
                 )
                 db.execute("UPDATE audio SET transcript_version=lower(hex(randomblob(16)))")
             db.executescript(SEMANTIC_SCHEMA)
+            migrate_semantic_schema(db)
             db.executescript(TRANSLATION_SCHEMA)
             db.executescript(SUMMARY_TRANSLATION_SCHEMA)
             db.executescript(SPEAKER_SCHEMA)

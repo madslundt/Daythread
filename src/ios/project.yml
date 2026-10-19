@@ -34,6 +34,11 @@ targets:
       path: DaythreadApp/Info.plist
       properties:
         CFBundleDisplayName: Daythread
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio recording
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.audio, public.mpeg-4-audio, public.mp3, com.microsoft.waveform-audio, org.xiph.flac, com.microsoft.windows-media-wma]
         DaythreadManagedServiceURL: https://app.daythread.elcc.dk
         APNSEnvironment: $(APS_ENVIRONMENT)
         UILaunchScreen: {}

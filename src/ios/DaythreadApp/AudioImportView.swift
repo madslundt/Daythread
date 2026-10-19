@@ -13,6 +13,7 @@ struct AudioImportView: View {
     @State private var vendorRevision = 0
     var onImported: () -> Void = {}
     var conversationSourceID: String? = nil
+    var sharedURL: URL? = nil
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -118,6 +119,12 @@ struct AudioImportView: View {
             }
         }
         .onAppear {
+            if let sharedURL, importer.recordings.isEmpty {
+                run {
+                    do { await importer.add([sharedURL], client: try model.client()) }
+                    catch { importer.error = L10n.error(error) }
+                }
+            }
             if let conversationSourceID, importer.recordings.isEmpty {
                 importer.linking = true
                 importer.conversationSourceID = conversationSourceID

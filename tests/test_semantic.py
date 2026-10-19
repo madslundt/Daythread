@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from omi_local.api import create_app
 from omi_local.domain import EvidenceChanged
+from omi_local.embedding_chunking import chunk_passages
 from omi_local.embeddings import EmbeddingError, Embeddings, index_one
 from omi_local.inference import Inference
 from omi_local.semantic_store import normalized, passages
@@ -268,14 +269,15 @@ def test_whitespace_only_passages_are_skipped_without_breaking_batch_cursors(con
     text = "\n" * 3000 + "Søren handles the invoice. " * 1000 + " " * 3000
     key = insert(store, text)
     batches = 0
+    chunk_count = len(chunk_passages(text, config.embedding_manifest))
     while job := store.claim_embedding_batch(set_id, 1000):
         assert all(text[row["start_offset"]:row["end_offset"]].strip() for row in job["passages"])
-        assert [row["ordinal"] for row in job["passages"]] == list(range(
-            job["cursor"], job["cursor"] + len(job["passages"])
-        ))
+        ordinals = [row["ordinal"] for row in job["passages"]]
+        assert ordinals == sorted(set(ordinals))
+        assert min(ordinals) >= job["cursor"]
         assert store.finish_embedding_batch(job, [[1, 0]] * len(job["passages"]))
         batches += 1
-        assert batches < 5
+        assert batches <= (chunk_count + 15) // 16
     assert batches > 1
     assert store.embedding_coverage(set_id) == {"total": 1, "indexed": 1}
     assert store.semantic_candidates(set_id, [1, 0], 0.5, 10, None, None)[0]["audio_id"] == key

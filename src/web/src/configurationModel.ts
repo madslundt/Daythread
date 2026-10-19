@@ -125,7 +125,14 @@ const advancedKeys = new Set([
   "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
   "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
   "embedding_dimension", "embedding_timeout_seconds", "embedding_min_score",
-  "embedding_routes",
+  "embedding_routes", "embedding_query_prefix", "embedding_document_prefix",
+  "embedding_chunking_strategy", "embedding_target_tokens", "embedding_max_tokens", "embedding_overlap_tokens",
+  "embedding_max_input_tokens", "embedding_special_tokens", "embedding_tokenizer", "embedding_tokenizer_revision",
+  "embedding_query_format", "embedding_query_instruction", "embedding_send_dimensions",
+  "retrieval_candidate_limit", "retrieval_rrf_k", "retrieval_lexical_weight", "retrieval_semantic_weight",
+  "retrieval_matches_per_source", "retrieval_evidence_character_budget",
+  "reranker_enabled", "reranker_base_url", "reranker_model", "reranker_token", "reranker_timeout_seconds",
+  "reranker_max_candidates", "reranker_max_passage_chars", "reranker_max_query_chars",
   "diarization_enabled", "diarization_base_url", "diarization_timeout_seconds",
   "voice_recognition_enabled", "voice_recognition_report", "omi_api_key", "pocket_api_key",
   "audio_forwarding_token", "worker_enabled",
@@ -135,6 +142,7 @@ export function advancedConfigurationFields(fields: ConfigurationField[], values
   return fields.filter(({ key }) => {
     if (!advancedKeys.has(key)) return false;
     if (key.startsWith("embedding_") && key !== "embedding_enabled") return values.embedding_enabled === true;
+    if (key.startsWith("reranker_") && key !== "reranker_enabled") return values.reranker_enabled === true;
     if (key.startsWith("diarization_") && key !== "diarization_enabled") return values.diarization_enabled === true;
     if (key === "voice_recognition_enabled") return values.diarization_enabled === true;
     if (key === "voice_recognition_report") return values.diarization_enabled === true && values.voice_recognition_enabled === true;
@@ -181,8 +189,8 @@ export function routeChanges(rows: Omit<RouteRow, "id">[], llm: boolean, embeddi
       ...(llm || embedding ? { revision: row.revision?.trim() || null } : {}),
       ...(embedding && row.dimension ? { dimension: Number(row.dimension) } : {}),
       ...(embedding ? {
-        query_prefix: row.query_prefix === undefined ? null : row.query_prefix.trim(),
-        document_prefix: row.document_prefix === undefined ? null : row.document_prefix.trim(),
+        query_prefix: row.query_prefix?.trim() || null,
+        document_prefix: row.document_prefix?.trim() || null,
       } : {}),
       ...(token !== undefined ? { token } : {}),
     };

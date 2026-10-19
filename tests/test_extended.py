@@ -234,6 +234,12 @@ def test_unknown_model_citations_are_rejected_without_persisting_answer(client):
         validate_citations(f"[{unknown}]", [])
 
 
+def test_validate_citations_ignores_unbracketed_uuid_content():
+    value = "00000000-0000-0000-0000-000000000000"
+    text = f"The event identifier is {value}."
+    assert validate_citations(text, []) == text
+
+
 def test_capture_gaps_survive_retries_and_are_visible_in_rewind(client):
     gap = {
         "gap_id": str(uuid4()),

@@ -86,9 +86,13 @@ def summary_language_instruction(language: str) -> str:
 
 def validate_citations(text: str, sources: list[dict]) -> str:
     allowed = {source["id"].lower() for source in sources}
+    # UUIDs are citations only in the square-bracket form required by the system
+    # prompt. Transcripts can contain UUIDs as ordinary content (for example, an
+    # event or task identifier), and those must not invalidate an otherwise valid
+    # summary.
     cited = re.findall(
-        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        r"\[\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*\]",
         text,
     )
     if any(key.lower() not in allowed for key in cited):

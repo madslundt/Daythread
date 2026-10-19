@@ -21,7 +21,7 @@ export function TranscriptPassage({ source, section }: {
 export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText }: {
   sourceId: string; original: string; passage?: TranslationPassage;
   content?: "transcript" | "summary";
-  renderText?: (text: string, translated: boolean) => ReactNode;
+  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>) => ReactNode;
 }) {
   const requests = useMemo(() => new TranscriptTranslationRequests(sourceId, passage, content),
     [sourceId, passage?.start_offset, passage?.end_offset, passage?.transcript_version, content]);
@@ -129,7 +129,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
   content = "transcript", renderText }: {
   original: string;
   content?: "transcript" | "summary";
-  renderText?: (text: string, translated: boolean) => ReactNode;
+  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>) => ReactNode;
   data?: TranscriptTranslationData;
   translated?: boolean;
   selectedLanguage?: string;
@@ -167,6 +167,17 @@ export function TranscriptTranslationView({ original, data, translated = false, 
     if (code === "original") onSelect(false);
     else onLanguage(code);
   }
+
+  const previewAction = <div className="translation-preview-action">
+    {loading || generating ? <p className="caption" role="status">{generating ? t("Translating…") : t("Checking saved translation…")}</p>
+      : <>
+        {data?.regeneration_required ? <p className="caption">{t("Update this translation to keep the recap’s topics and layout.")}</p> : null}
+        {translationError ? <p className="caption translation-error" role="alert">{translationError}</p> : null}
+        <button type="button" className="translation-trigger" onClick={() => onTranslate(active)}>
+          {translationError || data?.regeneration_required ? t("Translate again") : t("Translate to {value0}", { value0: language })}
+        </button>
+      </>}
+  </div>;
 
   return <div className="transcript-translation">
     <div className="translation-tabs" role="tablist" aria-label={content === "summary" ? t("Summary language") : t("Transcript language")}
@@ -214,19 +225,16 @@ export function TranscriptTranslationView({ original, data, translated = false, 
       : data && !data.available_languages.length ? <p className="caption">{t("Add translation languages in")}{" "}<a href="/settings/general">{t("Settings")}</a> {content === "summary" ? t("to translate this summary.") : t("to translate this transcript.")}</p>
       : translation ? <p className="caption">{content === "summary" ? t("Generated translation · The original summary is preserved.") : t("Generated translation · Corrections apply to the original transcript.")}</p> : null}
     <div id={`${id}-text`} role="tabpanel" aria-labelledby={`${id}-${active}`} tabIndex={0}>
-      {placeholder ? <div className="translation-preview" aria-busy={loading || generating}>
-        <p className="transcript-text translation-preview-text" aria-hidden="true">{original}</p>
-        <div className="translation-preview-action">
-          {loading || generating ? <p className="caption" role="status">{generating ? t("Translating…") : t("Checking saved translation…")}</p>
-            : <>
-              {translationError ? <p className="caption translation-error" role="alert">{translationError}</p> : null}
-              <button type="button" className="translation-trigger" onClick={() => onTranslate(active)}>
-                {translationError ? t("Translate again") : t("Translate to {value0}", { value0: language })}
-              </button>
-            </>}
+      {renderText ? <div className={placeholder ? "translation-preview" : undefined} aria-busy={placeholder ? loading || generating : undefined}>
+        <div lang={translation?.language} className={placeholder ? "translation-preview-text" : undefined}
+          aria-hidden={placeholder || undefined} inert={placeholder || undefined}>
+          {renderText(translation?.text ?? original, !!translation, translation ?? undefined)}
         </div>
-      </div> : renderText ? <div lang={translation?.language}>{renderText(translation?.text ?? original, !!translation)}</div>
-        : <p className="transcript-text" lang={translation?.language}>{translation?.text ?? original}</p>}
+        {placeholder ? previewAction : null}
+      </div> : placeholder ? <div className="translation-preview" aria-busy={loading || generating}>
+        <p className="transcript-text translation-preview-text" aria-hidden="true">{original}</p>
+        {previewAction}
+      </div> : <p className="transcript-text" lang={translation?.language}>{translation?.text ?? original}</p>}
     </div>
     {error ? <ErrorState message={error} retry={!data || loading ? onRetry : undefined} /> : null}
   </div>;

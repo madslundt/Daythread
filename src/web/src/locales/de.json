@@ -2821,5 +2821,8 @@
   "Retry whole day": "Gesamten Tag erneut prüfen",
   "Recording filter changed before recap generation; retry": "Der Aufnahmefilter wurde vor der Erstellung der Zusammenfassung geändert; erneut versuchen",
   "Recording filter or selected evidence changed; retry the recap": "Der Aufnahmefilter oder die ausgewählten Belege haben sich geändert; Zusammenfassung erneut erstellen",
-  "A filtered recap requires a tag or location filter": "Eine gefilterte Zusammenfassung erfordert einen Markierungs- oder Ortsfilter"
+  "A filtered recap requires a tag or location filter": "Eine gefilterte Zusammenfassung erfordert einen Markierungs- oder Ortsfilter",
+  "Update this translation to keep the recap’s topics and layout.": "Aktualisiere diese Übersetzung, um die Themen und das Layout des Rückblicks beizubehalten.",
+  "Saved translation cannot preserve this recap's topics. Translate again.": "Die gespeicherte Übersetzung kann die Themen dieses Rückblicks nicht beibehalten. Übersetze erneut.",
+  "Translation changed summary structure": "Die Übersetzung hat die Struktur des Rückblicks verändert"
 }

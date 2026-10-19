@@ -249,7 +249,9 @@ struct SourceTranscriptTopicsView: View {
 /// A saved summary has a separate translation while its original actions and evidence retain their identity.
 struct SummaryTranslationView<Original: View>: View {
     let output: JSONValue
-    @ViewBuilder let original: () -> Original
+    private let original: () -> Original
+    private let renderedContent: ((JSONValue?, Bool) -> Original)?
+    private let translationIsCompatible: ((JSONValue) -> Bool)?
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var interfaceLocale
@@ -270,13 +272,28 @@ struct SummaryTranslationView<Original: View>: View {
     @State private var refresh = UUID()
     @State private var generation: Task<Void, Never>?
     @State private var loadedScope = ""
+    @State private var regenerationRequired = false
+
+    init(output: JSONValue, @ViewBuilder original: @escaping () -> Original) {
+        self.output = output; self.original = original; renderedContent = nil; translationIsCompatible = nil
+    }
+
+    init(output: JSONValue, translationIsCompatible: ((JSONValue) -> Bool)? = nil,
+         @ViewBuilder renderedContent: @escaping (JSONValue?, Bool) -> Original) {
+        self.output = output; self.renderedContent = renderedContent
+        self.translationIsCompatible = translationIsCompatible
+        original = { renderedContent(nil, false) }
+    }
 
     private var outputID: String { output["output_id"].text }
     private var languageName: String { L10n.locale.localizedString(forLanguageCode: language) ?? language }
     private var hasTranslation: Bool {
-        !alreadyInTargetLanguage && !translation["text"].text.isEmpty &&
+        !regenerationRequired && !alreadyInTargetLanguage && !translation["text"].text.isEmpty &&
             translation["language"].text == language && summaryVersion != .null &&
-            translation["summary_version"] == summaryVersion
+            translation["summary_version"] == summaryVersion && (translationIsCompatible?(translation) ?? true)
+    }
+    private var needsLayoutUpdate: Bool {
+        regenerationRequired || (!translation["text"].text.isEmpty && !(translationIsCompatible?(translation) ?? true))
     }
     private var scopeKey: String {
         [model.archiveIdentity, model.archiveRevision, outputID, output["summary"].text].joined(separator: "|")
@@ -296,7 +313,12 @@ struct SummaryTranslationView<Original: View>: View {
                 Text(showingTranslation ? L10n.text("Showing the \(languageName) translation. The original summary is preserved.") : L10n.text("Showing the original summary. A \(languageName) translation is available."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if showingTranslation && hasTranslation {
+            if loaded && needsLayoutUpdate {
+                Text(L10n.text("Update this translation to keep the recap’s topics and layout.")).font(.caption).foregroundStyle(.secondary)
+            }
+            if let renderedContent {
+                renderedContent(hasTranslation ? translation : nil, showingTranslation && hasTranslation)
+            } else if showingTranslation && hasTranslation {
                 Text(.init(translation["text"].text)).textSelection(.enabled).accessibilityIdentifier("summary.translationText")
                 Button {
                     UIPasteboard.general.string = translation["text"].text
@@ -329,7 +351,7 @@ struct SummaryTranslationView<Original: View>: View {
                     } else if loaded && alreadyInTargetLanguage {
                         Text(L10n.text("Summary is already in \(languageName). Choose another translation language above."))
                             .font(.caption).foregroundStyle(.secondary)
-                    } else if loaded && !hasTranslation {
+                    } else if loaded && !hasTranslation && !needsLayoutUpdate {
                         Text(L10n.text("Translation is generated when requested and preserves the original summary."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -350,6 +372,7 @@ struct SummaryTranslationView<Original: View>: View {
         generation?.cancel(); generation = nil
         translation = .null; summaryVersion = .null; languageAnalysis = .null; recommendedLanguage = ""; showingTranslation = false
         alreadyInTargetLanguage = false; loaded = false; busy = false; copied = false
+        regenerationRequired = false
     }
 
     private func load() async {
@@ -386,6 +409,7 @@ struct SummaryTranslationView<Original: View>: View {
         recommendedLanguage = result["recommended_language"].text
         summaryVersion = result["summary_version"]
         alreadyInTargetLanguage = result["already_in_target_language"] == .bool(true)
+        regenerationRequired = result["regeneration_required"] == .bool(true)
         translation = alreadyInTargetLanguage ? .null : result["translation"]
         if alreadyInTargetLanguage { showingTranslation = false }
         else if previousTranslation != translation { showingTranslation = hasTranslation; copied = false }

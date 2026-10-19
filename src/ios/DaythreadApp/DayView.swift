@@ -43,6 +43,8 @@ struct DayView: View {
     @State private var loadedScope = ""
     @State private var loadedRecordingKey = ""
     @State private var membershipRevision = 0
+    @State private var recapFocus: RecapTopicFocus?
+    @State private var recapFocusScope = ""
 
     init(date: Date? = nil, filters: DayFilterScope = .init()) {
         _selectedDate = State(initialValue: date)
@@ -61,6 +63,7 @@ struct DayView: View {
     private var cacheKey: String { model.archiveIdentity + ".day-content.v2." + scopeKey + "." + Data(query.utf8).base64EncodedString() }
     private var currentRecap: JSONValue { loadedScope == scopeKey ? recap : .null }
     private var currentGroups: [JSONValue] { loadedRecordingKey == cacheKey ? recordingGroups : [] }
+    private var currentFocus: RecapTopicFocus? { recapFocusScope == scopeKey ? recapFocus : nil }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -78,7 +81,9 @@ struct DayView: View {
                     .font(.caption).foregroundStyle(.secondary).editorialRow()
             }
             recapSection
-            DayAtGlanceSections(day: dayKey, filters: filters).id(scopeKey)
+            DayAtGlanceSections(day: dayKey, topicSources: currentFocus?.sourceIDs, topicPassages: currentFocus?.passages ?? [],
+                topicVersions: currentFocus?.versions ?? [:], filters: filters, topicTitle: currentFocus?.title)
+                .id(scopeKey + (currentFocus?.id ?? "day"))
             Section {
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
                     HStack(spacing: 10) {
@@ -188,6 +193,7 @@ struct DayView: View {
 
     private var recapSection: some View {
         let recap = currentRecap
+        let focusedScope = scopeKey
         let hasContent = !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty })
         return Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day recap")) {
             ErrorNote(message: loadedScope == scopeKey ? recapError : nil)
@@ -202,7 +208,9 @@ struct DayView: View {
             }
             if !hasContent && ["queued", "running"].contains(recap["generation_state"].text) { ProgressView(L10n.text("Preparing a recap for the selected filters…")) }
             if hasContent {
-                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters).id(scopeKey + recap["scope_fingerprint"].text)
+                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
+                    onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } })
+                    .id(scopeKey + recap["scope_fingerprint"].text)
             } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }

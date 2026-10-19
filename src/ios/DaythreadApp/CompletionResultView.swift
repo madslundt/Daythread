@@ -33,6 +33,7 @@ struct CompletionResultView: View {
     @State private var error: String?
     @State private var loading = true
     @State private var playing = false
+    @State private var recapFocus: RecapTopicFocus?
     private var result: JSONValue { job["result"] }
     private var parameters: JSONValue { job["parameters"] }
     private var recapFilters: DayFilterScope {
@@ -96,13 +97,17 @@ struct CompletionResultView: View {
                     if !result["summary"].text.isEmpty {
                         Section(L10n.text("Saved summary")) {
                             if job["kind"].text == "recap" {
-                                RecapContentView(recap: result, day: parameters["day"].text)
+                                RecapContentView(recap: result, day: parameters["day"].text, onFocusChange: { recapFocus = $0 })
                             } else {
                                 SummaryTranslationView(output: result) {
                                     Text(.init(result["summary"].text)).textSelection(.enabled)
                                 }
                             }
                         }
+                    }
+                    if job["kind"].text == "recap", let recapFocus {
+                        DayAtGlanceSections(day: parameters["day"].text, topicSources: recapFocus.sourceIDs,
+                            topicPassages: recapFocus.passages, topicVersions: recapFocus.versions, topicTitle: recapFocus.title).id(recapFocus.id)
                     }
                     if job["kind"].text == "rewind" {
                         Section(L10n.text("Rewind window")) {

@@ -2821,5 +2821,8 @@
   "Retry whole day": "Prøv hele dagen på nytt",
   "Recording filter changed before recap generation; retry": "Opptaksfilteret ble endret før sammendraget ble generert; prøv på nytt",
   "Recording filter or selected evidence changed; retry the recap": "Opptaksfilteret eller det valgte kildebelegget er endret; prøv sammendraget på nytt",
-  "A filtered recap requires a tag or location filter": "Et filtrert sammendrag krever et merke- eller stedsfilter"
+  "A filtered recap requires a tag or location filter": "Et filtrert sammendrag krever et merke- eller stedsfilter",
+  "Update this translation to keep the recap’s topics and layout.": "Oppdater denne oversettelsen for å bevare emnene og oppsettet i oppsummeringen.",
+  "Saved translation cannot preserve this recap's topics. Translate again.": "Den lagrede oversettelsen kan ikke bevare emnene i denne oppsummeringen. Oversett på nytt.",
+  "Translation changed summary structure": "Oversettelsen endret strukturen i oppsummeringen"
 }

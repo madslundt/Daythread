@@ -189,14 +189,27 @@ describe("transcript translation display", () => {
     expect(html).not.toContain(">Japanese</option>");
   });
 
-  it.each(["transcript", "summary"] as const)("offers translation into a dominant language for mixed %s", (content) => {
-    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} content={content} data={{
+  it("offers translation into a dominant language for a mixed transcript", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} content="transcript" data={{
       ...data, translation: null, recommended_language: "da",
       language_analysis: { dominant_language: "da", dominant_language_share: 0.8,
         language_shares: { da: 0.8, en: 0.2 } },
     }} />);
     expect(html).toContain("Danish is dominant (about 80%)");
     expect(html).toContain("Translate to Danish");
+    expect(html).toContain(original);
+  });
+
+  it("offers every enabled summary language as a tab without a transcript recommendation banner", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view} content="summary" data={{
+      ...data, translation: null, recommended_language: "da",
+      language_analysis: { dominant_language: "da", dominant_language_share: 0.8,
+        language_shares: { da: 0.8, en: 0.2 } },
+    }} />);
+    expect(html).toContain('aria-label="Summary language"');
+    for (const label of ["Original", "English", "Danish", "German"])
+      expect(html).toContain(`>${label}</button>`);
+    expect(html).not.toContain("is dominant");
     expect(html).toContain(original);
   });
 
@@ -277,7 +290,7 @@ describe("transcript translation display", () => {
     expect(html).not.toContain("original transcript");
   });
 
-  it("shows the original summary controls only on the Original tab", () => {
+  it("keeps summary controls in a hidden inert preview while the selected language loads", () => {
     const renderText = (text: string, translated: boolean) => translated
       ? <article>{text}</article> : <button>Original topic tools</button>;
     const originalHtml = renderToStaticMarkup(<TranscriptTranslationView {...view} data={data}
@@ -285,9 +298,18 @@ describe("transcript translation display", () => {
     const pendingHtml = renderToStaticMarkup(<TranscriptTranslationView {...view}
       data={{ ...data, translation: null }} translated content="summary" renderText={renderText} />);
     expect(originalHtml).toContain("Original topic tools");
-    expect(pendingHtml).not.toContain("Original topic tools");
+    expect(pendingHtml).toContain("Original topic tools");
+    expect(pendingHtml).toContain('aria-hidden="true" inert=""');
     expect(pendingHtml).toContain("translation-preview-text");
     expect(pendingHtml).toContain("Translate to English");
+  });
+
+  it("offers regeneration for a saved translation that cannot preserve recap structure", () => {
+    const html = renderToStaticMarkup(<TranscriptTranslationView {...view}
+      data={{ ...data, translation: null, regeneration_required: true }} translated content="summary" />);
+    expect(html).toContain("Update this translation to keep the recap’s topics and layout.");
+    expect(html).toContain("Translate again");
+    expect(html).not.toContain(data.translation!.text);
   });
 });
 

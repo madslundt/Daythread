@@ -89,6 +89,10 @@
     "Bearer ": "HTTP authorization or upload ownership identifier; must remain untranslated.",
     ".poll.": "Internal SwiftUI task identity suffix; not interface copy",
     ".automatic-decisions.": "Internal SwiftUI task identity suffix; not interface copy",
-    ".diary-poll.": "Internal SwiftUI task identity suffix; not interface copy"
+    ".diary-poll.": "Internal SwiftUI task identity suffix; not interface copy",
+    "src/ios/DaythreadApp/RecapTopicRow.swift::recap.topic.": "SwiftUI accessibility identifier prefix; not interface copy.",
+    "src/ios/DaythreadApp/RecapTopicRow.swift::recap.originalPassages.": "SwiftUI accessibility identifier prefix; not interface copy.",
+    "src/ios/Sources/OmiCore/RecapTranslationMapping.swift::^(\\s*(?:[-*+]|\\d+[.)])\\s+(?:\\[[ xX]\\]\\s+)?)(.*)$": "Regular expression validating canonical Markdown list structure; not interface copy.",
+    "src/ios/Sources/OmiCore/RecapTranslationMapping.swift::## Follow-ups": "Internal canonical heading used to retain original legacy action grouping; never rendered as interface copy."
   }
 }

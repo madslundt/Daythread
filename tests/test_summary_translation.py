@@ -42,7 +42,7 @@ def summary(tmp_path):
 
         async def translate(text, language):
             calls.append((text, language))
-            return f"## Budget\n\n{DANISH}"
+            return "Budget" if text == "Budget" else DANISH
 
         memory.inference.translate = translate
         yield SimpleNamespace(client=client, memory=memory, source=source, id=output_id,
@@ -59,10 +59,10 @@ def test_explicit_translation_is_cached_separately_and_preserves_original(summar
     assert not s.calls
     translated = s.client.post(s.path).json()
     assert translated["translation"]["summary_version"] == result["summary_version"]
-    assert s.calls == [(s.text, "da")]
+    assert s.calls == [("Budget", "da"), (ENGLISH, "da")]
     assert s.client.post(s.path).json() == translated
     assert s.client.get(s.path).json() == translated
-    assert len(s.calls) == 1
+    assert len(s.calls) == 2
     reopened = Store(s.memory.store.root)
     source = reopened.summary_translation_source(s.id)
     assert source["text"] == s.text
@@ -85,7 +85,7 @@ def test_settings_languages_control_targets_independently_of_summary_language(su
     assert s.client.get(s.path).json()["available_languages"] == []
     assert s.client.post(s.path, params={"language": "fr"}).status_code == 422
     assert s.client.post(s.path).status_code == 409
-    assert len(s.calls) == 1
+    assert len(s.calls) == 2
 
 
 @pytest.mark.parametrize("share,recommended", [(0.89, "da"), (0.9, None), (0.91, None)])
@@ -273,7 +273,10 @@ def test_durable_translation_job_reports_activity_notifies_and_tracks_sources(su
     assert asyncio.run(jobs.process_one())
     job = s.client.get(f"/v1/jobs/{job_id}").json()
     assert job["state"] == "completed"
-    assert job["result"]["translation"]["text"] == DANISH
+    translated = job["result"]["translation"]
+    assert DANISH in translated["text"]
+    assert translated["text"].count(s.source["id"]) == 1
+    assert translated["structure"]["version"] == 1
     jobs.notify_completed()
     notice = s.memory.store.notifications_after(0)["notifications"][0]
     assert notice["kind"] == "summary_translation"
@@ -293,4 +296,4 @@ def test_preexisting_saved_rewind_job_can_be_translated(summary):
             (str(uuid4()), json.dumps({"output_id": s.id, "summary": s.text})),
         )
     assert s.client.post(s.path).status_code == 200
-    assert s.calls == [(s.text, "da")]
+    assert s.calls == [("Budget", "da"), (ENGLISH, "da")]

@@ -10,10 +10,12 @@ import { recapBrowserTopics, type RecapFocus } from "./recapItems";
 import { SourceList } from "./SourceList";
 import { RecapContent } from "./RecapContent";
 import { SummaryTranslation } from "./SummaryTranslation";
-import type { ChatScope, Recap, Status } from "./types";
+import type { ChatScope, Recap, Source, Status } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice, RichText } from "./UI";
 import { Icon } from "./Icon";
+
+const emptySources: Source[] = [];
 
 export function RecapSection({
   day,
@@ -62,7 +64,10 @@ export function RecapSection({
     (status?.generation?.stages.summarizing || 0) > 0;
   const [showVersions, setShowVersions] = useState(false);
   const [focus, setFocus] = useState<RecapFocus>();
-  const hasOriginalTopics = recapBrowserTopics([], recap.data?.sources || []).length > 0;
+  const summary = recap.data?.summary || "";
+  const version = recap.data?.output_id || recap.data?.generated_at || "unversioned";
+  const sources = recap.data?.sources || emptySources;
+  const hasOriginalTopics = recapBrowserTopics([], sources).length > 0;
   useEffect(() => { setFocus(undefined); }, [day, recap.data?.summary, recap.data?.output_id]);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", recap.refresh);
@@ -91,23 +96,25 @@ export function RecapSection({
         <Loading>{filtered ? t("Loading filtered recap…") : t("Loading recap…")}</Loading>
       ) : recap.data && (recap.data.summary || hasOriginalTopics) ? (
         <div className="recap-content">
-          {!filtered && recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}>
-            <RecapContent
-              key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
-              text={recap.data.summary}
-              day={day}
-              version={recap.data.output_id || recap.data.generated_at || "unversioned"}
-              sources={recap.data.sources || []}
-              timezone={timezone}
-              onCorrect={recap.refresh}
-              onChat={scopedChat}
-              onFocus={setFocus}
-              compact={compact}
-            />
-          </SummaryTranslation> : <RecapContent
+          {!filtered && recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}
+            renderContent={(displayText, translated, translation) => <RecapContent
+                key={`${day}:${version}:${summary}`}
+                text={summary}
+                translatedText={translated ? displayText : undefined}
+                translationStructure={translated ? translation?.structure : undefined}
+                day={day}
+                version={version}
+                sources={sources}
+                timezone={timezone}
+                onCorrect={recap.refresh}
+                onChat={scopedChat}
+                onFocus={setFocus}
+                compact={compact}
+              />
+            } /> : <RecapContent
             key={`${day}:${dayFilterKey(filters)}:${recap.data.output_id || recap.data.generated_at || "originals"}:${recap.data.summary || ""}`}
             text={recap.data.summary || ""} day={day} version={recap.data.output_id || "originals"}
-            sources={recap.data.sources || []} timezone={timezone} onCorrect={recap.refresh} onChat={scopedChat}
+            sources={sources} timezone={timezone} onCorrect={recap.refresh} onChat={scopedChat}
             onFocus={setFocus} compact={compact} emptyMessage={filtered ? filteredMessage : undefined} />}
           <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} filters={filters} focus={focus && recap.data.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={scopedChat} />
           {recap.data.pending_chunks ? (

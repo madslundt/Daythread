@@ -1,8 +1,4 @@
 /* Today keeps content prominent and utility details close at hand. */
-.recap-view-switch { display: inline-flex; max-width: 100%; margin: 0 0 22px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-.recap-view-switch button { min-height: 44px; padding: 10px 20px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 500; }
-.recap-view-switch button + button { border-left: 1px solid var(--line); }
-.recap-view-switch button[aria-pressed='true'] { color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
 .recap-workspace .recap-topic { padding: 18px 0; border-top: 1px solid var(--line); }
 .recap-workspace .recap-section-heading { align-items: center; gap: 6px 14px; margin-bottom: 5px; }
 .recap-workspace .recap-section-heading h3 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
@@ -12,26 +8,30 @@
 .recap-workspace .recap-topic-summary { color: var(--secondary); }
 .recap-topic-summary.is-collapsed > .prose { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .recap-workspace .recap-summary-toggle { min-height: 36px; margin-top: 3px; font-size: 12px; color: var(--accent); }
-.recap-introduction { margin-bottom: 20px; }
 .recap-topic-actions { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-top: 10px; }
 .recap-topic-actions .text-button, .recap-workspace .recap-topic-evidence > .text-button { font-size: 12px; color: var(--muted); }
 .recap-topic-actions .text-button:hover { color: var(--accent); }
 .recap-workspace .recap-topic-evidence { margin-top: 6px; }
-.recap-workspace .recap-topic-evidence > .text-button { min-height: 40px; padding: 8px 0; }
+.recap-workspace .recap-topic-evidence > .text-button { min-height: 44px; padding: 8px 0; }
 .recap-workspace .recap-day-chat { margin-top: 10px; min-height: 44px; }
 .recap-overview-actions { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin-top: 10px; }
 .recap-workspace .recap-overview-actions .recap-day-chat { margin: 0; }
 .recap-topic-search { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--canvas); padding: 0 12px; border-radius: 8px; margin-bottom: 12px; }
 .recap-topic-search input { width: 100%; padding: 12px 0; background: transparent; border: 0; font-size: 14px; }
-.recap-topic-option { display: flex; gap: 18px; align-items: center; width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; padding: 18px 0; text-align: left; }
+.recap-topic-row { border-top: 1px solid var(--line); }
+.recap-topic-row > h3 { margin: 0; font-family: inherit; }
+.recap-topic-option { display: flex; gap: 18px; align-items: center; width: 100%; min-height: 60px; border: 0; border-radius: 0; background: transparent; padding: 16px 0; text-align: left; }
 .recap-topic-option > span { flex: 1; min-width: 0; }
-.recap-topic-option strong { display: block; font: 400 20px/1.3 var(--serif); margin-bottom: 7px; }
+.recap-topic-option strong { display: block; font: 400 20px/1.3 var(--serif); overflow-wrap: anywhere; }
+.recap-topic-option strong + span { margin-top: 7px; }
 .recap-topic-option > span > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; color: var(--muted); line-height: 1.6; }
 .recap-topic-option:hover strong { color: var(--accent); }
-.recap-back { min-height: 44px; margin-bottom: 10px; }
+.recap-topic-option > svg { flex-shrink: 0; color: var(--muted); }
+.recap-topic-option[aria-expanded='true'] > svg { transform: rotate(90deg); }
+.recap-workspace .recap-topic-inline { padding: 0 0 14px; border: 0; }
+.recap-topic-row > div > .caption { margin: 0 0 16px; }
+.recap-translation-warning { margin: 0 0 14px; }
 .recap-topic-passages h4 { margin: 24px 0 8px; font-size: 14px; font-weight: 500; }
-.recap-recorded-followups { border-top: 1px solid var(--line); padding: 12px 0; font-size: 13px; color: var(--muted); }
-.recap-recorded-followups > summary { padding: 8px 0; }
 .action-points { margin: 20px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); }
 .action-points .section-heading { min-height: 35px; align-items: baseline; }
 .action-points .section-heading .text-link { font-size: 12px; }
@@ -90,8 +90,6 @@
 .action-followup { border-top: 1px solid var(--line); padding: 16px 0; margin-top: 16px; }
 .action-followup p { margin-bottom: 8px; }
 @media (max-width: 760px) {
-  .recap-view-switch { display: flex; }
-  .recap-view-switch button { flex: 1; padding-inline: 12px; }
   .recap-workspace .recap-section-heading { align-items: flex-start; }
   .recap-workspace .recap-section-heading > .text-button { padding: 0; min-height: 32px; }
   .recap-workspace .recap-section-heading h3 { flex-basis: 100%; }

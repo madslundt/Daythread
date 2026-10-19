@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RecapContent } from "./RecapContent";
+import { RecapContent, RecapTopicRow } from "./RecapContent";
 import { RecapEvidence } from "./RecapEvidence";
 import { RecapTopic } from "./RecapTopic";
 import { currentRecapPassage, itemSources, recapBrowserTopics, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText, recapTopics, topicFocus } from "./recapItems";
@@ -13,12 +13,15 @@ const sources: Source[] = [
 ];
 
 describe("day recap interactions", () => {
-  it("offers a whole-day reading view and a searchable topic path without separate task state", () => {
+  it("offers one searchable topic list without duplicate views or separate task state", () => {
     const html = renderToStaticMarkup(<RecapContent text={"## Cocoa\nA test with dark chocolate.\n## Follow-ups\n- Buy cocoa"}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} />);
-    expect(html).toContain("Day overview");
-    expect(html).toContain("Explore topics");
-    expect(html).toContain("Explore topic: Cocoa");
+    expect(html).toContain('aria-label="Find a topic in this day"');
+    expect(html).toContain('class="recap-topic-list"');
+    expect(html).toContain('data-topic-id="recap:0:Cocoa"');
+    expect(html).not.toContain("Day overview");
+    expect(html).not.toContain("Explore topics");
+    expect(html).not.toContain("Explore topic:");
     expect(html).not.toContain('type="checkbox"');
     expect(html).not.toContain("saved in this browser");
   });
@@ -50,13 +53,13 @@ describe("day recap interactions", () => {
     expect(recapReadingText("Bring [the original] notes.")).toBe("Bring [the original] notes.");
   });
 
-  it("keeps the whole-day reading view readable and offers topic drill-down", () => {
+  it("keeps legacy summaries and follow-ups readable in the same collapsed list", () => {
     const html = renderToStaticMarkup(<RecapContent
       text={`**Highlights**\n- **Gym** — A workout [${sources[0].id}].\n## Follow-ups\n- Call Sam`}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact
     />);
-    expect(html).toContain('aria-pressed="true">Day overview');
-    expect(html).toContain('aria-label="Explore topic: Gym"');
+    expect(html).toContain('data-topic-id="recap:0:Gym"');
+    expect(html.match(/class="recap-topic-option" aria-expanded="false"/g)).toHaveLength(2);
     expect(html).toContain("Follow-ups mentioned in the recap");
     expect(html).toContain("A workout.");
     expect(html).not.toContain(sources[0].id);
@@ -85,18 +88,34 @@ describe("day recap interactions", () => {
     expect(html).toContain("Milk frother and cocoa.");
   });
 
-  it("starts each long day summary collapsed with its own prose-only expansion control", () => {
+  it("starts every topic collapsed with independent accessible inline controls and no mounted passage UI", () => {
     const prose = "A detailed account of the relevant conversation and its useful context. ".repeat(7);
     const html = renderToStaticMarkup(<RecapContent text={`## Cocoa\n${prose}\n## Garden\n${prose}`}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onCorrect={() => {}} />);
-    const controls = [...html.matchAll(/class="text-button recap-summary-toggle" aria-expanded="false" aria-controls="([^"]+)"/g)];
+    const controls = [...html.matchAll(/class="recap-topic-option" aria-expanded="false" aria-controls="([^"]+)"/g)];
     expect(controls).toHaveLength(2);
     expect(new Set(controls.map((match) => match[1])).size).toBe(2);
-    expect(html.match(/recap-topic-summary is-collapsed/g)).toHaveLength(2);
-    expect(html.match(/>Read more<\/button>/g)).toHaveLength(2);
+    expect(html).not.toContain('class="recap-topic-summary');
+    expect(html).not.toContain("Read more");
     expect(html).not.toContain("Show original passages");
     expect(html).not.toContain("Loading recordings…");
     expect(html).not.toContain('<article class="recap-evidence">');
+    expect(html).not.toContain("<audio");
+  });
+
+  it("renders an expanded topic inline once while sibling rows remain visible and passages stay closed", () => {
+    const parsed = recapTopics(recapParts("## Cocoa\nA cocoa trial.\n## Garden\nCompared garden tools."), "2026-10-16").topics;
+    const rows = recapBrowserTopics(parsed, []).map((topic) => ({ ...topic, displayTitle: topic.title, displayParts: topic.parts }));
+    const html = renderToStaticMarkup(<div className="recap-topic-list">{rows.map((topic, index) => <RecapTopicRow key={topic.id}
+      topic={topic} expanded={index === 0} onToggle={() => {}} day="2026-10-16" sources={sources} timezone="UTC" onCorrect={() => {}} />)}</div>);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(2);
+    expect(html).toMatch(/data-topic-id="recap:0:Cocoa"[\s\S]*aria-expanded="true"[\s\S]*recap-topic-inline[\s\S]*data-topic-id="recap:1:Garden"[\s\S]*aria-expanded="false"/);
+    expect(html.match(/A cocoa trial\./g)).toHaveLength(1);
+    expect(html).toContain("Compared garden tools.");
+    expect(html).not.toContain("Read more");
+    expect(html).not.toContain("All topics");
+    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+">Show original passages/);
+    expect(html).not.toContain("Loading recordings…");
     expect(html).not.toContain("<audio");
   });
 
@@ -220,9 +239,9 @@ describe("day recap interactions", () => {
       text={'- **Gym · 07:15** — A workout.\n\n## Follow-ups\n- [x] <script>alert("unsafe")</script>'}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}}
     />);
-    expect(html).toContain('aria-label="Explore topic: Gym · 07:15"');
+    expect(html).toContain('data-topic-id="recap:0:Gym · 07:15"');
     expect(html).not.toContain('type="checkbox"');
-    expect(html).toContain("Review and manage these in the overview below.");
+    expect(html).toContain("Follow-ups mentioned in the recap");
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -266,7 +285,8 @@ describe("day recap interactions", () => {
       section: source.sections![1], text: second }]);
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[source]} timezone="UTC" onCorrect={() => {}} />);
     expect(html).toContain("A useful cocoa trial.");
-    expect(html).not.toContain("Garden tools");
+    expect(html).toContain("Garden tools");
+    expect(html).toContain("Original passages");
     expect(html).not.toContain(second);
     const separate = { ...source, id: sources[1].id, sections: [source.sections![0]] };
     expect(recapBrowserTopics(synthesized, [source, separate]).map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools", "Cocoa"]);

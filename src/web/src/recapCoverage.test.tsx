@@ -29,7 +29,8 @@ describe("transcribed recording recap display", () => {
     expect(html).toContain('aria-label="Summary language"');
     expect(html).toContain("Checking summary language and saved translation…");
     expect(html).toContain('aria-label="Copy summary: Day recap"');
-    expect(html).toContain('aria-label="Explore topic: Cocoa"');
+    expect(html).toContain('data-topic-id="recap:0:Cocoa"');
+    expect(html).toContain('class="recap-topic-option" aria-expanded="false"');
   });
   it("has no manual generation button and explains automatic updates", () => {
     resource.data = { ...resource.data!, stale: true };
@@ -67,9 +68,11 @@ describe("transcribed recording recap display", () => {
       sections: [{ title: "Garden tools", start_offset: 0, end_offset: 25 }],
     }] };
     const html = render();
-    expect(html).toContain('aria-pressed="true">Day overview');
-    expect(html).toContain('aria-pressed="false">Explore topics');
-    expect(html).not.toContain("Garden tools");
+    expect(html).not.toContain("Day overview");
+    expect(html).not.toContain("Explore topics");
+    expect(html).toContain("Garden tools");
+    expect(html).toContain("Original passages");
+    expect(html).toContain('class="recap-topic-option" aria-expanded="false"');
     expect(html).not.toContain("The story of your day starts here.");
     expect(html.match(/No useful recap content in transcribed recordings yet/g)).toHaveLength(1);
     expect(html).not.toContain("We compared garden tools.");

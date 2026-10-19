@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DA7C0A170000000000000001 /* RecapTopicRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A170000000000000002 /* RecapTopicRow.swift */; };
 		DA7C0A160000000000000001 /* DayFiltersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A160000000000000002 /* DayFiltersView.swift */; };
 		DA7C0A150000000000000001 /* DayTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A150000000000000002 /* DayTimelineView.swift */; };
 		DA7C0A140000000000000001 /* RecapOriginalTopicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */; };
@@ -104,6 +105,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DA7C0A170000000000000002 /* RecapTopicRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapTopicRow.swift; sourceTree = "<group>"; };
 		DA7C0A160000000000000002 /* DayFiltersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayFiltersView.swift; sourceTree = "<group>"; };
 		DA7C0A150000000000000002 /* DayTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTimelineView.swift; sourceTree = "<group>"; };
 		DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapOriginalTopicsView.swift; sourceTree = "<group>"; };
@@ -275,6 +277,7 @@
 				098D6B2A5946A45042E68B98 /* PhoneRecorder.swift */,
 				F26052510BCFA46A84F81952 /* PhoneRecordingSection.swift */,
 				29EF87E070429C693E0345F2 /* RecapContentView.swift */,
+				DA7C0A170000000000000002 /* RecapTopicRow.swift */,
 				DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */,
 				99E42A2B1223F6C7FFBBF343 /* RecapHistoryView.swift */,
 				88344B9913B8B63E905C1D60 /* RecordingAudioPlayer.swift */,
@@ -489,6 +492,7 @@
 				42EB4AE14EF594826F1137AF /* PhoneRecorder.swift in Sources */,
 				A7FDEC49086B665391472D49 /* PhoneRecordingSection.swift in Sources */,
 				1345FE32B947E92896337795 /* RecapContentView.swift in Sources */,
+				DA7C0A170000000000000001 /* RecapTopicRow.swift in Sources */,
 				DA7C0A140000000000000001 /* RecapOriginalTopicsView.swift in Sources */,
 				328C18D503CA89BAC38FFA3A /* RecapHistoryView.swift in Sources */,
 				47FDD87E606B95AA4DA842B4 /* RecordingAudioPlayer.swift in Sources */,

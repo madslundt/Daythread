@@ -11,6 +11,7 @@ import { useResource } from "./useResource";
 
 type Props = {
   title: string; parts: RecapPart[]; sources: Source[]; timezone: string;
+  displayTitle?: string; displayParts?: RecapPart[]; inline?: boolean;
   onCorrect: () => void; compact: boolean;
   day?: string; expanded?: boolean; onExplore?: () => void;
   originalPassages?: OriginalRecapPassage[];
@@ -18,24 +19,26 @@ type Props = {
   onChat?: (scope: ChatScope, question?: string) => void;
 };
 
-export function RecapTopic({ title, parts, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, onFocus }: Props) {
+export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, onFocus }: Props) {
   const [showEvidence, setShowEvidence] = useState(false);
   const passageId = useId();
   const text = recapTopicText(parts);
   const plain = text.replace(/\*\*/g, "");
   const heading = title.replace(/\*\*/g, "");
+  const displayText = recapTopicText(displayParts);
+  const displayHeading = displayTitle.replace(/\*\*/g, "");
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
   const evidence = related.sources.length ? related.sources.map((source) => (
     <CurrentTopicEvidence key={source.id} id={source.id} point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
   const body = <>
-    {text ? <RecapSummary text={text} /> : null}
+    {displayText ? inline ? <div className="recap-topic-summary"><RichText text={displayText} /></div> : <RecapSummary text={displayText} /> : null}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
         t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: heading }))}>
         <Icon name="chat" size={16} />{t("Chat about this topic")}
       </button> : null}
-      {text ? <CopySummary text={`${heading}\n\n${plain}`} context={heading} /> : null}
+      {displayText ? <CopySummary text={`${displayHeading}\n\n${displayText.replace(/\*\*/g, "")}`} context={displayHeading} /> : null}
     </div> : null}
     {onExplore ? null : <div className="recap-topic-evidence">
       <button type="button" className="text-button" aria-expanded={showEvidence} aria-controls={passageId}
@@ -48,14 +51,14 @@ export function RecapTopic({ title, parts, sources, timezone, onCorrect, compact
   </>;
   return compact ? <details className="recap-group">
     <summary>
-      <span className="recap-group-overview"><span><InlineText text={title} /></span><span className="recap-group-summary">{plain}</span></span>
+      <span className="recap-group-overview"><span><InlineText text={displayTitle} /></span><span className="recap-group-summary">{displayText.replace(/\*\*/g, "")}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="recap-group-content">{body}</div>
-  </details> : <section className="recap-topic">
-    <div className="recap-section-heading"><h3><InlineText text={title} /></h3>
+  </details> : <section className={`recap-topic${inline ? " recap-topic-inline" : ""}`}>
+    {!inline ? <div className="recap-section-heading"><h3><InlineText text={displayTitle} /></h3>
       {onExplore ? <button className="text-button" aria-label={t("Explore topic: {value0}", { value0: heading })} onClick={onExplore}>{t("Explore topic")}<Icon name="chevron-right" size={15} /></button> : null}
-    </div>
+    </div> : null}
     {body}
   </section>;
 }

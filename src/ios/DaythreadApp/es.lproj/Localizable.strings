@@ -2702,3 +2702,8 @@
 "Recording filter or selected evidence changed; retry the recap" = "El filtro de grabaciones o la evidencia seleccionada han cambiado; vuelve a generar el resumen";
 
 "A filtered recap requires a tag or location filter" = "Un resumen filtrado requiere un filtro de etiqueta o ubicación";
+
+"Update this translation to keep the recap’s topics and layout." = "Actualiza esta traducción para conservar los temas y el diseño del resumen.";
+"Saved translation cannot preserve this recap's topics. Translate again." = "La traducción guardada no puede conservar los temas de este resumen. Vuelve a traducirlo.";
+
+"Translation changed summary structure" = "La traducción cambió la estructura del resumen";

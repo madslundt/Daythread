@@ -3,6 +3,19 @@ import { request } from "./api";
 import { profileScope } from "./profiles";
 import { interfaceLanguage } from "./i18n";
 
+export type SummaryTranslationStructure = {
+  version: 1;
+  summary_version: string;
+  blocks: {
+    index: number;
+    kind: string;
+    start_offset: number;
+    end_offset: number;
+    original_text: string;
+    text: string;
+  }[];
+};
+
 export type TranscriptTranslationData = {
   language: string;
   available_languages: string[];
@@ -14,12 +27,14 @@ export type TranscriptTranslationData = {
   };
   recommended_language?: string | null;
   already_in_target_language: boolean;
+  regeneration_required?: boolean;
   translation: {
     text: string;
     language: string;
     transcript_version?: string;
     summary_version?: string;
     created_at: string;
+    structure?: SummaryTranslationStructure;
   } | null;
 };
 

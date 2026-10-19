@@ -18,26 +18,30 @@ export type OriginalRecapPassage = {
 export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[] };
 
 // Older recaps used bold labels in a flat list instead of topic headings.
-export function recapTopics(parts: RecapPart[], day: string) {
+export function recapTopics(parts: RecapPart[], day: string, displayParts = parts) {
   const topics: RecapTopicGroup[] = [];
   const introduction: RecapPart[] = [];
   const followups: RecapPart[] = [];
-  for (const group of recapGroups(parts, day)) {
+  const displays = new Map(parts.map((part, index) => [part, displayParts[index] || part]));
+  const displayGroups = recapGroups(parts, day, displayParts);
+  for (const [index, group] of recapGroups(parts, day).entries()) {
     const narrative = group.parts.filter((part) => part.kind !== "item" || !part.action);
-    followups.push(...group.parts.filter((part) => part.kind === "item" && part.action));
+    followups.push(...group.parts.filter((part) => part.kind === "item" && part.action).map((part) => displays.get(part)!));
     const labelled = narrative.some((part) => part.kind === "item" && /^\*\*[^*]+\*\*/.test(part.text));
     if (group.title && narrative.length && !labelled) {
-      topics.push({ title: group.title.replace(/\*\*/g, ""), parts: narrative });
+      topics.push({ title: displayGroups[index].title!.replace(/\*\*/g, ""), parts: narrative.map((part) => displays.get(part)!) });
       continue;
     }
     let current: RecapTopicGroup | undefined;
     for (const part of narrative) {
       const label = part.kind === "item" ? part.text.match(/^\*\*([^*]+)\*\*\s*(?:[—–:-]\s*)?([\s\S]*)$/) : null;
+      const display = displays.get(part)!;
       if (label) {
-        current = { title: label[1], parts: [{ kind: "text", text: label[2] || part.text }] };
+        const displayLabel = display.text.match(/^\*\*([^*]+)\*\*\s*(?:[—–:-]\s*)?([\s\S]*)$/);
+        current = { title: displayLabel?.[1] || label[1], parts: [{ kind: "text", text: displayLabel?.[2] || display.text }] };
         topics.push(current);
-      } else if (current) current.parts.push(part);
-      else introduction.push(part);
+      } else if (current) current.parts.push(display);
+      else introduction.push(display);
     }
   }
   return { topics, introduction, followups };
@@ -91,17 +95,18 @@ export function currentRecapPassage(passage: OriginalRecapPassage, source: Sourc
 }
 
 // Group the reading view without rewriting saved text or its importance keys.
-export function recapGroups(parts: RecapPart[], day: string) {
+export function recapGroups(parts: RecapPart[], day: string, displayParts = parts) {
   const groups: { title?: string; parts: RecapPart[] }[] = [];
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
+    const display = displayParts[index] || part;
     const title = part.text.replace(/\*\*/g, "").trim();
     const isHeading = part.kind === "heading" || (part.kind === "text" && /^\*\*[^*]+\*\*:?$/.test(part.text));
     if (isHeading) {
       if (!groups.length && new RegExp(`^(?:diary recap|day recap|daily recap|recap)\\s*[:·—-]?\\s*${day}$`, "i").test(title)) continue;
-      groups.push({ title: part.text, parts: [] });
+      groups.push({ title: display.text, parts: [] });
     } else {
       if (!groups.length) groups.push({ parts: [] });
-      groups[groups.length - 1].parts.push(part);
+      groups[groups.length - 1].parts.push(display);
     }
   }
   return groups.filter((group) => group.parts.length > 0);
@@ -172,34 +177,40 @@ export function recapSourceSections(point: string, source: Source, topic = ""): 
 const actionHeading = /^(?:to follow[ -]?up|follow[ -]?ups?|action (?:items?|points?)|next steps?|to[ -]?dos?|tasks?)$/i;
 
 // Parse only presentation structure. Completion always comes from the user's checks.
-export function recapParts(markdown: string): RecapPart[] {
+export function recapParts(markdown: string, displayMarkdown?: string): RecapPart[] {
   const parts: RecapPart[] = [];
+  const displayLines = displayMarkdown?.split("\n");
   let actions = false;
-  for (const raw of markdown.split("\n")) {
+  for (const [index, raw] of markdown.split("\n").entries()) {
     const line = raw.trim();
+    const displayLine = (displayLines?.[index] ?? raw).trim();
     if (!line) continue;
     const heading = line.match(/^#{1,4}\s+(.+)$/);
     const label = line.replace(/\*\*/g, "").match(/^([^:]+):\s*(.*)$/);
     if (heading || (label && actionHeading.test(label[1].trim())) || actionHeading.test(line.replace(/\*\*/g, "").replace(/:$/, ""))) {
       const title = heading?.[1] ?? label?.[1] ?? line.replace(/\*\*/g, "").replace(/:$/, "");
+      const displayHeading = displayLine.match(/^#{1,4}\s+(.+)$/);
+      const displayLabel = displayLine.replace(/\*\*/g, "").match(/^([^:]+):\s*(.*)$/);
       actions = actionHeading.test(title.replace(/\*\*/g, "").replace(/:$/, "").trim());
-      parts.push({ kind: "heading", text: title });
+      parts.push({ kind: "heading", text: displayHeading?.[1] ?? displayLabel?.[1] ?? displayLine.replace(/\*\*/g, "").replace(/:$/, "") });
       if (actions && label?.[2]) {
         // Older recaps can contain a single, comma-separated follow-up paragraph.
         const body = label[2].replace(/\s+Completion is not recorded\.?$/i, "");
         // Keep commas inside a task ("email Alice, Bob and Charlie") intact.
         const items = body.split(/(?:;\s*|,\s*(?:and\s+)?)(?=(?:share|call|bring|confirm|send|book|check|prepare|schedule|review|ask|buy|pick up|follow up)\b)/i);
-        for (const item of items.filter(Boolean)) parts.push({ kind: "item", text: item, action: true });
+        for (const [itemIndex, item] of items.filter(Boolean).entries()) parts.push({ kind: "item",
+          text: displayLines ? itemIndex === 0 ? displayLabel?.[2] || "" : "" : item, action: true });
       }
       continue;
     }
     const bullet = line.match(/^(?:[-*+]\s+|\d+[.)]\s+)(?:\[([ xX])\]\s+)?(.+)$/);
     if (bullet) {
-      parts.push({ kind: "item", text: bullet[2], action: actions || bullet[1] !== undefined });
+      const displayBullet = displayLine.match(/^(?:[-*+]\s+|\d+[.)]\s+)(?:\[([ xX])\]\s+)?(.+)$/);
+      parts.push({ kind: "item", text: displayBullet?.[2] ?? displayLine, action: actions || bullet[1] !== undefined });
     } else if (/^\s+/.test(raw) && parts.at(-1)?.kind === "item") {
-      parts.at(-1)!.text += ` ${line}`;
+      parts.at(-1)!.text += ` ${displayLine}`;
     } else {
-      parts.push({ kind: "text", text: line });
+      parts.push({ kind: "text", text: displayLine });
     }
   }
   return parts;

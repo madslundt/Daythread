@@ -8,6 +8,7 @@ struct DayAtGlanceSections: View {
     var topicPassages: [InboxTopicPassage] = []
     var topicVersions: [String: String] = [:]
     var filters = DayFilterScope()
+    var topicTitle: String? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -41,6 +42,7 @@ struct DayAtGlanceSections: View {
         let _ = interfaceLocale
         Section {
             Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM") } ?? day).font(.subheadline).foregroundStyle(.secondary)
+            if let topicTitle { Text(L10n.text("Topic") + ": " + topicTitle).font(.subheadline.weight(.medium)) }
             Text(L10n.text("Proposals come from your recorded conversations and need your review.")).font(.caption).foregroundStyle(.secondary)
             if loading || loadedScope != scope { ProgressView(L10n.text("Loading action points…")) }
             ErrorNote(message: inboxError)

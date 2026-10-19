@@ -15,10 +15,10 @@ from starlette.concurrency import run_in_threadpool
 from .completeness import revision
 from .domain import stamp, utc_now
 from .inference import InferenceError
+from .summary_translation_structure import projection, rebuild, translate_structure
 from .translation import (
     analyze_transcript_languages,
     recommended_translation_language,
-    translation_chunks,
     translation_targets,
 )
 
@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS summary_translations (
  output_id TEXT NOT NULL, language TEXT NOT NULL, summary_version TEXT NOT NULL,
  text TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(output_id,language)
 );
+CREATE TABLE IF NOT EXISTS summary_translation_structures (
+ output_id TEXT NOT NULL, language TEXT NOT NULL, summary_version TEXT NOT NULL,
+ structure TEXT NOT NULL, PRIMARY KEY(output_id,language)
+);
+CREATE TRIGGER IF NOT EXISTS summary_translation_structure_delete
+AFTER DELETE ON summary_translations BEGIN
+ DELETE FROM summary_translation_structures WHERE output_id=OLD.output_id AND language=OLD.language;
+END;
 CREATE TRIGGER IF NOT EXISTS summary_translation_output_delete
 AFTER DELETE ON output_evidence BEGIN
  DELETE FROM summary_outputs WHERE id=OLD.id;
@@ -124,10 +132,26 @@ class SummaryTranslationStore:
                 "WHERE output_id=? AND language=? AND summary_version=?",
                 (source["id"], language.lower(), source["summary_version"]),
             ).fetchone()
-            return dict(row) if row else None
+            if row is None:
+                return None
+            saved = db.execute(
+                "SELECT structure FROM summary_translation_structures WHERE output_id=? "
+                "AND language=? AND summary_version=?",
+                (source["id"], language.lower(), source["summary_version"]),
+            ).fetchone()
+            try:
+                mapping = json.loads(saved["structure"]) if saved else None
+            except (TypeError, ValueError):
+                mapping = {}  # Damaged restored metadata requires explicit regeneration.
+            mapped = projection(source["text"], row["text"], mapping)
+            return dict(row) | {
+                "text": rebuild(source["text"], mapped["blocks"]) if mapped else row["text"],
+                "structure": mapped,
+            }
 
     def save_summary_translation(
         self, source: dict, language: str, text: str, fallback_languages: list[str],
+        structure: dict | None = None,
     ) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -146,10 +170,19 @@ class SummaryTranslationStore:
             db.executemany("INSERT OR IGNORE INTO summary_output_sources VALUES(?,?)",
                            [(source["id"], item["id"]) for item in source["sources"]])
             result = {"language": language, "summary_version": source["summary_version"],
-                      "text": text, "created_at": stamp(utc_now())}
+                      "text": text, "created_at": stamp(utc_now()), "structure": structure}
             db.execute("INSERT OR REPLACE INTO summary_translations VALUES(?,?,?,?,?)",
                        (source["id"], language.lower(), source["summary_version"], text,
                         result["created_at"]))
+            db.execute(
+                "DELETE FROM summary_translation_structures WHERE output_id=? AND language=?",
+                (source["id"], language.lower()),
+            )
+            if structure is not None:
+                db.execute("INSERT INTO summary_translation_structures VALUES(?,?,?,?)", (
+                    source["id"], language.lower(), source["summary_version"],
+                    json.dumps(structure),
+                ))
             return result
 
 
@@ -170,13 +203,20 @@ def read_summary_translation(
     redundant = [code for code in languages
                  if analysis["language_shares"].get(code.split("-")[0], 0) >= 0.9]
     already = language in redundant
+    translation = None if already or not language else memory.store.summary_translation(
+        source, language,
+    )
+    regenerate = bool(translation and translation["structure"] is None)
     return {
         "language": language, "summary_version": source["summary_version"],
         "language_analysis": analysis, "recommended_language": recommended,
         "available_languages": languages, "redundant_languages": redundant,
         "already_in_target_language": already,
-        "translation": None if already or not language else memory.store.summary_translation(
-            source, language
+        "translation": None if regenerate else translation,
+        "regeneration_required": regenerate,
+        "regeneration_reason": (
+            "Saved translation cannot preserve this recap's topics. Translate again."
+            if regenerate else None
         ),
     }, source
 
@@ -203,20 +243,17 @@ async def generate_summary_translation(
         memory.settings.require_inference("llm")
         try:
             async with asyncio.timeout(memory.settings.inference_timeout_seconds):
-                parts = []
-                for chunk in translation_chunks(source["text"]):
-                    translated = await memory.inference.translate(chunk, language)
-                    if not isinstance(translated, str) or not translated.strip():
-                        raise InferenceError("Empty translation")
-                    parts.append(translated.strip())
-                text = "\n".join(parts)
+                text, structure = await translate_structure(
+                    memory.inference, source["text"], language,
+                )
         except (InferenceError, httpx.HTTPError, TimeoutError) as exc:
             raise HTTPException(
                 502, "Translation failed. The original summary is available."
             ) from exc
         result["translation"] = memory.store.save_summary_translation(
-            source, language, text, memory.settings.translation_languages,
+            source, language, text, memory.settings.translation_languages, structure,
         )
+        result.update(regeneration_required=False, regeneration_reason=None)
         result["available_languages"] = list(memory.settings.translation_languages)
         return result
 

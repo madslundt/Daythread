@@ -13,12 +13,14 @@ extension JSONValue {
 }
 
 /// These are original section titles and passages, with no generated recap prose.
-struct RecapOriginalTopicDetail: View {
+struct RecapOriginalTopicRow: View {
     let topic: RecapOriginalTopics.Topic
     let day: String
     let onCorrect: (() -> Void)?
     var filters = DayFilterScope()
     var scopeFingerprint = ""
+    @Binding var expanded: Bool
+    let onFocus: (RecapTopicFocus) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -38,8 +40,9 @@ struct RecapOriginalTopicDetail: View {
 
     var body: some View {
         let _ = interfaceLocale
-        List {
-            Section(L10n.text("Original passages")) {
+        VStack(alignment: .leading, spacing: 12) {
+            RecapTopicHeader(id: "original:" + topic.id, title: topic.title, preview: L10n.text("Original passages"), expanded: $expanded)
+            if expanded {
                 if loading { ProgressView(L10n.text("Checking original evidence…")) }
                 ErrorNote(message: error)
                 if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
@@ -53,9 +56,9 @@ struct RecapOriginalTopicDetail: View {
                                     if source["audio_available"] != .bool(false),
                                        let section = source["sections"].array.first(where: { $0["start_offset"].integer == part.start && $0["end_offset"].integer == part.end }),
                                        case .number(let seconds) = section["start_seconds"], seconds.isFinite, seconds >= 0 {
-                                        Button {
-                                            selected = OriginalTopicRecording(source: source, startAt: seconds)
-                                        } label: { Label(L10n.text("Listen from this topic"), systemImage: "gobackward") }
+                                        Button { selected = OriginalTopicRecording(source: source, startAt: seconds) } label: {
+                                            Label(L10n.text("Listen from this topic"), systemImage: "gobackward")
+                                        }
                                     }
                                     Button { selected = OriginalTopicRecording(source: source, startAt: nil) } label: {
                                         Label(L10n.text("Full recording & tools"), systemImage: "waveform")
@@ -63,32 +66,28 @@ struct RecapOriginalTopicDetail: View {
                                 }.padding(.vertical, 8)
                             }
                         }
-                    }.accessibilityIdentifier("recap.originalPassages")
-                    if !filters.isFiltered { NavigationLink {
-                        ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + topic.title)
-                    } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
-                    Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
+                    }.accessibilityIdentifier("recap.originalPassages.original:" + topic.id)
+                    if !filters.isFiltered {
+                        NavigationLink {
+                            ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + topic.title)
+                        } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
+                        Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
-            if !loading && error == nil && !verifiedSources.isEmpty {
-                DayAtGlanceSections(day: day, topicSources: Set(verifiedSources.map { $0["id"].text }),
-                    topicPassages: topic.parts.map { .init(sourceID: $0.sourceID, start: $0.start, end: $0.end) },
-                    topicVersions: Dictionary(verifiedSources.map { ($0["id"].text, $0["source_version"].text) }, uniquingKeysWith: { _, latest in latest }), filters: filters)
-            }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle(topic.title).navigationBarTitleDisplayMode(.inline)
-            .disclosureGroupStyle(RecapDisclosureStyle())
-            .task(id: key) { await load() }
-            .refreshable { refresh = UUID() }
-            .sheet(item: $selected) { recording in
-                SourceDetail(source: recording.source, onCorrect: { sources = []; refresh = UUID(); onCorrect?() }, startAt: recording.startAt)
-            }
+        }
+        .task(id: key + String(expanded)) { if expanded { await load() } }
+        .onChange(of: expanded) { _, value in if !value { showingOriginals = false; sources = []; validatedKey = "" } }
+        .sheet(item: $selected) { recording in
+            SourceDetail(source: recording.source, onCorrect: { sources = []; refresh = UUID(); onCorrect?() }, startAt: recording.startAt)
+        }
     }
 
     private func load() async {
         guard phase == .active else { sources = []; selected = nil; return }
         let requested = key
         loading = true; error = nil; sources = []; validatedKey = ""
+        onFocus(.init(id: "original:" + topic.id, title: topic.title))
         defer { if key == requested { loading = false } }
         do {
             let client = try model.client()
@@ -97,7 +96,7 @@ struct RecapOriginalTopicDetail: View {
             for id in Set(topic.parts.map(\.sourceID)).sorted() {
                 incoming.append(try await client.request("v1/transcripts/\(id)"))
             }
-            guard !Task.isCancelled, key == requested else { return }
+            guard !Task.isCancelled, expanded, key == requested else { return }
             for part in topic.parts {
                 guard let source = incoming.first(where: { $0["id"].text == part.sourceID }),
                       source["state"].text == "done",
@@ -106,7 +105,11 @@ struct RecapOriginalTopicDetail: View {
                 }
             }
             sources = incoming; validatedKey = requested
-        } catch { if !Task.isCancelled, key == requested { self.error = L10n.error(error) } }
+            onFocus(.init(id: "original:" + topic.id, title: topic.title,
+                sourceIDs: Set(incoming.map { $0["id"].text }),
+                passages: topic.parts.map { .init(sourceID: $0.sourceID, start: $0.start, end: $0.end) },
+                versions: Dictionary(incoming.map { ($0["id"].text, $0["source_version"].text) }, uniquingKeysWith: { _, value in value })))
+        } catch { if !Task.isCancelled, expanded, key == requested { self.error = L10n.error(error) } }
     }
     private func time(_ source: JSONValue) -> String {
         guard let date = AppModel.date(source["started_at"].text) else { return source["started_at"].text }

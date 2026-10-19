@@ -2821,5 +2821,8 @@
   "Retry whole day": "Retry whole day",
   "Recording filter changed before recap generation; retry": "Recording filter changed before recap generation; retry",
   "Recording filter or selected evidence changed; retry the recap": "Recording filter or selected evidence changed; retry the recap",
-  "A filtered recap requires a tag or location filter": "A filtered recap requires a tag or location filter"
+  "A filtered recap requires a tag or location filter": "A filtered recap requires a tag or location filter",
+  "Update this translation to keep the recap’s topics and layout.": "Update this translation to keep the recap’s topics and layout.",
+  "Saved translation cannot preserve this recap's topics. Translate again.": "Saved translation cannot preserve this recap's topics. Translate again.",
+  "Translation changed summary structure": "Translation changed summary structure"
 }

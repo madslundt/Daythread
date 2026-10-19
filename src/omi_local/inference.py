@@ -377,8 +377,8 @@ class Inference(Transcription, InferenceUsage):
         on_delta: Delta | None = None,
     ) -> str:
         # Map/reduce keeps a full day's evidence in scope without silently truncating its tail.
+        original_sources = sources
         if answer_task is None:
-            original_sources = sources
             sources, filtering = filter_summary_sources(sources)
             self.record_summary_filter(filtering, original_sources)
             if trace is not None:
@@ -415,7 +415,15 @@ class Inference(Transcription, InferenceUsage):
         # Large chat also uses this reducer, but keeps its existing language behavior.
         if answer_task is None:
             task += summary_language_instruction(self.settings.summary_language)
-        allowed_ids = sorted({source["id"] for source in sources})
+        allowed_source_ids = {
+            source["id"] for source in original_sources
+        } | {
+            source_id
+            for source in original_sources
+            for source_id in source.get("citation_source_ids", [])
+        }
+        allowed_sources = [{"id": source_id} for source_id in allowed_source_ids]
+        allowed_ids = sorted(allowed_source_ids)
         task += (
             " Cite only original source UUIDs copied exactly from this allowed list; do not "
             "invent or cite any other UUID: " + ", ".join(allowed_ids) + "."
@@ -447,12 +455,14 @@ class Inference(Transcription, InferenceUsage):
                         answer_task if answer_task is not None else task,
                         batches[0] if batches else "",
                     )
-                return validate_citations(answer, sources)
+                return validate_citations(answer, allowed_sources)
             if trace is not None:
                 trace["reduction_used"] = True
                 trace["model_calls"] += len(batches)
             pieces = [
-                validate_citations(await self.for_task("summary").generate(task, batch), sources)
+                validate_citations(
+                    await self.for_task("summary").generate(task, batch), allowed_sources
+                )
                 for batch in batches
             ]
         raise InferenceError("Summary reduction exceeded bounded context budget")

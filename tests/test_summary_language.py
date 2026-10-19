@@ -157,6 +157,32 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
 
 
 @pytest.mark.anyio
+async def test_summary_allows_citations_from_original_sources_with_cached_notes(tmp_path):
+    settings = config(tmp_path)
+    note_source, cited_source = str(uuid4()), str(uuid4())
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{
+            "message": {"content": f"A supported detail [{cited_source}]"},
+            "finish_reason": "stop",
+        }]})
+
+    sources = [{
+        "id": note_source,
+        "started_at": stamp(AT),
+        "text": f"Cached recording notes refer to [{cited_source}].",
+        "citation_source_ids": [note_source, cited_source],
+    }, {"id": cited_source, "started_at": stamp(AT), "text": ""}]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await Inference(settings, http).summarize(sources, "a daily recap")
+    assert result == f"A supported detail [{cited_source}]"
+    task = json.loads(calls[0]["messages"][1]["content"])["task"]
+    assert cited_source in task
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("language", ["auto", "da", "en"])
 async def test_recording_titles_receive_summary_language_instruction(tmp_path, language):
     from omi_local.recording_topics import analyze

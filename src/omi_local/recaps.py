@@ -246,8 +246,15 @@ class Recaps:
             originals = self.sources(group)
             sources.extend(originals)
             if notes != NO_CONTENT and originals:
-                inputs.extend({**source, "text": notes if index == 0 else ""}
-                              for index, source in enumerate(originals))
+                inputs.extend(
+                    {
+                        **source,
+                        "text": notes if index == 0 else "",
+                        **({"citation_source_ids": [item["id"] for item in originals]}
+                           if index == 0 else {}),
+                    }
+                    for index, source in enumerate(originals)
+                )
         # Sources are originals; bounded cached notes are used only for daily synthesis.
         result.update(sources=sources, day=day.isoformat(), timezone=memory.settings.timezone,
                       model=memory.settings.llm_route("summary").model,

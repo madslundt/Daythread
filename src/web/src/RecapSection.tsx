@@ -14,6 +14,7 @@ import type { ChatScope, Recap, Source, Status } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice, RichText } from "./UI";
 import { Icon } from "./Icon";
+import { DisplayTranslationLanguage } from "./displayTranslations";
 
 const emptySources: Source[] = [];
 
@@ -74,6 +75,10 @@ export function RecapSection({
     return () =>
       window.removeEventListener("omi:archive-changed", recap.refresh);
   }, [recap.refresh]);
+  const overview = (language?: string) => <DisplayTranslationLanguage value={language}>
+    <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} filters={filters}
+      focus={focus && recap.data?.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={scopedChat} />
+  </DisplayTranslationLanguage>;
   return (
     <section className="recap-section">
       <div className="section-heading">
@@ -97,7 +102,8 @@ export function RecapSection({
       ) : recap.data && (recap.data.summary || hasOriginalTopics) ? (
         <div className="recap-content">
           {!filtered && recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}
-            renderContent={(displayText, translated, translation) => <RecapContent
+            renderFollowing={overview}
+            renderContent={(displayText, translated, translation, language) => <DisplayTranslationLanguage value={language}><RecapContent
                 key={`${day}:${version}:${summary}`}
                 text={summary}
                 translatedText={translated ? displayText : undefined}
@@ -110,13 +116,13 @@ export function RecapSection({
                 onChat={scopedChat}
                 onFocus={setFocus}
                 compact={compact}
-              />
+              /></DisplayTranslationLanguage>
             } /> : <RecapContent
             key={`${day}:${dayFilterKey(filters)}:${recap.data.output_id || recap.data.generated_at || "originals"}:${recap.data.summary || ""}`}
             text={recap.data.summary || ""} day={day} version={recap.data.output_id || "originals"}
             sources={sources} timezone={timezone} onCorrect={recap.refresh} onChat={scopedChat}
             onFocus={setFocus} compact={compact} emptyMessage={filtered ? filteredMessage : undefined} />}
-          <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} filters={filters} focus={focus && recap.data.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={scopedChat} />
+          {filtered || !recap.data.summary ? overview() : null}
           {recap.data.pending_chunks ? (
             <p className="caption">
               {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>

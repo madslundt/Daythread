@@ -2824,5 +2824,10 @@
   "A filtered recap requires a tag or location filter": "Un resumen filtrado requiere un filtro de etiqueta o ubicación",
   "Update this translation to keep the recap’s topics and layout.": "Actualiza esta traducción para conservar los temas y el diseño del resumen.",
   "Saved translation cannot preserve this recap's topics. Translate again.": "La traducción guardada no puede conservar los temas de este resumen. Vuelve a traducirlo.",
-  "Translation changed summary structure": "La traducción cambió la estructura del resumen"
+  "Translation changed summary structure": "La traducción cambió la estructura del resumen",
+  "The overview translation could not be loaded. Try again.": "No se pudo cargar la traducción de la vista general. Vuelve a intentarlo.",
+  "Display item not found": "No se encontró el elemento para mostrar",
+  "Display item changed; refresh and try again": "El elemento para mostrar ha cambiado; actualiza y vuelve a intentarlo",
+  "Display translation failed. Original text is available.": "La traducción ha fallado. El texto original está disponible.",
+  "Topic end must follow its start": "El final del tema debe ser posterior a su inicio"
 }

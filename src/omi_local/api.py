@@ -23,6 +23,7 @@ from .blob_storage import storage_from_settings
 from .configuration import RESTART_FIELDS, Configuration
 from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
+from .display_translations import display_translation_routes
 from .domain import (
     ButtonEvent,
     CaptureGap,
@@ -191,6 +192,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inbox_router(memory))
     app.include_router(translation_routes(memory))
     app.include_router(summary_translation_routes(memory))
+    app.include_router(display_translation_routes(memory))
     app.include_router(notification_routes(memory))
     app.include_router(generation_routes(lambda: runtime().jobs))
     app.include_router(recap_routes(memory, lambda: runtime().jobs))

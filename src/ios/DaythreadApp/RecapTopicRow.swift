@@ -4,6 +4,7 @@ import OmiCore
 struct RecapTopicFocus: Equatable {
     let id: String
     let title: String
+    var displayTitle: String? = nil
     var sourceIDs: Set<String> = []
     var passages: [InboxTopicPassage] = []
     var versions: [String: String] = [:]

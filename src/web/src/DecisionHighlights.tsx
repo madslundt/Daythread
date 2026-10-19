@@ -11,6 +11,7 @@ import type { RecapFocus } from "./recapItems";
 import { statusLabel } from "./statusLabels";
 import { ErrorState, Loading } from "./UI";
 import { useHighlightList } from "./useHighlightList";
+import { DisplayTranslationStatus, useDisplayTranslations } from "./displayTranslations";
 
 type ExtractionCommand = { request_id: string; day?: string; run_id?: string };
 
@@ -50,18 +51,20 @@ export function DecisionHighlights({ day, timezone, focus, filters = allDayFilte
     } finally { if (active.current === controller) setBusy(false); }
   }
   const decisions = resource.items.filter((item) => item.content && !item.successor_id && item.review_status !== "dismissed" && item.evidence_condition !== "removed" && (!focus || decisionMatchesTopic(item, focus)));
+  const display = useDisplayTranslations(decisions.map((item) => ({ kind: "decision", id: item.id, version: item.version, original_title: item.content!.choice.text })), `${day}:${scopeKey}`);
   return <section className="highlight-group decision-highlights" aria-label={t("Decisions")}>
     <div className="highlight-group-heading"><h3>{t("Decisions")}</h3><span className="caption">{decisions.length}</span>
       {!filtered ? <button type="button" className="text-button" disabled={busy} onClick={() => void find()}>{busy ? t("Finding decisions…") : t("Find decisions")}</button> : null}
     </div>
     <p className="caption">{t("Recorded choices, including tentative decisions. Review the evidence before confirming.")}</p>
+    <DisplayTranslationStatus value={display} />
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {error ? <ErrorState message={error} retry={() => void find()} /> : null}
     {resource.loading && !resource.data || resource.loadingMore ? <Loading>{t("Loading decisions…")}</Loading> : null}
     {progress && busy ? <p className="caption" role="status">{t("Reviewed {value0} of {value1} recordings.", { value0: progress.processed_sources, value1: progress.total_sources })}</p> : null}
     {progress && !busy && !error && progress.pending_chunks ? <p className="caption">{t("Some recordings are still awaiting transcription.")}</p> : null}
     {decisions.slice(0, visible).map((decision) => <article className="highlight-decision" key={decision.id}>
-      <div><p>{decision.content!.choice.text}</p><p className="caption">{dateTimeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)}</p>
+      <div><p lang={display.language}>{display.title({ kind: "decision", id: decision.id, version: decision.version, original_title: decision.content!.choice.text })}</p><p className="caption">{dateTimeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)}</p>
         {decision.evidence_condition !== "current" ? <p className="caption action-point-warning">{statusLabel(decision.evidence_condition)}</p> : null}</div>
       <button className="button small" onClick={() => setSelected(decision.id)}>{t("Review decision")}</button>
     </article>)}

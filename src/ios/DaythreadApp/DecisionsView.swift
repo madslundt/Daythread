@@ -93,6 +93,7 @@ struct DecisionsSection: View {
 
 struct DecisionRow: View {
     let record: DecisionRecord
+    var displayTitle: String? = nil
     @Environment(AppModel.self) private var model
     private var dateLabel: String {
         guard let date = AppModel.date(record.started_at) else { return record.started_at }
@@ -102,7 +103,7 @@ struct DecisionRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 5) {
-            Text(record.title).foregroundStyle(.primary)
+            Text(displayTitle ?? record.title).foregroundStyle(.primary)
             Text(L10n.text("\(L10n.status(record.display_state)) · \(L10n.status(record.review_status)) · evidence \(L10n.status(record.evidence_condition))"))
                 .font(.caption).foregroundStyle(record.evidence_condition != "current" || record.review_status == "proposed" ? Color.orange : Color.secondary)
             Text(dateLabel).font(.caption).foregroundStyle(.secondary)

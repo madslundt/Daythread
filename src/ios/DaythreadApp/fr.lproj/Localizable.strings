@@ -2707,3 +2707,9 @@
 "Saved translation cannot preserve this recap's topics. Translate again." = "La traduction enregistrée ne peut pas conserver les sujets de ce récapitulatif. Traduisez-le à nouveau.";
 
 "Translation changed summary structure" = "La traduction a modifié la structure du récapitulatif";
+
+"The overview translation could not be loaded. Try again." = "La traduction de l’aperçu n’a pas pu être chargée. Réessayez.";
+"Display item not found" = "Élément à afficher introuvable";
+"Display item changed; refresh and try again" = "L’élément à afficher a changé ; actualisez et réessayez";
+"Display translation failed. Original text is available." = "La traduction a échoué. Le texte original est disponible.";
+"Topic end must follow its start" = "La fin du sujet doit se situer après son début";

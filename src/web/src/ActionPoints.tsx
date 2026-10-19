@@ -12,6 +12,7 @@ import { ErrorState, Loading } from "./UI";
 import { useHighlightList } from "./useHighlightList";
 import { DecisionHighlights } from "./DecisionHighlights";
 import { actionableKind, actionMatchesTopic, highlightCompletionLabel, highlightGroups, highlightReviewLabel, orderedHighlights, type HighlightCategory } from "./dayHighlights";
+import { DisplayTranslationStatus, useDisplayTranslations } from "./displayTranslations";
 export { actionMatchesTopic } from "./dayHighlights";
 
 export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFilters }: {
@@ -47,6 +48,7 @@ export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFil
   for (const item of [...resource.items, ...reviewed.items]) if (!latest.has(item.id) || latest.get(item.id)!.version <= item.version) latest.set(item.id, item);
   const items = orderedHighlights([...latest.values()].filter((item) => item.health !== "withdrawn"
     && (!actionableKind(item.kind) || item.status === status) && (!focus || actionMatchesTopic(item, focus))));
+  const display = useDisplayTranslations(items.map((item) => ({ kind: "inbox", id: item.id, version: item.version, original_title: item.title })), `${day}:${scopeKey}`);
   const coverage = resource.data?.coverage;
   const showFollowups = category !== "decisions";
   const extracting = Boolean(coverage?.jobs.running || coverage?.jobs.queued);
@@ -56,6 +58,7 @@ export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFil
   const renderGroup = (group: typeof groups[number]) => !group.items.length ? null : <section className="highlight-group" key={group.id} aria-label={t(group.title)}>
     <div className="highlight-group-heading"><h3>{t(group.title)}</h3><span className="caption">{group.items.length}</span></div>
     {group.items.slice(0, visible[group.id] || 5).map((item) => <ActionPointRow key={`${item.id}:${item.version}`} item={item} timezone={timezone}
+      displayTitle={display.title({ kind: "inbox", id: item.id, version: item.version, original_title: item.title })} language={display.language}
       onReview={() => setSelected(item.id)} onChanged={refresh} onChat={!filtered && onChat ? () => onChat({ kind: "day", day }, item.kind === "question"
         ? t("Help me answer this question from this day: {value0}", { value0: item.title })
         : t("Help me think through this topic from this day: {value0}", { value0: item.title })) : undefined} />)}
@@ -63,7 +66,8 @@ export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFil
   </section>;
   return <section className="action-points day-highlights" aria-label={t("Your day at a glance")}>
     <div className="section-heading"><h2>{t("Your day at a glance")}</h2><a className="text-link" href="/inbox">{t("Open Inbox")}</a></div>
-    <p className="caption">{focus ? t("Highlights with evidence in {value0}.", { value0: focus.title }) : t("What to do, answer, remember, or think through.")}</p>
+    <p className="caption">{focus ? t("Highlights with evidence in {value0}.", { value0: display.language ? focus.displayTitle || focus.title : focus.title }) : t("What to do, answer, remember, or think through.")}</p>
+    <DisplayTranslationStatus value={display} />
     <div className="highlight-controls">
       <label><span className="sr-only">{t("Overview category")}</span><select value={category} onChange={(event) => setCategory(event.target.value as HighlightCategory)}>
         <option value="all">{t("All categories")}</option>
@@ -97,8 +101,9 @@ export function ActionPoints({ day, timezone, focus, onChat, filters = allDayFil
   </section>;
 }
 
-function ActionPointRow({ item, timezone, onReview, onChanged, onChat }: {
+export function ActionPointRow({ item, timezone, onReview, onChanged, onChat, displayTitle = item.title, language }: {
   item: InboxItem; timezone: string; onReview: () => void; onChanged: () => void; onChat?: () => void;
+  displayTitle?: string; language?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -121,8 +126,8 @@ function ActionPointRow({ item, timezone, onReview, onChanged, onChat }: {
   return <article className={`action-point ${item.status === "completed" && ["commitment", "deadline", "reminder"].includes(item.kind) ? "is-completed" : ""}`}>
     <div className="action-point-line">
       <label className="action-point-check"><input type="checkbox" checked={item.status === "completed"} disabled={busy || item.health !== "current"}
-        onChange={() => void complete()} aria-label={highlightCompletionLabel(item)} /></label>
-      <div className="action-point-text"><p>{item.title}</p><p className="caption">{meta}</p>
+        onChange={() => void complete()} aria-label={highlightCompletionLabel(item, displayTitle)} /></label>
+      <div className="action-point-text"><p lang={language}>{displayTitle}</p><p className="caption">{meta}</p>
         {item.overdue ? <p className="caption action-point-warning">{t("Overdue")}</p> : null}
         {item.health !== "current" ? <p className="caption action-point-warning">{t("Evidence changed — review required")}</p> : null}
       </div>

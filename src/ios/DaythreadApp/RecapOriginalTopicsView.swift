@@ -17,6 +17,7 @@ struct RecapOriginalTopicRow: View {
     let topic: RecapOriginalTopics.Topic
     let day: String
     let onCorrect: (() -> Void)?
+    var displayTitle: String? = nil
     var filters = DayFilterScope()
     var scopeFingerprint = ""
     @Binding var expanded: Bool
@@ -41,7 +42,7 @@ struct RecapOriginalTopicRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
-            RecapTopicHeader(id: "original:" + topic.id, title: topic.title, preview: L10n.text("Original passages"), expanded: $expanded)
+            RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title, preview: L10n.text("Original passages"), expanded: $expanded)
             if expanded {
                 if loading { ProgressView(L10n.text("Checking original evidence…")) }
                 ErrorNote(message: error)

@@ -88,6 +88,7 @@ private struct SavedRecapVersionView: View {
     let version: JSONValue
     @State private var copied = false
     @State private var recapFocus: RecapTopicFocus?
+    @State private var contentLanguage: String?
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
@@ -98,7 +99,7 @@ private struct SavedRecapVersionView: View {
                     .font(.subheadline).foregroundStyle(.secondary)
                 if version["content"]["summary"].text.isEmpty { Text(L10n.text("No summary in this version.")) }
                 else {
-                    RecapContentView(recap: version["content"], day: day, onFocusChange: { recapFocus = $0 })
+                    RecapContentView(recap: version["content"], day: day, onFocusChange: { recapFocus = $0 }, onContentLanguageChange: { contentLanguage = $0 })
                     Button {
                         UIPasteboard.general.string = RecapPresentation.readingText(version["content"]["summary"].text)
                         copied = true
@@ -108,7 +109,7 @@ private struct SavedRecapVersionView: View {
             }
             if let recapFocus {
                 DayAtGlanceSections(day: day, topicSources: recapFocus.sourceIDs, topicPassages: recapFocus.passages,
-                    topicVersions: recapFocus.versions, topicTitle: recapFocus.title).id(recapFocus.id)
+                    topicVersions: recapFocus.versions, topicTitle: recapFocus.displayTitle ?? recapFocus.title, contentLanguage: contentLanguage).id(recapFocus.id)
             }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Saved recap")).navigationBarTitleDisplayMode(.inline)
     }

@@ -2,12 +2,13 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { interfaceLanguage, source, t } from "./i18n";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
-import { recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
+import { originalTopicTranslation, recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
 import { RecapTopic } from "./RecapTopic";
 import { recapTranslationDisplay } from "./recapTranslationDisplay";
 import type { SummaryTranslationStructure } from "./transcriptTranslationRequests";
 import type { ChatScope, Source } from "./types";
 import { InlineText } from "./UI";
+import { DisplayTranslationStatus, useDisplayTranslations, type DisplayTranslationInput } from "./displayTranslations";
 
 type Props = {
   text: string; day: string; version: string; sources: Source[]; timezone: string;
@@ -20,7 +21,7 @@ type Props = {
 
 type TopicRow = RecapBrowserTopic & { displayTitle: string; displayParts: RecapTopicGroup["parts"]; followups?: boolean };
 
-export function RecapContent({ text, translatedText, translationStructure, day, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage }: Props) {
+export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage }: Props) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string>();
   useEffect(() => () => onFocus?.(undefined), [onFocus]);
@@ -28,7 +29,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
   const language = interfaceLanguage();
   const display = useMemo(() => translatedText === undefined ? undefined
     : recapTranslationDisplay(text, translatedText, translationStructure), [text, translatedText, translationStructure]);
-  const rows = useMemo(() => {
+  const canonicalRows = useMemo(() => {
     const parts = recapParts(text);
     const original = recapTopics(parts, day);
     const translated = display === undefined ? original : recapTopics(parts, day, recapParts(text, display));
@@ -40,17 +41,26 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
       displayTitle: t("Follow-ups mentioned in the recap"), displayParts: translated.followups, followups: true });
     return topics;
   }, [text, display, day, sources, language]);
+  const labels = useDisplayTranslations(canonicalRows.map(originalTopicTranslation).filter((item): item is DisplayTranslationInput => !!item), `${day}:${version}`);
+  const rows = useMemo(() => canonicalRows.map((topic) => {
+    const input = originalTopicTranslation(topic);
+    return input ? { ...topic, displayTitle: labels.title(input) } : topic;
+  }), [canonicalRows, labels.title]);
   const active = rows.find((topic) => topic.id === selected);
   useEffect(() => {
     if (selected && !active) { setSelected(undefined); onFocus?.(undefined); }
   }, [selected, active, onFocus]);
+  useEffect(() => {
+    if (active && !active.originalPassages) onFocus?.({ ...topicFocus(active, sources), displayTitle: active.displayTitle });
+  }, [active, sources, onFocus]);
   const normalized = query.normalize("NFKC").toLocaleLowerCase().trim();
   const visible = rows.filter((topic) => `${topic.displayTitle}\n${recapTopicText(topic.displayParts)}\n${topic.title}\n${recapTopicText(topic.parts)}\n${topic.originalPassages?.map((passage) => passage.text).join("\n") || ""}`
     .normalize("NFKC").toLocaleLowerCase().includes(normalized));
   function toggle(topic: RecapBrowserTopic) {
     const next = selected === topic.id ? undefined : topic.id;
     setSelected(next);
-    onFocus?.(!next ? undefined : topic.originalPassages ? { title: topic.title, basis: "original", passages: [] } : topicFocus(topic, sources));
+    const displayTitle = rows.find((row) => row.id === topic.id)?.displayTitle;
+    onFocus?.(!next ? undefined : { ...(topic.originalPassages ? { title: topic.title, basis: "original" as const, passages: [] } : topicFocus(topic, sources)), displayTitle });
   }
   return <div className={`recap-workspace ${compact ? "recap-reading-view" : ""}`}>
     {translatedText !== undefined && display === undefined ? <p className="caption recap-translation-warning" role="status">
@@ -64,6 +74,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
           setQuery(event.target.value); setSelected(undefined); onFocus?.(undefined);
         }} placeholder={t("Find a topic in this day")} aria-label={t("Find a topic in this day")} />
       </label>
+      <DisplayTranslationStatus value={labels} />
       <div className="recap-topic-list">
         {visible.map((topic) => <RecapTopicRow key={topic.id} topic={topic} expanded={selected === topic.id} onToggle={() => toggle(topic)}
           day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} />)}

@@ -15,6 +15,7 @@ from .conversation_tags import SCHEMA as CONVERSATION_TAGS_SCHEMA
 from .conversation_tags import ConversationTagStore, decorate_tags
 from .decision_export import diary_markdown
 from .decision_store import DECISION_SCHEMA, DecisionStore
+from .display_translation_store import SCHEMA as DISPLAY_TRANSLATION_SCHEMA
 from .domain import ButtonEvent, HintPolicy, stamp, utc_now
 from .forwarding_store import SCHEMA as FORWARDING_SCHEMA
 from .forwarding_store import ForwardingStore
@@ -200,6 +201,7 @@ class Store(
             db.executescript(RECAP_SCHEMA)
             db.executescript(NOTIFICATION_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)
+            db.executescript(DISPLAY_TRANSLATION_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
             db.executescript(RECORDING_UPLOADS_SCHEMA)
             db.executescript(VENDOR_IMPORT_SCHEMA)

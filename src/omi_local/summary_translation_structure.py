@@ -130,10 +130,10 @@ async def gather(*coroutines):
         raise
 
 
-async def translate_structure(inference, original, language):
+async def translate_structure(inference, original, language, *, semaphore=None):
     # A single overall timeout is owned by the caller. Three bounded calls can run together;
     # indexed gather preserves source order regardless of provider completion order.
-    semaphore = asyncio.Semaphore(3)
+    semaphore = semaphore or asyncio.Semaphore(3)
 
     async def unit(text, heading=False):
         async def chunk(value):

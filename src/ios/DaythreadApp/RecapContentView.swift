@@ -8,6 +8,7 @@ struct RecapContentView: View {
     var emptyMessage: String? = nil
     var filters = DayFilterScope()
     var onFocusChange: ((RecapTopicFocus?) -> Void)? = nil
+    var onContentLanguageChange: ((String?) -> Void)? = nil
     @State private var query = ""
     @State private var expandedID: String?
     @Environment(\.locale) private var interfaceLocale
@@ -28,7 +29,7 @@ struct RecapContentView: View {
                     .map { InboxTopicPassage(sourceID: source["id"].text, start: $0.start, end: $0.end) }
             }
         }
-        return RecapOriginalTopics.topics(sources: sources.map(\.originalTopicSource), excluding: covered, query: query)
+        return RecapOriginalTopics.topics(sources: sources.map(\.originalTopicSource), excluding: covered)
     }
 
 
@@ -36,7 +37,7 @@ struct RecapContentView: View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 18) {
             if !effectiveFilters.isFiltered && !recap["summary"].text.isEmpty {
-                SummaryTranslationView(output: recap, translationIsCompatible: { translatedMapping($0) != nil }, renderedContent: { translation, showing in
+                SummaryTranslationView(output: recap, translationIsCompatible: { translatedMapping($0) != nil }, onContentLanguageChange: onContentLanguageChange, renderedContent: { translation, showing in
                     topicList(translation: translation, showingTranslation: showing)
                 })
             } else { topicList(translation: nil, showingTranslation: false) }
@@ -48,7 +49,7 @@ struct RecapContentView: View {
         }.buttonStyle(.borderless).disclosureGroupStyle(RecapDisclosureStyle())
             .onChange(of: query) { _, _ in select(nil, title: "") }
             .onChange(of: recap["summary"]) { _, _ in query = ""; select(nil, title: "") }
-            .onDisappear { onFocusChange?(nil) }
+            .onDisappear { onFocusChange?(nil); onContentLanguageChange?(nil) }
     }
 
     private func topicList(translation: JSONValue?, showingTranslation: Bool) -> RecapTopicsContent {
@@ -56,6 +57,7 @@ struct RecapContentView: View {
         let translated = translation.flatMap(translatedMapping)
         return RecapTopicsContent(original: original, translated: translated, showingTranslation: showingTranslation,
             mappingUnavailable: translation != nil && translated == nil, originals: originalTopics,
+            contentLanguage: showingTranslation ? translation?["language"].text : nil,
             recap: recap, day: day, filters: effectiveFilters, emptyMessage: emptyMessage,
             query: $query, expandedID: expandedID, onSelect: select, onCorrect: onCorrect,
             onFocus: { focus in if expandedID == focus.id { onFocusChange?(focus) } })
@@ -80,6 +82,7 @@ private struct RecapTopicsContent: View {
     let showingTranslation: Bool
     let mappingUnavailable: Bool
     let originals: [RecapOriginalTopics.Topic]
+    let contentLanguage: String?
     let recap: JSONValue
     let day: String
     let filters: DayFilterScope
@@ -90,6 +93,10 @@ private struct RecapTopicsContent: View {
     let onCorrect: (() -> Void)?
     let onFocus: (RecapTopicFocus) -> Void
     @State private var showingFollowUps = false
+    @State private var labelState = DisplayLabelTranslationState()
+    @State private var labelsRefresh = UUID()
+    @State private var canonicalFocus: RecapTopicFocus?
+    @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
     private var visibleTopics: [RecapTranslationMapping.Topic] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -100,19 +107,50 @@ private struct RecapTopicsContent: View {
         }
     }
     private var followUps: [RecapPresentation.Group] { showingTranslation ? translated?.followUps ?? original.followUps : original.followUps }
+    private var labels: [DisplayTranslations.Label] { originals.compactMap(\.displayLabel) }
+    private var labelsKey: String {
+        model.archiveIdentity + model.archiveRevision + filters.identity + recap["scope_fingerprint"].text + labelsRefresh.uuidString + DisplayTranslations.identity(language: contentLanguage, labels: labels)
+    }
+    private var labelValues: [DisplayTranslations.Reference: String] { labelState.values(for: labelsKey) }
+    private func originalTitle(_ topic: RecapOriginalTopics.Topic) -> String {
+        topic.displayLabel.flatMap { labelValues[$0.reference] } ?? topic.title
+    }
+    private var visibleOriginals: [RecapOriginalTopics.Topic] {
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return originals.filter { topic in
+            let text = topic.title + " " + originalTitle(topic) + " " + topic.parts.map(\.quote).joined(separator: " ")
+            return "original:" + topic.id == expandedID || search.isEmpty || text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+    private var projectedFocus: RecapTopicFocus? {
+        guard var focus = canonicalFocus, expandedID == focus.id else { return nil }
+        if showingTranslation, let topic = translated?.topics.first(where: { $0.id == focus.id }) {
+            focus.displayTitle = topic.display.title?.replacingOccurrences(of: "**", with: "")
+        } else if let topic = originals.first(where: { "original:" + $0.id == focus.id }) {
+            focus.displayTitle = originalTitle(topic)
+        }
+        return focus
+    }
+    private func select(_ id: String?, title: String) { canonicalFocus = nil; onSelect(id, title) }
+    private func acceptFocus(_ focus: RecapTopicFocus) { if focus.id == expandedID { canonicalFocus = focus } }
 
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 14) {
             TextField(L10n.text("Search recap topics"), text: $query).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("recap.topicSearch")
+            if labelState.isLoading(key: labelsKey, language: contentLanguage, labels: labels) { ProgressView(L10n.text("Translating…")) }
+            if let error = labelState.error(for: labelsKey) {
+                ErrorNote(message: error)
+                Button(L10n.text("Retry")) { labelsRefresh = UUID() }
+            }
             if mappingUnavailable {
                 Text(L10n.text("Update this translation to keep the recap’s topics and layout.")).font(.caption).foregroundStyle(.secondary)
             }
             if recap["summary"].text.isEmpty {
                 Text(emptyMessage ?? L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.")).font(.subheadline).foregroundStyle(.secondary)
             }
-            if visibleTopics.isEmpty && originals.isEmpty && !query.isEmpty {
+            if visibleTopics.isEmpty && visibleOriginals.isEmpty && !query.isEmpty {
                 Text(L10n.text("No matching recap topics. Try another word or browse the day’s recordings.")).font(.subheadline).foregroundStyle(.secondary)
             }
             ForEach(visibleTopics) { topic in
@@ -120,15 +158,15 @@ private struct RecapTopicsContent: View {
                 let display = showingTranslation ? translated?.topics.first { $0.id == topic.id }?.display ?? topic.original : topic.original
                 RecapTopicRow(topic: topic, display: display, sources: recap["sources"].array, day: day,
                     filters: filters, scopeFingerprint: recap["scope_fingerprint"].text,
-                    expanded: Binding(get: { expandedID == topic.id }, set: { onSelect($0 ? topic.id : nil, title) }),
-                    onCorrect: onCorrect, onFocus: onFocus)
+                    expanded: Binding(get: { expandedID == topic.id }, set: { select($0 ? topic.id : nil, title: title) }),
+                    onCorrect: onCorrect, onFocus: acceptFocus)
                 Divider()
             }
-            ForEach(originals) { topic in
-                RecapOriginalTopicRow(topic: topic, day: day, onCorrect: onCorrect, filters: filters,
+            ForEach(visibleOriginals) { topic in
+                RecapOriginalTopicRow(topic: topic, day: day, onCorrect: onCorrect, displayTitle: originalTitle(topic), filters: filters,
                     scopeFingerprint: recap["scope_fingerprint"].text,
-                    expanded: Binding(get: { expandedID == "original:" + topic.id }, set: { onSelect($0 ? "original:" + topic.id : nil, topic.title) }),
-                    onFocus: onFocus)
+                    expanded: Binding(get: { expandedID == "original:" + topic.id }, set: { select($0 ? "original:" + topic.id : nil, title: topic.title) }),
+                    onFocus: acceptFocus)
                 Divider()
             }
             if !followUps.isEmpty {
@@ -138,6 +176,8 @@ private struct RecapTopicsContent: View {
                 }
             }
         }
+        .task(id: labelsKey) { await labelState.load(key: labelsKey, language: contentLanguage, labels: labels, client: model.client) }
+        .onChange(of: projectedFocus, initial: true) { _, focus in if let focus { onFocus(focus) } }
     }
 }
 

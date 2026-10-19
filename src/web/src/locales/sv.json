@@ -2824,5 +2824,10 @@
   "A filtered recap requires a tag or location filter": "En filtrerad sammanfattning kräver ett tagg- eller platsfilter",
   "Update this translation to keep the recap’s topics and layout.": "Uppdatera den här översättningen för att behålla sammanfattningens ämnen och layout.",
   "Saved translation cannot preserve this recap's topics. Translate again.": "Den sparade översättningen kan inte behålla ämnena i den här sammanfattningen. Översätt igen.",
-  "Translation changed summary structure": "Översättningen ändrade sammanfattningens struktur"
+  "Translation changed summary structure": "Översättningen ändrade sammanfattningens struktur",
+  "The overview translation could not be loaded. Try again.": "Översättningen av översikten kunde inte läsas in. Försök igen.",
+  "Display item not found": "Visningselementet hittades inte",
+  "Display item changed; refresh and try again": "Visningselementet har ändrats; uppdatera och försök igen",
+  "Display translation failed. Original text is available.": "Översättningen misslyckades. Originaltexten är tillgänglig.",
+  "Topic end must follow its start": "Ämnets slut måste komma efter dess början"
 }

@@ -9,6 +9,7 @@ struct DayAtGlanceSections: View {
     var topicVersions: [String: String] = [:]
     var filters = DayFilterScope()
     var topicTitle: String? = nil
+    var contentLanguage: String? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -30,6 +31,8 @@ struct DayAtGlanceSections: View {
     @State private var loadedScope = ""
     @State private var visibleDecisions = 5
     @State private var category = ""
+    @State private var labelState = DisplayLabelTranslationState()
+    @State private var labelsRefresh = UUID()
     private var scope: String {
         model.archiveIdentity + day + filters.identity + (topicSources?.sorted().joined() ?? "day") + String(describing: topicPassages) + topicVersions.sorted { $0.key < $1.key }.map { $0.key + $0.value }.joined()
     }
@@ -37,6 +40,15 @@ struct DayAtGlanceSections: View {
     private var scopedItems: [InboxItem] { loadedScope == scope ? items : [] }
     private var scopedDecisions: [DecisionRecord] { loadedScope == scope ? decisions : [] }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
+    private var labels: [DisplayTranslations.Label] {
+        let intents: [InboxIntent] = [.todo, .questions, .schedule, .reflection, .information]
+        let rows = intents.filter { category.isEmpty || category == $0.rawValue }.flatMap { Array(orderedItems($0).prefix(5)) }
+        let choices = category.isEmpty || category == "decisions" ? Array(scopedDecisions.prefix(visibleDecisions)) : []
+        return rows.map { .init(reference: .init(kind: "inbox", id: $0.id, version: $0.version), title: $0.title) }
+            + choices.map { .init(reference: .init(kind: "decision", id: $0.id, version: $0.version), title: $0.title) }
+    }
+    private var labelsKey: String { scope + model.archiveRevision + labelsRefresh.uuidString + DisplayTranslations.identity(language: contentLanguage, labels: labels) }
+    private var labelValues: [DisplayTranslations.Reference: String] { labelState.values(for: labelsKey) }
 
     var body: some View {
         let _ = interfaceLocale
@@ -44,6 +56,11 @@ struct DayAtGlanceSections: View {
             Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM") } ?? day).font(.subheadline).foregroundStyle(.secondary)
             if let topicTitle { Text(L10n.text("Topic") + ": " + topicTitle).font(.subheadline.weight(.medium)) }
             Text(L10n.text("Proposals come from your recorded conversations and need your review.")).font(.caption).foregroundStyle(.secondary)
+            if labelState.isLoading(key: labelsKey, language: contentLanguage, labels: labels) { ProgressView(L10n.text("Translating…")) }
+            if let error = labelState.error(for: labelsKey) {
+                ErrorNote(message: error)
+                Button(L10n.text("Retry")) { labelsRefresh = UUID() }
+            }
             if loading || loadedScope != scope { ProgressView(L10n.text("Loading action points…")) }
             ErrorNote(message: inboxError)
             if inboxError != nil { Button(L10n.text("Retry")) { refresh = UUID() } }
@@ -68,6 +85,7 @@ struct DayAtGlanceSections: View {
         }
         .onAppear { refresh = UUID() }
         .onChange(of: scope) { _, _ in invalidateScans() }
+        .task(id: labelsKey) { await labelState.load(key: labelsKey, language: contentLanguage, labels: labels, client: model.client) }
         if category.isEmpty || category == InboxIntent.todo.rawValue { inboxGroup(.todo) }
         if category.isEmpty || category == InboxIntent.questions.rawValue { inboxGroup(.questions) }
         if category.isEmpty || category == InboxIntent.schedule.rawValue { inboxGroup(.schedule) }
@@ -79,15 +97,20 @@ struct DayAtGlanceSections: View {
 
     private var scopedInbox: some View { InboxView(day: day, topicSources: topicSources, topicPassages: topicPassages, filters: filters) }
 
-    private func inboxGroup(_ intent: InboxIntent) -> some View {
-        let relevant = scopedItems.filter { $0.intent == intent }.enumerated().sorted {
+    private func orderedItems(_ intent: InboxIntent) -> [InboxItem] {
+        scopedItems.filter { $0.intent == intent }.enumerated().sorted {
             if ($0.element.overdue == true) != ($1.element.overdue == true) { return $0.element.overdue == true }
             let lhs = $0.element.health != "current", rhs = $1.element.health != "current"
             return lhs == rhs ? $0.offset < $1.offset : lhs
         }.map(\.element)
+    }
+    private func inboxGroup(_ intent: InboxIntent) -> some View {
+        let relevant = orderedItems(intent)
         return Section {
             ForEach(relevant.prefix(5)) { item in
-                NavigationLink { InboxDetail(id: item.id) } label: { InboxOverviewRow(item: item) }
+                NavigationLink { InboxDetail(id: item.id) } label: {
+                    InboxOverviewRow(item: item, displayTitle: labelValues[.init(kind: "inbox", id: item.id, version: item.version)])
+                }
             }
             if relevant.isEmpty && !loading && inboxError == nil && loadedScope == scope {
                 Text(L10n.text("No items in this group yet. Scans may still be incomplete.")).font(.caption).foregroundStyle(.secondary)
@@ -103,7 +126,7 @@ struct DayAtGlanceSections: View {
             ForEach(scopedDecisions.prefix(visibleDecisions)) { record in
                 NavigationLink { DecisionDetail(id: record.id) } label: {
                     VStack(alignment: .leading, spacing: 7) {
-                        DecisionRow(record: record)
+                        DecisionRow(record: record, displayTitle: labelValues[.init(kind: "decision", id: record.id, version: record.version)])
                         Text(L10n.text("Review decision")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                     }
                 }
@@ -281,6 +304,7 @@ private extension InboxIntent {
 
 struct InboxOverviewRow: View {
     let item: InboxItem
+    var displayTitle: String? = nil
     @Environment(\.locale) private var interfaceLocale
     private var nextAction: String {
         if item.status == "completed" { return item.kind == "question" ? L10n.text("Answered") : item.isReviewOnly ? L10n.text("Reviewed") : L10n.text("Completed") }
@@ -296,7 +320,7 @@ struct InboxOverviewRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 6) {
-            Text(item.title).foregroundStyle(.primary)
+            Text(displayTitle ?? item.title).foregroundStyle(.primary)
             Text(L10n.status(item.kind) + " · " + (item.status == "completed" || item.reviewed_at != nil ? L10n.text("Reviewed") : L10n.text("Proposed"))).font(.caption).foregroundStyle(.secondary)
             if item.overdue == true { Label(L10n.text("Overdue"), systemImage: "exclamationmark.circle").font(.caption.weight(.semibold)).foregroundStyle(.orange) }
             if item.health != "current" { Text(L10n.text("Evidence \(L10n.status(item.health))")).font(.caption).foregroundStyle(.orange) }

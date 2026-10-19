@@ -45,6 +45,8 @@ struct DayView: View {
     @State private var membershipRevision = 0
     @State private var recapFocus: RecapTopicFocus?
     @State private var recapFocusScope = ""
+    @State private var contentLanguage: String?
+    @State private var contentLanguageScope = ""
 
     init(date: Date? = nil, filters: DayFilterScope = .init()) {
         _selectedDate = State(initialValue: date)
@@ -64,6 +66,7 @@ struct DayView: View {
     private var currentRecap: JSONValue { loadedScope == scopeKey ? recap : .null }
     private var currentGroups: [JSONValue] { loadedRecordingKey == cacheKey ? recordingGroups : [] }
     private var currentFocus: RecapTopicFocus? { recapFocusScope == scopeKey ? recapFocus : nil }
+    private var currentContentLanguage: String? { contentLanguageScope == scopeKey ? contentLanguage : nil }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -82,7 +85,8 @@ struct DayView: View {
             }
             recapSection
             DayAtGlanceSections(day: dayKey, topicSources: currentFocus?.sourceIDs, topicPassages: currentFocus?.passages ?? [],
-                topicVersions: currentFocus?.versions ?? [:], filters: filters, topicTitle: currentFocus?.title)
+                topicVersions: currentFocus?.versions ?? [:], filters: filters, topicTitle: currentFocus?.displayTitle ?? currentFocus?.title,
+                contentLanguage: currentContentLanguage)
                 .id(scopeKey + (currentFocus?.id ?? "day"))
             Section {
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
@@ -209,7 +213,8 @@ struct DayView: View {
             if !hasContent && ["queued", "running"].contains(recap["generation_state"].text) { ProgressView(L10n.text("Preparing a recap for the selected filters…")) }
             if hasContent {
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
-                    onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } })
+                    onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } },
+                    onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } })
                     .id(scopeKey + recap["scope_fingerprint"].text)
             } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)

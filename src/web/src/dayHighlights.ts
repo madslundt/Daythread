@@ -33,11 +33,11 @@ export function highlightReviewLabel(item: InboxItem): string {
   return t("Review action");
 }
 
-export function highlightCompletionLabel(item: InboxItem): string {
-  if (item.status === "completed") return t("Reopen: {value0}", { value0: item.title });
-  if (item.kind === "question") return t("Mark answered: {value0}", { value0: item.title });
-  if (!actionableKind(item.kind)) return t("Mark reviewed: {value0}", { value0: item.title });
-  return t("Mark complete: {value0}", { value0: item.title });
+export function highlightCompletionLabel(item: InboxItem, title = item.title): string {
+  if (item.status === "completed") return t("Reopen: {value0}", { value0: title });
+  if (item.kind === "question") return t("Mark answered: {value0}", { value0: title });
+  if (!actionableKind(item.kind)) return t("Mark reviewed: {value0}", { value0: title });
+  return t("Mark complete: {value0}", { value0: title });
 }
 
 export function orderedHighlights(items: InboxItem[]): InboxItem[] {

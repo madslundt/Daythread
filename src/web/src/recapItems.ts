@@ -1,4 +1,5 @@
 import type { Source } from "./types";
+import type { DisplayTranslationInput } from "./displayTranslations";
 
 export type RecapPart =
   | { kind: "text"; text: string }
@@ -7,6 +8,7 @@ export type RecapPart =
 
 export type RecapFocus = {
   title: string;
+  displayTitle?: string;
   basis?: "original";
   passages: { source_id: string; start: number; end: number }[];
 };
@@ -16,6 +18,15 @@ export type OriginalRecapPassage = {
   section: NonNullable<Source["sections"]>[number]; text: string;
 };
 export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[] };
+
+export function originalTopicTranslation(topic: RecapBrowserTopic): DisplayTranslationInput | undefined {
+  const passage = topic.originalPassages?.[0];
+  if (!passage?.source_version || !passage.transcript_version) return;
+  return { kind: "source_topic", id: passage.source_id, source_version: passage.source_version,
+    transcript_version: passage.transcript_version, start_offset: passage.section.start_offset,
+    end_offset: passage.section.end_offset, ...(passage.section.chapter_id ? { chapter_id: passage.section.chapter_id } : {}),
+    original_title: passage.section.title };
+}
 
 // Older recaps used bold labels in a flat list instead of topic headings.
 export function recapTopics(parts: RecapPart[], day: string, displayParts = parts) {

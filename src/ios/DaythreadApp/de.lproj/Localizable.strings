@@ -2707,3 +2707,9 @@
 "Saved translation cannot preserve this recap's topics. Translate again." = "Die gespeicherte Übersetzung kann die Themen dieses Rückblicks nicht beibehalten. Übersetze erneut.";
 
 "Translation changed summary structure" = "Die Übersetzung hat die Struktur des Rückblicks verändert";
+
+"The overview translation could not be loaded. Try again." = "Die Übersetzung der Übersicht konnte nicht geladen werden. Versuche es erneut.";
+"Display item not found" = "Anzeigeelement nicht gefunden";
+"Display item changed; refresh and try again" = "Das Anzeigeelement wurde geändert; aktualisiere die Ansicht und versuche es erneut";
+"Display translation failed. Original text is available." = "Die Übersetzung ist fehlgeschlagen. Der Originaltext ist verfügbar.";
+"Topic end must follow its start" = "Das Ende des Themas muss nach seinem Anfang liegen";

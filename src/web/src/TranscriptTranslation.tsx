@@ -18,10 +18,11 @@ export function TranscriptPassage({ source, section }: {
     sourceId={source.id} original={original} passage={{ ...section, transcript_version: source.transcript_version }} />;
 }
 
-export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText }: {
+export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText, renderFollowing }: {
   sourceId: string; original: string; passage?: TranslationPassage;
   content?: "transcript" | "summary";
-  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>) => ReactNode;
+  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>, language?: string) => ReactNode;
+  renderFollowing?: (language?: string) => ReactNode;
 }) {
   const requests = useMemo(() => new TranscriptTranslationRequests(sourceId, passage, content),
     [sourceId, passage?.start_offset, passage?.end_offset, passage?.transcript_version, content]);
@@ -110,7 +111,7 @@ export function TranscriptTranslation({ sourceId, original, passage, content = "
   }
 
   return <TranscriptTranslationView original={original} data={data} translated={translated}
-    content={content} renderText={renderText}
+    content={content} renderText={renderText} renderFollowing={renderFollowing}
     selectedLanguage={generating ? generationTarget.current : target ?? data?.language} loading={loading} generating={generating}
     error={error} translationError={translationError}
     onTranslate={(language) => void translate(language)} onSelect={setTranslated}
@@ -126,10 +127,11 @@ export function TranscriptTranslation({ sourceId, original, passage, content = "
 
 export function TranscriptTranslationView({ original, data, translated = false, selectedLanguage,
   loading, generating, error, translationError = "", onTranslate, onSelect, onRetry, onLanguage,
-  content = "transcript", renderText }: {
+  content = "transcript", renderText, renderFollowing }: {
   original: string;
   content?: "transcript" | "summary";
-  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>) => ReactNode;
+  renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>, language?: string) => ReactNode;
+  renderFollowing?: (language?: string) => ReactNode;
   data?: TranscriptTranslationData;
   translated?: boolean;
   selectedLanguage?: string;
@@ -228,7 +230,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
       {renderText ? <div className={placeholder ? "translation-preview" : undefined} aria-busy={placeholder ? loading || generating : undefined}>
         <div lang={translation?.language} className={placeholder ? "translation-preview-text" : undefined}
           aria-hidden={placeholder || undefined} inert={placeholder || undefined}>
-          {renderText(translation?.text ?? original, !!translation, translation ?? undefined)}
+          {renderText(translation?.text ?? original, !!translation, translation ?? undefined, active === "original" ? undefined : active)}
         </div>
         {placeholder ? previewAction : null}
       </div> : placeholder ? <div className="translation-preview" aria-busy={loading || generating}>
@@ -237,5 +239,6 @@ export function TranscriptTranslationView({ original, data, translated = false, 
       </div> : <p className="transcript-text" lang={translation?.language}>{translation?.text ?? original}</p>}
     </div>
     {error ? <ErrorState message={error} retry={!data || loading ? onRetry : undefined} /> : null}
+    {renderFollowing?.(active === "original" ? undefined : active)}
   </div>;
 }

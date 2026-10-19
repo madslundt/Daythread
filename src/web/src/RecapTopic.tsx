@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
@@ -27,6 +27,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   const heading = title.replace(/\*\*/g, "");
   const displayText = recapTopicText(displayParts);
   const displayHeading = displayTitle.replace(/\*\*/g, "");
+  const reportFocus = useCallback((focus?: RecapFocus) => onFocus?.(focus ? { ...focus, displayTitle: displayHeading } : undefined), [onFocus, displayHeading]);
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
   const evidence = related.sources.length ? related.sources.map((source) => (
     <CurrentTopicEvidence key={source.id} id={source.id} point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
@@ -45,7 +46,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
         onClick={() => setShowEvidence((value) => !value)}>{showEvidence ? t("Hide original passages") : t("Show original passages")}</button>
       <div id={passageId} hidden={!showEvidence}>
         {originalPassages ? <OriginalTopicEvidence title={title} passages={originalPassages} visible={showEvidence}
-          timezone={timezone} onCorrect={onCorrect} onFocus={onFocus} /> : showEvidence ? evidence : null}
+          timezone={timezone} onCorrect={onCorrect} onFocus={reportFocus} /> : showEvidence ? evidence : null}
       </div>
     </div>}
   </>;

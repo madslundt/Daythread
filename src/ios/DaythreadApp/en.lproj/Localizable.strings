@@ -2709,3 +2709,9 @@
 "Saved translation cannot preserve this recap's topics. Translate again." = "Saved translation cannot preserve this recap's topics. Translate again.";
 
 "Translation changed summary structure" = "Translation changed summary structure";
+
+"The overview translation could not be loaded. Try again." = "The overview translation could not be loaded. Try again.";
+"Display item not found" = "Display item not found";
+"Display item changed; refresh and try again" = "Display item changed; refresh and try again";
+"Display translation failed. Original text is available." = "Display translation failed. Original text is available.";
+"Topic end must follow its start" = "Topic end must follow its start";

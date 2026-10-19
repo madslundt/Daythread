@@ -23,7 +23,9 @@ export function recapGroups(parts: RecapPart[], day: string) {
 }
 
 export function recapReadingText(text: string) {
-  return text.replace(/\[[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\]/gi, "").replace(/ +([.,;!?])/g, "$1").trim();
+  const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
+  return text.replace(new RegExp(`\\[\\s*${uuid}(?:\\s*,\\s*${uuid})*\\s*\\]`, "gi"), "")
+    .replace(/ +([.,;!?])/g, "$1").trim();
 }
 
 export function recapGroupSummary(parts: RecapPart[]): string {

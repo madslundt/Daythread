@@ -19,9 +19,7 @@ import { SourceList } from "./SourceList";
 import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
 import { RecapContent } from "./RecapContent";
-import { CopySummary } from "./CopySummary";
 import { SummaryTranslation } from "./SummaryTranslation";
-import { recapReadingText } from "./recapItems";
 import type { ChatScope, Recap, Source, Status, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { EmptyState, ErrorState, Loading, Notice, RichText } from "./UI";
@@ -79,7 +77,6 @@ export function RecapSection({
               version={recap.data.output_id || recap.data.generated_at || "unversioned"}
               sources={recap.data.sources || []}
               timezone={timezone}
-              onChat={onChat}
               onCorrect={recap.refresh}
               compact={compact}
             />
@@ -91,7 +88,6 @@ export function RecapSection({
           <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
           <EvidenceFeedback outputId={recap.data.output_id} evidence={recap.data.evidence} outputText={recap.data.summary} />
           <div className="recap-footer">
-            <CopySummary text={recapReadingText(recap.data.summary)} label={t("Copy recap")} />
             {recap.data.generated_at ? (
               <span className="caption">
                 {t("Generated at")}{" "}{timeLabel(recap.data.generated_at, timezone)}

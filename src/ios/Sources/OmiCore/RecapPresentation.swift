@@ -47,7 +47,8 @@ public enum RecapPresentation {
     private static let danish = Set("det den der dette denne disse som til med om eller og en et kan vil har var være bliver blev bruger brugeren taler nævnte nævnes beskriver beskrevet samt her også deres vores min mit mine man jeg mig dig han hun dem sin sit sine sig skal skulle kunne have havde ikke fra ved for på af at ind ud dag dagen andet første anden meget noget nogle alle hver hvad hvordan hvor hvorfor hvis når fordi optagelse optagelsen samtalen emne emnet diskussion discussion details mentioned said".split(separator: " ").map(String.init))
 
     public static func readingText(_ text: String) -> String {
-        text.replacingOccurrences(of: "(?i)\\[" + uuid + "\\]", with: "", options: .regularExpression)
+        let citation = "\\[\\s*" + uuid + "(?:\\s*,\\s*" + uuid + ")*\\s*\\]"
+        text.replacingOccurrences(of: citation, with: "", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: #" +([.,;!?])"#, with: "$1", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

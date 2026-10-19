@@ -29,12 +29,8 @@ struct RecapContentView: View {
     private var original: some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                RecapTopicView(group: group, day: day, version: version, sources: recap["sources"].array,
+                RecapTopicView(group: group, sources: recap["sources"].array,
                                checks: $checks, onCheck: saveChecks, onCorrect: onCorrect)
-            }
-            if UUID(uuidString: version) != nil {
-                ImportanceButton(target: .init(kind: "recap", id: version), label: L10n.text("day recap"))
-                    .font(.subheadline)
             }
         }
     }
@@ -45,18 +41,13 @@ struct RecapContentView: View {
 
 private struct RecapTopicView: View {
     let group: RecapPresentation.Group
-    let day: String
-    let version: String
     let sources: [JSONValue]
     @Binding var checks: Set<String>
     let onCheck: () -> Void
     let onCorrect: (() -> Void)?
     @State private var expanded = false
-    @State private var copied = false
-    @State private var asking = false
     private var title: String { (group.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "") }
     private var plain: String { group.text.replacingOccurrences(of: "**", with: "") }
-    private var prompt: String { L10n.text("Tell me more about this topic from my day recap: \(title)\n\(plain)") }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -79,24 +70,10 @@ private struct RecapTopicView: View {
         VStack(alignment: .leading, spacing: 14) {
             if group.hasActions || group.title == nil {
                 ForEach(Array(group.parts.enumerated()), id: \.offset) { _, part in
-                    RecapPointView(part: part, topic: group.title == nil ? "" : title, day: day, version: version,
+                    RecapPointView(part: part, topic: group.title == nil ? "" : title,
                                    sources: sources, checks: $checks, onCheck: onCheck, onCorrect: onCorrect)
                 }
             } else { Text(.init(group.text)).textSelection(.enabled) }
-            HStack(spacing: 18) {
-                Button {
-                    UIPasteboard.general.string = (group.title == nil ? "" : title + "\n\n") + plain
-                    copied = true
-                } label: { Label(copied ? L10n.text("Copied") : L10n.text("Copy"), systemImage: copied ? "checkmark" : "doc.on.doc") }
-                    .accessibilityLabel(L10n.text("Copy summary: \(title)"))
-                Button { asking = true } label: {
-                    Label(L10n.text("Ask about this"), systemImage: "bubble.left.and.bubble.right")
-                }
-            }.buttonStyle(.borderless).font(.subheadline)
-                .sheet(isPresented: $asking) { RecapQuestionView(day: day, question: prompt) }
-            if UUID(uuidString: version) != nil, let heading = group.title {
-                ImportanceButton(target: .init(kind: "recap", id: version, section: heading), label: title)
-            }
             if !group.hasActions && group.title != nil {
                 RecapEvidenceList(point: group.parts.map(\.text).joined(separator: "\n"), topic: title,
                                   sources: sources, onCorrect: onCorrect)
@@ -108,14 +85,11 @@ private struct RecapTopicView: View {
 private struct RecapPointView: View {
     let part: RecapPresentation.Part
     let topic: String
-    let day: String
-    let version: String
     let sources: [JSONValue]
     @Binding var checks: Set<String>
     let onCheck: () -> Void
     let onCorrect: (() -> Void)?
     @State private var expanded = false
-    @State private var asking = false
     private var plain: String { RecapPresentation.readingText(part.text).replacingOccurrences(of: "**", with: "") }
 
     @Environment(\.locale) private var interfaceLocale
@@ -146,25 +120,13 @@ private struct RecapPointView: View {
                 }
             } else {
                 Text(.init(RecapPresentation.readingText(part.text))).textSelection(.enabled)
-                importance
             }
         }
     }
     private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button { asking = true } label: { Label(L10n.text("Ask about this"), systemImage: "bubble.left.and.bubble.right") }
-                .buttonStyle(.borderless)
-                .sheet(isPresented: $asking) {
-                    RecapQuestionView(day: day, question: L10n.text("Tell me more about this point from my day recap: ") + part.text)
-                }
-            importance
             RecapEvidenceList(point: part.text, topic: topic, sources: sources, onCorrect: onCorrect)
         }.font(.subheadline)
-    }
-    @ViewBuilder private var importance: some View {
-        if UUID(uuidString: version) != nil {
-            ImportanceButton(target: .init(kind: "recap", id: version, section: part.text), label: L10n.text("recap point: ") + plain)
-        }
     }
 }
 
@@ -258,20 +220,6 @@ private struct RecapEvidenceView: View {
                     if (error as? BackendFailure)?.status == 404 { fresh = .null }
                 }
             }
-    }
-}
-
-private struct RecapQuestionView: View {
-    let day: String
-    let question: String
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        NavigationStack {
-            ChatView(initialScope: .day(day), initialQuestion: question)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("Close")) { dismiss() } } }
-        }
     }
 }
 

@@ -73,12 +73,13 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         tmp_path,
         llm_routes={"summary": {"model": "translator", "base_url": "http://summary.local/v1"}},
     )
+    budgets = []
 
     def handler(request):
         body = json.loads(request.content)
+        budgets.append(body["max_tokens"])
         assert str(request.url) == "http://summary.local/v1/chat/completions"
         assert body["model"] == "translator"
-        assert body["max_tokens"] == 4000
         assert "untrusted data" in body["messages"][0]["content"]
         payload = json.loads(body["messages"][1]["content"])
         assert payload["evidence"] == original
@@ -86,16 +87,30 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         assert "do not summarize" in payload["task"]
         return httpx.Response(200, json={"choices": [{
             "message": {"content": "Speaker 1: Hej.\nSpeaker 2: Hej."},
-            "finish_reason": "length" if truncated else "stop",
+            "finish_reason": "length" if truncated and len(budgets) == 1 else "stop",
         }]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         inference = Inference(settings, http, task="chat")
-        if truncated:
-            with pytest.raises(InferenceTruncated):
-                await inference.translate(original, "da")
-        else:
-            assert await inference.translate(original, "da") == "Speaker 1: Hej.\nSpeaker 2: Hej."
+        assert await inference.translate(original, "da") == "Speaker 1: Hej.\nSpeaker 2: Hej."
+    assert budgets == ([4000, 8000] if truncated else [4000])
+
+
+@pytest.mark.anyio
+async def test_translation_still_fails_when_larger_retry_is_truncated(tmp_path):
+    settings = config(tmp_path)
+    budgets = []
+
+    def handler(request):
+        budgets.append(json.loads(request.content)["max_tokens"])
+        return httpx.Response(200, json={"choices": [{
+            "message": {"content": "partial"}, "finish_reason": "length",
+        }]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(InferenceTruncated):
+            await Inference(settings, http).translate("Transcript", "da")
+    assert budgets == [4000, 8000]
 
 
 @pytest.mark.anyio

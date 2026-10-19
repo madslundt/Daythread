@@ -179,34 +179,39 @@ class Inference(Transcription, InferenceUsage):
     ) -> str:
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
-        response = await self.post(
-            "llm",
-            f"{route.base_url}/chat/completions",
-            _usage_task=usage_task,
-            headers={"Authorization": f"Bearer {token}"} if token else {},
-            json={
-                **self.llm_template_options,
-                "model": route.model,
-                "temperature": 0.1,
-                "max_tokens": tokens,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"task": task, "evidence": evidence}, ensure_ascii=False
-                        ),
-                    },
-                ],
-            },
-        )
-        try:
-            choice = response.json()["choices"][0]
-            if choice.get("finish_reason") == "length":
-                raise InferenceTruncated("LLM output was truncated")
-            text = choice["message"]["content"]
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
-            raise InferenceError("Invalid LLM response") from exc
+        budgets = (tokens, min(tokens * 2, 8000))
+        for attempt, budget in enumerate(budgets):
+            response = await self.post(
+                "llm",
+                f"{route.base_url}/chat/completions",
+                _usage_task=usage_task,
+                headers={"Authorization": f"Bearer {token}"} if token else {},
+                json={
+                    **self.llm_template_options,
+                    "model": route.model,
+                    "temperature": 0.1,
+                    "max_tokens": budget,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {"task": task, "evidence": evidence}, ensure_ascii=False
+                            ),
+                        },
+                    ],
+                },
+            )
+            try:
+                choice = response.json()["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    if attempt == 0 and budgets[1] > budget:
+                        continue
+                    raise InferenceTruncated("LLM output was truncated")
+                text = choice["message"]["content"]
+                break
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise InferenceError("Invalid LLM response") from exc
         if not isinstance(text, str) or not text.strip() or len(text) > 30000:
             raise InferenceError("Invalid LLM response")
         return text.strip()

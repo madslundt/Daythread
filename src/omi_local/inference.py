@@ -183,16 +183,17 @@ class Inference(Transcription, InferenceUsage):
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
         budgets = (tokens, min(tokens * 2, 8000))
+        base_timeout = max(
+            self.settings.inference_timeout_seconds, 300 if tokens >= 4000 else 0,
+        )
         for attempt, budget in enumerate(budgets):
             response = await self.post(
                 "llm",
                 f"{route.base_url}/chat/completions",
                 _usage_task=usage_task,
                 _timeout_seconds=(
-                    self.settings.inference_timeout_seconds if attempt == 0 else max(
-                        self.settings.inference_timeout_seconds,
-                        min(self.settings.inference_timeout_seconds * 2, 600),
-                    )
+                    base_timeout if attempt == 0 else max(base_timeout,
+                                                         min(base_timeout * 2, 600))
                 ),
                 headers={"Authorization": f"Bearer {token}"} if token else {},
                 json={

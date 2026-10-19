@@ -96,7 +96,7 @@ async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_
         inference = Inference(settings, http, task="chat")
         assert await inference.translate(original, "da") == "Speaker 1: Hej.\nSpeaker 2: Hej."
     assert budgets == ([4000, 8000] if truncated else [4000])
-    assert timeouts == ([120, 240] if truncated else [120])
+    assert timeouts == ([300, 600] if truncated else [300])
 
 
 @pytest.mark.anyio
@@ -116,7 +116,7 @@ async def test_translation_still_fails_when_larger_retry_is_truncated(tmp_path):
         with pytest.raises(InferenceTruncated):
             await Inference(settings, http).translate("Transcript", "da")
     assert budgets == [4000, 8000]
-    assert timeouts == [120, 240]
+    assert timeouts == [300, 600]
 
 
 @pytest.mark.anyio

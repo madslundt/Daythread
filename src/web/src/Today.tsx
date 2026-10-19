@@ -14,7 +14,8 @@ import {
   FeedbackReview,
 } from "./CompletenessFeedback";
 import { InboxEntry } from "./Inbox";
-import { Decisions } from "./Decisions";
+import { ActionPoints } from "./ActionPoints";
+import { recapBrowserTopics, type RecapFocus } from "./recapItems";
 import { SourceList } from "./SourceList";
 import { RecordingGroups, type RecordingGroupList } from "./RecordingGroups";
 import { Speakers } from "./Speakers";
@@ -46,6 +47,9 @@ export function RecapSection({
   const summarizing = !statusError && Number.isFinite(statusAt) && Date.now() - statusAt <= 120_000 &&
     (status?.generation?.stages.summarizing || 0) > 0;
   const [showVersions, setShowVersions] = useState(false);
+  const [focus, setFocus] = useState<RecapFocus>();
+  const hasOriginalTopics = recapBrowserTopics([], recap.data?.sources || []).length > 0;
+  useEffect(() => { setFocus(undefined); }, [day, recap.data?.summary, recap.data?.output_id]);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", recap.refresh);
     return () =>
@@ -63,13 +67,13 @@ export function RecapSection({
         <Notice>
           {t("New or changed evidence is available. This recap will update automatically.")}{" "}</Notice>
       ) : null}
-      {recap.data ? <RecapCoverage recap={recap.data} timezone={timezone} /> : null}
+      {recap.data ? <RecapCoverage recap={recap.data.summary ? { ...recap.data, boundary_note: undefined } : recap.data} timezone={timezone} /> : null}
       {!compact ? <CompletenessDetails value={recap.data?.completeness} /> : null}
       {recap.loading && !recap.data ? (
         <Loading>{t("Loading recap…")}</Loading>
-      ) : recap.data?.summary ? (
+      ) : recap.data && (recap.data.summary || hasOriginalTopics) ? (
         <div className="recap-content">
-          <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}>
+          {recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}>
             <RecapContent
               key={`${day}:${recap.data.output_id || recap.data.generated_at || "unversioned"}:${recap.data.summary}`}
               text={recap.data.summary}
@@ -78,14 +82,21 @@ export function RecapSection({
               sources={recap.data.sources || []}
               timezone={timezone}
               onCorrect={recap.refresh}
+              onChat={onChat}
+              onFocus={setFocus}
               compact={compact}
             />
-          </SummaryTranslation>
+          </SummaryTranslation> : <RecapContent
+            key={`${day}:original-topics`} text="" day={day} version="originals"
+            sources={recap.data.sources || []} timezone={timezone} onCorrect={recap.refresh} onChat={onChat}
+            onFocus={setFocus} compact={compact} />}
+          <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} focus={focus && recap.data.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={onChat} />
           {recap.data.pending_chunks ? (
             <p className="caption">
               {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>
           ) : null}
-          <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
+          {recap.data.summary ? <RecapUtilities compact={compact} generatedAt={recap.data.generated_at} timezone={timezone}>
+          {recap.data.boundary_note ? <p className="caption">{t(recap.data.boundary_note)}</p> : null}
           <EvidenceFeedback outputId={recap.data.output_id} evidence={recap.data.evidence} outputText={recap.data.summary} />
           <div className="recap-footer">
             {recap.data.generated_at ? (
@@ -122,7 +133,7 @@ export function RecapSection({
             </details>
           ) : null}
           {compact ? <CompletenessDetails value={recap.data.completeness} /> : null}
-          </RecapUtilities>
+          </RecapUtilities> : null}
         </div>
       ) : (
         <div className="recap-empty">
@@ -139,6 +150,8 @@ export function RecapSection({
         </div>
       )}
       {compact && !recap.data?.summary ? <CompletenessDetails value={recap.data?.completeness} /> : null}
+      {!recap.data?.summary && !hasOriginalTopics ? <ActionPoints key={`actions-${day}`} day={day} timezone={timezone}
+        focus={focus && recap.data?.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={onChat} /> : null}
     </section>
   );
 }
@@ -231,7 +244,6 @@ export function Today({
           onUpload={onUpload}
           onChat={onChat}
         />
-        <Decisions key={`decisions-${day}`} day={day} timezone={timezone} compact />
       </div>
       <aside className="day-rail" aria-label={t("Day tools and capture")}>
         <QuickRewind onRewind={onRewind} />

@@ -5,6 +5,7 @@ import { errorMessage } from "./api";
 import { SpeakersRequests, VoiceProfilesRequests, speakerName, speakerTime, type Speaker, type SpeakersData, type VoiceProfilesData, type VoiceProfile } from "./speakersRequests";
 import { ErrorState } from "./UI";
 import "./speakers.css";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 export function Speakers({ kind, id }: { kind: "source" | "meeting"; id: string }) {
   return <SpeakersPanel key={`${kind}:${id}`} kind={kind} id={id} />;
@@ -147,8 +148,8 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     onListen={(speaker) => { setAudioError(false); setListening(speaker); }}>
     {selected && data?.version ? <div className="speaker-playback">
       <p className="caption">{t("Listening to")}{" "}{speakerName(selected)} {t("· speaking turns joined in order.")}</p>
-      <audio key={`${selected.id}:${data.version}`} ref={bindAudio} controls autoPlay preload="none"
-        aria-label={t("Listen to {value0} only", { value0: speakerName(selected) })} src={requests.audioUrl(selected.id, data.version)}
+      <RecordingAudioPlayer key={`${selected.id}:${data.version}`} audioRef={bindAudio} autoPlay
+        label={t("Listen to {value0} only", { value0: speakerName(selected) })} src={requests.audioUrl(selected.id, data.version)}
         onError={() => setAudioError(true)} />
       {audioError ? <p className="caption" role="alert">{t("Speaker audio is unavailable. The original audio may have expired. Refresh speakers to check again.")}</p> : null}
     </div> : null}

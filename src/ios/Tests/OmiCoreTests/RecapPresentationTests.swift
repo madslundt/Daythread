@@ -28,6 +28,16 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertEqual(groups[0].text, "A useful detail.\n\nAnother useful detail.")
     }
 
+    func testTopicBrowserSeparatesLabelledSubjectsAndPreservesEvidence() {
+        let second = "22222222-2222-4222-8222-222222222222"
+        let markdown = "## Highlights\n- **Café** — Discussed cocoa [\(sourceID)].\n- **Roadster** — Book a service [\(second)].\n## Action points\n- Book a service"
+        let topics = RecapPresentation.topics(markdown, day: "2026-10-16")
+        XCTAssertEqual(topics.map(\.title), ["Café", "Roadster"])
+        XCTAssertEqual(RecapPresentation.topics(markdown, day: "2026-10-16", query: "CAFE"), [topics[0]])
+        XCTAssertEqual(RecapPresentation.sources(for: topics[1].parts.map(\.text).joined(), in: [.init(id: sourceID, text: "cocoa"), .init(id: second, text: "service")]).ids, [second])
+        XCTAssertEqual(RecapPresentation.groups(markdown, day: "2026-10-16").last?.parts.first?.text, "Book a service")
+    }
+
     func testCitationsOutrankWordsAndNeverFallBackWhenDeleted() {
         let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "Gym workout"), .init(id: "22222222-2222-4222-8222-222222222222", text: "Work prototype")]
         let cited = RecapPresentation.sources(for: "Work prototype [\(sourceID)]", in: sources)
@@ -42,6 +52,8 @@ final class RecapPresentationTests: XCTestCase {
     func testSubjectAndDistinctiveWordsSupportUncitedOlderRecaps() {
         let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "The Gym workout was vigorous."), .init(id: "other", text: "Work prototype moved forward.")]
         XCTAssertEqual(RecapPresentation.sources(for: "**Gym · 07:15** — Exercise", in: sources).ids, [sourceID])
+        XCTAssertEqual(RecapPresentation.sources(for: "**Gym**\nA useful conversation.", in: sources).ids, [sourceID])
+        XCTAssertEqual(RecapPresentation.sources(for: "**Work prototype**\nA useful conversation [\(sourceID)].", in: sources).ids, [sourceID])
         XCTAssertEqual(RecapPresentation.sources(for: "Vigorous workout", in: sources).ids, [sourceID])
         XCTAssertEqual(RecapPresentation.sources(for: "Gym", in: sources).ids, [])
     }

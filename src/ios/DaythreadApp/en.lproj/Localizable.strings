@@ -2581,3 +2581,99 @@
 "No conversations yet" = "No conversations yet";
 "No matching conversations" = "No matching conversations";
 "Search conversations" = "Search conversations";
+
+/* Recap overview, topic exploration, and Inbox action points. */
+"Action points" = "Action points";
+"Ask about this day" = "Ask about this day";
+"Ask about this topic" = "Ask about this topic";
+"Calendar & reminders" = "Calendar & reminders";
+"Chat searches this day, guided by your topic question." = "Chat searches this day, guided by your topic question.";
+"Choose a topic to revisit its recap and original conversation." = "Choose a topic to revisit its recap and original conversation.";
+"Day overview" = "Day overview";
+"Daythread action point {value0} · version {value1}" = "Daythread action point {value0} · version {value1}";
+"Explore topics" = "Explore topics";
+"Find calendar & reminder options" = "Find calendar & reminder options";
+"Listen from this topic" = "Listen from this topic";
+"Loading action points…" = "Loading action points…";
+"No calendar or reminder suggestions found." = "No calendar or reminder suggestions found.";
+"No matching recap topics. Try another word or browse the day’s recordings." = "No matching recap topics. Try another word or browse the day’s recordings.";
+"No pending action points from this day. Recording scans may still be incomplete." = "No pending action points from this day. Recording scans may still be incomplete.";
+"No pending action points linked to an identified passage in this topic." = "No pending action points linked to an identified passage in this topic.";
+"Notes" = "Notes";
+"Recap this topic from this day: " = "Recap this topic from this day: ";
+"Recap view" = "Recap view";
+"Review action points" = "Review action points";
+"Review calendar event" = "Review calendar event";
+"Review each suggestion before saving it to Calendar or Reminders. Inbox keeps its own completion status." = "Review each suggestion before saving it to Calendar or Reminders. Inbox keeps its own completion status.";
+"Review reminder" = "Review reminder";
+"Review reminders, commitments and questions in Inbox. Saving to Calendar or Reminders does not mark an action complete." = "Review reminders, commitments and questions in Inbox. Saving to Calendar or Reminders does not mark an action complete.";
+"Revisit the conversation" = "Revisit the conversation";
+"Saved to Calendar" = "Saved to Calendar";
+"Saved to Reminders" = "Saved to Reminders";
+"Saving this reminder does not mark the action complete in Inbox." = "Saving this reminder does not mark the action complete in Inbox.";
+"Search recap topics" = "Search recap topics";
+"This action point changed or its evidence is no longer current. Refresh and review it again." = "This action point changed or its evidence is no longer current. Refresh and review it again.";
+"Topic recap" = "Topic recap";
+
+/* Shared follow-up validation and native event review. */
+"Action point changed; refresh before creating follow-ups" = "Action point changed; refresh before creating follow-ups";
+"Action point context changed; rescan its recordings" = "Action point context changed; rescan its recordings";
+"Action point evidence changed; rescan its recordings" = "Action point evidence changed; rescan its recordings";
+"Action point was removed while suggesting follow-ups" = "Action point was removed while suggesting follow-ups";
+"Evidence exceeds the follow-up context budget" = "Evidence exceeds the follow-up context budget";
+"Follow-ups mentioned in the recap" = "Follow-ups mentioned in the recap";
+"Follow-ups require a current, pending action point" = "Follow-ups require a current, pending action point";
+"Follow-ups require current original evidence" = "Follow-ups require current original evidence";
+"Inbox item or source not found" = "Inbox item or source not found";
+"Invalid structured action-point follow-ups" = "Invalid structured action-point follow-ups";
+"Look back up to 10 seconds near the maximum request duration and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only." = "Look back up to 10 seconds near the maximum request duration and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only.";
+"No event date was recorded. Choose a date before continuing." = "No event date was recorded. Choose a date before continuing.";
+"Original evidence changed while suggesting follow-ups" = "Original evidence changed while suggesting follow-ups";
+"Review and manage these in Action points below." = "Review and manage these in Action points below.";
+"Save your review first. Then choose a suggested event or reminder to add to your apps." = "Save your review first. Then choose a suggested event or reminder to add to your apps.";
+
+"Find action points" = "Find action points";
+"Action points are being extracted from your recordings." = "Action points are being extracted from your recordings.";
+"Some action extraction failed. Open Inbox to retry the affected days." = "Some action extraction failed. Open Inbox to retry the affected days.";
+
+/* Day overview, decisions, personal answers and notes. */
+"Add your thoughts" = "Add your thoughts";
+"Answer question" = "Answer question";
+"Clear your writing" = "Clear your writing";
+"Complete" = "Complete";
+"Completed / answered / reviewed" = "Completed / answered / reviewed";
+"Decision scan: {value0} of {value1} recordings" = "Decision scan: {value0} of {value1} recordings";
+"Events & reminders" = "Events & reminders";
+"Find decisions" = "Find decisions";
+"Find items from this day" = "Find items from this day";
+"Follow-ups require an actionable item" = "Follow-ups require an actionable item";
+"Mark answered" = "Mark answered";
+"Mark reviewed" = "Mark reviewed";
+"No current decision choices linked to an identified passage in this topic." = "No current decision choices linked to an identified passage in this topic.";
+"No items in this group yet. Scans may still be incomplete." = "No items in this group yet. Scans may still be incomplete.";
+"Questions to answer" = "Questions to answer";
+"Read note" = "Read note";
+"Review all items" = "Review all items";
+"Review and manage these in the overview below." = "Review and manage these in the overview below.";
+"Review decision" = "Review decision";
+"Review event/reminder" = "Review event/reminder";
+"Reviewed" = "Reviewed";
+"To do" = "To do";
+"Worth considering" = "Worth considering";
+"Worth remembering" = "Worth remembering";
+"Your answer" = "Your answer";
+"Your day at a glance" = "Your day at a glance";
+"Your notes" = "Your notes";
+"Your writing is personal context, not recorded evidence. Saving it does not complete this item." = "Your writing is personal context, not recorded evidence. Saving it does not complete this item.";
+"status.event" = "Calendar event";
+"status.note" = "Important information";
+"status.reflection" = "Reflection";
+"status.reminder" = "Reminder";
+
+"All categories" = "All categories";
+
+"Recorded evidence changed. Refresh this day before finding decisions again." = "Recorded evidence changed. Refresh this day before finding decisions again.";
+
+"Selection criterion does not match candidate kind" = "Selection criterion does not match candidate kind";
+
+"Selection evidence must include the candidate's own point" = "Selection evidence must include the candidate's own point";

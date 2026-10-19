@@ -24,8 +24,20 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = f"subject-chapters-8-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
-DAY_PROMPT_VERSION = "daily-topics-3-subject-continuity"
+PROMPT_VERSION = f"subject-chapters-9-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
+DAY_PROMPT_VERSION = "daily-topics-4-lasting-relevance"
+RELEVANCE = (
+    "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
+    "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
+    "and durable information needed later. Retain explicit requests to remember something, "
+    "including ordinary errands; importance does not require a work project or a major event. "
+    "Omit small talk, fleeting conversational requests, routine momentary choices, incidental "
+    "mentions, vague musings, generic suggestions and trivia unless the conversation establishes "
+    "a concrete later use or meaningful personal significance. Length, repetition, speaker labels "
+    "and nearby importance markers alone do not establish relevance. Never invent stakes, "
+    "obligations or a connection to the owner. Do not fill a quota or create a section for every "
+    "subject hint. A short recap is better than padding. "
+)
 BOUNDARY_NOTE = (
     "Uploaded recordings are included after transcription. Live conversations wait for the "
     "configured pause in recorded speech. Missing uploads do not count as silence. "
@@ -188,17 +200,19 @@ class Recaps:
             summary = await memory.inference.summarize(
                 topic_sources(sources),
                 "notes from a finished upload or a live conversation followed by a long pause. "
-                "An uploaded file may contain only part of a conversation. "
+                "An uploaded file may contain only part of a conversation. " + RELEVANCE +
                 "Preserve short meaningful answers in context, dates, "
                 "agreements and decisions without claiming the conversation has ended. "
                 "Omit fillers, unintelligible fragments and isolated "
                 "words without supported meaning. Do not infer events from background noise. "
                 f"If nothing useful is supported, return exactly {NO_CONTENT} and nothing else. "
                 "Multiple sources can record the same meeting. Describe shared points once, "
-                "retain every unique detail from each source including its beginning and end, "
+                "retain unique details selected for their usefulness from each source, including "
+                "its beginning and end when relevant, "
                 "and disclose conflicting readings instead of guessing. "
                 "Keep related details together by subject. A recording can cover several "
-                "subjects; preserve each without forcing event, decision or question categories. "
+                "subjects; summarize the useful ones without forcing event, decision or question "
+                "categories. "
                 "Use specific subject headings (##) matching the supplied subject hints when "
                 "they fit the transcript. Hints are navigation labels, never additional facts. "
                 "A subject continuing across audio parts belongs in the same section, even "
@@ -265,9 +279,12 @@ class Recaps:
         if inputs:
             purpose = (
                 f"a readable diary recap for {day.isoformat()} from transcribed recording notes. "
+                + RELEVANCE +
+                "Include only topics with useful supported substance. "
+                f"If none qualify, return exactly {NO_CONTENT} and nothing else. "
                 "Use the fewest meaningful topic sections that keep it easy to read. "
-                "For a recording covering three distinct subjects, use three topic sections "
-                "with one summary each, not extra category sections. "
+                "For a recording covering three distinct relevant subjects, use three topic "
+                "sections with one summary each, not extra category sections. "
                 "Group related discussions across recordings, rather than making a section "
                 "for each recording, utterance or minor detail. Use short, specific subject "
                 "headings (##) that make the subject recognizable when scanning. Merge continued "
@@ -298,16 +315,20 @@ class Recaps:
                 trace["daily_synthesis"] = pipeline
             else:
                 summary = await memory.inference.summarize(inputs, purpose)
-            result["summary"] = validate_citations(summary, sources)
-            result["output_id"] = str(uuid4())
-            counts = {"eligible_transcripts": len(sources),
-                      "pending_chunks": result["pending_chunks"],
-                      "blocked_chunks": blocked,
-                      "selection_observed_at": result["completeness"]["as_of"]}
-            result["evidence"] = memory.evidence_metadata(
-                sources, result["summary"], "transcribed_recordings", start, end,
-                result["completeness"], trace, counts, kind="recap",
-            )
+            summary = validate_citations(summary, sources).strip()
+            if summary == NO_CONTENT:
+                result.update(summary=None, no_recap_content=True)
+            else:
+                result["summary"] = summary
+                result["output_id"] = str(uuid4())
+                counts = {"eligible_transcripts": len(sources),
+                          "pending_chunks": result["pending_chunks"],
+                          "blocked_chunks": blocked,
+                          "selection_observed_at": result["completeness"]["as_of"]}
+                result["evidence"] = memory.evidence_metadata(
+                    sources, result["summary"], "transcribed_recordings", start, end,
+                    result["completeness"], trace, counts, kind="recap",
+                )
         if ready or existing:
             memory.store.save_diary(day.isoformat(), key, result, guard=guard)
             publish_recap(memory, result, key, guard=guard)

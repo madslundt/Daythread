@@ -44,8 +44,9 @@ export function Inbox({ timezone }: { timezone: string }) {
   const resource = useResource<InboxPage>(`/v1/inbox?${params}`, 10_000);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", resource.refresh);
+    window.addEventListener("omi:inbox-changed", resource.refresh);
     return () =>
-      window.removeEventListener("omi:archive-changed", resource.refresh);
+      { window.removeEventListener("omi:archive-changed", resource.refresh); window.removeEventListener("omi:inbox-changed", resource.refresh); };
   }, [resource.refresh]);
   async function scan() {
     setBusy(true);
@@ -71,7 +72,7 @@ export function Inbox({ timezone }: { timezone: string }) {
   return (
     <div className="feature-content">
       <p className="caption">
-        {t("Pending promises, deadlines and unanswered questions across all days. Model proposals need your review.")}{" "}</p>
+        {t("Tasks, unanswered questions, plans, and things to remember or consider. Review proposals against the recording.")}{" "}</p>
       <details className="inbox-scan">
         <summary>{t("Scan earlier recordings / retry failed work")}</summary>
         <form
@@ -154,6 +155,10 @@ export function Inbox({ timezone }: { timezone: string }) {
             <option value="commitment">{t("Commitments")}</option>
             <option value="deadline">{t("Deadlines")}</option>
             <option value="question">{t("Questions")}</option>
+            <option value="reminder">{t("Reminders")}</option>
+            <option value="event">{t("Calendar events")}</option>
+            <option value="reflection">{t("Worth considering")}</option>
+            <option value="note">{t("Worth remembering")}</option>
           </select>
         </label>
         <label>

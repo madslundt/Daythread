@@ -6,6 +6,7 @@ import { evidencePassage } from "./decisionModels";
 import type { Source } from "./types";
 import { ErrorState, Loading, Notice } from "./UI";
 import { useResource } from "./useResource";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 export function DecisionEvidence({ anchor, historical, opposing = false }: { anchor: DecisionAnchor; historical: boolean; opposing?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -30,7 +31,7 @@ export function DecisionEvidence({ anchor, historical, opposing = false }: { anc
       <p className="caption">{t("Current source transcript ·")}{" "}{source.started_at} · {source.device_id}</p>
       <p className="transcript-text decision-original">{passage ? <>{passage.before}<mark>{passage.quote}</mark>{passage.after}</> : source.text || t("No transcript remains.")}</p>
       {source.audio_available === true ? <>
-        <audio controls preload="none" src={audioUrl(source.id)} onError={() => setAudioError(true)} aria-label={t("Play supporting source")} />
+        <RecordingAudioPlayer src={audioUrl(source.id)} onError={() => setAudioError(true)} label={t("Play supporting source")} />
         {audioError ? <p className="caption">{t("This source audio is currently unavailable.")}</p> : null}
       </> : <p className="caption">{source.source_kind === "omi_api" ? t("Imported transcript only; original audio is unavailable.") : t("Original audio is unavailable or has expired. The transcript remains the evidence.")}</p>}
     </> : null}

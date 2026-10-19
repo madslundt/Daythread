@@ -1,6 +1,6 @@
 import { t } from "./i18n";
 export type InboxStatus = "pending" | "completed" | "dismissed";
-export type InboxKind = "commitment" | "deadline" | "question";
+export type InboxKind = "commitment" | "deadline" | "question" | "reminder" | "event" | "reflection" | "note";
 export interface Deadline {
   precision: "unknown" | "date" | "datetime";
   day?: string | null;
@@ -14,6 +14,7 @@ export interface InboxFields {
   kind: InboxKind;
   owner: string | null;
   deadline: Deadline | null;
+  user_note?: string | null;
 }
 export interface InboxItem extends InboxFields {
   id: string;
@@ -23,8 +24,11 @@ export interface InboxItem extends InboxFields {
   created_at: string;
   updated_at: string;
   reviewed_at: string | null;
+  user_note_provenance?: "user" | null;
   duplicate_of: string | null;
   overdue?: boolean;
+  source_ids?: string[];
+  evidence_spans?: { source_id: string; start: number; end: number; current: boolean }[];
   proposal: InboxFields;
   overrides: Partial<InboxFields>;
   evidence?: {

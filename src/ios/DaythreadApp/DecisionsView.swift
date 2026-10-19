@@ -104,7 +104,7 @@ struct DecisionRow: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(record.title).foregroundStyle(.primary)
             Text(L10n.text("\(L10n.status(record.display_state)) · \(L10n.status(record.review_status)) · evidence \(L10n.status(record.evidence_condition))"))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(record.evidence_condition != "current" || record.review_status == "proposed" ? Color.orange : Color.secondary)
             Text(dateLabel).font(.caption).foregroundStyle(.secondary)
         }
     }

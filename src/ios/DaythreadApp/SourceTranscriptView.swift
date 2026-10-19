@@ -305,36 +305,38 @@ struct SummaryTranslationView<Original: View>: View {
                     .buttonStyle(.borderless)
             } else { original() }
             if !outputID.isEmpty && !output["summary"].text.isEmpty {
-                if loaded {
-                    MixedLanguageTranslationNotice(analysis: languageAnalysis, recommendedLanguage: recommendedLanguage,
-                        selectedLanguage: language, availableLanguages: availableLanguages, disabled: busy) { generate(targetLanguage: $0) }
-                }
-                if !availableLanguages.isEmpty {
-                    Picker(L10n.text("Translate to"), selection: Binding(get: { language }, set: selectLanguage)) {
-                        ForEach(availableLanguages, id: \.self) { code in
-                            Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
-                        }
-                    }.accessibilityIdentifier("summary.translationTarget")
-                }
-                Button(language.isEmpty ? L10n.text("Translate") : L10n.text("Translate to \(languageName)"), systemImage: "translate") { generate() }
-                    .disabled(busy || !loaded || !availableLanguages.contains(language) || alreadyInTargetLanguage || hasTranslation)
-                    .accessibilityIdentifier("summary.translate")
-                if busy {
-                    ProgressView(generation == nil ? L10n.text("Checking translation…") : L10n.text("Translating…"))
-                } else if loaded && availableLanguages.isEmpty {
-                    Text(L10n.text("Choose translation languages in Settings to translate this summary."))
-                        .font(.caption).foregroundStyle(.secondary)
-                    NavigationLink(L10n.text("Translation settings")) { SettingsView() }
-                } else if loaded && alreadyInTargetLanguage {
-                    Text(L10n.text("Summary is already in \(languageName). Choose another translation language above."))
-                        .font(.caption).foregroundStyle(.secondary)
-                } else if loaded && !hasTranslation {
-                    Text(L10n.text("Translation is generated when requested and preserves the original summary."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if error != nil {
-                    ErrorNote(message: error)
-                    if !loaded { Button(L10n.text("Retry translation lookup")) { refresh = UUID() }.disabled(busy) }
+                DisclosureGroup(L10n.text("Translate")) {
+                    if loaded {
+                        MixedLanguageTranslationNotice(analysis: languageAnalysis, recommendedLanguage: recommendedLanguage,
+                            selectedLanguage: language, availableLanguages: availableLanguages, disabled: busy) { generate(targetLanguage: $0) }
+                    }
+                    if !availableLanguages.isEmpty {
+                        Picker(L10n.text("Translate to"), selection: Binding(get: { language }, set: selectLanguage)) {
+                            ForEach(availableLanguages, id: \.self) { code in
+                                Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
+                            }
+                        }.accessibilityIdentifier("summary.translationTarget")
+                    }
+                    Button(language.isEmpty ? L10n.text("Translate") : L10n.text("Translate to \(languageName)"), systemImage: "translate") { generate() }
+                        .disabled(busy || !loaded || !availableLanguages.contains(language) || alreadyInTargetLanguage || hasTranslation)
+                        .accessibilityIdentifier("summary.translate")
+                    if busy {
+                        ProgressView(generation == nil ? L10n.text("Checking translation…") : L10n.text("Translating…"))
+                    } else if loaded && availableLanguages.isEmpty {
+                        Text(L10n.text("Choose translation languages in Settings to translate this summary."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        NavigationLink(L10n.text("Translation settings")) { SettingsView() }
+                    } else if loaded && alreadyInTargetLanguage {
+                        Text(L10n.text("Summary is already in \(languageName). Choose another translation language above."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if loaded && !hasTranslation {
+                        Text(L10n.text("Translation is generated when requested and preserves the original summary."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if error != nil {
+                        ErrorNote(message: error)
+                        if !loaded { Button(L10n.text("Retry translation lookup")) { refresh = UUID() }.disabled(busy) }
+                    }
                 }
             }
         }

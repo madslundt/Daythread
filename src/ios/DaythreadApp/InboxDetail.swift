@@ -16,6 +16,7 @@ struct InboxDetail: View {
     @State private var instant = ""
     @State private var timezone = ""
     @State private var duplicate = ""
+    @State private var userNote = ""
     @State private var alternatives: [InboxItem] = []
     @State private var resets: Set<String> = []
     @State private var operation: (fingerprint: String, id: String)?
@@ -25,12 +26,20 @@ struct InboxDetail: View {
     @State private var requestID = UUID()
     @State private var mutationID = UUID()
     private var conflict: Bool { base?.version != latest?.version }
+    private var hasUnsavedChanges: Bool {
+        guard let base else { return false }
+        return title != base.title || owner != (base.owner ?? "") || kind != base.kind || status != base.status ||
+            precision != (base.deadline?.precision ?? "unknown") || day != (base.deadline?.day ?? "") ||
+            instant != (base.deadline?.instant ?? "") || timezone != (base.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC") ||
+            duplicate != (base.duplicate_of ?? "") || userNote != (base.user_note ?? "") || !resets.isEmpty
+    }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
         Form {
             if let base {
+                if prioritizesWriting { personalWriting }
                 Section(L10n.text("Review")) {
                     Text(L10n.text("Unsaved edits remain here if saving fails. Leaving this screen discards them.")).font(.caption)
                     ErrorNote(message: error)
@@ -41,17 +50,21 @@ struct InboxDetail: View {
                     }
                     TextField(L10n.text("Title"), text: $title, axis: .vertical)
                     Picker(L10n.text("Kind"), selection: $kind) {
-                        Text(L10n.text("Commitment")).tag("commitment"); Text(L10n.text("Deadline")).tag("deadline"); Text(L10n.text("Question")).tag("question")
+                        ForEach(InboxItem.kinds, id: \.self) { value in Text(L10n.status(value)).tag(value) }
                     }
-                    TextField(L10n.text("Owner unknown"), text: $owner)
-                    Picker(L10n.text("Deadline precision"), selection: $precision) {
-                        Text(L10n.text("Unknown / unresolved")).tag("unknown"); Text(L10n.text("Date only")).tag("date"); Text(L10n.text("Exact instant")).tag("datetime")
+                    if kind != "reflection" && kind != "note" {
+                        TextField(L10n.text("Owner unknown"), text: $owner)
+                        Picker(L10n.text("Deadline precision"), selection: $precision) {
+                            Text(L10n.text("Unknown / unresolved")).tag("unknown"); Text(L10n.text("Date only")).tag("date"); Text(L10n.text("Exact instant")).tag("datetime")
+                        }
+                        if precision == "date" { TextField("YYYY-MM-DD", text: $day).textInputAutocapitalization(.never) }
+                        if precision == "datetime" { TextField(L10n.text("ISO instant with UTC offset"), text: $instant).textInputAutocapitalization(.never) }
+                        TextField(L10n.text("Deadline timezone"), text: $timezone).textInputAutocapitalization(.never)
                     }
-                    if precision == "date" { TextField("YYYY-MM-DD", text: $day).textInputAutocapitalization(.never) }
-                    if precision == "datetime" { TextField(L10n.text("ISO instant with UTC offset"), text: $instant).textInputAutocapitalization(.never) }
-                    TextField(L10n.text("Deadline timezone"), text: $timezone).textInputAutocapitalization(.never)
                     Picker(L10n.text("Status"), selection: $status) {
-                        Text(L10n.text("Pending")).tag("pending"); Text(kind == "question" ? L10n.text("Answered") : L10n.text("Completed")).tag("completed"); Text(L10n.text("Dismissed")).tag("dismissed")
+                        Text(L10n.text("Pending")).tag("pending")
+                        Text(kind == "question" ? L10n.text("Answered") : (kind == "reflection" || kind == "note") ? L10n.text("Reviewed") : L10n.text("Completed")).tag("completed")
+                        Text(L10n.text("Dismissed")).tag("dismissed")
                     }
                     if status == "dismissed" {
                         Picker(L10n.text("Duplicate of"), selection: $duplicate) {
@@ -59,7 +72,22 @@ struct InboxDetail: View {
                             ForEach(alternatives.filter { $0.id != id && $0.duplicate_of == nil }) { Text($0.title).tag($0.id) }
                         }
                     }
-                    Button(busy ? L10n.text("Saving…") : L10n.text("Save review")) { Task { await save() } }.disabled(busy || conflict || latest == nil)
+                    if status == "pending", let action = completionAction {
+                        Button(action) { status = "completed"; Task { await save() } }
+                            .disabled(busy || conflict || latest == nil || userNote.unicodeScalars.count > 8000)
+                    }
+                    Button(busy ? L10n.text("Saving…") : L10n.text("Save review")) { Task { await save() } }.disabled(busy || conflict || latest == nil || userNote.unicodeScalars.count > 8000)
+                }
+                if !prioritizesWriting { personalWriting }
+                if let latest, latest.canSuggestFollowUps, !conflict {
+                    Section(L10n.text("Calendar & reminders")) {
+                        if hasUnsavedChanges {
+                            Text(L10n.text("Save your review first. Then choose a suggested event or reminder to add to your apps.")).font(.caption).foregroundStyle(.secondary)
+                        }
+                        InboxFollowUpLinks(item: latest)
+                            .id("\(latest.id).\(latest.version)")
+                            .disabled(hasUnsavedChanges)
+                    }
                 }
                 Section(L10n.text("Extracted values / reset overrides")) {
                     Text("\(L10n.status(base.proposal.kind)): \(base.proposal.title)\n\(base.proposal.owner ?? L10n.text("Owner unknown")) · \(base.proposal.deadline?.label ?? L10n.text("Deadline unknown"))").font(.caption)
@@ -106,9 +134,32 @@ struct InboxDetail: View {
             .onChange(of: day) { _, _ in clearDeadlineResetIfEdited() }
             .onChange(of: instant) { _, _ in clearDeadlineResetIfEdited() }
             .onChange(of: timezone) { _, _ in clearDeadlineResetIfEdited() }
+            .onChange(of: userNote) { _, value in if !value.isEmpty { resets.remove("user_note") } }
+    }
+    private var prioritizesWriting: Bool { kind == "question" || kind == "reflection" || kind == "note" }
+    private var completionAction: String? {
+        switch kind {
+        case "question": L10n.text("Mark answered")
+        case "reflection", "note": L10n.text("Mark reviewed")
+        case "commitment", "deadline": L10n.text("Complete")
+        default: nil
+        }
+    }
+    private var personalWriting: some View {
+        Section {
+            if prioritizesWriting { Text(title).font(.headline) }
+            TextField(kind == "question" ? L10n.text("Your answer") : L10n.text("Your notes"), text: $userNote, axis: .vertical)
+                .lineLimit(4...12).accessibilityIdentifier("inbox.userNote")
+            Text("\(userNote.unicodeScalars.count)/8000").font(.caption).foregroundStyle(.secondary)
+            Button(L10n.text("Clear your writing")) { userNote = ""; resets.insert("user_note") }
+                .disabled(userNote.isEmpty && base?.user_note == nil)
+        } header: { Text(kind == "question" ? L10n.text("Your answer") : L10n.text("Your notes")) } footer: {
+            Text(L10n.text("Your writing is personal context, not recorded evidence. Saving it does not complete this item."))
+        }
     }
     private func fill(_ item: InboxItem) {
         title = item.title; owner = item.owner ?? ""; kind = item.kind; status = item.status; duplicate = item.duplicate_of ?? ""
+        userNote = item.user_note ?? ""
         precision = item.deadline?.precision ?? "unknown"; day = item.deadline?.day ?? ""; instant = item.deadline?.instant ?? ""
         timezone = item.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC"
     }
@@ -150,6 +201,7 @@ struct InboxDetail: View {
         if title != base.title { changes["title"] = title }
         if kind != base.kind { changes["kind"] = kind }
         if owner != (base.owner ?? "") { changes["owner"] = owner.isEmpty ? NSNull() : owner as Any }
+        if userNote != (base.user_note ?? "") { changes["user_note"] = userNote.isEmpty ? NSNull() : userNote as Any }
         if precision != (base.deadline?.precision ?? "unknown") || day != (base.deadline?.day ?? "") || instant != (base.deadline?.instant ?? "") || timezone != (base.deadline?.timezone ?? model.serverTimeZoneIdentifier ?? "UTC") {
             changes["deadline"] = ["precision": precision, "day": precision == "date" ? day as Any : NSNull(), "instant": precision == "datetime" ? instant as Any : NSNull(), "timezone": timezone, "basis": L10n.source("user edit")]
         }

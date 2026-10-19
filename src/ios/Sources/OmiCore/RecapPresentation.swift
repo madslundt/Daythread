@@ -48,7 +48,7 @@ public enum RecapPresentation {
 
     public static func readingText(_ text: String) -> String {
         let citation = "\\[\\s*" + uuid + "(?:\\s*,\\s*" + uuid + ")*\\s*\\]"
-        text.replacingOccurrences(of: citation, with: "", options: [.regularExpression, .caseInsensitive])
+        return text.replacingOccurrences(of: citation, with: "", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: #" +([.,;!?])"#, with: "$1", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -93,6 +93,31 @@ public enum RecapPresentation {
             }
         }
         return result.filter { !$0.parts.isEmpty }
+    }
+
+    /// Preserve citations while separating labelled subjects inside broad recap headings.
+    /// Action lists remain readable in the day overview; Inbox owns their review/status.
+    public static func topics(_ markdown: String, day: String, query: String = "") -> [Group] {
+        let result = groups(markdown, day: day).filter { !$0.hasActions }.flatMap { group -> [Group] in
+            let labelled = group.parts.compactMap { part -> (String, Part)? in
+                guard let title = captures(#"^\*\*([^*]+)\*\*\s*(?:[—–:]\s*)?"#, part.text)?.first else { return nil }
+                return (title, part)
+            }
+            guard !labelled.isEmpty else { return [group] }
+            var topics: [Group] = []
+            for part in group.parts {
+                if let title = labelled.first(where: { $0.1 == part })?.0 {
+                    topics.append(Group(title: title, parts: [part]))
+                } else if !topics.isEmpty { topics[topics.count - 1].parts.append(part) }
+                else { topics.append(Group(title: group.title, parts: [part])) }
+            }
+            return topics
+        }
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !search.isEmpty else { return result }
+        return result.filter {
+            (($0.title ?? "") + " " + $0.text).range(of: search, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
     }
 
     public static func sources(for text: String, in sources: [Source]) -> Matches {

@@ -69,6 +69,7 @@ struct DayView: View {
                     .font(.caption).foregroundStyle(.secondary).editorialRow()
             }
             recapSection
+            DayAtGlanceSections(day: dayKey)
             Section {
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
                     HStack(spacing: 10) {
@@ -111,7 +112,6 @@ struct DayView: View {
             Section {
                 DisclosureGroup(L10n.text("Follow through")) {
                     InboxLink()
-                    NavigationLink { DayDecisionsView(day: dayKey) } label: { Label(L10n.text("Decisions from this day"), systemImage: "arrow.triangle.branch") }
                     NavigationLink { LabelsView() } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }
                 }
             }
@@ -186,8 +186,8 @@ struct DayView: View {
             ErrorNote(message: recapError)
             if recapError != nil { Button(L10n.text("Retry recap")) { Task { await refresh() } } }
             if loading && recap == .null { ProgressView(L10n.text("Bringing your day together…")) }
-            else if !recap["summary"].text.isEmpty {
-                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await load() } })
+            else if !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty }) {
+                RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await load() } }, emptyMessage: recapEmptyMessage)
             } else if recapError == nil {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }

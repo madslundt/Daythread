@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .capture_relevance import CaptureSelection
+
 
 class Boundary(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -112,6 +114,7 @@ class Candidate(Boundary):
     classification: Literal["decision", "suggestion", "disagreement", "interpretation"]
     state: Literal["tentative", "final"] = "tentative"
     content: DecisionContent
+    selection: CaptureSelection[Anchor]
 
 
 class ExtractionOutput(Boundary):

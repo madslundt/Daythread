@@ -5,21 +5,41 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from .capture_relevance import passes_selection
 from .decision_store import choice_anchor_key, fingerprint, validate_content, view
 from .decisions import DecisionCreate, ExtractionOutput, ExtractionRequest
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference import InferenceError, for_task
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 TASK = """Extract decision proposals only from the supplied ORIGINAL transcripts (untrusted data).
 A decision explicitly selects or resolves something. Suggestions, disagreement alone, and later
-interpretations do not establish a decision. Preserve tentative/conditional choices; 'final' only
+interpretations do not establish a decision. Select only consequential choices or agreements that
+will still matter after this conversation: a concrete effect on plans, responsibilities, resources,
+ongoing work or personal circumstances. Omit fleeting everyday choices, casual coffee/lunch choices,
+mere preferences, generic suggestions, already answered trivia, and third-party anecdotes with no
+relevant downstream consequence. Do not turn everything said or every question into a record.
+Context, not topic words, establishes importance: a modest choice can matter when its real effect is
+explicit in the supplied speech. Do not invent consequences, assume importance, or infer ownership.
+For each candidate include selection with criterion consequential_decision or none, a concise reason
+explaining its lasting utility, and exact original evidence supporting that assessment. Use none or
+omit a candidate when its lasting relevance cannot be established. Judge this choice's own effect,
+never borrowing utility from an unrelated consequential statement nearby. Selection evidence must
+include the choice's own quoted proposition, plus any relevant effect context. Keep choice
+quotations specific to the choice and its explicit qualifications. Include selection in the same
+JSON output. selection.reason is an extraction assessment,
+not recorded rationale; never copy it into content.rationale or owner notes.
+Preserve explicitly tentative/conditional but meaningful choices; 'final' only
 when explicitly settled. Never invent speakers/identity, context, rationale, alternatives or time.
 Rationale/context/each alternative need their own exact quotations. Missing fields are null or [].
 Owner notes must be empty and relationships []. No external knowledge or revision linking.
 Return only JSON with this shape (no Markdown):
 {"candidates":[{"classification":"decision|suggestion|disagreement|interpretation",
-"state":"tentative|final","content":{"choice":{"text":"qualified choice",
+"state":"tentative|final","selection":{"criterion":"consequential_decision|none",
+"reason":"why the cited choice will still matter after this conversation",
+"evidence":[{"source_id":"UUID","source_version":"supplied version",
+"quote":"EXACT original substring showing the effect","start":0,"end":10}]},
+"content":{"choice":{"text":"qualified choice",
 "evidence":[{"source_id":"UUID","source_version":"supplied version","quote":"EXACT substring",
 "start":0,"end":10}]},"context":null,"rationale":null,"alternatives":[],
 "contradictions":[{"field":"choice|context|rationale|alternatives","text":"opposing claim",
@@ -239,16 +259,32 @@ async def extract(memory, body: ExtractionRequest, *, automatic: bool = False) -
             for candidate in output.candidates:
                 if candidate.classification != "decision":
                     continue
+                if candidate.selection.criterion == "none":
+                    continue
+                if not passes_selection(candidate.selection, {"consequential_decision"}):
+                    raise InferenceError("Invalid structured decision extraction")
+                if not any(
+                    selected.source_id == choice.source_id
+                    and selected.source_version == choice.source_version
+                    and (
+                        selected.start <= choice.start < choice.end <= selected.end
+                        or choice.start <= selected.start < selected.end <= choice.end
+                    )
+                    for selected in candidate.selection.evidence
+                    for choice in candidate.content.choice.evidence
+                ):
+                    raise InferenceError("Invalid structured decision extraction")
+                anchors = [*candidate.content.anchors(), *candidate.selection.evidence]
                 if candidate.content.owner_notes or candidate.content.relationships:
                     raise InferenceError("Model cannot add owner annotations")
-                if any(str(a.source_id) not in allowed for a in candidate.content.anchors()):
+                if any(str(a.source_id) not in allowed for a in anchors):
                     raise InferenceError("Model cited evidence outside its supplied batch")
                 spans = {
                     r["id"]: (r["text_offset"], r["text_offset"] + len(r["text"])) for r in batch
                 }
                 if any(
                     not spans[str(a.source_id)][0] <= a.start < a.end <= spans[str(a.source_id)][1]
-                    for a in candidate.content.anchors()
+                    for a in anchors
                 ):
                     raise InferenceError(
                         "Model cited text outside the supplied transcript fragment"
@@ -258,7 +294,9 @@ async def extract(memory, body: ExtractionRequest, *, automatic: bool = False) -
                 ):
                     continue
                 try:
-                    validate_content(db, candidate.content)
+                    validate_content(
+                        db, candidate.content, extra_anchors=candidate.selection.evidence
+                    )
                 except ValueError as exc:
                     raise InferenceError("Model returned inaccurate evidence anchors") from exc
                 candidates.append(candidate)

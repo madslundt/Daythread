@@ -23,12 +23,16 @@ struct InboxLink: View {
 }
 
 struct InboxView: View {
+    let day: String?
+    let topicSources: Set<String>?
+    let topicPassages: [InboxTopicPassage]
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var status = "pending"
     @State private var kind = ""
     @State private var due = ""
     @State private var page: InboxPage?
+    @State private var items: [InboxItem] = []
     @State private var error: String?
     @State private var busy = false
     @State private var offset = 0
@@ -36,7 +40,11 @@ struct InboxView: View {
     @State private var end = Date()
     @State private var message: String?
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
-    private var queryKey: String { "\(model.archiveIdentity)|\(status)|\(kind)|\(due)|\(offset)" }
+    private var queryKey: String { "\(model.archiveIdentity)|\(model.archiveRevision)|\(day ?? "")|\(status)|\(kind)|\(due)|\(offset)|\(topicSources?.sorted().joined() ?? "")|\(topicPassages)" }
+
+    init(day: String? = nil, topicSources: Set<String>? = nil, topicPassages: [InboxTopicPassage] = []) {
+        self.day = day; self.topicSources = topicSources; self.topicPassages = topicPassages
+    }
 
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -44,14 +52,16 @@ struct InboxView: View {
         List {
             Section {
                 EditorialTitle(eyebrow: L10n.text("Follow through"), title: L10n.text("Keep things moving.")).editorialRow()
+                if let day { Text(day).font(.subheadline).foregroundStyle(.secondary) }
             }
             Section {
                 Picker(L10n.text("Show"), selection: $status) {
-                    Text(L10n.text("Pending")).tag("pending"); Text(L10n.text("Completed / answered")).tag("completed"); Text(L10n.text("Dismissed")).tag("dismissed")
+                    Text(L10n.text("Pending")).tag("pending"); Text(L10n.text("Completed / answered / reviewed")).tag("completed"); Text(L10n.text("Dismissed")).tag("dismissed")
                 }
                 DisclosureGroup {
                     Picker(L10n.text("Kind"), selection: $kind) {
-                        Text(L10n.text("All kinds")).tag(""); Text(L10n.text("Commitments")).tag("commitment"); Text(L10n.text("Deadlines")).tag("deadline"); Text(L10n.text("Questions")).tag("question")
+                        Text(L10n.text("All kinds")).tag("")
+                        ForEach(InboxItem.kinds, id: \.self) { value in Text(L10n.status(value)).tag(value) }
                     }
                     Picker(L10n.text("Deadline"), selection: $due) {
                         Text(L10n.text("All deadlines")).tag(""); Text(L10n.text("Overdue")).tag("overdue"); Text(L10n.text("Upcoming")).tag("upcoming"); Text(L10n.text("Unknown / unresolved")).tag("unknown")
@@ -65,19 +75,14 @@ struct InboxView: View {
                 if let message { Text(L10n.key(message)).font(.caption) }
             }
             if let page {
-                Section(L10n.text("\(L10n.status(status)) · all days")) {
-                    ForEach(page.items) { item in
+                Section(day.map { L10n.status(status) + " · " + $0 } ?? L10n.text("\(L10n.status(status)) · all days")) {
+                    ForEach(items) { item in
                         NavigationLink { InboxDetail(id: item.id) } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(L10n.status(item.kind) + (item.reviewed_at == nil ? L10n.text(" · Unreviewed") : L10n.text(" · Reviewed"))).font(.caption).foregroundStyle(.secondary)
-                                Text(item.title)
-                                Text("\(item.owner ?? L10n.text("Owner unknown")) · \(item.deadline?.label ?? L10n.text("Deadline unknown"))\(item.overdue == true ? L10n.text(" · Overdue") : "")").font(.caption).foregroundStyle(.secondary)
-                                if item.health != "current" { Text(L10n.text("Evidence \(L10n.status(item.health))")).font(.caption).foregroundStyle(Theme.accent) }
-                            }
+                            InboxOverviewRow(item: item)
                         }
                     }
-                    if page.items.isEmpty { Text(page.coverage.jobs["done", default: 0] == 0 ? L10n.text("No scan has completed yet. Capture new speech or scan earlier recordings below.") : L10n.text("No items match. Extraction may be incomplete; this does not establish that no obligations exist.")).foregroundStyle(.secondary) }
-                    if page.total > 50 {
+                    if items.isEmpty { Text(page.coverage.jobs["done", default: 0] == 0 ? L10n.text("No scan has completed yet. Capture new speech or scan earlier recordings below.") : L10n.text("No items match. Extraction may be incomplete; this does not establish that no obligations exist.")).foregroundStyle(.secondary) }
+                    if page.total > 50 && topicSources == nil {
                         HStack {
                             Button(L10n.text("Previous")) { offset = max(0, offset - 50) }.disabled(offset == 0)
                             Spacer(); Text("\(offset + 1)–\(min(offset + 50, page.total)) / \(page.total)").font(.caption); Spacer()
@@ -110,7 +115,7 @@ struct InboxView: View {
                 Text(L10n.text("Proposals come from your recorded conversations and need your review."))
             }
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Inbox")).navigationBarTitleDisplayMode(.inline)
-            .task(id: queryKey) { await load() }
+            .task(id: queryKey) { page = nil; items = []; error = nil; await load() }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 while !Task.isCancelled {
@@ -125,13 +130,7 @@ struct InboxView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await load() } } }
     }
     private var filterSummary: String {
-        let kindLabel: String
-        switch kind {
-        case "commitment": kindLabel = L10n.text("Commitments")
-        case "deadline": kindLabel = L10n.text("Deadlines")
-        case "question": kindLabel = L10n.text("Questions")
-        default: kindLabel = L10n.text("All kinds")
-        }
+        let kindLabel = kind.isEmpty ? L10n.text("All kinds") : L10n.status(kind)
         let dueLabel: String
         switch due {
         case "unknown": dueLabel = L10n.text("Unresolved deadlines")
@@ -144,9 +143,26 @@ struct InboxView: View {
     private func load() async {
         let key = queryKey
         do {
-            let result = try await model.client().decoded("v1/inbox", query: ["status": status, "limit": "50", "offset": "\(offset)"].merging(kind.isEmpty ? [:] : ["kind": kind]) { _, new in new }.merging(due.isEmpty ? [:] : ["due": due]) { _, new in new }, as: InboxPage.self)
+            var query = ["status": status, "limit": topicSources == nil ? "50" : "200", "offset": topicSources == nil ? "\(offset)" : "0"]
+            if let day { query["day"] = day }
+            if !kind.isEmpty { query["kind"] = kind }
+            if !due.isEmpty { query["due"] = due }
+            let client = try model.client()
+            let result = try await client.decoded("v1/inbox", query: query, as: InboxPage.self)
+            var incoming = result.items
+            if topicSources != nil {
+                while incoming.count < result.total {
+                    try Task.checkCancellation()
+                    query["offset"] = "\(incoming.count)"
+                    let next = try await client.decoded("v1/inbox", query: query, as: InboxPage.self)
+                    if next.items.isEmpty { break }
+                    incoming += next.items
+                }
+            }
             guard !Task.isCancelled, key == queryKey else { return }
-            page = result; error = nil
+            page = result
+            items = topicSources.map { ids in incoming.filter { $0.matchesTopic(sources: ids, passages: topicPassages) } } ?? incoming
+            error = nil
         } catch { if !Task.isCancelled, key == queryKey { self.error = L10n.error(error) } }
     }
     private func scan() async {

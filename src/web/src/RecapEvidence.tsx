@@ -7,14 +7,16 @@ import { TranscriptPassage } from "./TranscriptTranslation";
 import { SourceList } from "./SourceList";
 import type { Source } from "./types";
 import { audioUrl } from "./api";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 // Topic passages stay separate from the optional complete recording.
-export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }: {
+export function RecapEvidence({ source, point, topic = "", timezone, onCorrect, sections: selectedSections }: {
   source: Source; point: string; topic?: string; timezone: string; onCorrect: () => void;
+  sections?: NonNullable<Source["sections"]>;
 }) {
   const [fullRecording, setFullRecording] = useState(false);
   const id = useId();
-  const sections = recapSourceSections(point, source, topic);
+  const sections = selectedSections ?? recapSourceSections(point, source, topic);
   return <article className="recap-evidence">
     <div className="recap-evidence-heading">
       <span className="caption">{timeLabel(source.started_at, timezone)}</span>
@@ -25,7 +27,7 @@ export function RecapEvidence({ source, point, topic = "", timezone, onCorrect }
     {sections.length ? sections.map((section) => <blockquote key={section.start_offset}>
       {sections.length > 1 ? <p className="caption">{section.title}</p> : null}
       {section.start_seconds !== undefined && source.audio_available !== false && source.audio_availability !== "missing"
-        ? <audio controls preload="metadata" aria-label={section.title}
+        ? <RecordingAudioPlayer label={section.title}
           src={`${audioUrl(source.id)}#t=${section.start_seconds},${section.end_seconds}`} /> : null}
       <TranscriptPassage source={source} section={section} />
     </blockquote>) : null}

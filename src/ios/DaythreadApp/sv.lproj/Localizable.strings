@@ -2579,3 +2579,99 @@
 "No conversations yet" = "Inga konversationer ännu";
 "No matching conversations" = "Inga matchande konversationer";
 "Search conversations" = "Sök i konversationer";
+
+/* Recap overview, topic exploration, and Inbox action points. */
+"Action points" = "Åtgärdspunkter";
+"Ask about this day" = "Fråga om den här dagen";
+"Ask about this topic" = "Fråga om det här ämnet";
+"Calendar & reminders" = "Kalender och påminnelser";
+"Chat searches this day, guided by your topic question." = "Chatten söker i den här dagen utifrån din fråga om ämnet.";
+"Choose a topic to revisit its recap and original conversation." = "Välj ett ämne för att återse sammanfattningen och det ursprungliga samtalet.";
+"Day overview" = "Dagsöversikt";
+"Daythread action point {value0} · version {value1}" = "Daythread-åtgärdspunkt {value0} · version {value1}";
+"Explore topics" = "Utforska ämnen";
+"Find calendar & reminder options" = "Hitta kalender- och påminnelsealternativ";
+"Listen from this topic" = "Lyssna från det här ämnet";
+"Loading action points…" = "Läser in åtgärdspunkter…";
+"No calendar or reminder suggestions found." = "Inga kalender- eller påminnelseförslag hittades.";
+"No matching recap topics. Try another word or browse the day’s recordings." = "Inga matchande ämnen. Prova ett annat ord eller bläddra bland dagens inspelningar.";
+"No pending action points from this day. Recording scans may still be incomplete." = "Inga väntande åtgärdspunkter från den här dagen. Genomgången av inspelningar kan fortfarande vara ofullständig.";
+"No pending action points linked to an identified passage in this topic." = "Inga väntande åtgärdspunkter är kopplade till ett identifierat avsnitt i det här ämnet.";
+"Notes" = "Anteckningar";
+"Recap this topic from this day: " = "Sammanfatta det här ämnet från den här dagen: ";
+"Recap view" = "Sammanfattningsvy";
+"Review action points" = "Granska åtgärdspunkter";
+"Review calendar event" = "Granska kalenderhändelse";
+"Review each suggestion before saving it to Calendar or Reminders. Inbox keeps its own completion status." = "Granska varje förslag innan du sparar det i Kalender eller Påminnelser. Inkorgen har en egen status för slutförande.";
+"Review reminder" = "Granska påminnelse";
+"Review reminders, commitments and questions in Inbox. Saving to Calendar or Reminders does not mark an action complete." = "Granska påminnelser, åtaganden och frågor i inkorgen. Att spara i Kalender eller Påminnelser markerar inte en åtgärd som slutförd.";
+"Revisit the conversation" = "Återbesök samtalet";
+"Saved to Calendar" = "Sparat i Kalender";
+"Saved to Reminders" = "Sparat i Påminnelser";
+"Saving this reminder does not mark the action complete in Inbox." = "Att spara den här påminnelsen markerar inte åtgärden som slutförd i inkorgen.";
+"Search recap topics" = "Sök bland sammanfattningens ämnen";
+"This action point changed or its evidence is no longer current. Refresh and review it again." = "Den här åtgärdspunkten har ändrats eller underlaget är inte längre aktuellt. Uppdatera och granska igen.";
+"Topic recap" = "Ämnessammanfattning";
+
+/* Shared follow-up validation and native event review. */
+"Action point changed; refresh before creating follow-ups" = "Åtgärdspunkten har ändrats; uppdatera innan du skapar uppföljningar";
+"Action point context changed; rescan its recordings" = "Åtgärdspunktens sammanhang har ändrats; skanna inspelningarna igen";
+"Action point evidence changed; rescan its recordings" = "Åtgärdspunktens källstöd har ändrats; skanna inspelningarna igen";
+"Action point was removed while suggesting follow-ups" = "Åtgärdspunkten togs bort medan uppföljningar föreslogs";
+"Evidence exceeds the follow-up context budget" = "Källstödet överskrider kontextgränsen för uppföljningar";
+"Follow-ups mentioned in the recap" = "Uppföljningar som nämns i sammanfattningen";
+"Follow-ups require a current, pending action point" = "Uppföljningar kräver en aktuell, väntande åtgärdspunkt";
+"Follow-ups require current original evidence" = "Uppföljningar kräver aktuellt ursprungligt källstöd";
+"Inbox item or source not found" = "Inkorgsobjektet eller källan hittades inte";
+"Invalid structured action-point follow-ups" = "Ogiltiga strukturerade uppföljningar för åtgärdspunkten";
+"Look back up to 10 seconds near the maximum request duration and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only." = "Sök upp till 10 sekunder bakåt nära den maximala varaktigheten per begäran och dela vid den tydligaste pausen. Alla ljudsamplingar och pauser bevaras. 0 använder fasta gränser. Gäller bara inom en uppladdning.";
+"No event date was recorded. Choose a date before continuing." = "Inget datum spelades in för händelsen. Välj ett datum innan du fortsätter.";
+"Original evidence changed while suggesting follow-ups" = "Det ursprungliga källstödet ändrades medan uppföljningar föreslogs";
+"Review and manage these in Action points below." = "Granska och hantera dem under Åtgärdspunkter nedan.";
+"Save your review first. Then choose a suggested event or reminder to add to your apps." = "Spara granskningen först. Välj sedan en föreslagen händelse eller påminnelse att lägga till i dina appar.";
+
+"Find action points" = "Hitta åtgärdspunkter";
+"Action points are being extracted from your recordings." = "Åtgärdspunkter hämtas från dina inspelningar.";
+"Some action extraction failed. Open Inbox to retry the affected days." = "Vissa åtgärder kunde inte hämtas. Öppna Inkorg för att försöka igen för de berörda dagarna.";
+
+/* Day overview, decisions, personal answers and notes. */
+"Add your thoughts" = "Lägg till dina tankar";
+"Answer question" = "Besvara fråga";
+"Clear your writing" = "Rensa din text";
+"Complete" = "Slutför";
+"Completed / answered / reviewed" = "Slutfört / besvarat / granskat";
+"Decision scan: {value0} of {value1} recordings" = "Beslutsskanning: {value0} av {value1} inspelningar";
+"Events & reminders" = "Händelser och påminnelser";
+"Find decisions" = "Hitta beslut";
+"Find items from this day" = "Hitta objekt från den här dagen";
+"Follow-ups require an actionable item" = "Uppföljningar kräver ett objekt som går att agera på";
+"Mark answered" = "Markera som besvarad";
+"Mark reviewed" = "Markera som granskad";
+"No current decision choices linked to an identified passage in this topic." = "Inga aktuella beslutsalternativ är kopplade till ett identifierat textavsnitt i det här ämnet.";
+"No items in this group yet. Scans may still be incomplete." = "Inga objekt i den här gruppen än. Skanningarna kanske inte är klara.";
+"Questions to answer" = "Frågor att besvara";
+"Read note" = "Läs anteckning";
+"Review all items" = "Granska alla objekt";
+"Review and manage these in the overview below." = "Granska och hantera dem i översikten nedan.";
+"Review decision" = "Granska beslut";
+"Review event/reminder" = "Granska händelse/påminnelse";
+"Reviewed" = "Granskat";
+"To do" = "Att göra";
+"Worth considering" = "Värt att överväga";
+"Worth remembering" = "Värt att minnas";
+"Your answer" = "Ditt svar";
+"Your day at a glance" = "Din dag i korthet";
+"Your notes" = "Dina anteckningar";
+"Your writing is personal context, not recorded evidence. Saving it does not complete this item." = "Det du skriver är personligt sammanhang, inte inspelat källstöd. Att spara det slutför inte det här objektet.";
+"status.event" = "Kalenderhändelse";
+"status.note" = "Viktig information";
+"status.reflection" = "Reflektion";
+"status.reminder" = "Påminnelse";
+
+"All categories" = "Alla kategorier";
+
+"Recorded evidence changed. Refresh this day before finding decisions again." = "Det inspelade källstödet har ändrats. Uppdatera den här dagen innan du söker efter beslut igen.";
+
+"Selection criterion does not match candidate kind" = "Urvalskriteriet matchar inte förslagets typ";
+
+"Selection evidence must include the candidate's own point" = "Källstödet för urvalet måste innehålla förslagets egen punkt";

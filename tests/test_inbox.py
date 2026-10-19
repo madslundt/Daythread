@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from inbox_selection_fixtures import selection
 from pydantic import ValidationError
 
 from omi_local.api import create_app
@@ -52,6 +53,7 @@ def proposal(key, text=TEXT, title="Send the résumé tomorrow", kind="commitmen
         "owner": None,
         "deadline_phrase": None,
         "evidence": [span(key, text)],
+        "selection": selection(key, text, kind),
     }
 
 
@@ -422,7 +424,7 @@ def test_backup_restore_preserves_inbox_edits_events_and_jobs(archive, tmp_path)
         archive,
         listing(archive)["items"][0],
         status="completed",
-        changes={"title": "Keep manual title", "owner": None},
+        changes={"title": "Keep manual title", "owner": None, "user_note": "Keep personal context"},
     )
     source(archive, "Pending extraction source", AT + timedelta(days=1))
     InboxJobs(archive).discover("UTC")
@@ -436,6 +438,7 @@ def test_backup_restore_preserves_inbox_edits_events_and_jobs(archive, tmp_path)
         assert restored.get_audio(key)["path"].startswith(str(destination))
         restored.correct_transcript(key, "Correction after restore")
         assert InboxStore(restored).item(item["id"])["health"] == "needs_review"
+        assert InboxStore(restored).item(item["id"])["user_note"] == "Keep personal context"
     finally:
         shutil.rmtree(snapshot.parent)
 

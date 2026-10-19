@@ -2579,3 +2579,99 @@
 "No conversations yet" = "Ingen samtaler ennå";
 "No matching conversations" = "Ingen samsvarende samtaler";
 "Search conversations" = "Søk i samtaler";
+
+/* Recap overview, topic exploration, and Inbox action points. */
+"Action points" = "Handlingspunkter";
+"Ask about this day" = "Spør om denne dagen";
+"Ask about this topic" = "Spør om dette emnet";
+"Calendar & reminders" = "Kalender og påminnelser";
+"Chat searches this day, guided by your topic question." = "Chat søker i denne dagen ut fra spørsmålet ditt om emnet.";
+"Choose a topic to revisit its recap and original conversation." = "Velg et emne for å se sammendraget og den opprinnelige samtalen.";
+"Day overview" = "Dagsoversikt";
+"Daythread action point {value0} · version {value1}" = "Daythread-handlingspunkt {value0} · versjon {value1}";
+"Explore topics" = "Utforsk emner";
+"Find calendar & reminder options" = "Finn kalender- og påminnelsesalternativer";
+"Listen from this topic" = "Lytt fra dette emnet";
+"Loading action points…" = "Laster handlingspunkter…";
+"No calendar or reminder suggestions found." = "Fant ingen kalender- eller påminnelsesforslag.";
+"No matching recap topics. Try another word or browse the day’s recordings." = "Ingen emner samsvarer. Prøv et annet ord, eller bla gjennom dagens opptak.";
+"No pending action points from this day. Recording scans may still be incomplete." = "Ingen ventende handlingspunkter fra denne dagen. Gjennomgangen av opptak kan fortsatt være ufullstendig.";
+"No pending action points linked to an identified passage in this topic." = "Ingen ventende handlingspunkter er knyttet til et identifisert avsnitt i dette emnet.";
+"Notes" = "Notater";
+"Recap this topic from this day: " = "Oppsummer dette emnet fra denne dagen: ";
+"Recap view" = "Sammendragsvisning";
+"Review action points" = "Se gjennom handlingspunkter";
+"Review calendar event" = "Se gjennom kalenderhendelse";
+"Review each suggestion before saving it to Calendar or Reminders. Inbox keeps its own completion status." = "Se gjennom hvert forslag før du lagrer det i Kalender eller Påminnelser. Innboksen har sin egen fullføringsstatus.";
+"Review reminder" = "Se gjennom påminnelse";
+"Review reminders, commitments and questions in Inbox. Saving to Calendar or Reminders does not mark an action complete." = "Se gjennom påminnelser, forpliktelser og spørsmål i innboksen. Lagring i Kalender eller Påminnelser markerer ikke en handling som fullført.";
+"Revisit the conversation" = "Gå tilbake til samtalen";
+"Saved to Calendar" = "Lagret i Kalender";
+"Saved to Reminders" = "Lagret i Påminnelser";
+"Saving this reminder does not mark the action complete in Inbox." = "Lagring av denne påminnelsen markerer ikke handlingen som fullført i innboksen.";
+"Search recap topics" = "Søk i sammendragets emner";
+"This action point changed or its evidence is no longer current. Refresh and review it again." = "Dette handlingspunktet er endret, eller dokumentasjonen er ikke lenger oppdatert. Oppdater og se gjennom det på nytt.";
+"Topic recap" = "Emnesammendrag";
+
+/* Shared follow-up validation and native event review. */
+"Action point changed; refresh before creating follow-ups" = "Handlingspunktet er endret; oppdater før du oppretter oppfølginger";
+"Action point context changed; rescan its recordings" = "Handlingspunktets kontekst er endret; skann opptakene på nytt";
+"Action point evidence changed; rescan its recordings" = "Handlingspunktets kildebelegg er endret; skann opptakene på nytt";
+"Action point was removed while suggesting follow-ups" = "Handlingspunktet ble fjernet mens oppfølginger ble foreslått";
+"Evidence exceeds the follow-up context budget" = "Kildebelegget overskrider kontekstgrensen for oppfølginger";
+"Follow-ups mentioned in the recap" = "Oppfølginger nevnt i sammendraget";
+"Follow-ups require a current, pending action point" = "Oppfølginger krever et oppdatert, ventende handlingspunkt";
+"Follow-ups require current original evidence" = "Oppfølginger krever oppdatert opprinnelig kildebelegg";
+"Inbox item or source not found" = "Innbokselementet eller kilden ble ikke funnet";
+"Invalid structured action-point follow-ups" = "Ugyldige strukturerte oppfølginger for handlingspunktet";
+"Look back up to 10 seconds near the maximum request duration and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only." = "Se opptil 10 sekunder tilbake nær maksimal varighet per forespørsel, og del ved den tydeligste pausen. Alle lydprøver og pauser beholdes. 0 bruker faste grenser. Gjelder bare innenfor én opplasting.";
+"No event date was recorded. Choose a date before continuing." = "Ingen dato ble registrert for hendelsen. Velg en dato før du fortsetter.";
+"Original evidence changed while suggesting follow-ups" = "Det opprinnelige kildebelegget ble endret mens oppfølginger ble foreslått";
+"Review and manage these in Action points below." = "Se gjennom og administrer dem under Handlingspunkter nedenfor.";
+"Save your review first. Then choose a suggested event or reminder to add to your apps." = "Lagre gjennomgangen først. Velg deretter en foreslått hendelse eller påminnelse du vil legge til i appene dine.";
+
+"Find action points" = "Finn handlingspunkter";
+"Action points are being extracted from your recordings." = "Handlingspunkter hentes ut fra opptakene dine.";
+"Some action extraction failed. Open Inbox to retry the affected days." = "Uthenting av enkelte handlinger mislyktes. Åpne Innboks for å prøve igjen for de berørte dagene.";
+
+/* Day overview, decisions, personal answers and notes. */
+"Add your thoughts" = "Legg til tankene dine";
+"Answer question" = "Svar på spørsmål";
+"Clear your writing" = "Fjern teksten din";
+"Complete" = "Fullfør";
+"Completed / answered / reviewed" = "Fullført / besvart / gjennomgått";
+"Decision scan: {value0} of {value1} recordings" = "Beslutningsskanning: {value0} av {value1} opptak";
+"Events & reminders" = "Hendelser og påminnelser";
+"Find decisions" = "Finn beslutninger";
+"Find items from this day" = "Finn elementer fra denne dagen";
+"Follow-ups require an actionable item" = "Oppfølginger krever et element det kan handles på";
+"Mark answered" = "Merk som besvart";
+"Mark reviewed" = "Merk som gjennomgått";
+"No current decision choices linked to an identified passage in this topic." = "Ingen gjeldende beslutningsalternativer er knyttet til et identifisert tekstutdrag i dette emnet.";
+"No items in this group yet. Scans may still be incomplete." = "Ingen elementer i denne gruppen ennå. Skanningene er kanskje ikke ferdige.";
+"Questions to answer" = "Spørsmål å svare på";
+"Read note" = "Les notat";
+"Review all items" = "Se gjennom alle elementer";
+"Review and manage these in the overview below." = "Se gjennom og administrer dem i oversikten nedenfor.";
+"Review decision" = "Se gjennom beslutning";
+"Review event/reminder" = "Se gjennom hendelse/påminnelse";
+"Reviewed" = "Gjennomgått";
+"To do" = "Å gjøre";
+"Worth considering" = "Verdt å vurdere";
+"Worth remembering" = "Verdt å huske";
+"Your answer" = "Svaret ditt";
+"Your day at a glance" = "Dagen din i korte trekk";
+"Your notes" = "Notatene dine";
+"Your writing is personal context, not recorded evidence. Saving it does not complete this item." = "Det du skriver, er personlig kontekst, ikke innspilt kildebelegg. Lagring fullfører ikke dette elementet.";
+"status.event" = "Kalenderhendelse";
+"status.note" = "Viktig informasjon";
+"status.reflection" = "Refleksjon";
+"status.reminder" = "Påminnelse";
+
+"All categories" = "Alle kategorier";
+
+"Recorded evidence changed. Refresh this day before finding decisions again." = "Kildebelegget fra opptakene er endret. Oppdater denne dagen før du søker etter beslutninger igjen.";
+
+"Selection criterion does not match candidate kind" = "Utvalgskriteriet samsvarer ikke med forslagets type";
+
+"Selection evidence must include the candidate's own point" = "Kildebelegget for utvalget må inkludere forslagets eget punkt";

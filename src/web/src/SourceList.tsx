@@ -15,6 +15,7 @@ import { TranscriptTranslation } from "./TranscriptTranslation";
 import { Speakers } from "./Speakers";
 import { RecordingSections } from "./RecordingSections";
 import { Icon } from "./Icon";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
@@ -87,7 +88,6 @@ function SourceRow({
   const [currentSource, setCurrentSource] = useState(source);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [audioError, setAudioError] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -172,17 +172,12 @@ function SourceRow({
           </p>
         ) : (
           <>
-            <audio
-              controls
-              preload="none"
+            <RecordingAudioPlayer
+              active={open}
               src={audioUrl(source.id)}
-              onError={() => setAudioError(true)}
-              aria-label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
+              durationHint={(Date.parse(source.ended_at) - Date.parse(source.started_at)) / 1000}
+              label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
             />
-            {audioError ? (
-              <p className="caption">
-                {t("This audio is unavailable. The original may have expired under your retention policy.")}{" "}</p>
-            ) : null}
             {!compact ? <a
               className="text-link caption"
               href={audioUrl(source.id)}

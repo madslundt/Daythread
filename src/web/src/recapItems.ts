@@ -5,6 +5,91 @@ export type RecapPart =
   | { kind: "heading"; text: string }
   | { kind: "item"; text: string; action: boolean };
 
+export type RecapFocus = {
+  title: string;
+  basis?: "original";
+  passages: { source_id: string; start: number; end: number }[];
+};
+export type RecapTopicGroup = { title: string; parts: RecapPart[] };
+export type OriginalRecapPassage = {
+  source_id: string; source_version?: string; transcript_version?: string;
+  section: NonNullable<Source["sections"]>[number]; text: string;
+};
+export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[] };
+
+// Older recaps used bold labels in a flat list instead of topic headings.
+export function recapTopics(parts: RecapPart[], day: string) {
+  const topics: RecapTopicGroup[] = [];
+  const introduction: RecapPart[] = [];
+  const followups: RecapPart[] = [];
+  for (const group of recapGroups(parts, day)) {
+    const narrative = group.parts.filter((part) => part.kind !== "item" || !part.action);
+    followups.push(...group.parts.filter((part) => part.kind === "item" && part.action));
+    const labelled = narrative.some((part) => part.kind === "item" && /^\*\*[^*]+\*\*/.test(part.text));
+    if (group.title && narrative.length && !labelled) {
+      topics.push({ title: group.title.replace(/\*\*/g, ""), parts: narrative });
+      continue;
+    }
+    let current: RecapTopicGroup | undefined;
+    for (const part of narrative) {
+      const label = part.kind === "item" ? part.text.match(/^\*\*([^*]+)\*\*\s*(?:[—–:-]\s*)?([\s\S]*)$/) : null;
+      if (label) {
+        current = { title: label[1], parts: [{ kind: "text", text: label[2] || part.text }] };
+        topics.push(current);
+      } else if (current) current.parts.push(part);
+      else introduction.push(part);
+    }
+  }
+  return { topics, introduction, followups };
+}
+
+export function topicFocus(topic: RecapTopicGroup, sources: Source[]): RecapFocus {
+  const text = topic.parts.map((part) => part.text).join("\n");
+  return { title: topic.title, passages: itemSources(`**${topic.title}**\n${text}`, sources).sources.flatMap((source) =>
+    recapSourceSections(text, source, topic.title).map((section) => ({ source_id: source.id, start: section.start_offset, end: section.end_offset }))) };
+}
+
+// The day synthesis is selective; original chapters remain available for deliberate exploration.
+export function recapBrowserTopics(topics: RecapTopicGroup[], sources: Source[]): RecapBrowserTopic[] {
+  const result: RecapBrowserTopic[] = topics.map((topic, index) => ({ ...topic, id: `recap:${index}:${topic.title}` }));
+  const represented = topics.flatMap((topic) => topicFocus(topic, sources).passages);
+  const originals = new Map<string, RecapBrowserTopic>();
+  const seen = new Set<string>();
+  for (const source of sources) {
+    if (source.state !== "done" || !source.text) continue;
+    const characters = Array.from(source.text);
+    for (const section of source.sections || []) {
+      if (!section.title.trim() || !Number.isInteger(section.start_offset) || !Number.isInteger(section.end_offset)
+        || section.start_offset < 0 || section.end_offset <= section.start_offset || section.end_offset > characters.length) continue;
+      if (represented.some((passage) => passage.source_id === source.id
+        && passage.start <= section.start_offset && passage.end >= section.end_offset)) continue;
+      const identity = `${source.id}:${source.source_version || ""}:${source.transcript_version || ""}:${section.start_offset}:${section.end_offset}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const passage: OriginalRecapPassage = { source_id: source.id, source_version: source.source_version,
+        transcript_version: source.transcript_version, section,
+        text: characters.slice(section.start_offset, section.end_offset).join("") };
+      // Only the backend's explicit chapter identity joins passages across audio parts.
+      const chapter = section.chapter_id || identity;
+      const existing = originals.get(chapter);
+      if (existing) existing.originalPassages!.push(passage);
+      else originals.set(chapter, { id: `original:${chapter}`, title: section.title, parts: [], originalPassages: [passage] });
+    }
+  }
+  return [...result, ...originals.values()];
+}
+
+export function currentRecapPassage(passage: OriginalRecapPassage, source: Source): Source | undefined {
+  if (source.id !== passage.source_id || source.state !== "done"
+    || (passage.source_version && source.source_version !== passage.source_version)
+    || (passage.transcript_version && source.transcript_version !== passage.transcript_version)) return;
+  const section = source.sections?.find((candidate) => candidate.start_offset === passage.section.start_offset
+    && candidate.end_offset === passage.section.end_offset && candidate.title === passage.section.title
+    && candidate.chapter_id === passage.section.chapter_id);
+  if (!section || Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("") !== passage.text) return;
+  return { ...source, sections: [section] };
+}
+
 // Group the reading view without rewriting saved text or its importance keys.
 export function recapGroups(parts: RecapPart[], day: string) {
   const groups: { title?: string; parts: RecapPart[] }[] = [];

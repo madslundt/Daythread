@@ -1,0 +1,123 @@
+import { useEffect, useRef, useState } from "react";
+import { errorMessage, newId, post, request } from "./api";
+import { dateTimeLabel } from "./format";
+import { t } from "./i18n";
+import { InboxEditor } from "./InboxEditor";
+import { deadlineLabel, type InboxItem, type InboxPage, type InboxStatus } from "./inboxTypes";
+import type { RecapFocus } from "./recapItems";
+import type { ChatScope } from "./types";
+import { statusLabel } from "./statusLabels";
+import { ErrorState, Loading } from "./UI";
+import { useHighlightList } from "./useHighlightList";
+import { DecisionHighlights } from "./DecisionHighlights";
+import { actionableKind, actionMatchesTopic, highlightCompletionLabel, highlightGroups, highlightReviewLabel, orderedHighlights, type HighlightCategory } from "./dayHighlights";
+export { actionMatchesTopic } from "./dayHighlights";
+
+export function ActionPoints({ day, timezone, focus, onChat }: {
+  day: string; timezone: string; focus?: RecapFocus;
+  onChat?: (scope: ChatScope, question?: string) => void;
+}) {
+  const [status, setStatus] = useState<InboxStatus>("pending");
+  const [category, setCategory] = useState<HighlightCategory>("all");
+  const [visible, setVisible] = useState<Record<string, number>>({});
+  const [selected, setSelected] = useState<string>();
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const params = new URLSearchParams({ day, status: "pending", limit: "200", offset: "0" });
+  const resource = useHighlightList<InboxPage>(`/v1/inbox?${params}`, "omi:inbox-changed");
+  const reviewed = useHighlightList<InboxPage>(`/v1/inbox?${new URLSearchParams({ day, status: "completed", limit: "200", offset: "0" })}`, "omi:inbox-changed");
+  const refresh = () => { resource.refresh(); reviewed.refresh(); };
+  useEffect(() => {
+    const close = () => setSelected(undefined);
+    window.addEventListener("omi:archive-changed", close);
+    return () => window.removeEventListener("omi:archive-changed", close);
+  }, []);
+  async function scan() {
+    setScanning(true); setScanError("");
+    try { await post("/v1/inbox/extractions", { start_day: day, end_day: day, retry_failed: true }); refresh(); }
+    catch (error) { setScanError(errorMessage(error)); }
+    finally { setScanning(false); }
+  }
+  const latest = new Map<string, InboxItem>();
+  for (const item of [...resource.items, ...reviewed.items]) if (!latest.has(item.id) || latest.get(item.id)!.version <= item.version) latest.set(item.id, item);
+  const items = orderedHighlights([...latest.values()].filter((item) => item.health !== "withdrawn"
+    && (!actionableKind(item.kind) || item.status === status) && (!focus || actionMatchesTopic(item, focus))));
+  const coverage = resource.data?.coverage;
+  const groups = highlightGroups.map((group) => ({ ...group, items: items.filter((item) => new Set<string>(group.kinds).has(item.kind)) }));
+  const shown = groups.filter((group) => category === "all" || category === group.id);
+  const renderGroup = (group: typeof groups[number]) => !group.items.length ? null : <section className="highlight-group" key={group.id} aria-label={t(group.title)}>
+    <div className="highlight-group-heading"><h3>{t(group.title)}</h3><span className="caption">{group.items.length}</span></div>
+    {group.items.slice(0, visible[group.id] || 5).map((item) => <ActionPointRow key={`${item.id}:${item.version}`} item={item} timezone={timezone}
+      onReview={() => setSelected(item.id)} onChanged={refresh} onChat={onChat ? () => onChat({ kind: "day", day }, item.kind === "question"
+        ? t("Help me answer this question from this day: {value0}", { value0: item.title })
+        : t("Help me think through this topic from this day: {value0}", { value0: item.title })) : undefined} />)}
+    {group.items.length > (visible[group.id] || 5) ? <button type="button" className="text-button highlight-show-more" onClick={() => setVisible((current) => ({ ...current, [group.id]: (current[group.id] || 5) + 10 }))}>{t("Show more")}</button> : null}
+  </section>;
+  return <section className="action-points day-highlights" aria-label={t("Your day at a glance")}>
+    <div className="section-heading"><h2>{t("Your day at a glance")}</h2><a className="text-link" href="/inbox">{t("Open Inbox")}</a></div>
+    <p className="caption">{focus ? t("Highlights with evidence in {value0}.", { value0: focus.title }) : t("What to do, answer, remember, or think through.")}</p>
+    <div className="highlight-controls">
+      <label><span className="sr-only">{t("Overview category")}</span><select value={category} onChange={(event) => setCategory(event.target.value as HighlightCategory)}>
+        <option value="all">{t("All categories")}</option>
+        {highlightGroups.slice(0, 3).map((group) => <option key={group.id} value={group.id}>{t(group.title)}</option>)}
+        <option value="decisions">{t("Decisions")}</option>
+        {highlightGroups.slice(3).map((group) => <option key={group.id} value={group.id}>{t(group.title)}</option>)}
+      </select></label>
+      <button type="button" className="text-button" disabled={scanning} onClick={() => void scan()}>{scanning ? t("Queuing…") : t("Find highlights")}</button>
+    </div>
+    {!["decisions", "reflections", "notes"].includes(category) ? <div className="action-point-filters" aria-label={t("Follow-up status")}>
+      <span className="caption">{t("Follow-ups")}</span>
+      <button type="button" className="text-button" aria-pressed={status === "pending"} onClick={() => setStatus("pending")}>{t("Open")}</button>
+      <button type="button" className="text-button" aria-pressed={status === "completed"} onClick={() => setStatus("completed")}>{t("Reviewed / done")}</button>
+    </div> : null}
+    {resource.error || reviewed.error || scanError ? <ErrorState message={resource.error || reviewed.error || scanError} retry={refresh} /> : null}
+    {category !== "decisions" && (resource.loading && !resource.data || resource.loadingMore || reviewed.loading && !reviewed.data || reviewed.loadingMore) ? <Loading>{t("Loading highlights…")}</Loading> : null}
+    {shown.filter((group) => group.id !== "reflections" && group.id !== "notes").map(renderGroup)}
+    {category === "all" || category === "decisions" ? <DecisionHighlights day={day} timezone={timezone} focus={focus} /> : null}
+    {shown.filter((group) => group.id === "reflections" || group.id === "notes").map(renderGroup)}
+    {category !== "decisions" && resource.data && reviewed.data && !resource.loadingMore && !reviewed.loadingMore && !shown.some((group) => group.items.length) ? <p className="action-points-empty">{coverage?.jobs.running || coverage?.jobs.queued
+      ? t("Highlights are being extracted from your recordings.") : coverage?.jobs.failed
+        ? t("Some extraction failed. Open Inbox to retry the affected days.")
+        : focus ? t("No matching follow-ups or notes found in this topic.")
+        : status === "completed" ? t("No reviewed or completed items in this view.") : t("No open follow-ups or notes found in this view.")}</p> : null}
+    <p className="caption action-point-note">{t("Saved across your devices. Your answers and notes stay separate from recorded evidence.")}</p>
+    {selected ? <InboxEditor key={selected} id={selected} timezone={timezone} onClose={() => { setSelected(undefined); refresh(); }} /> : null}
+  </section>;
+}
+
+function ActionPointRow({ item, timezone, onReview, onChanged, onChat }: {
+  item: InboxItem; timezone: string; onReview: () => void; onChanged: () => void; onChat?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const operation = useRef<string | undefined>(undefined);
+  async function complete() {
+    if (busy) return;
+    setBusy(true); setError(""); operation.current ??= newId();
+    try {
+      await request(`/v1/inbox/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({
+        operation_id: operation.current, expected_version: item.version, status: item.status === "completed" ? "pending" : "completed",
+      }) });
+      window.dispatchEvent(new Event("omi:inbox-changed")); onChanged();
+    } catch (error) { setError(errorMessage(error)); onChanged(); }
+    finally { setBusy(false); }
+  }
+  const date = item.deadline?.precision === "datetime" && item.deadline.instant ? dateTimeLabel(item.deadline.instant, timezone)
+    : item.deadline?.precision === "date" || item.deadline?.phrase ? deadlineLabel(item.deadline) : actionableKind(item.kind) ? t("No date set") : "";
+  const meta = [statusLabel(item.kind), item.owner || (actionableKind(item.kind) ? t("Owner unknown") : ""), date,
+    !actionableKind(item.kind) && item.status === "completed" ? t("Reviewed") : !item.reviewed_at ? t("Unreviewed") : ""].filter(Boolean).join(" · ");
+  return <article className={`action-point ${item.status === "completed" && ["commitment", "deadline", "reminder"].includes(item.kind) ? "is-completed" : ""}`}>
+    <div className="action-point-line">
+      <label className="action-point-check"><input type="checkbox" checked={item.status === "completed"} disabled={busy || item.health !== "current"}
+        onChange={() => void complete()} aria-label={highlightCompletionLabel(item)} /></label>
+      <div className="action-point-text"><p>{item.title}</p><p className="caption">{meta}</p>
+        {item.overdue ? <p className="caption action-point-warning">{t("Overdue")}</p> : null}
+        {item.health !== "current" ? <p className="caption action-point-warning">{t("Evidence changed — review required")}</p> : null}
+      </div>
+      <button className="button small" onClick={onReview}>{highlightReviewLabel(item)}</button>
+    </div>
+    {item.user_note ? <p className="highlight-personal-note"><strong>{item.kind === "question" ? t("Your answer") : t("Your notes")}</strong> {item.user_note}</p> : null}
+    {onChat && ["question", "reflection"].includes(item.kind) ? <button type="button" className="text-button highlight-chat" onClick={onChat}>{item.kind === "question" ? t("Ask your memory") : t("Think this through")}</button> : null}
+    {error ? <p className="error-text" role="alert">{error}</p> : null}
+  </article>;
+}

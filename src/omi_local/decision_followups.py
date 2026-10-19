@@ -117,36 +117,79 @@ def current_decision(store, key: str, expected_version: int, db) -> tuple[dict, 
 
 def excerpts(db, content: DecisionContent, timezone: str) -> list[dict]:
     """Bound original speech around choice/context rather than unrelated full recordings."""
+    return evidence_excerpts(
+        db,
+        [
+            anchor
+            for claim in (content.choice, content.context)
+            if claim
+            for anchor in claim.evidence
+        ],
+        timezone,
+    )
+
+
+def evidence_excerpts(db, anchors: list[Anchor], timezone: str) -> list[dict]:
+    """Share bounded, original-speech context across reviewed action surfaces."""
     result, remaining = [], 24000
-    claims = [content.choice, content.context]
-    for claim in claims:
-        for anchor in claim.evidence if claim else []:
-            source = db.execute(
-                "SELECT * FROM audio WHERE id=?", (str(anchor.source_id),)
-            ).fetchone()
-            start, end = max(0, anchor.start - 500), min(len(source["text"]), anchor.end + 500)
-            if any(
-                r["id"] == source["id"]
-                and r["text_offset"] <= start
-                and r["text_offset"] + len(r["text"]) >= end
-                for r in result
-            ):
-                continue
-            if end - start > remaining:
-                raise ValueError("Decision evidence exceeds the follow-up context budget")
-            captured = datetime.fromisoformat(source["started_at"]).astimezone(ZoneInfo(timezone))
-            result.append(
-                {
-                    "id": source["id"],
-                    "source_version": source["source_version"],
-                    "started_at": source["started_at"],
-                    "captured_local_date": str(captured.date()),
-                    "text_offset": start,
-                    "text": source["text"][start:end],
-                }
-            )
-            remaining -= end - start
+    for anchor in anchors:
+        source = db.execute(
+            "SELECT * FROM audio WHERE id=?", (str(anchor.source_id),)
+        ).fetchone()
+        start, end = max(0, anchor.start - 500), min(len(source["text"]), anchor.end + 500)
+        if any(
+            r["id"] == source["id"]
+            and r["text_offset"] <= start
+            and r["text_offset"] + len(r["text"]) >= end
+            for r in result
+        ):
+            continue
+        if end - start > remaining:
+            raise ValueError("Evidence exceeds the follow-up context budget")
+        captured = datetime.fromisoformat(source["started_at"]).astimezone(ZoneInfo(timezone))
+        result.append(
+            {
+                "id": source["id"],
+                "source_version": source["source_version"],
+                "started_at": source["started_at"],
+                "captured_local_date": str(captured.date()),
+                "text_offset": start,
+                "text": source["text"][start:end],
+            }
+        )
+        remaining -= end - start
     return result
+
+
+def validate_suggestions(output: FollowUpOutput, sources: list[dict]) -> None:
+    """Every generated follow-up must cite exact speech from the supplied excerpts."""
+    for suggestion in output.suggestions:
+        if suggestion.location_trigger and not any(
+            suggestion.location in anchor.quote for anchor in suggestion.evidence
+        ):
+            raise InferenceError("Location reminder needs an exact cited place phrase")
+        for anchor in suggestion.evidence:
+            match = next(
+                (
+                    s
+                    for s in sources
+                    if s["id"] == str(anchor.source_id)
+                    and s["source_version"] == anchor.source_version
+                    and s["text_offset"]
+                    <= anchor.start
+                    < anchor.end
+                    <= s["text_offset"] + len(s["text"])
+                ),
+                None,
+            )
+            if (
+                not match
+                or match["text"][
+                    anchor.start - match["text_offset"] : anchor.end - match["text_offset"]
+                ]
+                != anchor.quote
+            ):
+                raise InferenceError("Follow-up cited unsupported original evidence")
 
 
 async def suggest_followups(memory, key: str, body: FollowUpRequest) -> dict:
@@ -175,33 +218,7 @@ async def suggest_followups(memory, key: str, body: FollowUpRequest) -> dict:
         current_decision(memory.store, key, body.expected_version, db)
         if memory.settings.timezone != timezone:
             raise EvidenceChanged("Timezone changed while suggesting follow-ups; retry")
-        for suggestion in output.suggestions:
-            if suggestion.location_trigger and not any(
-                suggestion.location in anchor.quote for anchor in suggestion.evidence
-            ):
-                raise InferenceError("Location reminder needs an exact cited place phrase")
-            for anchor in suggestion.evidence:
-                match = next(
-                    (
-                        s
-                        for s in sources
-                        if s["id"] == str(anchor.source_id)
-                        and s["source_version"] == anchor.source_version
-                        and s["text_offset"]
-                        <= anchor.start
-                        < anchor.end
-                        <= s["text_offset"] + len(s["text"])
-                    ),
-                    None,
-                )
-                if (
-                    not match
-                    or match["text"][
-                        anchor.start - match["text_offset"] : anchor.end - match["text_offset"]
-                    ]
-                    != anchor.quote
-                ):
-                    raise InferenceError("Follow-up cited unsupported original evidence")
+        validate_suggestions(output, sources)
     return {
         "decision_id": key,
         "decision_version": row["version"],

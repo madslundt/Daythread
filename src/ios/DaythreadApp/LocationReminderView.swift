@@ -11,7 +11,7 @@ private struct ReminderPlace {
 
 /// Resolve ambiguous spoken places explicitly; coordinates never come from the language model.
 struct LocationReminderView: View {
-    let record: DecisionRecord
+    let origin: FollowUpOrigin
     let suggestion: DecisionFollowUp
     let timezone: String
     let onSaved: () -> Void
@@ -31,7 +31,12 @@ struct LocationReminderView: View {
     @State private var store = EKEventStore()
 
     init(record: DecisionRecord, suggestion: DecisionFollowUp, timezone: String, onSaved: @escaping () -> Void) {
-        self.record = record; self.suggestion = suggestion; self.timezone = timezone; self.onSaved = onSaved
+        self.origin = .decision(record); self.suggestion = suggestion; self.timezone = timezone; self.onSaved = onSaved
+        _query = State(initialValue: suggestion.location)
+    }
+
+    init(item: InboxItem, suggestion: DecisionFollowUp, timezone: String, onSaved: @escaping () -> Void) {
+        self.origin = .inbox(item); self.suggestion = suggestion; self.timezone = timezone; self.onSaved = onSaved
         _query = State(initialValue: suggestion.location)
     }
 
@@ -157,7 +162,7 @@ struct LocationReminderView: View {
             let reminder = EKReminder(eventStore: store)
             reminder.calendar = list; reminder.title = suggestion.title
             reminder.notes = [suggestion.notes, suggestion.reason, selected.address,
-                L10n.text("Daythread decision \(record.id) · version \(record.version)")].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                origin.provenance].filter { !$0.isEmpty }.joined(separator: "\n\n")
             if let due = DecisionFollowUp.date(suggestion.due_at, allDay: suggestion.all_day,
                                                timeZone: TimeZone(identifier: timezone) ?? .current) {
                 var calendar = Calendar(identifier: .gregorian)
@@ -178,9 +183,6 @@ struct LocationReminderView: View {
     }
 
     private func validate(_ client: BackendClient) async throws {
-        let latest: DecisionRecord = try await client.decisionRequest("v1/decisions/\(record.id)")
-        guard latest.version == record.version, latest.canSuggestFollowUps else {
-            throw BackendFailure(message: String(localized: "This decision changed or its evidence is no longer current. Refresh the decision."))
-        }
+        try await origin.validate(client)
     }
 }

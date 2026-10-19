@@ -1,0 +1,26 @@
+.recording-player { min-width: 0; width: 100%; margin-block: 8px 18px; padding-block: 8px; }
+.recording-player audio { display: none; }
+.recording-player-time { font-size: 14px; font-variant-numeric: tabular-nums; line-height: 20px; }
+.recording-player-time > span + span { color: var(--muted); }
+.recording-player-waveform { position: relative; display: grid; align-items: center; height: 64px; margin-block: 10px; border-radius: 4px; }
+.recording-player-waveform > svg { width: 100%; height: 64px; pointer-events: none; }
+.recording-player-waveform rect { fill: var(--muted); opacity: .28; }
+.recording-player-waveform rect.played { fill: var(--accent); opacity: 1; }
+.recording-player-waveform > input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: transparent; appearance: none; cursor: pointer; touch-action: none; }
+.recording-player-waveform > input::-webkit-slider-runnable-track { background: transparent; border: 0; }
+.recording-player-waveform > input::-moz-range-track { background: transparent; border: 0; }
+.recording-player-waveform > input::-webkit-slider-thumb { appearance: none; width: 1px; height: 64px; background: transparent; border: 0; }
+.recording-player-waveform > input::-moz-range-thumb { width: 1px; height: 64px; background: transparent; border: 0; }
+.recording-player-waveform:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
+.recording-player-waveform input:focus-visible { outline: none; }
+.recording-player-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.recording-player-transport, .recording-player-speed { display: flex; align-items: center; }
+.recording-player-transport { gap: 6px; }
+.recording-player-controls button { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
+.recording-player-controls button:hover:not(:disabled) { background: var(--hover); }
+.recording-player-controls .recording-player-play { width: 48px; height: 48px; color: #fff; background: var(--accent-fill); }
+.recording-player-controls .recording-player-play:hover:not(:disabled) { background: var(--accent-hover); }
+.recording-player-play svg { fill: currentColor; stroke-width: 2; }
+.recording-player-speed > span { min-width: 40px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.recording-player-error { color: var(--error-ink); margin-block: 10px 0; }
+@media (max-width: 370px) { .recording-player-controls { justify-content: center; } }

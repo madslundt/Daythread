@@ -137,7 +137,7 @@ struct DecisionFollowUpLinks: View {
             let client = try model.client()
             try await currentDecision(client: client)
             guard !Task.isCancelled, !invalid, requestID == token, model.archiveIdentity == identity, model.archiveRevision == revision else { return }
-            let result: DecisionFollowUps = try await client.decisionRequest("v1/decisions/\(record.id)/suggestions", method: "POST", body: DecisionSuggestionRequest(expected_version: record.version))
+            let result: DecisionFollowUps = try await client.decisionRequest("v1/decisions/\(record.id)/suggestions", method: "POST", body: FollowUpSuggestionRequest(expected_version: record.version))
             guard !Task.isCancelled, !invalid, requestID == token, model.archiveIdentity == identity, model.archiveRevision == revision else { return }
             guard result.decision_id == record.id, result.decision_version == record.version, TimeZone(identifier: result.timezone) != nil else {
                 throw BackendFailure(message: L10n.text("The suggestions no longer match this decision. Refresh and try again."))
@@ -205,7 +205,7 @@ struct DecisionFollowUpLinks: View {
     }
 }
 
-private struct DecisionSuggestionRequest: Encodable { let expected_version: Int }
+struct FollowUpSuggestionRequest: Encodable { let expected_version: Int }
 
 private extension DecisionFollowUp {
     func saveKey(_ record: DecisionRecord) -> String {
@@ -214,7 +214,7 @@ private extension DecisionFollowUp {
     }
 }
 
-private struct CalendarComposition: Identifiable {
+struct CalendarComposition: Identifiable {
     let id = UUID()
     let store: EKEventStore
     let event: EKEvent
@@ -223,7 +223,7 @@ private struct CalendarComposition: Identifiable {
     let revision: String
 }
 
-private struct NativeEventComposer: UIViewControllerRepresentable {
+struct NativeEventComposer: UIViewControllerRepresentable {
     let composition: CalendarComposition
     let completed: (EKEventEditViewAction) -> Void
 
@@ -242,8 +242,35 @@ private struct NativeEventComposer: UIViewControllerRepresentable {
     }
 }
 
-private struct NearbyComposition: Identifiable {
+struct NearbyComposition: Identifiable {
     let id = UUID()
     let suggestion: DecisionFollowUp
     let timezone: String
+}
+
+/// Native follow-up editors share evidence validation across legacy decisions and Inbox.
+enum FollowUpOrigin {
+    case decision(DecisionRecord), inbox(InboxItem)
+
+    var provenance: String {
+        switch self {
+        case .decision(let record): L10n.text("Daythread decision \(record.id) · version \(record.version)")
+        case .inbox(let item): L10n.text("Daythread action point \(item.id) · version \(item.version)")
+        }
+    }
+
+    func validate(_ client: BackendClient) async throws {
+        switch self {
+        case .decision(let record):
+            let latest: DecisionRecord = try await client.decisionRequest("v1/decisions/\(record.id)")
+            guard latest.version == record.version, latest.canSuggestFollowUps else {
+                throw BackendFailure(message: L10n.text("This decision changed or its evidence is no longer current. Refresh the decision."))
+            }
+        case .inbox(let item):
+            let latest = try await client.decoded("v1/inbox/\(item.id)", as: InboxItem.self)
+            guard latest.version == item.version, latest.canSuggestFollowUps else {
+                throw BackendFailure(message: L10n.text("This action point changed or its evidence is no longer current. Refresh and review it again."))
+            }
+        }
+    }
 }

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from inbox_selection_fixtures import selection
 
 from omi_local.domain import stamp
 from omi_local.inbox_domain import Mutation
@@ -38,6 +39,7 @@ def candidate(key, text, title, phrase=None):
         "kind": "commitment",
         "title": title,
         "evidence": [{"source_id": key, "start": 0, "end": len(text), "quote": text}],
+        "selection": selection(key, text, "commitment"),
     }
     if phrase:
         start = text.index(phrase)

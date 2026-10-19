@@ -53,6 +53,17 @@ def content(s, text="Use A"):
     )
 
 
+def selected_decision(value, **fields):
+    return dict(
+        classification="decision", content=value,
+        selection=dict(
+            criterion="consequential_decision",
+            reason="The recorded choice directs the plan in this extraction fixture.",
+            evidence=value["choice"]["evidence"],
+        ), **fields,
+    )
+
+
 def create(client, s, text="Use A", state="tentative"):
     response = client.post(
         "/v1/decisions", json=dict(command_id=str(uuid4()), state=state, content=content(s, text))
@@ -147,11 +158,9 @@ class Extractor:
         return json.dumps(
             {
                 "candidates": [
-                    {
-                        "classification": "decision",
-                        "state": "final",
-                        "content": content(dict(r, source_version=r["source_version"])),
-                    }
+                    selected_decision(
+                        content(dict(r, source_version=r["source_version"])), state="final"
+                    )
                     for r in rows
                 ]
             }
@@ -273,7 +282,8 @@ def test_extraction_classification_and_unknown_evidence_are_rejected(client):
             return json.dumps(
                 {
                     "candidates": [
-                        {"classification": classification, "content": content(s)}
+                        {"classification": classification, "content": content(s),
+                         "selection": selected_decision(content(s))["selection"]}
                         for classification in ["suggestion", "disagreement", "interpretation"]
                     ]
                 }
@@ -287,7 +297,7 @@ def test_extraction_classification_and_unknown_evidence_are_rejected(client):
         async def generate(self, task, evidence):
             c = content(s)
             c["choice"]["evidence"][0]["source_id"] = str(uuid4())
-            return json.dumps({"candidates": [{"classification": "decision", "content": c}]})
+            return json.dumps({"candidates": [selected_decision(c)]})
 
     client.app.state.memory.inference = Unknown()
     assert (

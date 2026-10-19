@@ -45,6 +45,11 @@ changing transcription settings or correcting a transcript prevents recognition 
 After transcription, the backend generates a descriptive recording title and topic sections using
 the local summary model. Open a recording in Today to read its full transcript directly below
 the audio player. Optional titled topics below the transcript expand to their original passages.
+Recording playback matches the iPhone controls: an audio-derived, seekable waveform,
+elapsed/total time, play/pause, 15-second skips, and speed adjustments from 0.5× to 2×
+in 0.25× steps. Dragging the waveform pauses playback and resumes it on release.
+Topic playback keeps its timestamp boundaries. Waveforms load only for opened recordings;
+if waveform decoding is unsupported, the recording can still play.
 Existing recordings are analyzed automatically after upgrade. The original recording stays whole;
 topic boundaries do not claim exact audio timestamps. Corrections
 clear old titles and sections until the updated transcript has been analyzed.

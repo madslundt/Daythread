@@ -2,10 +2,11 @@
 
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from .decision_export import day_bounds
 from .domain import stamp, utc_now
 from .inbox_domain import Mutation
 
@@ -28,6 +29,8 @@ def decode(row) -> dict:
             "proposal": proposal,
             "overrides": overrides,
             "accepted_deadline": json.loads(accepted) if accepted else None,
+            "user_note": overrides.get("user_note"),
+            "user_note_provenance": "user" if "user_note" in overrides else None,
         }
     )
 
@@ -88,17 +91,67 @@ class InboxStore:
         return value
 
     def listing(
-        self, status: str, kind: str | None, due: str | None, limit: int, offset: int
+        self,
+        status: str,
+        kind: str | None,
+        due: str | None,
+        limit: int,
+        offset: int,
+        *,
+        day: date | None = None,
+        q: str = "",
+        timezone: str = "UTC",
     ) -> dict:
         with self.archive.connect() as db:
             rows = db.execute(
                 "SELECT * FROM inbox_items WHERE status=? ORDER BY created_at DESC,id", (status,)
             ).fetchall()
             items = [decode(r) for r in rows]
+            evidence: dict[str, list[dict]] = {}
+            for occurrence in db.execute(
+                "SELECT o.item_id,o.evidence,j.state FROM inbox_occurrences o "
+                "JOIN inbox_jobs j ON j.id=o.job_id "
+                "JOIN inbox_items i ON i.id=o.item_id WHERE i.status=?",
+                (status,),
+            ):
+                evidence.setdefault(occurrence["item_id"], []).extend(
+                    span | {"current": occurrence["state"] == "done"}
+                    for span in json.loads(occurrence["evidence"])
+                )
+            zone, terms = ZoneInfo(timezone), q.casefold().split()
+            for item in items:
+                item["source_ids"] = sorted(
+                    {span["source_id"] for span in evidence.get(item["id"], [])}
+                )
+                item["evidence_spans"] = list(
+                    {
+                        (span["source_id"], span["start"], span["end"], span["current"]): {
+                            field: span[field] for field in ("source_id", "start", "end", "current")
+                        }
+                        for span in evidence.get(item["id"], [])
+                    }.values()
+                )
             now = utc_now()
 
             def matches(item):
                 if kind and item["kind"] != kind:
+                    return False
+                spans = evidence.get(item["id"], [])
+                if day and not any(
+                    datetime.fromisoformat(span["started_at"]).astimezone(zone).date() == day
+                    for span in spans
+                ):
+                    return False
+                searchable = " ".join(
+                    [
+                        item["title"],
+                        item["owner"] or "",
+                        item["user_note"] or "",
+                        (item["deadline"] or {}).get("phrase") or "",
+                    ]
+                    + [span["quote"] for span in spans]
+                ).casefold()
+                if not all(term in searchable for term in terms):
                     return False
                 deadline = item["deadline"] or {}
                 precision = deadline.get("precision", "unknown")
@@ -129,8 +182,20 @@ class InboxStore:
                     i["created_at"],
                 )
             )
+            bounds = day_bounds(day.isoformat(), timezone) if day else ()
+            source_scope = " AND a.started_at>=? AND a.started_at<?" if day else ""
+            job_scope = (
+                " WHERE EXISTS (SELECT 1 FROM inbox_dependencies d "
+                "JOIN audio a ON a.id=d.source_id "
+                "WHERE d.job_id=j.id" + source_scope + ")"
+                if day
+                else ""
+            )
             jobs = dict(
-                db.execute("SELECT state,count(*) FROM inbox_jobs GROUP BY state").fetchall()
+                db.execute(
+                    "SELECT j.state,count(*) FROM inbox_jobs j" + job_scope + " GROUP BY j.state",
+                    bounds,
+                ).fetchall()
             )
             pending = db.execute(
                 "SELECT count(*) FROM inbox_items WHERE status='pending'"
@@ -140,14 +205,16 @@ class InboxStore:
                 for r in db.execute(
                     "SELECT j.id,j.state,j.attempts,j.error,(SELECT min(a.started_at) "
                     "FROM inbox_dependencies d JOIN audio a ON a.id=d.source_id "
-                    "WHERE d.job_id=j.id) AS recording_start FROM inbox_jobs j "
-                    "ORDER BY j.created_at DESC LIMIT 20"
+                    "WHERE d.job_id=j.id" + source_scope + ") AS recording_start FROM inbox_jobs j"
+                    + job_scope + " ORDER BY j.created_at DESC LIMIT 20",
+                    bounds + bounds,
                 )
             ]
             unscanned = db.execute(
                 "SELECT count(*) FROM inbox_sources s JOIN audio a ON a.id=s.source_id "
                 "WHERE length(trim(a.text))>0 AND s.scanned_revision!=s.revision "
-                "AND a.id NOT IN (SELECT source_id FROM inbox_tombstones)"
+                "AND a.id NOT IN (SELECT source_id FROM inbox_tombstones)" + source_scope,
+                bounds,
             ).fetchone()[0]
         return {
             "items": items[offset : offset + limit],
@@ -265,7 +332,11 @@ class InboxStore:
                     and machine_title in proposed_titles
                 ):
                     continue
-                if machine["kind"] != proposal["kind"]:
+                # v3 splits reminders/events out of the older commitment category.
+                # Keep the same identity and user state when the grounded action still matches.
+                if machine["kind"] != proposal["kind"] and not {
+                    machine["kind"], proposal["kind"]
+                } <= {"commitment", "reminder", "event"}:
                     continue
                 occurrences = db.execute(
                     "SELECT evidence FROM inbox_occurrences WHERE item_id=?", (row["id"],)

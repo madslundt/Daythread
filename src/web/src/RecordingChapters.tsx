@@ -7,6 +7,7 @@ import { TranscriptPassage } from "./TranscriptTranslation";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
 import type { Source } from "./types";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 export type RecordingChapter = {
   id: string; title: string; started_at: string;
@@ -63,7 +64,7 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect }: {
   return <article className="chapter-passage">
     <p className="caption">{timeLabel(source.started_at, timezone)}</p>
     {source.audio_available !== false && source.audio_availability !== "missing"
-      ? <audio controls preload="metadata" src={audio} aria-label={section.title} /> : null}
+      ? <RecordingAudioPlayer src={audio} label={section.title} /> : null}
     <TranscriptPassage source={source} section={section} />
     <details onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);

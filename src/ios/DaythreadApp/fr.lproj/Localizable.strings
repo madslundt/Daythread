@@ -2579,3 +2579,99 @@
 "No conversations yet" = "Aucune conversation pour le moment";
 "No matching conversations" = "Aucune conversation correspondante";
 "Search conversations" = "Rechercher des conversations";
+
+/* Recap overview, topic exploration, and Inbox action points. */
+"Action points" = "Actions à suivre";
+"Ask about this day" = "Poser une question sur ce jour";
+"Ask about this topic" = "Poser une question sur ce sujet";
+"Calendar & reminders" = "Calendrier et rappels";
+"Chat searches this day, guided by your topic question." = "Le chat recherche dans cette journée à partir de votre question sur le sujet.";
+"Choose a topic to revisit its recap and original conversation." = "Choisissez un sujet pour revoir son résumé et la conversation originale.";
+"Day overview" = "Vue de la journée";
+"Daythread action point {value0} · version {value1}" = "Action Daythread {value0} · version {value1}";
+"Explore topics" = "Explorer les sujets";
+"Find calendar & reminder options" = "Trouver des options de calendrier et de rappels";
+"Listen from this topic" = "Écouter à partir de ce sujet";
+"Loading action points…" = "Chargement des actions…";
+"No calendar or reminder suggestions found." = "Aucune suggestion de calendrier ou de rappel trouvée.";
+"No matching recap topics. Try another word or browse the day’s recordings." = "Aucun sujet correspondant. Essayez un autre mot ou parcourez les enregistrements de la journée.";
+"No pending action points from this day. Recording scans may still be incomplete." = "Aucune action en attente pour ce jour. L’analyse des enregistrements peut être incomplète.";
+"No pending action points linked to an identified passage in this topic." = "Aucune action en attente liée à un passage identifié de ce sujet.";
+"Notes" = "Notes";
+"Recap this topic from this day: " = "Résume ce sujet pour cette journée : ";
+"Recap view" = "Vue du résumé";
+"Review action points" = "Examiner les actions";
+"Review calendar event" = "Examiner l’événement du calendrier";
+"Review each suggestion before saving it to Calendar or Reminders. Inbox keeps its own completion status." = "Examinez chaque suggestion avant de l’enregistrer dans Calendrier ou Rappels. La boîte de réception conserve son propre état d’achèvement.";
+"Review reminder" = "Examiner le rappel";
+"Review reminders, commitments and questions in Inbox. Saving to Calendar or Reminders does not mark an action complete." = "Examinez les rappels, engagements et questions dans la boîte de réception. Enregistrer dans Calendrier ou Rappels ne termine pas une action.";
+"Revisit the conversation" = "Revoir la conversation";
+"Saved to Calendar" = "Enregistré dans Calendrier";
+"Saved to Reminders" = "Enregistré dans Rappels";
+"Saving this reminder does not mark the action complete in Inbox." = "Enregistrer ce rappel ne termine pas l’action dans la boîte de réception.";
+"Search recap topics" = "Rechercher des sujets du résumé";
+"This action point changed or its evidence is no longer current. Refresh and review it again." = "Cette action a changé ou ses preuves ne sont plus à jour. Actualisez et examinez-la à nouveau.";
+"Topic recap" = "Résumé du sujet";
+
+/* Shared follow-up validation and native event review. */
+"Action point changed; refresh before creating follow-ups" = "L’action a changé ; actualisez avant de créer des suites à donner";
+"Action point context changed; rescan its recordings" = "Le contexte de l’action a changé ; analysez à nouveau ses enregistrements";
+"Action point evidence changed; rescan its recordings" = "Les sources de l’action ont changé ; analysez à nouveau ses enregistrements";
+"Action point was removed while suggesting follow-ups" = "L’action a été supprimée pendant la recherche de suites à donner";
+"Evidence exceeds the follow-up context budget" = "Les sources dépassent la limite de contexte pour les suites à donner";
+"Follow-ups mentioned in the recap" = "Suites à donner mentionnées dans le résumé";
+"Follow-ups require a current, pending action point" = "Les suites à donner nécessitent une action à jour et en attente";
+"Follow-ups require current original evidence" = "Les suites à donner nécessitent des sources originales à jour";
+"Inbox item or source not found" = "Élément de la boîte de réception ou source introuvable";
+"Invalid structured action-point follow-ups" = "Suites à donner structurées de l’action non valides";
+"Look back up to 10 seconds near the maximum request duration and split at the clearest pause found. Every sample and pause is retained. 0 uses fixed boundaries. Applies inside an upload only." = "Recherchez jusqu’à 10 secondes en arrière près de la durée maximale d’une requête et découpez à la pause la plus nette. Tous les échantillons audio et toutes les pauses sont conservés. 0 utilise des limites fixes. S’applique uniquement au sein d’un même envoi.";
+"No event date was recorded. Choose a date before continuing." = "Aucune date n’a été enregistrée pour cet événement. Choisissez une date avant de continuer.";
+"Original evidence changed while suggesting follow-ups" = "Les sources originales ont changé pendant la recherche de suites à donner";
+"Review and manage these in Action points below." = "Examinez-les et gérez-les dans Actions à suivre ci-dessous.";
+"Save your review first. Then choose a suggested event or reminder to add to your apps." = "Enregistrez d’abord votre vérification. Choisissez ensuite un événement ou un rappel suggéré à ajouter à vos applications.";
+
+"Find action points" = "Trouver des actions";
+"Action points are being extracted from your recordings." = "Les actions à suivre sont en cours d’extraction de vos enregistrements.";
+"Some action extraction failed. Open Inbox to retry the affected days." = "L’extraction de certaines actions a échoué. Ouvrez la boîte de réception pour réessayer pour les journées concernées.";
+
+/* Day overview, decisions, personal answers and notes. */
+"Add your thoughts" = "Ajouter vos réflexions";
+"Answer question" = "Répondre à la question";
+"Clear your writing" = "Effacer votre texte";
+"Complete" = "Terminer";
+"Completed / answered / reviewed" = "Terminé / répondu / vérifié";
+"Decision scan: {value0} of {value1} recordings" = "Analyse des décisions : {value0} enregistrements sur {value1}";
+"Events & reminders" = "Événements et rappels";
+"Find decisions" = "Rechercher des décisions";
+"Find items from this day" = "Rechercher les éléments de cette journée";
+"Follow-ups require an actionable item" = "Les suites à donner nécessitent un élément appelant une action";
+"Mark answered" = "Marquer comme répondu";
+"Mark reviewed" = "Marquer comme vérifié";
+"No current decision choices linked to an identified passage in this topic." = "Aucun choix de décision à jour lié à un passage identifié dans ce sujet.";
+"No items in this group yet. Scans may still be incomplete." = "Aucun élément dans ce groupe pour le moment. Les analyses sont peut-être encore incomplètes.";
+"Questions to answer" = "Questions en attente de réponse";
+"Read note" = "Lire la note";
+"Review all items" = "Vérifier tous les éléments";
+"Review and manage these in the overview below." = "Examinez-les et gérez-les dans la vue d’ensemble ci-dessous.";
+"Review decision" = "Vérifier la décision";
+"Review event/reminder" = "Vérifier l’événement ou le rappel";
+"Reviewed" = "Vérifié";
+"To do" = "À faire";
+"Worth considering" = "À considérer";
+"Worth remembering" = "À retenir";
+"Your answer" = "Votre réponse";
+"Your day at a glance" = "Votre journée en un coup d’œil";
+"Your notes" = "Vos notes";
+"Your writing is personal context, not recorded evidence. Saving it does not complete this item." = "Votre texte constitue un contexte personnel, pas une source enregistrée. L’enregistrer ne termine pas cet élément.";
+"status.event" = "Événement du calendrier";
+"status.note" = "Informations importantes";
+"status.reflection" = "Réflexion";
+"status.reminder" = "Rappel";
+
+"All categories" = "Toutes les catégories";
+
+"Recorded evidence changed. Refresh this day before finding decisions again." = "Les sources enregistrées ont changé. Actualisez cette journée avant de rechercher à nouveau des décisions.";
+
+"Selection criterion does not match candidate kind" = "Le critère de sélection ne correspond pas au type de proposition";
+
+"Selection evidence must include the candidate's own point" = "Les sources de la sélection doivent inclure le point propre à la proposition";

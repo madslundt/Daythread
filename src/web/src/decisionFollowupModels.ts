@@ -39,12 +39,12 @@ export function followupLinkLabel(suggestion: DecisionFollowup, timezone: string
 export class DecisionFollowupRequests {
   private scope = profileScope();
   private controller = new AbortController();
-  constructor(private decision: Pick<Decision, "id" | "version">) {}
+  constructor(private decision: Pick<Decision, "id" | "version">, private resource: "decisions" | "inbox" = "decisions") {}
   cancel(): void { this.controller.abort(); }
   async run<T>(action: "suggestions" | "calendar-export", suggestion?: DecisionFollowup): Promise<T | undefined> {
     if (this.controller.signal.aborted || this.scope.signal.aborted) return undefined;
     try {
-      const result = await request<T>(`/v1/decisions/${encodeURIComponent(this.decision.id)}/${action}`, {
+      const result = await request<T>(`/v1/${this.resource}/${encodeURIComponent(this.decision.id)}/${action}`, {
         method: "POST", signal: this.controller.signal,
         body: JSON.stringify({ expected_version: this.decision.version, ...(suggestion ? { suggestion, ...(suggestion.kind === "event" ? { use_calendar_defaults: true } : {}) } : {}) }),
       }, this.scope);

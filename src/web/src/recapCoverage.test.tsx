@@ -26,8 +26,8 @@ describe("transcribed recording recap display", () => {
     const html = render();
     expect(html).toContain('aria-label="Summary language"');
     expect(html).toContain("Checking summary language and saved translation…");
-    expect(html).toContain('aria-label="Copy summary: Cocoa"');
-    expect(html).toContain("Original passages");
+    expect(html).toContain('aria-label="Copy summary: Day recap"');
+    expect(html).toContain('aria-label="Explore topic: Cocoa"');
   });
   it("has no manual generation button and explains automatic updates", () => {
     resource.data = { ...resource.data!, stale: true };
@@ -57,6 +57,22 @@ describe("transcribed recording recap display", () => {
     expect(html).toContain("No useful recap content in transcribed recordings yet");
     expect(html).toContain("Your recordings remain available");
     expect(html).toContain("Some recordings are awaiting upload or transcription.");
+  });
+  it("keeps a selective empty day quiet while offering deliberate original topic exploration", () => {
+    resource.data = { ...resource.data!, no_recap_content: true, sources: [{
+      id: "11111111-1111-4111-8111-111111111111", device_id: "test", started_at: "2026-10-15T10:00:00Z",
+      ended_at: "2026-10-15T10:01:00Z", state: "done", text: "We compared garden tools.",
+      sections: [{ title: "Garden tools", start_offset: 0, end_offset: 25 }],
+    }] };
+    const html = render();
+    expect(html).toContain('aria-pressed="true">Day overview');
+    expect(html).toContain('aria-pressed="false">Explore topics');
+    expect(html).not.toContain("Garden tools");
+    expect(html).not.toContain("The story of your day starts here.");
+    expect(html.match(/No useful recap content in transcribed recordings yet/g)).toHaveLength(1);
+    expect(html).not.toContain("We compared garden tools.");
+    expect(html).not.toContain('aria-label="Summary language"');
+    expect(html).not.toContain('aria-label="Copy summary: Day recap"');
   });
   it("explains immediate file summaries and pause-based live recaps", () => {
     const html = render();

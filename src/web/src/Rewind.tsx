@@ -8,6 +8,7 @@ import { SourceList } from "./SourceList";
 import type { MemoryWindow } from "./types";
 import { EmptyState, ErrorState, Notice } from "./UI";
 import { SummaryTranslation } from "./SummaryTranslation";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 export type RewindIntent = { minutes: number; id: number };
 
@@ -114,13 +115,11 @@ export function Rewind({
                   <p className="caption">
                     {t("Audio is clipped to the requested window. Gaps remain silent.")}{" "}</p>
                 </div>
-                <audio
+                <RecordingAudioPlayer
                   key={result.end}
-                  controls
-                  preload="none"
                   src={rewindAudioUrl(completedMinutes, result.end)}
                   onError={() => setAudioError(true)}
-                  aria-label={t("Play rewind audio")}
+                  label={t("Play rewind audio")}
                 />
                 {audioError ? (
                   <ErrorState message={t("Audio for this window is unavailable. You can still read the available transcripts below.")} />

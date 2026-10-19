@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from test_decisions import AT, content, create, event, source
+from test_decisions import AT, content, create, event, selected_decision, source
 
 from omi_local.api import create_app
 from omi_local.settings import Settings
@@ -36,7 +36,7 @@ class Proposal:
         value = content(self.source, self.wording)
         if self.opposing:
             value["contradictions"] = [dict(content(self.opposing)["choice"], field="choice")]
-        return json.dumps({"candidates": [{"classification": "decision", "content": value}]})
+        return json.dumps({"candidates": [selected_decision(value)]})
 
 
 def extract(client, **scope):
@@ -215,7 +215,7 @@ def test_exact_anchor_set_normalizes_order_and_duplicates_without_semantic_match
             return json.dumps(
                 {
                     "candidates": [
-                        {"classification": "decision", "content": value} for value in claims
+                        selected_decision(value) for value in claims
                     ]
                 }
             )

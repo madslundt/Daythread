@@ -8,7 +8,19 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Kind = Literal["commitment", "deadline", "question"]
+from .capture_relevance import CaptureSelection, passes_selection
+
+Kind = Literal["commitment", "deadline", "question", "reminder", "event", "reflection", "note"]
+ACTIONABLE_KINDS = frozenset({"commitment", "deadline", "question", "reminder", "event"})
+SELECTION_CRITERIA = {
+    "commitment": {"lasting_follow_up", "explicit_reminder"},
+    "deadline": {"lasting_follow_up"},
+    "question": {"consequential_question"},
+    "reminder": {"explicit_reminder"},
+    "event": {"agreed_event"},
+    "reflection": {"meaningful_reflection"},
+    "note": {"durable_reference"},
+}
 Status = Literal["pending", "completed", "dismissed"]
 
 
@@ -61,10 +73,11 @@ class Candidate(StrictModel):
     evidence: list[Span] = Field(min_length=1, max_length=8)
     owner_evidence: Span | None = None
     deadline_evidence: Span | None = None
+    selection: CaptureSelection[Span]
 
 
 class Extraction(StrictModel):
-    candidates: list[Candidate] = Field(max_length=30)
+    candidates: list[Candidate]
 
 
 class Changes(StrictModel):
@@ -72,6 +85,7 @@ class Changes(StrictModel):
     title: str | None = Field(default=None, min_length=1, max_length=500)
     owner: str | None = Field(default=None, max_length=150)
     deadline: Deadline | None = None
+    user_note: str | None = Field(default=None, max_length=8000)
 
 
 class Mutation(StrictModel):
@@ -79,7 +93,9 @@ class Mutation(StrictModel):
     expected_version: int = Field(ge=1)
     changes: Changes = Field(default_factory=Changes)
     status: Status | None = None
-    reset: list[Literal["kind", "title", "owner", "deadline"]] = Field(default=[], max_length=4)
+    reset: list[Literal["kind", "title", "owner", "deadline", "user_note"]] = Field(
+        default=[], max_length=5
+    )
     duplicate_of: UUID | None = None
 
     @model_validator(mode="after")
@@ -154,6 +170,23 @@ def validate_candidates(raw: str, sources: list[dict], timezone: str) -> list[di
 
     result = []
     for candidate in extracted.candidates:
+        if candidate.selection.criterion == "none":
+            continue
+        if not passes_selection(candidate.selection, SELECTION_CRITERIA[candidate.kind]):
+            raise ValueError("Selection criterion does not match candidate kind")
+        # Utility must be supported by the same original context, never the model's rationale alone.
+        for support in candidate.selection.evidence:
+            evidence(support)
+        if not any(
+            support.source_id == primary.source_id
+            and (
+                support.start <= primary.start < primary.end <= support.end
+                or primary.start <= support.start < support.end <= primary.end
+            )
+            for support in candidate.selection.evidence
+            for primary in candidate.evidence
+        ):
+            raise ValueError("Selection evidence must include the candidate's own point")
         if not candidate.title.strip():
             raise ValueError("Candidate title cannot be blank")
         spans = [evidence(s) for s in candidate.evidence]
@@ -207,6 +240,8 @@ def validate_candidates(raw: str, sources: list[dict], timezone: str) -> list[di
         result.append(
             {
                 "kind": candidate.kind,
+                "_criterion": candidate.selection.criterion,
+                "_primary": sorted((str(s.source_id), s.start, s.end) for s in candidate.evidence),
                 "title": candidate.title.strip(),
                 "owner": owner,
                 "deadline": resolve_deadline(candidate.deadline_phrase, source, timezone),
@@ -215,4 +250,60 @@ def validate_candidates(raw: str, sources: list[dict], timezone: str) -> list[di
                 ),
             }
         )
-    return result
+    return consolidate_points(result)
+
+
+def consolidate_points(proposals: list[dict]) -> list[dict]:
+    """Consolidate exact duplicate points; overlapping claims may be distinct obligations."""
+    result = []
+    priority = {
+        kind: rank
+        for rank, kind in enumerate(
+            ("reminder", "event", "commitment", "deadline", "question", "reflection", "note")
+        )
+    }
+    for proposal in proposals:
+        title = " ".join(re.findall(r"\w+", proposal["title"].casefold()))
+        for index, other in enumerate(result):
+            if title != " ".join(re.findall(r"\w+", other["title"].casefold())):
+                continue
+            if other["owner"] != proposal["owner"]:
+                continue
+            if deadline_key(other["deadline"]) != deadline_key(proposal["deadline"]):
+                continue
+            if (
+                other["_primary"] != proposal["_primary"]
+                or other["_criterion"] != proposal["_criterion"]
+            ):
+                continue
+            kinds = {other["kind"], proposal["kind"]}
+            if len(kinds) > 1 and not (
+                kinds <= {"commitment", "reminder"}
+                and proposal["_criterion"] == "explicit_reminder"
+                or kinds <= {"commitment", "deadline"}
+                and proposal["_criterion"] == "lasting_follow_up"
+            ):
+                continue
+            chosen = proposal if priority[proposal["kind"]] < priority[other["kind"]] else other
+            merged = chosen.copy()
+            merged["evidence"] = list(
+                {
+                    (span["source_id"], span["start"], span["end"]): span
+                    for span in [*other["evidence"], *proposal["evidence"]]
+                }.values()
+            )
+            result[index] = merged
+            break
+        else:
+            result.append(proposal)
+    return [
+        {key: value for key, value in item.items() if not key.startswith("_")} for item in result
+    ]
+
+
+def deadline_key(deadline: dict) -> tuple:
+    if deadline["precision"] == "datetime":
+        return "datetime", datetime.fromisoformat(deadline["instant"]).timestamp()
+    if deadline["precision"] == "date":
+        return "date", deadline["day"], deadline["timezone"]
+    return "unknown", (deadline.get("phrase") or "").casefold().strip()

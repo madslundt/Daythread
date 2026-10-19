@@ -8,6 +8,7 @@ import { t } from "./i18n";
 import { Icon } from "./Icon";
 import { profileScope } from "./profiles";
 import { Notice } from "./UI";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
 // Retain a failed browser write across profile switches during this visit.
 const pendingSaves = new Map<string, CapturedRecording>();
@@ -195,5 +196,7 @@ function LocalRecordingPlayer({ owner, recording, store }: { owner: string; reco
     }).catch((error) => { if (alive) setError(errorMessage(error)); });
     return () => { alive = false; if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [owner, recording.id, store]);
-  return error ? <p role="alert">{error}</p> : url ? <audio controls src={url} aria-label={t("Local recording playback")} /> : null;
+  return error ? <p role="alert">{error}</p> : url ? <RecordingAudioPlayer src={url}
+    durationHint={(Date.parse(recording.stoppedAt) - Date.parse(recording.startedAt)) / 1000}
+    label={t("Local recording playback")} /> : null;
 }

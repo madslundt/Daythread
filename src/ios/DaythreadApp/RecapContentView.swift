@@ -5,156 +5,167 @@ struct RecapContentView: View {
     let recap: JSONValue
     let day: String
     var onCorrect: (() -> Void)? = nil
-    @Environment(AppModel.self) private var model
-    @State private var checks: Set<String> = []
-    private var version: String {
-        [recap["output_id"].text, recap["generated_at"].text, "unversioned"].first { !$0.isEmpty }!
-    }
-    private var identity: String { model.archiveIdentity + "|" + day + "|" + version }
-    private var groups: [RecapPresentation.Group] { RecapPresentation.groups(recap["summary"].text, day: day) }
-
+    var emptyMessage: String? = nil
+    @State private var exploring = false
+    @State private var query = ""
     @Environment(\.locale) private var interfaceLocale
+    private var groups: [RecapPresentation.Group] { RecapPresentation.groups(recap["summary"].text, day: day) }
+    private var topics: [RecapPresentation.Group] { RecapPresentation.topics(recap["summary"].text, day: day, query: query) }
+    private var originalTopics: [RecapOriginalTopics.Topic] {
+        let sources = recap["sources"].array
+        let sourceText = sources.map { RecapPresentation.Source(id: $0["id"].text, text: $0["text"].text) }
+        var covered: [InboxTopicPassage] = []
+        for group in RecapPresentation.topics(recap["summary"].text, day: day) {
+            let title = (group.title ?? "").replacingOccurrences(of: "**", with: "")
+            let point = group.parts.map(\.text).joined(separator: "\n")
+            let related = RecapPresentation.sources(for: "**\(title)**\n\(point)", in: sourceText)
+            for source in sources where related.ids.contains(source["id"].text) {
+                covered += RecapPresentation.sections(for: point, topic: title, text: source["text"].text,
+                    sections: source["sections"].array.map { .init(title: $0["title"].text, start: $0["start_offset"].integer, end: $0["end_offset"].integer) })
+                    .map { InboxTopicPassage(sourceID: source["id"].text, start: $0.start, end: $0.end) }
+            }
+        }
+        return RecapOriginalTopics.topics(sources: sources.map(\.originalTopicSource), excluding: covered, query: query)
+    }
+
     var body: some View {
         let _ = interfaceLocale
-        SummaryTranslationView(output: recap) {
-            original
-        }
-        .buttonStyle(.borderless)
-        .disclosureGroupStyle(RecapDisclosureStyle())
-        .id(identity)
-        .onChange(of: identity, initial: true) { _, _ in
-            checks = RecapCheckStore().checks(archive: model.archiveIdentity, day: day, version: version)
-        }
+        VStack(alignment: .leading, spacing: 18) {
+            Picker(L10n.text("Recap view"), selection: $exploring) {
+                Text(L10n.text("Day overview")).tag(false)
+                Text(L10n.text("Explore topics")).tag(true)
+            }.pickerStyle(.segmented).accessibilityIdentifier("recap.mode")
+            if exploring { topicBrowser }
+            else {
+                if recap["summary"].text.isEmpty {
+                    Text(emptyMessage ?? L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.")).font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                SummaryTranslationView(output: recap) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                            VStack(alignment: .leading, spacing: 8) {
+                                if group.hasActions {
+                                    Text(L10n.text("Follow-ups mentioned in the recap")).font(.headline)
+                                } else if let title = group.title {
+                                    Text(RecapPresentation.readingText(title).replacingOccurrences(of: "**", with: "")).font(.headline)
+                                }
+                                Text(.init(group.text)).textSelection(.enabled)
+                                if group.hasActions { Text(L10n.text("Review and manage these in the overview below.")).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
+                }
+                NavigationLink { ChatView(initialScope: .day(day)) } label: {
+                    Label(L10n.text("Ask about this day"), systemImage: "bubble.left.and.bubble.right")
+                }
+                Button { exploring = true } label: {
+                    Label(L10n.text("Explore topics"), systemImage: "text.magnifyingglass")
+                }
+            }
+        }.buttonStyle(.borderless).disclosureGroupStyle(RecapDisclosureStyle())
     }
-    private var original: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                RecapTopicView(group: group, sources: recap["sources"].array,
-                               checks: $checks, onCheck: saveChecks, onCorrect: onCorrect)
+
+    private var topicBrowser: some View {
+        let originals = originalTopics
+        return VStack(alignment: .leading, spacing: 14) {
+            Text(L10n.text("Choose a topic to revisit its recap and original conversation.")).font(.subheadline).foregroundStyle(.secondary)
+            TextField(L10n.text("Search recap topics"), text: $query).textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("recap.topicSearch")
+            if topics.isEmpty && originals.isEmpty {
+                Text(L10n.text("No matching recap topics. Try another word or browse the day’s recordings.")).font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(Array(topics.enumerated()), id: \.offset) { _, group in
+                NavigationLink {
+                    RecapTopicDetail(group: group, sources: recap["sources"].array, day: day, onCorrect: onCorrect)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text((group.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "")).font(.headline).foregroundStyle(.primary)
+                        Text(group.text.replacingOccurrences(of: "**", with: "")).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                    }.padding(.vertical, 6)
+                }
+            }
+            ForEach(originals) { topic in
+                NavigationLink {
+                    RecapOriginalTopicDetail(topic: topic, day: day, onCorrect: onCorrect)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(topic.title).font(.headline).foregroundStyle(.primary)
+                        Text(L10n.text("Original passages")).font(.caption).foregroundStyle(.secondary)
+                    }.padding(.vertical, 6)
+                }
             }
         }
     }
-    private func saveChecks() {
-        RecapCheckStore().save(checks, archive: model.archiveIdentity, day: day, version: version)
-    }
 }
 
-private struct RecapTopicView: View {
+private struct RecapTopicDetail: View {
     let group: RecapPresentation.Group
     let sources: [JSONValue]
-    @Binding var checks: Set<String>
-    let onCheck: () -> Void
+    let day: String
     let onCorrect: (() -> Void)?
-    @State private var expanded = false
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.locale) private var interfaceLocale
+    @State private var currentSources: [JSONValue] = []
+    @State private var loading = false
+    @State private var error: String?
+    @State private var refresh = UUID()
     private var title: String { (group.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "") }
-    private var plain: String { group.text.replacingOccurrences(of: "**", with: "") }
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        if group.title == nil { content }
-        else {
-            DisclosureGroup(isExpanded: $expanded) {
-                if expanded { content.padding(.top, 12) }
-            } label: {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.headline).foregroundStyle(.primary)
-                    if !expanded { Text(plain).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
-                }.padding(.vertical, 5)
-            }
-            .onAppear { if group.hasActions { expanded = true } }
-        }
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if group.hasActions || group.title == nil {
-                ForEach(Array(group.parts.enumerated()), id: \.offset) { _, part in
-                    RecapPointView(part: part, topic: group.title == nil ? "" : title,
-                                   sources: sources, checks: $checks, onCheck: onCheck, onCorrect: onCorrect)
-                }
-            } else { Text(.init(group.text)).textSelection(.enabled) }
-            if !group.hasActions && group.title != nil {
-                RecapEvidenceList(point: group.parts.map(\.text).joined(separator: "\n"), topic: title,
-                                  sources: sources, onCorrect: onCorrect)
-            }
-        }
-    }
-}
-
-private struct RecapPointView: View {
-    let part: RecapPresentation.Part
-    let topic: String
-    let sources: [JSONValue]
-    @Binding var checks: Set<String>
-    let onCheck: () -> Void
-    let onCorrect: (() -> Void)?
-    @State private var expanded = false
-    private var plain: String { RecapPresentation.readingText(part.text).replacingOccurrences(of: "**", with: "") }
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        VStack(alignment: .leading, spacing: 8) {
-            if part.kind == .item {
-                HStack(alignment: .top, spacing: 10) {
-                    if part.action {
-                        Button {
-                            if checks.contains(part.text) { checks.remove(part.text) } else { checks.insert(part.text) }
-                            onCheck()
-                        } label: {
-                            Image(systemName: checks.contains(part.text) ? "checkmark.circle.fill" : "circle")
-                                .font(.title3).frame(minWidth: 44, minHeight: 44)
-                        }.buttonStyle(.borderless)
-                            .accessibilityLabel(L10n.text("Mark complete: ") + plain)
-                            .accessibilityValue(checks.contains(part.text) ? L10n.text("Completed") : L10n.text("Not completed"))
-                    }
-                    DisclosureGroup(isExpanded: $expanded) {
-                        if expanded { details.padding(.vertical, 8) }
-                    } label: {
-                        Text(.init(RecapPresentation.readingText(part.text)))
-                            .strikethrough(part.action && checks.contains(part.text))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(.primary).padding(.vertical, 8)
-                    }.disclosureGroupStyle(RecapDisclosureStyle())
-                }
-            } else {
-                Text(.init(RecapPresentation.readingText(part.text))).textSelection(.enabled)
-            }
-        }
-    }
-    private var details: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            RecapEvidenceList(point: part.text, topic: topic, sources: sources, onCorrect: onCorrect)
-        }.font(.subheadline)
-    }
-}
-
-private struct RecapEvidenceList: View {
-    let point: String
-    let topic: String
-    let sources: [JSONValue]
-    let onCorrect: (() -> Void)?
-    @State private var expanded = false
+    private var point: String { group.parts.map(\.text).joined(separator: "\n") }
     private var related: RecapPresentation.Matches {
-        RecapPresentation.sources(for: point, in: sources.map { .init(id: $0["id"].text, text: $0["text"].text) })
+        RecapPresentation.sources(for: "**\(title)**\n\(point)", in: sources.map { .init(id: $0["id"].text, text: $0["text"].text) })
     }
-    @Environment(\.locale) private var interfaceLocale
+    private var passages: [InboxTopicPassage] {
+        currentSources.flatMap { source in
+            RecapPresentation.sections(for: point, topic: title, text: source["text"].text,
+                sections: source["sections"].array.map { .init(title: $0["title"].text, start: $0["start_offset"].integer, end: $0["end_offset"].integer) })
+                .map { InboxTopicPassage(sourceID: source["id"].text, start: $0.start, end: $0.end) }
+        }
+    }
+    private var loadKey: String { model.archiveIdentity + model.archiveRevision + refresh.uuidString + related.ids.joined() }
+
     var body: some View {
         let _ = interfaceLocale
-        DisclosureGroup(L10n.text("Original passages"), isExpanded: $expanded) {
-            if expanded {
-                if related.ids.isEmpty {
-                    Text(L10n.text("No linked or matching recordings for this topic.")).font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text(related.basis == .citation ? L10n.text("Cited recordings · check the original context.") : L10n.text("Possible matching recordings · relevance is inferred from shared words."))
-                        .font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(sources.filter { related.ids.contains($0["id"].text) }.enumerated()), id: \.element["id"].text) { _, source in
-                        RecapEvidenceView(source: source, point: point, topic: topic, onCorrect: onCorrect)
-                    }
+        List {
+            Section(L10n.text("Topic recap")) {
+                Text(.init(group.text)).textSelection(.enabled)
+                NavigationLink {
+                    ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + title)
+                } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
+                Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
+            }
+            Section(L10n.text("Revisit the conversation")) {
+                Text(related.basis == .citation ? L10n.text("Cited recordings · check the original context.") : L10n.text("Possible matching recordings · relevance is inferred from shared words."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if loading { ProgressView(L10n.text("Checking original evidence…")) }
+                ErrorNote(message: error)
+                if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
+                if related.ids.isEmpty { Text(L10n.text("No linked or matching recordings for this topic.")).foregroundStyle(.secondary) }
+                ForEach(currentSources, id: \.["id"].text) { source in
+                    RecapEvidenceView(source: source, point: point, topic: title, onCorrect: { refresh = UUID(); onCorrect?() })
                 }
             }
-        }.font(.subheadline).disclosureGroupStyle(RecapDisclosureStyle())
+            if !loading && error == nil && !related.ids.isEmpty {
+                DayAtGlanceSections(day: day, topicSources: Set(currentSources.map { $0["id"].text }), topicPassages: passages, topicVersions: Dictionary(uniqueKeysWithValues: currentSources.map { ($0["id"].text, $0["source_version"].text) }))
+            }
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .disclosureGroupStyle(RecapDisclosureStyle())
+            .task(id: loadKey) { await loadSources() }
+            .onChange(of: phase) { _, value in if value == .active { refresh = UUID() } }
+            .refreshable { refresh = UUID() }
+    }
+
+    private func loadSources() async {
+        let key = loadKey
+        loading = true; error = nil; currentSources = []
+        defer { if key == loadKey { loading = false } }
+        do {
+            var incoming: [JSONValue] = []
+            for id in related.ids { incoming.append(try await model.client().request("v1/transcripts/\(id)")) }
+            guard !Task.isCancelled, key == loadKey else { return }
+            currentSources = incoming
+        } catch { if !Task.isCancelled, key == loadKey { self.error = L10n.error(error) } }
     }
 }
 
@@ -165,6 +176,7 @@ private struct RecapEvidenceView: View {
     let onCorrect: (() -> Void)?
     @Environment(AppModel.self) private var model
     @State private var selected: SourceSelection?
+    @State private var selectedStart: TimeInterval?
     @State private var fresh: JSONValue?
     @State private var error: String?
     @State private var loading = false
@@ -196,15 +208,22 @@ private struct RecapEvidenceView: View {
                     ForEach(sections, id: \.start) { section in
                         SourceTranscriptView(source: evidence, editing: false, startOffset: section.start, endOffset: section.end)
                             .padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(Theme.accent.opacity(0.3)).frame(width: 3) }
+                        if evidence["audio_available"] != .bool(false),
+                           let chapter = evidence["sections"].array.first(where: { $0["start_offset"].integer == section.start }),
+                           case .number(let seconds) = chapter["start_seconds"], seconds.isFinite, seconds >= 0 {
+                            Button {
+                                selectedStart = seconds; selected = SourceSelection(source: evidence)
+                            } label: { Label(L10n.text("Listen from this topic"), systemImage: "gobackward") }
+                        }
                     }
                 }
                 ImportanceButton(target: .init(kind: "source", id: evidence["id"].text), label: "recording")
-                Button { selected = SourceSelection(source: evidence) } label: { Label(L10n.text("Full recording & tools"), systemImage: "waveform") }
+                Button { selectedStart = nil; selected = SourceSelection(source: evidence) } label: { Label(L10n.text("Full recording & tools"), systemImage: "waveform") }
                     .buttonStyle(.borderless)
             }
         }.padding(.vertical, 10)
             .sheet(item: $selected) { selection in
-                SourceDetail(source: selection.source, onCorrect: { refresh = UUID(); onCorrect?() })
+                SourceDetail(source: selection.source, onCorrect: { refresh = UUID(); onCorrect?() }, startAt: selectedStart)
             }
             .task(id: identity) {
                 let requested = identity

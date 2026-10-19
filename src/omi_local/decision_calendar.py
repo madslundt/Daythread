@@ -83,57 +83,69 @@ def export_calendar(memory, key: str, body: CalendarExportRequest) -> dict:
     with memory.store.connect() as db:
         db.execute("BEGIN")
         row, _ = current_decision(memory.store, key, body.expected_version, db)
-        item = body.suggestion
-        if item.location_trigger:
-            raise ValueError(
-                "Open this follow-up on iPhone to confirm its place and location alert"
-            )
-        start, end, defaults_note = item.start_at, item.end_at, ""
-        component = "VEVENT" if item.kind == "event" else "VTODO"
-        if item.kind == "event":
-            if body.use_calendar_defaults and (start is None or end is None):
-                start, end, defaults_note = compose_dates(item, memory.settings.timezone)
-            if not start or not end:
-                raise ValueError("Choose both start and end before exporting an event")
-            if item.all_day and end.date() <= start.date():
-                raise ValueError("All-day event end date must follow its start date (exclusive)")
-        schedule = item.start_at if item.kind == "event" else item.due_at
-        schedule_key = calendar_time("AT", schedule, item.all_day) if schedule else "undated"
-        if item.kind == "event" and schedule is None and item.end_at:
-            schedule_key = calendar_time("END", item.end_at, item.all_day)
-        uid = uuid5(
-            NAMESPACE_URL, f"omi-local:decision:{key}:{item.kind}:{item.title}:{schedule_key}"
+        return calendar_file(key, row["version"], body, memory.settings.timezone)
+
+
+def calendar_file(
+    key: str,
+    version: int,
+    body: CalendarExportRequest,
+    timezone: str,
+    *,
+    context: str = "decision",
+) -> dict:
+    """Serialize a reviewed follow-up after its owning context checked the evidence."""
+    item = body.suggestion
+    if item.location_trigger:
+        raise ValueError(
+            "Open this follow-up on iPhone to confirm its place and location alert"
         )
-        lines = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            "PRODID:-//Daythread//Decision follow-ups//EN",
-            "CALSCALE:GREGORIAN",
-            f"BEGIN:{component}",
-            f"UID:{uid}@omi-local",
-            calendar_time("DTSTAMP", utc_now(), False),
-            f"SEQUENCE:{row['version']}",
-            f"SUMMARY:{escape(item.title)}",
-            "DESCRIPTION:"
-            + escape(
-                "\n\n".join(
-                    filter(None, [item.notes, item.reason, defaults_note, f"Omi decision: {key}"])
-                )
-            ),
+    start, end, defaults_note = item.start_at, item.end_at, ""
+    component = "VEVENT" if item.kind == "event" else "VTODO"
+    if item.kind == "event":
+        if body.use_calendar_defaults and (start is None or end is None):
+            start, end, defaults_note = compose_dates(item, timezone)
+        if not start or not end:
+            raise ValueError("Choose both start and end before exporting an event")
+        if item.all_day and end.date() <= start.date():
+            raise ValueError("All-day event end date must follow its start date (exclusive)")
+    schedule = item.start_at if item.kind == "event" else item.due_at
+    schedule_key = calendar_time("AT", schedule, item.all_day) if schedule else "undated"
+    if item.kind == "event" and schedule is None and item.end_at:
+        schedule_key = calendar_time("END", item.end_at, item.all_day)
+    uid = uuid5(
+        NAMESPACE_URL, f"omi-local:{context}:{key}:{item.kind}:{item.title}:{schedule_key}"
+    )
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        f"PRODID:-//Daythread//{context.title()} follow-ups//EN",
+        "CALSCALE:GREGORIAN",
+        f"BEGIN:{component}",
+        f"UID:{uid}@omi-local",
+        calendar_time("DTSTAMP", utc_now(), False),
+        f"SEQUENCE:{version}",
+        f"SUMMARY:{escape(item.title)}",
+        "DESCRIPTION:"
+        + escape(
+            "\n\n".join(
+                filter(None, [item.notes, item.reason, defaults_note, f"Omi {context}: {key}"])
+            )
+        ),
+    ]
+    if item.location:
+        lines.append(f"LOCATION:{escape(item.location)}")
+    if item.kind == "event":
+        lines += [
+            calendar_time("DTSTART", start, item.all_day),
+            calendar_time("DTEND", end, item.all_day),
         ]
-        if item.location:
-            lines.append(f"LOCATION:{escape(item.location)}")
-        if item.kind == "event":
-            lines += [
-                calendar_time("DTSTART", start, item.all_day),
-                calendar_time("DTEND", end, item.all_day),
-            ]
-        else:
-            lines.append("STATUS:NEEDS-ACTION")
-            if item.due_at:
-                lines.append(calendar_time("DUE", item.due_at, item.all_day))
-        lines += [f"END:{component}", "END:VCALENDAR"]
-        return {
-            "filename": f"omi-{item.kind}-{key}.ics",
-            "content": "\r\n".join(fold(line) for line in lines) + "\r\n",
-        }
+    else:
+        lines.append("STATUS:NEEDS-ACTION")
+        if item.due_at:
+            lines.append(calendar_time("DUE", item.due_at, item.all_day))
+    lines += [f"END:{component}", "END:VCALENDAR"]
+    return {
+        "filename": f"omi-{item.kind}-{key}.ics",
+        "content": "\r\n".join(fold(line) for line in lines) + "\r\n",
+    }

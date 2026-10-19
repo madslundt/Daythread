@@ -3,10 +3,11 @@
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime
 from uuid import uuid4
 
-from .decisions import DecisionContent, DecisionCreate, DecisionEvent
+from .decisions import Anchor, DecisionContent, DecisionCreate, DecisionEvent
 from .domain import EvidenceChanged, stamp, utc_now
 
 DECISION_SCHEMA = """
@@ -70,11 +71,13 @@ def view(row: sqlite3.Row) -> dict:
     return result
 
 
-def validate_content(db: sqlite3.Connection, content: DecisionContent) -> tuple[str, str]:
+def validate_content(
+    db: sqlite3.Connection, content: DecisionContent, *, extra_anchors: Iterable[Anchor] = ()
+) -> tuple[str, str]:
     """Validate Unicode code point anchors, never infer support from source membership."""
     starts, ends = [], []
     choice_ids = {str(a.source_id) for a in content.choice.evidence}
-    for anchor in content.anchors():
+    for anchor in [*content.anchors(), *extra_anchors]:
         row = db.execute("SELECT * FROM audio WHERE id=?", (str(anchor.source_id),)).fetchone()
         if not row or row["source_version"] != anchor.source_version or row["state"] != "done":
             raise EvidenceChanged("Source was removed or corrected; refresh evidence")

@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RecapContent } from "./RecapContent";
 import { RecapEvidence } from "./RecapEvidence";
-import { itemSources, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText } from "./recapItems";
+import { RecapTopic } from "./RecapTopic";
+import { currentRecapPassage, itemSources, recapBrowserTopics, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText, recapTopics, topicFocus } from "./recapItems";
 import type { Source } from "./types";
 
 const sources: Source[] = [
@@ -12,6 +13,15 @@ const sources: Source[] = [
 ];
 
 describe("day recap interactions", () => {
+  it("offers a whole-day reading view and a searchable topic path without separate task state", () => {
+    const html = renderToStaticMarkup(<RecapContent text={"## Cocoa\nA test with dark chocolate.\n## Follow-ups\n- Buy cocoa"}
+      day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} />);
+    expect(html).toContain("Day overview");
+    expect(html).toContain("Explore topics");
+    expect(html).toContain("Explore topic: Cocoa");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("saved in this browser");
+  });
   it("groups Markdown and bold section headings without changing saved point keys", () => {
     const text = `## Diary Recap: 2026-10-16\n\n**Highlights**\n- **Gym** — A workout [${sources[0].id}].\n\n## Follow-ups\n- Call Sam`;
     const parts = recapParts(text);
@@ -40,14 +50,14 @@ describe("day recap interactions", () => {
     expect(recapReadingText("Bring [the original] notes.")).toBe("Bring [the original] notes.");
   });
 
-  it("renders recap groups and full accessible point names in the compact reading view", () => {
+  it("keeps the whole-day reading view readable and offers topic drill-down", () => {
     const html = renderToStaticMarkup(<RecapContent
       text={`**Highlights**\n- **Gym** — A workout [${sources[0].id}].\n## Follow-ups\n- Call Sam`}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact
     />);
-    expect(html.match(/class="recap-group"/g)).toHaveLength(2);
-    expect(html.match(/class="recap-group" open=""/g)).toHaveLength(1);
-    expect(html).toContain("aria-expanded=\"false\"");
+    expect(html).toContain('aria-pressed="true">Day overview');
+    expect(html).toContain('aria-label="Explore topic: Gym"');
+    expect(html).toContain("Follow-ups mentioned in the recap");
     expect(html).toContain("A workout.");
     expect(html).not.toContain(sources[0].id);
   });
@@ -64,8 +74,9 @@ describe("day recap interactions", () => {
     const text = `## Cocoa\nA test with dark chocolate.\n- Milk frother and cocoa [${sources[0].id}].`;
     expect(recapGroupSummary(recapParts(text).slice(1))).toBe("A test with dark chocolate.");
     expect(recapGroupSummary(recapParts(`- Cocoa [${sources[0].id}].`))).toBe("Cocoa.");
-    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact />);
-    expect(html).toContain('class="recap-group-summary">A test with dark chocolate.');
+    const html = renderToStaticMarkup(<RecapTopic title="Cocoa" parts={recapParts(text).slice(1)} day="2026-10-16" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact={false} expanded />);
+    expect(html).toContain('class="recap-topic-summary"');
+    expect(html).toContain('A test with dark chocolate.');
     expect(html).not.toContain("1 point");
     expect(html).not.toContain("recap-item-button");
     expect(html).toContain('aria-label="Copy summary: Cocoa"');
@@ -163,17 +174,93 @@ describe("day recap interactions", () => {
     expect(itemSources("Review the plans for next week.", [{ ...sources[0], text: "We made plans for next week about something else." }]).sources).toEqual([]);
   });
 
-  it("renders accessible entry controls, optional checks, and escaped model text", () => {
+  it("keeps recorded follow-ups readable without independent checkmarks and escapes model text", () => {
     const html = renderToStaticMarkup(<RecapContent
       text={'- **Gym · 07:15** — A workout.\n\n## Follow-ups\n- [x] <script>alert("unsafe")</script>'}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}}
     />);
-    expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
-    expect(html.match(/type="checkbox"/g)).toHaveLength(1);
-    expect(html).not.toContain("checked=\"\"");
-    expect(html).toContain("Optional checkmarks");
-    expect(html).toContain("saved in this browser");
+    expect(html).toContain('aria-label="Explore topic: Gym · 07:15"');
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).toContain("Review and manage these in the overview below.");
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("adapts flat legacy topics and preserves narrative and follow-up text", () => {
+    const result = recapTopics(recapParts("A useful day.\n- **Gym** — Workout with Sam.\n- **Family** — Lunch plans.\n## Follow-ups\n- Call Sam"), "2026-10-16");
+    expect(result.topics.map((topic) => topic.title)).toEqual(["Gym", "Family"]);
+    expect(recapTopicText(result.introduction)).toBe("A useful day.");
+    expect(result.followups.map((part) => part.text)).toEqual(["Call Sam"]);
+  });
+
+  it("scopes actions to the selected topic's character boundaries within a shared recording", () => {
+    const source = { ...sources[0], text: "Cocoa discussion. Car discussion.", sections: [
+      { title: "Cocoa", start_offset: 0, end_offset: 18 },
+      { title: "Car", start_offset: 18, end_offset: 33 },
+    ] };
+    expect(topicFocus({ title: "Cocoa", parts: [{ kind: "text", text: `A cocoa discussion [${source.id}]` }] }, [source]))
+      .toEqual({ title: "Cocoa", passages: [{ source_id: source.id, start: 0, end: 18 }] });
+    expect(topicFocus({ title: "Unknown", parts: [{ kind: "text", text: "Unrelated." }] }, [source]).passages).toEqual([]);
+  });
+
+  it("separates legacy subjects inside broad headings and keeps their continuation text", () => {
+    const result = recapTopics(recapParts("## Highlights\n- **Gym** — Workout with Sam.\nThe next session is Saturday.\n- **Family** — Lunch plans."), "2026-10-16");
+    expect(result.topics.map((topic) => topic.title)).toEqual(["Gym", "Family"]);
+    expect(recapTopicText(result.topics[0].parts)).toContain("The next session is Saturday.");
+  });
+
+  it("keeps omitted original chapters in topic browsing without adding them to the day synthesis", () => {
+    const first = "🪴 Cocoa trial. ";
+    const second = "We compared garden tools.";
+    const source: Source = { ...sources[0], source_version: "source-1", transcript_version: "text-1", text: first + second, sections: [
+      { title: "Cocoa", start_offset: 0, end_offset: Array.from(first).length },
+      { title: "Garden tools", start_offset: Array.from(first).length, end_offset: Array.from(first + second).length },
+    ] };
+    const text = `## Cocoa\nA useful cocoa trial [${source.id}].`;
+    const synthesized = recapTopics(recapParts(text), "2026-10-16").topics;
+    const topics = recapBrowserTopics(synthesized, [source]);
+    expect(topics.map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools"]);
+    expect(topics[1].parts).toEqual([]);
+    expect(topics[1].originalPassages).toEqual([{ source_id: source.id, source_version: "source-1", transcript_version: "text-1",
+      section: source.sections![1], text: second }]);
+    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[source]} timezone="UTC" onCorrect={() => {}} />);
+    expect(html).toContain("A useful cocoa trial.");
+    expect(html).not.toContain("Garden tools");
+    expect(html).not.toContain(second);
+    const separate = { ...source, id: sources[1].id, sections: [source.sections![0]] };
+    expect(recapBrowserTopics(synthesized, [source, separate]).map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools", "Cocoa"]);
+  });
+
+  it("groups explicitly shared original chapters across parts and rejects invalid bounds", () => {
+    const one: Source = { ...sources[0], text: "First part.", sections: [
+      { title: "Garden", chapter_id: "chapter-1", start_offset: 0, end_offset: 11 },
+      { title: "Invalid", start_offset: 0, end_offset: 50 },
+    ] };
+    const two: Source = { ...sources[1], text: "Second part.", sections: [
+      { title: "Garden", chapter_id: "chapter-1", start_offset: 0, end_offset: 12 },
+    ] };
+    const topics = recapBrowserTopics([], [one, two, one]);
+    expect(topics).toHaveLength(1);
+    expect(topics[0].originalPassages?.map((passage) => passage.source_id)).toEqual([one.id, two.id]);
+    expect(recapBrowserTopics([], [{ ...one, state: "queued" }, { ...two, text: null }])).toEqual([]);
+    expect(recapBrowserTopics([], [one, { ...two, sections: [{ ...two.sections![0], chapter_id: "chapter-2" }] }])).toHaveLength(2);
+  });
+
+  it("revalidates original section offsets, source revisions and exact quoted text before use", () => {
+    const source: Source = { ...sources[0], source_version: "source-1", transcript_version: "text-1", text: "No. Later.", sections: [
+      { title: "Reply", start_offset: 0, end_offset: 3, start_seconds: 2, end_seconds: 4 },
+      { title: "Other", start_offset: 3, end_offset: 10 },
+    ] };
+    const passage = recapBrowserTopics([], [source])[0].originalPassages![0];
+    const current = currentRecapPassage(passage, source)!;
+    expect(current.sections).toEqual([source.sections![0]]);
+    expect(currentRecapPassage(passage, { ...source, transcript_version: "text-2" })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, source_version: "source-2" })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, text: "Go. Later." })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, sections: [source.sections![1]] })).toBeUndefined();
+    const html = renderToStaticMarkup(<RecapEvidence source={current} point="" sections={current.sections} timezone="UTC" onCorrect={() => {}} />);
+    expect(html).toContain("No.");
+    expect(html).not.toContain("Later.");
+    expect(html).toContain("#t=2,4");
   });
 });

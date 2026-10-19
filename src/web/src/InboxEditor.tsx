@@ -1,7 +1,10 @@
 import { statusLabel } from "./statusLabels";
 import { t, source } from "./i18n";
 import { useEffect, useRef, useState } from "react";
+import { ActionFollowups } from "./ActionFollowups";
+import { actionableKind } from "./dayHighlights";
 import { ApiError, audioUrl, errorMessage, newId, request } from "./api";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { dateTimeLabel } from "./format";
 import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
@@ -48,6 +51,8 @@ export function InboxEditor({
   }, [resource.data, base]);
   const conflict =
     base && resource.data && base.version !== resource.data.version;
+  const unsaved = Boolean(base && draft && (status !== base.status || duplicate !== (base.duplicate_of || "") || reset.length ||
+    ([...Object.keys(base.proposal), "user_note"] as (keyof InboxFields)[]).some((field) => JSON.stringify(draft[field]) !== JSON.stringify(base[field]))));
   function change<K extends keyof InboxFields>(key: K, value: InboxFields[K]) {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
     setReset((r) => r.filter((f) => f !== key));
@@ -62,7 +67,7 @@ export function InboxEditor({
     resource.setData(item);
     setSaved(t("Saved to your local backend."));
     operation.current = null;
-    window.dispatchEvent(new Event("omi:archive-changed"));
+    window.dispatchEvent(new Event("omi:inbox-changed"));
   }
   async function save() {
     if (!draft || !base || busy) return;
@@ -70,7 +75,7 @@ export function InboxEditor({
     setError("");
     setSaved("");
     const changes = Object.fromEntries(
-      (Object.keys(base.proposal) as (keyof InboxFields)[])
+      ([...Object.keys(base.proposal), "user_note"] as (keyof InboxFields)[])
         .filter(
           (k) =>
             !reset.includes(k) &&
@@ -188,6 +193,10 @@ export function InboxEditor({
                 <option value="commitment">{t("Commitment")}</option>
                 <option value="deadline">{t("Deadline")}</option>
                 <option value="question">{t("Question")}</option>
+                <option value="reminder">{statusLabel("reminder")}</option>
+                <option value="event">{statusLabel("event")}</option>
+                <option value="reflection">{statusLabel("reflection")}</option>
+                <option value="note">{statusLabel("note")}</option>
               </select>
             </label>
             <label>
@@ -198,15 +207,14 @@ export function InboxEditor({
                 onChange={(e) => change("title", e.target.value)}
               />
             </label>
-            <label>
+            {actionableKind(draft.kind) ? <><label>
               {t("Owner")}{" "}<input
                 maxLength={150}
                 placeholder={t("Unknown")}
                 value={draft.owner || ""}
                 onChange={(e) => change("owner", e.target.value || null)}
               />
-            </label>
-            <label>
+            </label><label>
               {t("Deadline precision")}{" "}<select
                 value={draft.deadline?.precision || "unknown"}
                 onChange={(e) =>
@@ -221,8 +229,17 @@ export function InboxEditor({
                 <option value="date">{t("Date only")}</option>
                 <option value="datetime">{t("Exact instant")}</option>
               </select>
+            </label></> : null}
+            <label>
+              {draft.kind === "question" ? t("Your answer") : t("Your notes")}
+              <textarea rows={4} maxLength={8000} value={draft.user_note || ""} onChange={(event) => change("user_note", event.target.value || null)} />
             </label>
-            {draft.deadline?.precision === "date" ? (
+            <p className="caption">{t("Your own words. Saving notes does not change the recording or automatically close this item.")}</p>
+            {base.user_note_provenance ? <button type="button" className="text-button" onClick={() => {
+              setDraft((value) => value ? { ...value, user_note: null } : value);
+              setReset((value) => [...new Set([...value, "user_note" as const])]);
+            }}>{t("Clear personal note on save")}</button> : null}
+            {actionableKind(draft.kind) && draft.deadline?.precision === "date" ? (
               <label>
                 {t("Due date")}{" "}<input
                   type="date"
@@ -232,7 +249,7 @@ export function InboxEditor({
                 />
               </label>
             ) : null}
-            {draft.deadline?.precision === "datetime" ? (
+            {actionableKind(draft.kind) && draft.deadline?.precision === "datetime" ? (
               <label>
                 {t("Due instant with UTC offset")}{" "}<input
                   required
@@ -242,13 +259,13 @@ export function InboxEditor({
                 />
               </label>
             ) : null}
-            <label>
+            {actionableKind(draft.kind) ? <label>
               {t("Deadline timezone")}{" "}<input
                 required
                 value={draft.deadline?.timezone || timezone}
                 onChange={(e) => updateDeadline({ timezone: e.target.value })}
               />
-            </label>
+            </label> : null}
             <label>
               {t("Status")}{" "}<select
                 value={status}
@@ -256,7 +273,7 @@ export function InboxEditor({
               >
                 <option value="pending">{t("Pending")}</option>
                 <option value="completed">
-                  {draft.kind === "question" ? t("Answered") : t("Completed")}
+                  {draft.kind === "question" ? t("Answered") : !actionableKind(draft.kind) ? t("Reviewed") : t("Completed")}
                 </option>
                 <option value="dismissed">{t("Dismissed")}</option>
               </select>
@@ -330,9 +347,7 @@ export function InboxEditor({
                   {span.current ? t("Current transcript") : t("Prior transcript")} {t("· chunk-level timing ·")}{" "}{span.source_id}
                 </p>
                 {span.audio_available ? (
-                  <audio
-                    controls
-                    preload="none"
+                  <RecordingAudioPlayer
                     src={audioUrl(span.source_id)}
                   />
                 ) : (
@@ -353,6 +368,7 @@ export function InboxEditor({
       ) : (
         <Loading />
       )}
+      {resource.data && !conflict ? <ActionFollowups key={`${id}:${resource.data.version}`} item={resource.data} timezone={timezone} disabled={busy || unsaved} /> : null}
     </dialog>
   );
 }

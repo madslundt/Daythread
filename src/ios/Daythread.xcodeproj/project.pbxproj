@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DA7C0A140000000000000001 /* RecapOriginalTopicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */; };
+		DA7C0A130000000000000001 /* DayAtGlanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A130000000000000002 /* DayAtGlanceView.swift */; };
+		DA7C0A120000000000000001 /* InboxFollowUpsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A120000000000000002 /* InboxFollowUpsView.swift */; };
 		DA7C0A110000000000000001 /* ChatConversationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C0A110000000000000002 /* ChatConversationContent.swift */; };
 		02341B5F191F35D69EE5BA68 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 38F938352BFD5D3D1451DC01 /* Assets.xcassets */; };
 		0531F8509E0E4DF0AB46A0FC /* OmiBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75EEBB6559DA06DCF7FF29D3 /* OmiBluetooth.swift */; };
@@ -99,6 +102,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapOriginalTopicsView.swift; sourceTree = "<group>"; };
+		DA7C0A130000000000000002 /* DayAtGlanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAtGlanceView.swift; sourceTree = "<group>"; };
+		DA7C0A120000000000000002 /* InboxFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFollowUpsView.swift; sourceTree = "<group>"; };
 		DA7C0A110000000000000002 /* ChatConversationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConversationContent.swift; sourceTree = "<group>"; };
 		0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDetail.swift; sourceTree = "<group>"; };
 		08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionFollowUpsView.swift; sourceTree = "<group>"; };
@@ -237,12 +243,14 @@
 				2721B9908BFBD82A5D7663D7 /* DaythreadApp.swift */,
 				71A187A0A53A548A61D917AB /* DaythreadLicense.txt */,
 				18BD1FFD6D04485108E8C274 /* DayView.swift */,
+				DA7C0A130000000000000002 /* DayAtGlanceView.swift */,
 				2971E2A1230492061E3C7FBA /* DecisionEditor.swift */,
 				08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */,
 				D3B4927CDA1C6E5BD24180FE /* DecisionModels.swift */,
 				D9B231914E1791C040EBABEC /* DecisionsView.swift */,
 				99EFACA8846B73A9CC8761F6 /* DiaryView.swift */,
 				0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */,
+				DA7C0A120000000000000002 /* InboxFollowUpsView.swift */,
 				B6BE7FB9BFAA9D45BEFA7EFA /* InboxView.swift */,
 				1E2ADF1FD7DEBAEDE16729A5 /* Info.plist */,
 				90A400E041D6B8F8DB948FA3 /* LabelDecisionLinkView.swift */,
@@ -261,6 +269,7 @@
 				098D6B2A5946A45042E68B98 /* PhoneRecorder.swift */,
 				F26052510BCFA46A84F81952 /* PhoneRecordingSection.swift */,
 				29EF87E070429C693E0345F2 /* RecapContentView.swift */,
+				DA7C0A140000000000000002 /* RecapOriginalTopicsView.swift */,
 				99E42A2B1223F6C7FFBBF343 /* RecapHistoryView.swift */,
 				88344B9913B8B63E905C1D60 /* RecordingAudioPlayer.swift */,
 				E96729107C2B61E0DF8DF796 /* RecordingImporter.swift */,
@@ -446,6 +455,7 @@
 				F0D86B200F8B37090F349894 /* ConversationPrepView.swift in Sources */,
 				A6AB75ADE8A4F593CC1B638A /* ConversationTagsView.swift in Sources */,
 				5F58C435E7754AE9BAC1A1C7 /* DayView.swift in Sources */,
+				DA7C0A130000000000000001 /* DayAtGlanceView.swift in Sources */,
 				40EC2BCFE8A3EF97AAB11402 /* DaythreadApp.swift in Sources */,
 				7755AE4258FFBAB63F9358A7 /* DecisionEditor.swift in Sources */,
 				7AE2F2C34D5A06FBFFA86806 /* DecisionFollowUpsView.swift in Sources */,
@@ -453,6 +463,7 @@
 				1193826A7496FFF93F272CC1 /* DecisionsView.swift in Sources */,
 				0E7B8F8E814C28BCEFCF5873 /* DiaryView.swift in Sources */,
 				2B3AC4B187300F27A7226FBE /* InboxDetail.swift in Sources */,
+				DA7C0A120000000000000001 /* InboxFollowUpsView.swift in Sources */,
 				DD5A23DA9B7A294179F53661 /* InboxView.swift in Sources */,
 				BB8076F4C2F72E5BF2807565 /* LabelDecisionLinkView.swift in Sources */,
 				BB65DDDD5D6C9B15B47336AB /* LabelManagementView.swift in Sources */,
@@ -470,6 +481,7 @@
 				42EB4AE14EF594826F1137AF /* PhoneRecorder.swift in Sources */,
 				A7FDEC49086B665391472D49 /* PhoneRecordingSection.swift in Sources */,
 				1345FE32B947E92896337795 /* RecapContentView.swift in Sources */,
+				DA7C0A140000000000000001 /* RecapOriginalTopicsView.swift in Sources */,
 				328C18D503CA89BAC38FFA3A /* RecapHistoryView.swift in Sources */,
 				47FDD87E606B95AA4DA842B4 /* RecordingAudioPlayer.swift in Sources */,
 				881D221CC42F8DFA1DF56361 /* RecordingImportTransport.swift in Sources */,

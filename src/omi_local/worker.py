@@ -14,7 +14,7 @@ from .decisions import ExtractionRequest
 from .domain import utc_now, wav_duration
 from .inbox_jobs import InboxJobs
 from .inference import Inference
-from .inference_errors import InferenceDisabled
+from .inference_errors import InferenceDisabled, InferenceError
 from .recaps import digest
 from .recording_topics import run_topics
 from .service import Memory
@@ -183,7 +183,8 @@ async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) 
             if batcher:
                 batcher.pending.pop(key, None)
         except Exception as exc:
-            logger.warning("Automatic recap will retry (%s)", type(exc).__name__)
+            reason = str(exc) if isinstance(exc, InferenceError) else type(exc).__name__
+            logger.warning("Automatic recap will retry (%s: %s)", type(exc).__name__, reason)
 
 
 async def scheduled_decisions(memory: Memory) -> None:

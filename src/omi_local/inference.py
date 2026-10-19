@@ -411,6 +411,11 @@ class Inference(Transcription, InferenceUsage):
         # Large chat also uses this reducer, but keeps its existing language behavior.
         if answer_task is None:
             task += summary_language_instruction(self.settings.summary_language)
+        allowed_ids = sorted({source["id"] for source in sources})
+        task += (
+            " Cite only original source UUIDs copied exactly from this allowed list; do not "
+            "invent or cite any other UUID: " + ", ".join(allowed_ids) + "."
+        )
         for _ in range(8):
             batches: list[str] = []
             current = ""

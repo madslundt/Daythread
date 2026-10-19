@@ -143,6 +143,8 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
     assert len(calls) > 1 if large else len(calls) == 1
     for body in calls:
         task = json.loads(body["messages"][1]["content"])["task"]
+        assert "Cite only original source UUIDs copied exactly" in task
+        assert key in task
         if language == "auto":
             assert "language with code" not in task
             assert "Use the transcript language." in task

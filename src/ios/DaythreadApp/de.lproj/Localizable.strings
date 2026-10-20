@@ -244,7 +244,6 @@
 "Choose a profile in Settings → Profiles to import conversations." = "Wählen Sie ein Profil in Einstellungen → Profile, um Konversationen zu importieren.";
 "Choose a profile to open recordings, diary and other pages. All settings remain available." = "Wählen Sie ein Profil, um Aufnahmen, Tagebuch und andere Seiten zu öffnen. Alle Einstellungen bleiben verfügbar.";
 "Choose a profile…" = "Wählen Sie ein Profil…";
-"Choose a recording no larger than 100 MB." = "Wählen Sie eine Aufnahme, die nicht größer als 100 MB ist.";
 "Choose a translation language enabled in Settings" = "Wählen Sie eine in den Einstellungen aktivierte Übersetzungssprache";
 "Choose a valid recording date and time." = "Wählen Sie ein gültiges Aufzeichnungsdatum und eine Uhrzeit.";
 "Choose after checking evidence" = "Wählen Sie nach Prüfung der Beweise";
@@ -1518,7 +1517,7 @@
 "Speech, language models, keys & advanced options" = "Sprache, Sprachmodelle, Schlüssel und erweiterte Optionen";
 "Speech-to-text (STT)" = "Sprache zu Text (STT)";
 "Split destination already exists" = "Split-Ziel existiert bereits";
-"Split recordings longer than two hours before uploading." = "Split Aufnahmen länger als zwei Stunden vor dem Hochladen.";
+"Split recordings longer than twelve hours before uploading." = "Teilen Sie Aufnahmen, die länger als zwölf Stunden sind, vor dem Hochladen auf.";
 "Split selected assignments" = "Ausgewählte Zuweisungen teilen";
 "Stale phone observation" = "Veraltete Telefonbeobachtung";
 "Start a new chat to choose a different scope" = "Starten Sie einen neuen Chat, um einen anderen Bereich zu wählen";
@@ -1769,7 +1768,7 @@
 "Voice profile" = "Stimmprofil";
 "Voice quality duration exceeds recording duration" = "Sprachqualität überschreitet die Aufnahmedauer";
 "Voice suggestions passed the configured recording evaluation. Confirm each suggestion before its name or example is saved." = "Sprachvorschläge bestanden die konfigurierte Aufnahmeauswertung. Bestätigen Sie jeden Vorschlag, bevor sein Name oder Beispiel gespeichert wird.";
-"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file." = "WAV, M4A, MP3 und andere Audioformate, die von iPhone unterstützt werden. Bis zu 100 MB und zwei Stunden pro Datei.";
+"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file." = "WAV, M4A, MP3 und andere vom iPhone unterstützte Audioformate. Bis zu zwölf Stunden pro Datei.";
 "Wait for this conversation's transcription to finish" = "Warten Sie, bis die Transkription dieses Gesprächs beendet ist";
 "Waiting for Wi-Fi" = "Warten auf Wi-Fi";
 "Waiting for connection" = "Warten auf Verbindung";
@@ -2713,3 +2712,9 @@
 "Display item changed; refresh and try again" = "Das Anzeigeelement wurde geändert; aktualisiere die Ansicht und versuche es erneut";
 "Display translation failed. Original text is available." = "Die Übersetzung ist fehlgeschlagen. Der Originaltext ist verfügbar.";
 "Topic end must follow its start" = "Das Ende des Themas muss nach seinem Anfang liegen";
+"Invalid audio range" = "Ungültiger Audiobereich";
+"Recording audio is incomplete" = "Die Audiodaten der Aufnahme sind unvollständig";
+"Recording audio no longer matches its capture bounds" = "Die Audiodaten stimmen nicht mehr mit dem Aufnahmezeitraum überein";
+"Recording audio unavailable" = "Audioaufnahme nicht verfügbar";
+"Recording unavailable" = "Aufnahme nicht verfügbar";
+"Recording upload is incomplete" = "Der Upload der Aufnahme ist unvollständig";

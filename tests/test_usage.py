@@ -149,7 +149,8 @@ def test_unknown_charges_are_incomplete_and_direct_providers_are_separate(tmp_pa
     assert totals["unknown_credit_attempts"] == 2
     assert totals["provider_attempts"] == 1
     assert totals["summary_credits"] == 1.25
-    assert totals["other_credits"] == .75
+    assert totals["chat_credits"] == .75
+    assert totals["other_credits"] == 0
     assert totals["transcription_credits"] == 0
     assert totals["filter_unavailable_recordings"] == 1
     assert totals["filtered_percent"] == 0
@@ -284,6 +285,61 @@ def test_summary_minutes_are_per_pass_durable_and_historical_duration_stays_unkn
     assert report["totals"]["summary_unknown_duration_runs"] == 2
     assert report["days"][0]["summary_source_minutes"] == 32
     assert report["days"][0]["summary_unknown_duration_runs"] == 2
+    assert report["totals"]["summary_unique_source_minutes"] == 0
+    assert report["totals"]["summary_unknown_coverage_runs"] == 3
+
+
+def test_unique_summary_coverage_unions_passes_and_filters_processing_month(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+    for start, end, seconds, created in [
+        ("10:00", "10:20", 1200, "2026-10-18T10:00:00Z"),
+        ("10:10", "10:35", 1500, "2026-10-19T10:00:00Z"),
+        ("10:00", "11:00", 3600, "2026-11-01T10:00:00Z"),
+    ]:
+        ledger.record(summary_filter(
+            source_seconds=seconds, source_duration_complete=True, created_at=created,
+            source_intervals=[[f"2026-10-18T{start}:00Z", f"2026-10-18T{end}:00Z"]],
+        ))
+    report = UsageLedger(Store(tmp_path)).report(month="2026-10")
+    assert report["totals"]["summary_source_minutes"] == 45
+    assert report["totals"]["summary_unique_source_minutes"] == 35
+    assert report["totals"]["summary_unknown_coverage_runs"] == 0
+    assert [day["summary_unique_source_minutes"] for day in report["days"]] == [25, 20]
+    assert ledger.report(month="2026-11")["totals"]["summary_unique_source_minutes"] == 60
+
+
+@pytest.mark.parametrize("category", ["translation", "chat"])
+def test_text_task_usage_keeps_retries_and_deduplicates_receipts(tmp_path, category):
+    ledger = UsageLedger(Store(tmp_path))
+    event = summary_attempt(task=category, operation_id="same")
+    ledger.record(event)
+    ledger.record(event)
+    ledger.record({**event, "attempt_id": str(uuid4())})
+    ledger.record(summary_attempt(task=category, credit_units=None, billing="provider",
+                                  input_tokens=None, output_tokens=None,
+                                  submitted_characters=None))
+    report = UsageLedger(Store(tmp_path)).report(month="2026-10")
+    for totals in (report["totals"], report["days"][0]):
+        assert totals[f"{category}_requests"] == 3
+        assert totals[f"{category}_credits"] == 1.2
+        assert totals[f"{category}_submitted_characters"] == 1800
+        assert totals[f"{category}_input_tokens"] == 250
+        assert totals[f"{category}_output_tokens"] == 45
+        assert totals[f"{category}_unknown_token_requests"] == 1
+        assert totals[f"{category}_unknown_character_requests"] == 1
+        assert totals["summary_requests"] == totals["other_credits"] == 0
+    assert ledger.report(month="2026-11")["totals"][f"{category}_requests"] == 0
+
+
+@pytest.mark.parametrize("intervals", [
+    None, "invalid", [["bad", "bad"]], [["2026-10-18T10:00:00", "2026-10-18T10:01:00"]],
+    [["2026-10-18T10:02:00Z", "2026-10-18T10:00:00Z"]], [[True, False]], [],
+])
+def test_invalid_summary_coverage_is_rejected(tmp_path, intervals):
+    with pytest.raises(ValueError):
+        UsageLedger(Store(tmp_path)).record(summary_filter(
+            source_seconds=60, source_duration_complete=True, source_intervals=intervals,
+        ))
 
 
 @pytest.mark.parametrize("changes", [

@@ -8,7 +8,13 @@ import httpx
 
 from .domain import stamp, utc_now, wav_duration
 from .inference_errors import InferenceError, InferenceTruncated, check_inference_response
-from .inference_usage import InferenceUsage, reported_tokens, submitted_characters, summary_usage
+from .inference_usage import (
+    InferenceUsage,
+    llm_usage,
+    reported_tokens,
+    submitted_characters,
+    summary_usage,
+)
 from .settings import LLMTask, Settings
 from .summary_filter import NO_CONTENT, filter_summary_sources
 from .transcription import Transcription
@@ -324,6 +330,7 @@ class Inference(Transcription, InferenceUsage):
             json.dumps({"question": question, "previous_question": previous_question}),
             "You rewrite memory search queries. Return only the requested JSON object.",
             200,
+            usage_task="chat",
         )
         try:
             query = json.loads(raw)["query"]
@@ -508,13 +515,14 @@ class Inference(Transcription, InferenceUsage):
         if len(payload) > 16000 and not all("matches" in row for row in sources):
             if trace is not None:
                 trace["reduction_used"] = True
-            return await self._reduce(
-                sources,
-                "evidence notes relevant to: " + original_question,
-                trace,
-                answer_task=question,
-                on_delta=on_delta,
-            )
+            with llm_usage("chat"):
+                return await self._reduce(
+                    sources,
+                    "evidence notes relevant to: " + original_question,
+                    trace,
+                    answer_task=question,
+                    on_delta=on_delta,
+                )
         if trace is not None:
             trace["model_calls"] += 1
             trace["final_prompt_source_ids"] = self.prompt_source_ids(payload, sources)

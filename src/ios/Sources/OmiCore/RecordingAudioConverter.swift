@@ -35,7 +35,7 @@ public enum RecordingAudioConverter {
         catch { throw RecordingImportError(AppLocalization.source("This recording cannot be decoded on this iPhone. Try a WAV, M4A, or MP3 file.")) }
         let duration = Double(file.length) / file.processingFormat.sampleRate
         guard duration.isFinite, duration > 0 else { throw RecordingImportError(AppLocalization.source("The recording contains no audio.")) }
-        guard duration <= 7200 else { throw RecordingImportError(AppLocalization.source("Split recordings longer than two hours before uploading.")) }
+        guard duration <= Double(RecordingImport.maximumDuration) else { throw RecordingImportError(AppLocalization.source("Split recordings longer than twelve hours before uploading.")) }
         let expectedSamples = Int(ceil(duration * Double(RecordingImport.sampleRate)))
         try RecordingImport.validateSampleCount(expectedSamples)
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(RecordingImport.sampleRate), channels: 1, interleaved: false),

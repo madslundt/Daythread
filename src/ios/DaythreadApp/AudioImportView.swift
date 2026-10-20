@@ -58,7 +58,7 @@ struct AudioImportView: View {
                     }.buttonStyle(.borderedProminent).disabled(importer.locked)
                         .accessibilityIdentifier("import.chooseFiles")
                 } footer: {
-                    Text(L10n.text("WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file."))
+                    Text(L10n.text("WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file."))
                 }
                 ForEach($importer.recordings) { $recording in
                     recordingSection($recording)

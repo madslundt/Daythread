@@ -7,6 +7,9 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
+MAX_RECORDING_SECONDS = 12 * 60 * 60
+MAX_RECORDING_PARTS = MAX_RECORDING_SECONDS // 120
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)

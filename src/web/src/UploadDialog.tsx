@@ -217,7 +217,7 @@ export function UploadDialog({
           {t("Import audio from another phone, voice recorder, or computer, including exported Voice Memos. Choose one or more files and when each recording stopped or began. Long recordings are uploaded in parts automatically.")}{" "}</p>
         <AudioDropArea files={recordings.map((item) => item.file)} busy={locked} dragging={dragging}
           onDragging={setDragging} onChoose={chooseRecording} />
-        <p className="caption" id="audio-file-hint">{t("WAV, M4A, MP3, OGG, FLAC, or another format supported by your browser. Up to 100 MB and two hours per file. Audio is converted locally before upload; keep this window open until it finishes.")}</p>
+        <p className="caption" id="audio-file-hint">{t("WAV, M4A, MP3, OGG, FLAC, or another supported audio format. Up to twelve hours per file. Large compressed recordings may require HTTPS and a recent browser. Audio is converted locally; keep this window open until upload finishes.")}</p>
         {checking ? <p role="status" className="caption">{t("Checking files for duplicates before upload…")}</p> : null}
         {!checking && queue.skipped.size ? <p role="status" className="caption">
           {t("{uploaded} uploaded · {skipped} duplicates skipped.", { uploaded: queue.completed.size, skipped: queue.skipped.size })}</p> : null}

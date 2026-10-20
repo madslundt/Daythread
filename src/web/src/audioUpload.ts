@@ -2,37 +2,8 @@ import { t } from "./i18n";
 import { localDateTimeInput } from "./format";
 import { request, uploadRecording } from "./api";
 import type { ProfileScope } from "./profiles";
-
-export function encodeWav(samples: Float32Array): ArrayBuffer {
-  const result = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(result);
-  const ascii = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i++)
-      view.setUint8(offset + i, text.charCodeAt(i));
-  };
-  ascii(0, "RIFF");
-  view.setUint32(4, result.byteLength - 8, true);
-  ascii(8, "WAVE");
-  ascii(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, 16000, true);
-  view.setUint32(28, 32000, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  ascii(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  for (let i = 0; i < samples.length; i++) {
-    const value = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(
-      44 + i * 2,
-      Math.round(value < 0 ? value * 32768 : value * 32767),
-      true,
-    );
-  }
-  return result;
-}
+import { prepareRecording, type ConvertedRecording } from "./audioConversion";
+export { encodeWav } from "./audioConversion";
 
 export function selectRecording(files: ArrayLike<File>): File {
   if (files.length !== 1)
@@ -41,8 +12,6 @@ export function selectRecording(files: ArrayLike<File>): File {
   if (!file.type.startsWith("audio/") && !/\.(wav|wave|m4a|mp3|mp4|ogg|oga|opus|flac|aac|aiff?|caf|webm)$/i.test(file.name))
     throw new Error(t("Choose an audio file, such as WAV, M4A, or MP3."));
   if (!file.size) throw new Error(t("The recording is empty. Choose another file."));
-  if (file.size > 100_000_000)
-    throw new Error(t("Choose a recording no larger than 100 MB."));
   if ([...file.name].length > 255)
     throw new Error(t("Rename this file to a name of 255 characters or fewer before uploading."));
   return file;
@@ -121,7 +90,7 @@ export class RecordingUploadQueue {
   hasPlan(file: File): boolean { return this.plans.has(file) || this.completed.has(file) || this.skipped.has(file); }
 
   constructor(
-    private decode = decodeRecording,
+    private decode: (file: File, onStage: (stage: string) => void, signal: AbortSignal) => Promise<ConvertedRecording> = prepareRecording,
     private send: (path: string, body: Blob, progress: (sent: number) => void, signal: AbortSignal, scope: ProfileScope) => Promise<unknown> = uploadRecording,
     private backend: RecordingUploadAPI = recordingUploadAPI,
   ) {}
@@ -150,6 +119,7 @@ export class RecordingUploadQueue {
     recording: RecordingSelection, target: string, signal: AbortSignal, scope: ProfileScope,
     onStage: (stage: string) => void, onProgress: (progress: UploadProgress) => void,
   ): Promise<void> {
+    signal = AbortSignal.any([signal, scope.signal]);
     const { file } = recording;
     if (this.completed.has(file) || this.skipped.has(file)) return;
     signal.throwIfAborted();
@@ -163,25 +133,15 @@ export class RecordingUploadQueue {
       this.skipped.set(file, t("Already uploaded as {value0}", { value0: match.source_id || file.name }));
       return;
     }
-    const chunkLength = 16000 * 120;
-    const samples = await this.decode(file, onStage);
+    const audio = await this.decode(file, onStage, signal);
     signal.throwIfAborted();
     scope.signal.throwIfAborted();
     const previous = this.plans.get(file);
-    const bounds = recordingTimes(recording.recordedAt, samples.length, recording.timeReference);
-    onStage(t("Checking the converted audio for duplicates…"));
-    const { sha256 } = await import("@noble/hashes/sha2.js");
-    const digests: string[] = [];
-    for (let offset = 0; offset < samples.length; offset += chunkLength) {
-      signal.throwIfAborted();
-      scope.signal.throwIfAborted();
-      digests.push(bytesToHex(sha256(new Uint8Array(encodeWav(samples.subarray(offset, offset + chunkLength))))));
-      // Yield between parts so cancellation and preparation feedback stay responsive.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    const bounds = recordingTimes(recording.recordedAt, audio.sampleCount, recording.timeReference);
+    const digests = audio.digests;
     const prepared = await this.backend.prepare({
       vendor_id: previous?.vendorId ?? recording.vendorId ?? "manual",
-      file_digest: fileDigest, digests, sample_count: samples.length, source_id: file.name,
+      file_digest: fileDigest, digests, sample_count: audio.sampleCount, source_id: file.name,
       started_at: previous?.startedAt ?? bounds.startedAt.toISOString(),
       ended_at: previous?.endedAt ?? bounds.endedAt.toISOString(), conversation_source_id: target || null,
     }, signal, scope);
@@ -198,23 +158,23 @@ export class RecordingUploadQueue {
       vendorId: prepared.vendor_id ?? "manual",
       startedAt: prepared.started_at, endedAt: prepared.ended_at, sourceId: prepared.source_id,
       recordingId: prepared.recording_id, conversationSourceId: prepared.conversation_source_id || "",
-      sampleCount: samples.length, ids: prepared.parts.map((part) => part.id), uploaded: prepared.parts.map((part) => part.uploaded),
+      sampleCount: audio.sampleCount, ids: prepared.parts.map((part) => part.id), uploaded: prepared.parts.map((part) => part.uploaded),
     };
     this.plans.set(file, current);
     const start = Date.parse(current.startedAt);
     const totalBytes = current.sampleCount * 2 + current.ids.length * 44;
-    const partBytes = (index: number) => Math.min(chunkLength, samples.length - index * chunkLength) * 2 + 44;
+    const chunkLength = 16000 * 120;
+    const partBytes = (index: number) => Math.min(chunkLength, audio.sampleCount - index * chunkLength) * 2 + 44;
     const initialBytes = current.uploaded.reduce((sum, done, index) => sum + (done ? partBytes(index) : 0), 0);
     const attemptStarted = performance.now();
     let confirmedBytes = initialBytes;
-    for (let i = 0; i < current.ids.length; i++) {
-      if (current.uploaded[i]) continue;
+    await audio.readParts(async (body, i) => {
+      if (current.uploaded[i]) return;
       signal.throwIfAborted();
       scope.signal.throwIfAborted();
       const offset = i * chunkLength;
-      const partSamples = samples.subarray(offset, offset + chunkLength);
+      const sampleCount = (body.size - 44) / 2;
       const partStartedAt = new Date(start + offset / 16).toISOString();
-      const body = new Blob([encodeWav(partSamples)], { type: "audio/wav" });
       const reportProgress = (bytes: number) => {
         const sent = confirmedBytes + bytes;
         onProgress({ sent, total: totalBytes, completed: current.uploaded.filter(Boolean).length, parts: current.ids.length,
@@ -234,12 +194,12 @@ export class RecordingUploadQueue {
       scope.signal.throwIfAborted();
       validateUploadReceipt(receipt, {
         id: current.ids[i], device_id: "manual-web", started_at: partStartedAt,
-        ended_at: new Date(start + (offset + partSamples.length) / 16).toISOString(),
+        ended_at: new Date(start + (offset + sampleCount) / 16).toISOString(),
       });
       current.uploaded[i] = true;
       reportProgress(body.size);
       confirmedBytes += body.size;
-    }
+    }, signal);
     this.completed.add(file);
     this.plans.delete(file);
   }
@@ -276,39 +236,6 @@ export function recordingTimes(
       ? t("Choose when the recording stopped, at or before now.")
       : t("This recording would end in the future. Set when it began, or choose Recording ended to enter when it stopped."));
   return { startedAt: new Date(end - duration), endedAt: new Date(end) };
-}
-
-export async function decodeRecording(file: File, onStage?: (stage: string) => void): Promise<Float32Array> {
-  selectRecording([file]);
-  const decoder = new AudioContext();
-  try {
-    onStage?.(t("Reading the recording on this device…"));
-    const bytes = await file.arrayBuffer();
-    onStage?.(t("Decoding audio on this device…"));
-    const decoded = await decoder.decodeAudioData(bytes);
-    if (decoded.duration > 7200)
-      throw new Error(
-        t("Split recordings longer than two hours before uploading."),
-      );
-    onStage?.(t("Converting audio for upload…"));
-    const offline = new OfflineAudioContext(
-      1,
-      Math.ceil(decoded.duration * 16000),
-      16000,
-    );
-    const source = offline.createBufferSource();
-    source.buffer = decoded;
-    source.connect(offline.destination);
-    source.start();
-    return (await offline.startRendering()).getChannelData(0);
-  } catch (error) {
-    if (error instanceof Error && /two hours/.test(error.message)) throw error;
-    throw new Error(
-      t("Your browser could not decode this recording. Try a WAV, M4A, or MP3 file."),
-    );
-  } finally {
-    await decoder.close();
-  }
 }
 
 export function progressTime(seconds: number): string {

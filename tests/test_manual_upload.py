@@ -309,3 +309,38 @@ def test_upload_fingerprints_are_profile_scoped(client):
 def test_invalid_recording_manifest_is_rejected(client, changes):
     response = client.post("/v1/recording-uploads/prepare", json=manifest([audio_part()]) | changes)
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("seconds", [3 * 3600 + 1, 12 * 3600])
+def test_long_recording_plan_accepts_final_part_and_preserves_retries(client, seconds):
+    count = (seconds + 119) // 120
+    last_part = audio_part(seconds - (count - 1) * 120)
+    digest = hashlib.sha256(audio_part(120)).hexdigest()
+    body = {
+        "file_digest": hashlib.sha256(f"long recording {seconds}".encode()).hexdigest(),
+        "digests": [digest] * (count - 1) + [hashlib.sha256(last_part).hexdigest()],
+        "sample_count": seconds * 16000, "source_id": "long-meeting.m4a",
+        "started_at": stamp(AT), "ended_at": stamp(AT + timedelta(seconds=seconds)),
+    }
+    plan = prepare(client, body)
+    assert len(plan["parts"]) == count
+    response = send_planned(client, plan, last_part, count - 1)
+    assert response.status_code == 200, response.text
+    assert response.json()["started_at"] == stamp(AT + timedelta(seconds=(count - 1) * 120))
+    assert response.json()["ended_at"] == body["ended_at"]
+    resumed = prepare(client, body)
+    assert resumed["recording_id"] == plan["recording_id"]
+    assert resumed["parts"][-1]["id"] == plan["parts"][-1]["id"]
+    assert resumed["parts"][-1]["uploaded"] is True
+
+
+def test_recording_beyond_twelve_hours_is_rejected(client):
+    samples = 12 * 3600 * 16000 + 1
+    body = {
+        "file_digest": "a" * 64, "digests": ["b" * 64] * 361,
+        "sample_count": samples, "source_id": "too-long.wav",
+        "started_at": stamp(AT), "ended_at": stamp(AT + timedelta(seconds=samples / 16000)),
+    }
+    assert client.post("/v1/recording-uploads/prepare", json=body).status_code == 422
+    response = upload(client, uuid4(), recording_id=str(uuid4()), part_index=360, part_count=361)
+    assert response.status_code == 422

@@ -1,3 +1,4 @@
+import { prepareSamples } from "./audioUpload.testSupport";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { progressTime, recordingEndTime, recordingTimes, selectRecording, selectRecordings, RecordingUploadQueue, type RecordingSelection, type PrepareRecording, type PreparedRecording, type RecordingUploadAPI, recordingFileDigest, uploadEstimate, validateUploadReceipt } from "./audioUpload";
@@ -118,10 +119,10 @@ describe("recordings chosen or dropped from another device", () => {
     expect(() => selectRecording([new File(["text"], "notes.txt")])).toThrow("audio file");
     expect(() => selectRecording([new File([], "empty.wav")])).toThrow("empty");
   });
-  it("checks size and filename limits before reading dropped audio", () => {
+  it("accepts large recordings while checking filename limits before reading audio", () => {
     const large = new File(["audio"], "recording.wav");
     Object.defineProperty(large, "size", { value: 100_000_001 });
-    expect(() => selectRecording([large])).toThrow("100 MB");
+    expect(selectRecording([large])).toBe(large);
     expect(() => selectRecording([new File(["audio"], "x".repeat(252) + ".wav")])).toThrow("255 characters");
   });
   it("offers keyboard file selection alongside the drop area without requiring native input files", () => {
@@ -253,7 +254,7 @@ describe("bulk recording upload retries", () => {
         return structuredClone(plan);
       },
     };
-    return new RecordingUploadQueue(decode, async (path, body) => {
+    return new RecordingUploadQueue(prepareSamples(decode), async (path, body) => {
       const result = await send(path, body);
       const actual = result as { id?: string };
       for (const plan of plans.values()) for (const part of plan.parts)
@@ -351,7 +352,7 @@ describe("duplicate recording detection", () => {
     const sameNameDifferentBytes = new File(["different"], "first.wav");
     const backend = { lookup: vi.fn(async () => ({ duplicate: false })), prepare: vi.fn() };
     const decode = vi.fn(), send = vi.fn();
-    const queue = new RecordingUploadQueue(decode, send, backend);
+    const queue = new RecordingUploadQueue(prepareSamples(decode), send, backend);
     await queue.inspect([first.file, copy, sameNameDifferentBytes], signal, scope);
     expect(queue.skipped.get(copy)).toContain("first.wav");
     expect(queue.skipped.has(first.file)).toBe(false);
@@ -366,7 +367,7 @@ describe("duplicate recording detection", () => {
   it("skips an archived duplicate without decoding or uploading any audio", async () => {
     const backend = { lookup: vi.fn(async () => ({ duplicate: true, source_id: "original.m4a" })), prepare: vi.fn() };
     const decode = vi.fn(), send = vi.fn();
-    const queue = new RecordingUploadQueue(decode, send, backend);
+    const queue = new RecordingUploadQueue(prepareSamples(decode), send, backend);
     await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
     expect(queue.skipped.get(first.file)).toContain("original.m4a");
     expect(decode).not.toHaveBeenCalled();
@@ -380,7 +381,7 @@ describe("duplicate recording detection", () => {
         .mockResolvedValueOnce({ status: "duplicate", source_id: "first.wav" }),
     };
     const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
-    const queue = new RecordingUploadQueue(async () => new Float32Array(16000 * 121), send, backend);
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000 * 121)), send, backend);
     await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
     const copy = { ...first, file: new File(["different container"], "another-export.m4a") };
     await queue.upload(copy, "", signal, scope, vi.fn(), vi.fn());
@@ -404,7 +405,7 @@ describe("duplicate recording detection", () => {
       },
     };
     const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
-    const queue = new RecordingUploadQueue(async () => new Float32Array(16000 * 121), send, backend);
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000 * 121)), send, backend);
     await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
     expect(send).toHaveBeenCalledOnce();
     const query = new URL(send.mock.calls[0][0], "http://localhost").searchParams;

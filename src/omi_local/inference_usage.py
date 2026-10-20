@@ -15,6 +15,17 @@ from .domain import stamp, utc_now
 logger = logging.getLogger(__name__)
 _recording_id: ContextVar[str | None] = ContextVar("usage_recording_id", default=None)
 _summary_run_id: ContextVar[str | None] = ContextVar("usage_summary_run_id", default=None)
+_llm_task: ContextVar[str | None] = ContextVar("usage_llm_task", default=None)
+
+
+@contextmanager
+def llm_usage(task: str):
+    """Attribute supporting model calls to their user-facing task."""
+    token = _llm_task.set(task)
+    try:
+        yield
+    finally:
+        _llm_task.reset(token)
 
 
 @contextmanager
@@ -66,6 +77,7 @@ def summary_source_duration(sources: list[dict]) -> dict:
     return {
         "source_seconds": sum((end - start).total_seconds() for start, end in merged),
         "source_duration_complete": complete,
+        "source_intervals": [[stamp(start), stamp(end)] for start, end in merged],
     }
 
 
@@ -117,7 +129,8 @@ class InferenceUsage:
     ) -> dict:
         event = {
             "attempt_id": str(uuid4()), "created_at": stamp(utc_now()),
-            "kind": kind, "task": task or (self.task if kind == "llm" else "transcription"),
+            "kind": kind,
+            "task": (task or _llm_task.get() or self.task) if kind == "llm" else "transcription",
             "submitted_seconds": submitted_seconds, "outcome": "pending",
             "credit_units": None, "billing": "unknown",
             "submitted_characters": characters,

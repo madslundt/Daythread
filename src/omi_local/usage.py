@@ -1,7 +1,8 @@
 """Profile-local usage measurements, independent of recording retention.
 
-Only durations, text/token counts, task categories and billing metadata enter this
-ledger. Audio, transcripts, prompts, credentials and responses are never stored here.
+Only recording time bounds, durations, text/token counts, task categories and billing
+metadata enter this ledger. Audio, transcripts, prompts, credentials and responses
+are never stored here.
 """
 
 import json
@@ -28,7 +29,7 @@ def _seconds(value) -> float:
 
 
 def _metrics() -> dict:
-    return dict.fromkeys((
+    metrics = dict.fromkeys((
         "recordings", "captured_minutes", "detected_speech_minutes", "retained_minutes",
         "submitted_minutes", "transcription_credits", "summary_credits", "other_credits",
         "unknown_credit_attempts", "provider_attempts", "managed_attempts", "failed_attempts",
@@ -39,7 +40,14 @@ def _metrics() -> dict:
         "summary_input_tokens", "summary_output_tokens", "summary_unknown_token_requests",
         "summary_unknown_character_requests",
         "summary_source_minutes", "summary_unknown_duration_runs",
+        "summary_unique_source_minutes", "summary_unknown_coverage_runs",
     ), 0)
+    for category in ("translation", "chat"):
+        metrics.update(dict.fromkeys((f"{category}_{field}" for field in (
+            "credits", "requests", "submitted_characters", "input_tokens", "output_tokens",
+            "unknown_token_requests", "unknown_character_requests",
+        )), 0))
+    return metrics
 
 
 def _count(value) -> int:
@@ -48,8 +56,40 @@ def _count(value) -> int:
     return value
 
 
-def _summary(event: dict) -> bool:
-    return event["kind"] == "llm" and event.get("task") in {"summary", "recap", "weekly"}
+def _llm_category(event: dict) -> str | None:
+    if event["kind"] != "llm":
+        return None
+    task = event.get("task")
+    if task in {"summary", "recap", "weekly"}:
+        return "summary"
+    return task if task in {"translation", "chat"} else None
+
+
+def _intervals(value: list) -> list[tuple[datetime, datetime]]:
+    if not isinstance(value, list):
+        raise ValueError("usage_source_intervals_invalid")
+    result = []
+    for pair in value:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("usage_source_intervals_invalid")
+        try:
+            start, end = (datetime.fromisoformat(bound) for bound in pair)
+            if start.tzinfo is None or end.tzinfo is None or end < start:
+                raise ValueError("usage_source_intervals_invalid")
+            result.append((start.astimezone(UTC), end.astimezone(UTC)))
+        except (TypeError, OverflowError) as exc:
+            raise ValueError("usage_source_intervals_invalid") from exc
+    return result
+
+
+def _covered_minutes(intervals: list[tuple[datetime, datetime]]) -> float:
+    merged = []
+    for start, end in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return sum((end - start).total_seconds() for start, end in merged) / 60
 
 
 class UsageLedger:
@@ -91,6 +131,15 @@ class UsageLedger:
             if type(complete) is not bool or complete and seconds is None:
                 raise ValueError("usage_source_duration_invalid")
             payload["source_duration_complete"] = complete
+            if "source_intervals" in event:
+                intervals = _intervals(event["source_intervals"])
+                if seconds is None or abs(
+                    _covered_minutes(intervals) * 60 - payload["source_seconds"]
+                ) > 0.001:
+                    raise ValueError("usage_source_intervals_duration_mismatch")
+                payload["source_intervals"] = [
+                    [start.isoformat(), end.isoformat()] for start, end in intervals
+                ]
             event_key = "summary_filter:" + payload["summary_run_id"]
         elif kind == "filter":
             if "recording_id" not in payload:
@@ -163,11 +212,11 @@ class UsageLedger:
         # Several HTTP attempts may refer to one idempotent managed operation.
         # Prefer its settled, priced observation over pending/unknown attempts.
         observations = {}
-        summary_attempts = []
+        llm_attempts = []
         for index, row in enumerate(rows):
             event = json.loads(row["payload"])
-            if _summary(event):
-                summary_attempts.append((row, event))
+            if _llm_category(event):
+                llm_attempts.append((row, event))
             operation = event.get("operation_id")
             key = (event["kind"], operation) if operation else ("attempt", index)
             current = observations.get(key)
@@ -184,6 +233,7 @@ class UsageLedger:
                         selected[field] = alternate[field]
                 observations[key] = (current[0], selected, max(score, current[2]))
         totals, days = _metrics(), {}
+        coverage, daily_coverage = [], {}
         for row, event, _score in observations.values():
             day = datetime.fromisoformat(row["created_at"]).astimezone(zone).date().isoformat()
             if month is not None and not day.startswith(month + "-"):
@@ -202,7 +252,14 @@ class UsageLedger:
                     summary_unknown_duration_runs=int(
                         not event.get("source_duration_complete", False)
                     ),
+                    summary_unknown_coverage_runs=int(
+                        "source_intervals" not in event
+                        or not event.get("source_duration_complete", False)
+                    ),
                 )
+                intervals = _intervals(event.get("source_intervals", []))
+                coverage.extend(intervals)
+                daily_coverage.setdefault(day, []).extend(intervals)
             elif event["kind"] == "filter":
                 values.update(
                     recordings=1,
@@ -223,38 +280,40 @@ class UsageLedger:
                     values["submitted_minutes"] = event["submitted_seconds"] / 60
                     credit_category = "transcription_credits"
                 else:
-                    credit_category = (
-                        "summary_credits" if event["task"] in {"summary", "recap", "weekly"}
-                        else "other_credits"
-                    )
+                    category = _llm_category(event)
+                    credit_category = f"{category}_credits" if category else "other_credits"
                 if billing == "credits" and event["credit_units"] is not None:
                     values[credit_category] = event["credit_units"] / 1000
-                if _summary(event):
-                    values["summary_input_tokens"] = event.get("input_tokens") or 0
-                    values["summary_output_tokens"] = event.get("output_tokens") or 0
+                if category := _llm_category(event):
+                    values[f"{category}_input_tokens"] = event.get("input_tokens") or 0
+                    values[f"{category}_output_tokens"] = event.get("output_tokens") or 0
             for key, value in values.items():
                 totals[key] += value
                 daily[key] += value
         # Request text is submitted on every HTTP attempt, including retries
         # returning an already-charged operation. Token receipts above count once.
-        for row, event in summary_attempts:
+        for row, event in llm_attempts:
             day = datetime.fromisoformat(row["created_at"]).astimezone(zone).date().isoformat()
             if month is not None and not day.startswith(month + "-"):
                 continue
             daily = days.setdefault(day, _metrics())
+            category = _llm_category(event)
             values = {
-                "summary_requests": 1,
-                "summary_submitted_characters": event.get("submitted_characters") or 0,
-                "summary_unknown_character_requests": int(
+                f"{category}_requests": 1,
+                f"{category}_submitted_characters": event.get("submitted_characters") or 0,
+                f"{category}_unknown_character_requests": int(
                     event.get("submitted_characters") is None
                 ),
-                "summary_unknown_token_requests": int(
+                f"{category}_unknown_token_requests": int(
                     event.get("input_tokens") is None or event.get("output_tokens") is None
                 ),
             }
             for key, value in values.items():
                 totals[key] += value
                 daily[key] += value
+        totals["summary_unique_source_minutes"] = _covered_minutes(coverage)
+        for day, metrics in days.items():
+            metrics["summary_unique_source_minutes"] = _covered_minutes(daily_coverage.get(day, []))
         for metrics in [totals, *days.values()]:
             captured = metrics["captured_minutes"]
             metrics["filtered_percent"] = (

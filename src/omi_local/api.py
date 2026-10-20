@@ -25,6 +25,7 @@ from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
 from .display_translations import display_translation_routes
 from .domain import (
+    MAX_RECORDING_PARTS,
     ButtonEvent,
     CaptureGap,
     CaptureState,
@@ -51,6 +52,7 @@ from .label_api import router as label_router
 from .label_models import LabelError
 from .location_zones import location_zone_routes
 from .locations import CaptureLocation
+from .merged_recordings import merged_recording_routes
 from .model_connections import model_connection_routes
 from .notification_api import notification_routes
 from .omi_api import ImportRequest, OmiAPIError
@@ -199,6 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
+    app.include_router(merged_recording_routes(memory))
     app.include_router(location_zone_routes(memory))
     app.include_router(recording_location_routes(memory))
     app.include_router(conversation_tag_routes(memory))
@@ -496,8 +499,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         source_id: Annotated[str, Query(max_length=255)] = "",
         vendor_id: Annotated[str, Query(max_length=80)] = "manual",
         recording_id: UUID | None = None,
-        part_index: Annotated[int | None, Query(ge=0, le=59)] = None,
-        part_count: Annotated[int | None, Query(ge=1, le=60)] = None,
+        part_index: Annotated[int | None, Query(ge=0, le=MAX_RECORDING_PARTS - 1)] = None,
+        part_count: Annotated[int | None, Query(ge=1, le=MAX_RECORDING_PARTS)] = None,
         conversation_source_id: UUID | None = None,
         recording_started_at: AwareDatetime | None = None,
         recording_ended_at: AwareDatetime | None = None,

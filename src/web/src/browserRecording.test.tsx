@@ -1,3 +1,4 @@
+import { prepareSamples } from "./audioUpload.testSupport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -59,7 +60,7 @@ describe("local browser recording outbox", () => {
     const scope = { id: "profile-a", signal: new AbortController().signal };
     async function attempt() {
       const value = await new BrowserRecordingStore(factory).load(stored.recording.owner, stored.recording.id);
-      const queue = new RecordingUploadQueue(async () => new Float32Array(32_000), send, backend);
+      const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(32_000)), send, backend);
       await queue.upload({ file: capturedRecordingFile(value!), recordedAt: value!.recording.startedAt, timeReference: "start" },
         "", scope.signal, scope, vi.fn(), vi.fn());
       await store.remove(stored.recording.owner, stored.recording.id);

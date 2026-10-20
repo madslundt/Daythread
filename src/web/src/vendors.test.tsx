@@ -1,3 +1,4 @@
+import { prepareSamples } from "./audioUpload.testSupport";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setLanguagePreference, t } from "./i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -144,7 +145,7 @@ describe("vendor upload retry identity", () => {
       return { id: "part-id", device_id: "manual-web", started_at: url.searchParams.get("started_at"),
         ended_at: new Date(Date.parse(url.searchParams.get("started_at")!) + (body.size - 44) / 32).toISOString() };
     }).mockRejectedValueOnce(new Error("Network interrupted"));
-    const queue = new RecordingUploadQueue(async () => new Float32Array(16000), send,
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000)), send,
       { lookup: async () => ({ duplicate: false }), prepare });
     const recording = { file, vendorId: "plaud", recordedAt: "2026-10-15T12:01:00Z", timeReference: "end" as const };
     await expect(queue.upload(recording, "", scope.signal, scope, vi.fn(), vi.fn())).rejects.toThrow("Network interrupted");

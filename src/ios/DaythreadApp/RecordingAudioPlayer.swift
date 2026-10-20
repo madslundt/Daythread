@@ -27,7 +27,7 @@ final class RecordingPlayback {
         return model?.player
     }
 
-    func load(sourceID: String, durationHint: TimeInterval, model: AppModel) async {
+    func load(sourceID: String, durationHint: TimeInterval, model: AppModel, audioPath: String? = nil) async {
         close()
         self.model = model
         duration = max(0, durationHint.isFinite ? durationHint : 0)
@@ -39,7 +39,7 @@ final class RecordingPlayback {
             if requestID == request { loading = false }
         }
         do {
-            let audio = try await model.client().download("v1/audio/\(sourceID)", query: [:])
+            let audio = try await model.client().download(audioPath ?? "v1/audio/\(sourceID)", query: [:])
             downloaded = audio
             try Task.checkCancellation()
             let waveformTask = Task.detached(priority: .utility) { try RecordingWaveform.read(url: audio) }

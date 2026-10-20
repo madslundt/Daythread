@@ -320,11 +320,13 @@ to use original text because their exact evidence quotes must match the archive.
 To opt into that older gate, disable preserve quiet and set `OMI_SILENCE_THRESHOLD` (35 by
 default; 0 disables that legacy gate). Keep it enabled when evaluating quiet speech.
 
-**Settings → Audio & credit usage** reports captured minutes (recordings that have started
-processing), retained minutes including speech context, total submitted minutes including
-language-specialist/cleanup passes and retries, and known transcription, summary and other
-AI credits. The month picker defaults to the current month in the archive timezone; all totals,
-notices and daily rows follow the selected month. It refreshes every 30 seconds and groups daily
+**Settings → Audio & credit usage** reports captured audio (recordings that have started
+processing), retained audio including speech context, total submitted audio including
+language-specialist/cleanup passes and retries, and known transcription, summary, translation,
+chat and other AI credits. Durations use readable seconds, minutes, hours, days, weeks and
+fixed 365-day years, with at most two units. The month picker defaults to the current month in
+the archive timezone; all totals, notices and daily rows follow the selected month. It refreshes
+every 30 seconds and groups daily
 totals by processing date in that timezone. These measurements start after upgrade; queued audio and earlier requests
 are not reconstructed. Per-profile metadata persists across restarts, recording deletion and
 archive backups without storing audio, prompts, response text or provider keys in the ledger.
@@ -335,17 +337,24 @@ counts and known provider input/output tokens. Original/retained text is counted
 logical summary pass, not once per unique recording. Actual submitted request text includes
 instructions, source references, reduction passes and retries, so it can exceed retained source
 text. Repeated attempts count submitted text each time; token and credit receipts for the same
-managed operation count once. Translation requests remain separate from summaries. Older
-requests without these measurements remain marked unknown rather than inferred from text size.
+managed operation count once. Translation and chat each have separate request, submitted-text,
+token and credit totals. Chat includes query expansion and evidence reduction, even when these
+use another model route. Older requests without these measurements remain marked unknown
+rather than inferred from text size.
 Summary run IDs connect local filtering with all of its downstream model requests; no text is
 saved to the usage ledger.
 
-Summary source minutes measure the original recording intervals considered before text
-filtering, including skipped content. Overlaps count once within each logical summary pass;
-later summaries of the same recordings count their source minutes again. Reduction requests
+Unique summary audio measures the union of original recording intervals considered before text
+filtering, including skipped content and imported transcripts. Overlaps and later summaries of the
+same recordings count once across the selected month, or once within each processing day in daily
+rows. The monthly total therefore need not equal the sum of daily coverage. **Audio across summary
+passes** separately counts the recordings again on each logical pass; this can exceed captured
+audio substantially. The API retains this cumulative measurement as `summary_source_minutes`
+and exposes unique coverage as `summary_unique_source_minutes`. Reduction requests
 and HTTP retries within a pass do not multiply these minutes. Cached conversation notes retain
-the scope of their original recordings. Missing/invalid timing and older measurements remain
-explicitly incomplete. These are recording minutes, not billable summary minutes or a conversion
+the scope of their original recordings. Older scalar-only measurements cannot be deduplicated;
+their unique coverage remains explicitly incomplete, along with missing/invalid recording times.
+These are recording durations, not billable summary minutes or a conversion
 from credits: summary cost depends on the actual text and tokens submitted.
 
 Provider attempts are saved before sending and finalized afterward. Pending/interrupted

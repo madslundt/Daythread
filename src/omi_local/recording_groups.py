@@ -112,6 +112,8 @@ def recording_groups(
         items = []
         for group in groups[offset:offset + limit]:
             members = group["members"]
+            recording_metadata = json.loads(members[0]["source_metadata"] or "{}")
+            recording_id = recording_metadata.get("recording_id")
             titles, seen = [], set()
             for row in members:
                 title = row["title"] or ""
@@ -122,15 +124,22 @@ def recording_groups(
             title = " · ".join(titles[:2]) or "Recording session"
             if len(titles) > 2:
                 title += " …"
-            items.append({key: group[key] for key in ("id", "started_at", "ended_at")} | {
-                "title": title, "recording_count": len(members),
+            bounds = {key: group[key] for key in ("id", "started_at", "ended_at")}
+            if recording_id and recording_metadata.get("recording_started_at"):
+                bounds.update(started_at=recording_metadata["recording_started_at"],
+                              ended_at=recording_metadata["recording_ended_at"])
+            items.append(bounds | {
+                "title": title, "recording_count": 1 if recording_id else len(members),
+                **({"recording_id": recording_id} if recording_id else {}),
                 "topic_count": len(chapter_navigation(members)),
                 "tags": list({
                     tag["id"]: tag for row in members
                     for tag in upload_tags[row["upload_key"]].values()
                 }.values()),
                 "estimated_times": any(r["source_kind"] == "omi_audio_webhook" for r in members),
-                "sources": sources(members) if len(members) == 1 else [],
+                "sources": sources(members) if len(members) == 1 and not recording_id else [],
             })
-        return {"items": items, "total": len(groups), "total_recordings": len(canonical),
+        recording_keys = {json.loads(row["source_metadata"] or "{}").get("recording_id")
+                          or row["id"] for row in canonical.values()}
+        return {"items": items, "total": len(groups), "total_recordings": len(recording_keys),
                 "gap_minutes": GAP_SECONDS // 60}

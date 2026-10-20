@@ -37,7 +37,8 @@ public struct RecordingBounds: Equatable, Sendable {
 public enum RecordingImport {
     public static let sampleRate = 16_000
     public static let samplesPerPart = sampleRate * 120
-    public static let maximumSamples = sampleRate * 7200
+    public static let maximumDuration = 12 * 60 * 60
+    public static let maximumSamples = sampleRate * maximumDuration
     // This is the shared manual-upload protocol identifier required by the backend.
     public static let deviceID = "manual-web"
 
@@ -50,12 +51,11 @@ public enum RecordingImport {
             throw RecordingImportError(AppLocalization.source("Rename this file to a name of 255 characters or fewer before uploading."))
         }
         guard bytes > 0 else { throw RecordingImportError(AppLocalization.source("The recording is empty. Choose another file.")) }
-        guard bytes <= 100_000_000 else { throw RecordingImportError(AppLocalization.source("Choose a recording no larger than 100 MB.")) }
     }
 
     public static func validateSampleCount(_ count: Int) throws {
         guard count > 0 else { throw RecordingImportError(AppLocalization.source("The recording contains no audio.")) }
-        guard count <= maximumSamples else { throw RecordingImportError(AppLocalization.source("Split recordings longer than two hours before uploading.")) }
+        guard count <= maximumSamples else { throw RecordingImportError(AppLocalization.source("Split recordings longer than twelve hours before uploading.")) }
     }
 
     public static func sampleRanges(count: Int) throws -> [Range<Int>] {

@@ -192,7 +192,10 @@ async def test_streaming_json_gateway_records_actual_chat_charge(tmp_path):
         assert await inference.generate_stream("Task", "Evidence", on_delta) == "Answer"
     assert deltas == ["Answer"]
     report = ledger.report()
-    assert report["totals"]["other_credits"] == 5
+    assert report["totals"]["chat_credits"] == 5
+    assert report["totals"]["chat_requests"] == 1
+    assert report["totals"]["chat_unknown_token_requests"] == 1
+    assert report["totals"]["other_credits"] == 0
     assert report["totals"]["summary_credits"] == 0
 
 

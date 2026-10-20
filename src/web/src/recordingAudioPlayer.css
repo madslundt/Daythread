@@ -23,4 +23,6 @@
 .recording-player-play svg { fill: currentColor; stroke-width: 2; }
 .recording-player-speed > span { min-width: 40px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
 .recording-player-error { color: var(--error-ink); margin-block: 10px 0; }
+.recording-topic-navigation { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.recording-topic-navigation select { width: 100%; min-width: 0; }
 @media (max-width: 370px) { .recording-player-controls { justify-content: center; } }

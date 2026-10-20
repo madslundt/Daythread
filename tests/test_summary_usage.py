@@ -190,7 +190,65 @@ async def test_translation_preserves_text_and_has_separate_usage_category(tmp_pa
     totals = ledger.report()["totals"]
     assert totals["summary_requests"] == totals["summary_filter_runs"] == 0
     assert totals["summary_credits"] == 0
-    assert totals["other_credits"] == 5
+    assert totals["translation_credits"] == 5
+    assert totals["translation_requests"] == 1
+    assert totals["translation_input_tokens"] == 123
+    assert totals["other_credits"] == 0
+
+
+@pytest.mark.anyio
+async def test_repeated_summaries_count_unique_audio_once(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+    key = str(uuid4())
+    sources = [{"id": key, "started_at": "2026-10-18T10:00:00Z",
+                "ended_at": "2026-10-18T10:35:00Z", "text": "Send the invoice Friday."}]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response(key))) as client:
+        inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+        inference.usage_recorder = ledger.record
+        for _ in range(3):
+            await inference.summarize(sources, "a recap")
+    totals = UsageLedger(Store(tmp_path)).report()["totals"]
+    assert totals["summary_unique_source_minutes"] == 35
+    assert totals["summary_source_minutes"] == 105
+    assert totals["summary_filter_runs"] == 3
+
+
+@pytest.mark.anyio
+async def test_large_chat_reduction_stays_in_chat_usage(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+    key = str(uuid4())
+    sources = [{"id": key, "started_at": "2026-10-18T10:00:00Z",
+                "ended_at": "2026-10-18T10:35:00Z", "text": "Invoice Friday. " * 1500}]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response(key))) as client:
+        inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+        inference.usage_recorder = ledger.record
+        await inference.chat("What happened?", sources)
+    totals = ledger.report()["totals"]
+    assert totals["summary_requests"] == 0
+    assert totals["summary_credits"] == 0
+    assert totals["chat_requests"] > 1
+    assert totals["chat_input_tokens"] == 123 * totals["chat_requests"]
+
+
+@pytest.mark.anyio
+async def test_chat_search_expansion_belongs_to_chat_usage(tmp_path):
+    ledger = UsageLedger(Store(tmp_path))
+
+    def provider(request):
+        return httpx.Response(200, headers=receipt(), json={
+            "choices": [{"message": {"content": '{"query":"invoice Friday"}'}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10},
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+        inference.usage_recorder = ledger.record
+        assert await inference.expand_query("What about the invoice?") == "invoice Friday"
+    totals = ledger.report()["totals"]
+    assert totals["chat_requests"] == 1
+    assert totals["chat_input_tokens"] == 100
+    assert totals["chat_credits"] == 5.125
+    assert totals["other_credits"] == totals["summary_requests"] == 0
 
 
 def test_summary_source_duration_unions_overlaps_and_keeps_cached_note_scope():
@@ -205,6 +263,10 @@ def test_summary_source_duration_unions_overlaps_and_keeps_cached_note_scope():
     before = copy.deepcopy(sources)
     assert summary_source_duration(sources) == {
         "source_seconds": 660, "source_duration_complete": True,
+        "source_intervals": [
+            ["2026-10-18T10:00:00.000000+00:00", "2026-10-18T10:10:00.000000+00:00"],
+            ["2026-10-18T10:20:00.000000+00:00", "2026-10-18T10:21:00.000000+00:00"],
+        ],
     }
     assert sources == before
 
@@ -219,4 +281,7 @@ def test_summary_duration_missing_bounds_do_not_estimate_from_text(bad):
     known = {"started_at": "2026-10-18T10:00:00Z", "ended_at": "2026-10-18T10:02:00Z"}
     assert summary_source_duration([known, {**bad, "text": "a" * 10000}]) == {
         "source_seconds": 120, "source_duration_complete": False,
+        "source_intervals": [
+            ["2026-10-18T10:00:00.000000+00:00", "2026-10-18T10:02:00.000000+00:00"],
+        ],
     }

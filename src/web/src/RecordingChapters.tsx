@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { audioUrl } from "./api";
 import { timeLabel } from "./format";
 import { t } from "./i18n";
@@ -20,35 +20,56 @@ export type RecordingChapter = {
 export function RecordingChapters({ chapters, timezone, onCorrect }: {
   chapters: RecordingChapter[]; timezone: string; onCorrect: () => void;
 }) {
+  const [activeChapter, setActiveChapter] = useState<string | null>(null);
   if (!chapters.length) return null;
   return <div className="recording-sections recording-chapters">
     <h3>{t("Topics")}</h3>
-    {chapters.map((chapter) => <Chapter key={chapter.id} chapter={chapter} timezone={timezone} onCorrect={onCorrect} />)}
+    {chapters.map((chapter) => <details key={chapter.id} open={activeChapter === chapter.id}
+      onToggle={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const open = event.currentTarget.open;
+        setActiveChapter((current) => open ? chapter.id : current === chapter.id ? null : current);
+      }}>
+      <summary>{chapter.title}</summary>
+      {activeChapter === chapter.id ? <RecordingChapterContent chapter={chapter} timezone={timezone} onCorrect={onCorrect} /> : null}
+    </details>)}
   </div>;
 }
 
-function Chapter({ chapter, timezone, onCorrect }: {
+export function RecordingChapterContent({ chapter, timezone, onCorrect }: {
   chapter: RecordingChapter; timezone: string; onCorrect: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [page, setPage] = useState(0);
-  return <details onToggle={(event) => {
-    if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
-  }}>
-    <summary>{chapter.title}</summary>
-    {open ? <div className="chapter-passages">
-      {chapter.parts.slice(page * 10, (page + 1) * 10).map((part) => <ChapterPassage key={`${part.source_id}:${part.start_offset}`}
-        chapterID={chapter.id} part={part} timezone={timezone} onCorrect={onCorrect} />)}
-      {chapter.parts.length > 10 ? <div className="pagination">
-        <button className="button small" disabled={page === 0} onClick={() => setPage(page - 1)}>{t("Previous recordings")}</button>
-        <button className="button small" disabled={(page + 1) * 10 >= chapter.parts.length} onClick={() => setPage(page + 1)}>{t("Next recordings")}</button>
-      </div> : null}
+  const [selected, setSelected] = useState(0);
+  const [autoPlay, setAutoPlay] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const bindAudio = useCallback((element: HTMLAudioElement | null) => { audio.current = element; }, []);
+  const index = Math.min(selected, chapter.parts.length - 1);
+  const part = chapter.parts[index];
+  if (!part) return null;
+  function select(index: number) {
+    setAutoPlay(Boolean(audio.current && !audio.current.paused));
+    if (audio.current) setSpeed(audio.current.playbackRate);
+    setSelected(index);
+  }
+  return <div className="chapter-passages">
+    {chapter.parts.length > 1 ? <div className="button-row" role="group" aria-label={chapter.title}>
+      <button type="button" className="button small" disabled={index === 0}
+        onClick={() => select(index - 1)}>{t("Previous")}</button>
+      <span className="caption" aria-live="polite">{index + 1} / {chapter.parts.length}</span>
+      <button type="button" className="button small" disabled={index === chapter.parts.length - 1}
+        onClick={() => select(index + 1)}>{t("Next")}</button>
     </div> : null}
-  </details>;
+    <ChapterPassage key={`${part.source_id}:${part.start_offset}:${part.transcript_version}`}
+      chapterID={chapter.id} part={part} timezone={timezone} onCorrect={onCorrect}
+      autoPlay={autoPlay} audioRef={bindAudio} initialSpeed={speed} />
+  </div>;
 }
 
-function ChapterPassage({ chapterID, part, timezone, onCorrect }: {
+function ChapterPassage({ chapterID, part, timezone, onCorrect, autoPlay, audioRef, initialSpeed }: {
   chapterID: string; part: RecordingChapter["parts"][number]; timezone: string; onCorrect: () => void;
+  autoPlay: boolean; audioRef: (element: HTMLAudioElement | null) => void;
+  initialSpeed: number;
 }) {
   const resource = useResource<Source>(`/v1/transcripts/${encodeURIComponent(part.source_id)}`);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -64,7 +85,7 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect }: {
   return <article className="chapter-passage">
     <p className="caption">{timeLabel(source.started_at, timezone)}</p>
     {source.audio_available !== false && source.audio_availability !== "missing"
-      ? <RecordingAudioPlayer src={audio} label={section.title} /> : null}
+      ? <RecordingAudioPlayer src={audio} label={section.title} autoPlay={autoPlay} audioRef={audioRef} initialSpeed={initialSpeed} /> : null}
     <TranscriptPassage source={source} section={section} />
     <details onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);

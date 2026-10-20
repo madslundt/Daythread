@@ -244,7 +244,6 @@
 "Choose a profile in Settings → Profiles to import conversations." = "Choose a profile in Settings → Profiles to import conversations.";
 "Choose a profile to open recordings, diary and other pages. All settings remain available." = "Choose a profile to open recordings, diary and other pages. All settings remain available.";
 "Choose a profile…" = "Choose a profile…";
-"Choose a recording no larger than 100 MB." = "Choose a recording no larger than 100 MB.";
 "Choose a translation language enabled in Settings" = "Choose a translation language enabled in Settings";
 "Choose a valid recording date and time." = "Choose a valid recording date and time.";
 "Choose after checking evidence" = "Choose after checking evidence";
@@ -1518,7 +1517,7 @@
 "Speech, language models, keys & advanced options" = "Speech, language models, keys & advanced options";
 "Speech-to-text (STT)" = "Speech-to-text (STT)";
 "Split destination already exists" = "Split destination already exists";
-"Split recordings longer than two hours before uploading." = "Split recordings longer than two hours before uploading.";
+"Split recordings longer than twelve hours before uploading." = "Split recordings longer than twelve hours before uploading.";
 "Split selected assignments" = "Split selected assignments";
 "Stale phone observation" = "Stale phone observation";
 "Start a new chat to choose a different scope" = "Start a new chat to choose a different scope";
@@ -1769,7 +1768,7 @@
 "Voice profile" = "Voice profile";
 "Voice quality duration exceeds recording duration" = "Voice quality duration exceeds recording duration";
 "Voice suggestions passed the configured recording evaluation. Confirm each suggestion before its name or example is saved." = "Voice suggestions passed the configured recording evaluation. Confirm each suggestion before its name or example is saved.";
-"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file." = "WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file.";
+"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file." = "WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file.";
 "Wait for this conversation's transcription to finish" = "Wait for this conversation's transcription to finish";
 "Waiting for Wi-Fi" = "Waiting for Wi-Fi";
 "Waiting for connection" = "Waiting for connection";
@@ -2715,3 +2714,9 @@
 "Display item changed; refresh and try again" = "Display item changed; refresh and try again";
 "Display translation failed. Original text is available." = "Display translation failed. Original text is available.";
 "Topic end must follow its start" = "Topic end must follow its start";
+"Invalid audio range" = "Invalid audio range";
+"Recording audio is incomplete" = "Recording audio is incomplete";
+"Recording audio no longer matches its capture bounds" = "Recording audio no longer matches its capture bounds";
+"Recording audio unavailable" = "Recording audio unavailable";
+"Recording unavailable" = "Recording unavailable";
+"Recording upload is incomplete" = "Recording upload is incomplete";

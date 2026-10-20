@@ -8,6 +8,7 @@ from datetime import datetime
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
+from .domain import MAX_RECORDING_PARTS
 from .locations import CaptureLocation
 from .transcription_filter import FILTER_VERSION
 from .vendor_catalog import file_vendor
@@ -43,8 +44,8 @@ class UploadGrouping(BaseModel):
     vendor_id: str | None = Field(default=None, max_length=80)
     location: CaptureLocation | None = None
     recording_id: str | None = None
-    part_index: int | None = Field(default=None, ge=0, le=59)
-    part_count: int | None = Field(default=None, ge=1, le=60)
+    part_index: int | None = Field(default=None, ge=0, le=MAX_RECORDING_PARTS - 1)
+    part_count: int | None = Field(default=None, ge=1, le=MAX_RECORDING_PARTS)
     conversation_source_id: str | None = None
     recording_started_at: AwareDatetime | None = None
     recording_ended_at: AwareDatetime | None = None

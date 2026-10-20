@@ -21,6 +21,13 @@ const totals: UsageMetrics = {
   summary_unknown_token_requests: 0, summary_unknown_character_requests: 0,
   summary_filtered_percent: 40,
   summary_source_minutes: 150.25, summary_unknown_duration_runs: 0,
+  summary_unique_source_minutes: 35.23, summary_unknown_coverage_runs: 0,
+  translation_credits: 1.25, translation_requests: 2, translation_submitted_characters: 200,
+  translation_input_tokens: 50, translation_output_tokens: 60,
+  translation_unknown_token_requests: 0, translation_unknown_character_requests: 0,
+  chat_credits: 2.5, chat_requests: 3, chat_submitted_characters: 300,
+  chat_input_tokens: 75, chat_output_tokens: 90,
+  chat_unknown_token_requests: 0, chat_unknown_character_requests: 0,
 };
 const report: UsageReport = {
   month: "2026-10",
@@ -31,14 +38,64 @@ afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => { resource.data = report; resource.useResource.mockClear(); });
 
 describe("trial usage measurements", () => {
+  it("separates unique audio coverage from repeated processing of the same audio", () => {
+    const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: {
+      ...totals, captured_minutes: 35.23, summary_source_minutes: 8334.15,
+    } }} />);
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>35 min 14 sec");
+    expect(html).toContain("Audio across summary passes</dt><dd>5 days 18 hr");
+    expect(html).toContain("This can exceed captured audio");
+    expect(html).not.toContain("8,334.15 min");
+  });
+
+  it("gives translations and chat their own measurements and credit categories", () => {
+    const html = renderToStaticMarkup(<UsageDetails report={report} />);
+    const translation = html.split("<h3>Translation usage</h3>")[1].split("<h3>Chat usage</h3>")[0];
+    const chat = html.split("<h3>Chat usage</h3>")[1].split("<h3>Known Daythread credits</h3>")[0];
+    expect(translation).toContain("Requests</dt><dd>2");
+    expect(translation).toContain("Submitted text (characters)</dt><dd>200");
+    expect(translation).toContain("Known input tokens</dt><dd>50");
+    expect(translation).toContain("Known output tokens</dt><dd>60");
+    expect(translation).toContain("Known credits</dt><dd>1.25");
+    expect(chat).toContain("Requests</dt><dd>3");
+    expect(chat).toContain("Submitted text (characters)</dt><dd>300");
+    expect(chat).toContain("Known input tokens</dt><dd>75");
+    expect(chat).toContain("Known output tokens</dt><dd>90");
+    expect(chat).toContain("Known credits</dt><dd>2.5");
+    expect(html).toContain("Translations</dt><dd>1.25");
+    expect(html).toContain("Chat</dt><dd>2.5");
+    expect(html).toContain("771.25");
+  });
+
+  it("does not turn historical cumulative audio into unique audio coverage", () => {
+    const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: {
+      ...totals, summary_source_minutes: 8334.15, summary_unique_source_minutes: 0,
+      summary_unknown_coverage_runs: totals.summary_filter_runs,
+    } }} />);
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>Not measured");
+    expect(html).toContain("Older passes or sources with missing recording times cannot be deduplicated");
+    expect(html).toContain("Audio across summary passes</dt><dd>5 days 18 hr");
+  });
+
+  it.each(["translation", "chat"] as const)("marks missing %s token and text measurements explicitly", (task) => {
+    const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: {
+      ...totals, [`${task}_requests`]: 2, [`${task}_submitted_characters`]: 0,
+      [`${task}_input_tokens`]: 0, [`${task}_output_tokens`]: 0,
+      [`${task}_unknown_token_requests`]: 2, [`${task}_unknown_character_requests`]: 2,
+    } }} />);
+    const section = html.split(`<h3>${task === "chat" ? "Chat" : "Translation"} usage</h3>`)[1].split("<h3>")[0];
+    expect(section).toContain("Submitted text (characters)</dt><dd>Not measured");
+    expect(section).toContain("Known input tokens</dt><dd>Not measured");
+    expect(section).toContain("Requests with unknown token usage: 2.");
+  });
   it("distinguishes captured, retained and submitted audio, with measured credits", () => {
     const html = renderToStaticMarkup(<UsageDetails report={report} />);
-    expect(html).toContain("960 min");
-    expect(html).toContain("240 min");
-    expect(html).toContain("480 min");
+    expect(html).toContain("16 hr");
+    expect(html).toContain("4 hr");
+    expect(html).toContain("8 hr");
     expect(html).toContain("75%");
     expect(html).toContain("Known Daythread credits");
-    expect(html).toContain("767.5");
+    expect(html).toContain("771.25");
     expect(html).toContain("extra transcription passes and retries");
     expect(html).toContain("Original audio follows your retention settings");
     expect(html).not.toContain("Credit totals are incomplete");
@@ -51,7 +108,7 @@ describe("trial usage measurements", () => {
     expect(html).toContain(`Requests with unknown charges: ${count}.`);
     expect(html).toContain(`Requests using your own provider or local models: ${count}.`);
     expect(html).toContain("(incomplete)");
-    expect(html).toContain("767.5");
+    expect(html).toContain("771.25");
   });
 
   it("keeps the smallest charged credit unit visible", () => {
@@ -79,40 +136,41 @@ describe("trial usage measurements", () => {
 
   it("shows measured summary source minutes alongside known summary credits", () => {
     const html = renderToStaticMarkup(<UsageDetails report={report} />);
-    expect(html).toContain("Source audio considered for summaries</dt><dd>150.25 min");
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>35 min 14 sec");
     expect(html).toContain("Known summary credits</dt><dd>45.5");
-    expect(html).toContain("Summary source minutes");
-    expect(html).toContain("overlaps count once per pass");
+    expect(html).toContain("Unique summary audio");
+    expect(html).toContain("overlapping recording time once");
     expect(html).toContain("including skipped content");
-    expect(html).toContain("summaries are charged for text and tokens");
-    expect(html).toContain("Retries and reduction add no minutes");
+    expect(html).toContain("Summaries are charged for text and tokens");
+    expect(html).toContain("Retries and reduction add no recording time");
     expect(html).not.toContain("Summary source minutes are incomplete");
   });
 
   it("keeps known source minutes visible while flagging missing source durations", () => {
-    const mixed = { ...totals, summary_unknown_duration_runs: 1 };
+    const mixed = { ...totals, summary_unknown_duration_runs: 1, summary_unknown_coverage_runs: 1 };
     const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: mixed,
       days: [{ date: "2026-10-18", ...mixed }] }} />);
-    expect(html).toContain("Source audio considered for summaries</dt><dd>150.25 min");
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>35 min 14 sec");
     expect(html).toContain("Passes with unknown recording duration: 1.");
     expect(html).toContain("(incomplete)");
   });
 
   it("keeps summary duration unknown rather than deriving it from credits or text", () => {
-    const unknown = { ...totals, summary_source_minutes: 0,
+    const unknown = { ...totals, summary_source_minutes: 0, summary_unique_source_minutes: 0,
+      summary_unknown_coverage_runs: totals.summary_filter_runs,
       summary_unknown_duration_runs: totals.summary_filter_runs };
     const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: unknown }} />);
-    expect(html).toContain("Source audio considered for summaries</dt><dd>Not measured");
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>Not measured");
     expect(html).toContain("Known summary credits</dt><dd>45.5");
-    expect(html).not.toContain("Source audio considered for summaries</dt><dd>0 min");
+    expect(html).not.toContain("Unique audio covered by summaries</dt><dd>0 sec");
   });
 
   it("supports summary responses from before duration tracking was added", () => {
-    const prior = { ...totals, summary_source_minutes: undefined,
+    const prior = { ...totals, summary_source_minutes: undefined, summary_unique_source_minutes: undefined,
       summary_unknown_duration_runs: undefined };
     const html = renderToStaticMarkup(<UsageDetails report={{ ...report, totals: prior,
       days: [{ date: "2026-10-18", ...prior }] }} />);
-    expect(html).toContain("Source audio considered for summaries</dt><dd>Not measured");
+    expect(html).toContain("Unique audio covered by summaries</dt><dd>Not measured");
     expect(html).toContain("Original text (characters)</dt><dd>10,000");
     expect(html).not.toContain("NaN");
   });

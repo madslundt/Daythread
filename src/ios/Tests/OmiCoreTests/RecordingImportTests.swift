@@ -26,7 +26,7 @@ final class RecordingImportTests: XCTestCase {
         XCTAssertEqual(try RecordingImport.sampleRanges(count: limit), [0..<limit])
         XCTAssertEqual(try RecordingImport.sampleRanges(count: limit + 1), [0..<limit, limit..<(limit + 1)])
         let ranges = try RecordingImport.sampleRanges(count: RecordingImport.maximumSamples)
-        XCTAssertEqual(ranges.count, 60)
+        XCTAssertEqual(ranges.count, 360)
         XCTAssertEqual(ranges.reduce(0) { $0 + $1.count }, RecordingImport.maximumSamples)
         for range in ranges {
             XCTAssertLessThanOrEqual(range.count * 2 + 44, 4_000_000)
@@ -35,9 +35,27 @@ final class RecordingImportTests: XCTestCase {
         XCTAssertThrowsError(try RecordingImport.sampleRanges(count: RecordingImport.maximumSamples + 1))
     }
 
-    func testFileLimitsAndSuggestedTimesDoNotInventCaptureTimes() throws {
+    func testImportedRecordingsAcceptThreeAndTwelveHoursButRejectLongerAudio() throws {
+        XCTAssertEqual(RecordingImport.maximumDuration, 43_200)
+        XCTAssertEqual(RecordingImport.maximumSamples, 16_000 * 43_200)
+        for duration in [3 * 60 * 60, 12 * 60 * 60] {
+            let count = RecordingImport.sampleRate * duration
+            XCTAssertNoThrow(try RecordingImport.validateSampleCount(count))
+            let bounds = try RecordingBounds(recordedAt: now, sampleCount: count, reference: .end, now: now)
+            XCTAssertEqual(bounds.endedAt, now)
+            XCTAssertEqual(bounds.endedAt.timeIntervalSince(bounds.startedAt), Double(duration), accuracy: 0.000001)
+            XCTAssertEqual(try RecordingImport.sampleRanges(count: count).count, duration / 120)
+        }
+        XCTAssertThrowsError(try RecordingImport.validateSampleCount(RecordingImport.maximumSamples + 1)) { error in
+            XCTAssertEqual((error as? RecordingImportError)?.message, "Split recordings longer than twelve hours before uploading.")
+        }
+        XCTAssertThrowsError(try RecordingBounds(recordedAt: now, sampleCount: RecordingImport.maximumSamples + 1, reference: .end, now: now))
+    }
+
+    func testLargeFilesAndSuggestedTimesDoNotInventCaptureTimes() throws {
         XCTAssertNoThrow(try RecordingImport.validateFile(name: "Voice Memo.m4a", bytes: 100_000_000))
-        XCTAssertThrowsError(try RecordingImport.validateFile(name: "a.wav", bytes: 100_000_001))
+        XCTAssertNoThrow(try RecordingImport.validateFile(name: "a.wav", bytes: 100_000_001))
+        XCTAssertNoThrow(try RecordingImport.validateFile(name: "hour-long.wav", bytes: 1_382_400_044))
         XCTAssertThrowsError(try RecordingImport.validateFile(name: "a.wav", bytes: 0))
         XCTAssertThrowsError(try RecordingImport.validateFile(name: String(repeating: "a", count: 256), bytes: 1))
         XCTAssertNil(RecordingImport.suggestedEnd(modifiedAt: nil, now: now))
@@ -186,6 +204,29 @@ final class RecordingImportTests: XCTestCase {
             XCTAssertEqual(file.length, Int64(part.samples))
             XCTAssertEqual(part.digest, try RecordingAudioConverter.fileDigest(part.url))
             XCTAssertTrue(bytes.dropFirst(44).contains { $0 != 0 })
+        }
+    }
+
+    func testStreamingConversionAcceptsSourceLargerThan100MB() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("large-stereo.wav")
+        // Float32 stereo at 44.1 kHz exceeds 100 MB in just over five minutes.
+        // The fixture writer and converter both use bounded buffers.
+        try writeStereo(to: source, seconds: 301)
+        let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize!
+        XCTAssertGreaterThan(size, 100_000_000)
+        try RecordingImport.validateFile(name: source.lastPathComponent, bytes: size)
+        XCTAssertEqual(try RecordingAudioConverter.fileDigest(source).count, 64)
+        let recording = try await RecordingAudioConverter.convert(source, into: root.appendingPathComponent("converted"))
+        XCTAssertEqual(recording.sampleCount, 301 * 16_000)
+        XCTAssertEqual(recording.parts.map(\.samples), [120 * 16_000, 120 * 16_000, 61 * 16_000])
+        for part in recording.parts {
+            let file = try AVAudioFile(forReading: part.url)
+            XCTAssertEqual(file.length, Int64(part.samples))
+            XCTAssertLessThan(part.bytes, 4_000_000)
+            XCTAssertEqual(part.digest, try RecordingAudioConverter.fileDigest(part.url))
         }
     }
 

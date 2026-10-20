@@ -244,7 +244,6 @@
 "Choose a profile in Settings → Profiles to import conversations." = "Velg en profil i Innstillinger → Profiler for å importere samtaler.";
 "Choose a profile to open recordings, diary and other pages. All settings remain available." = "Velg en profil for å åpne opptak, dagbok og andre sider. Alle innstillinger er tilgjengelige.";
 "Choose a profile…" = "Velg en profil…";
-"Choose a recording no larger than 100 MB." = "Velg et opptak som ikke overstiger 100 MB.";
 "Choose a translation language enabled in Settings" = "Velg et oversettelsesspråk som er aktivert i Innstillinger";
 "Choose a valid recording date and time." = "Velg en gyldig opptaksdato og -tid.";
 "Choose after checking evidence" = "Velg etter sjekking av dokumentasjon";
@@ -1518,7 +1517,7 @@
 "Speech, language models, keys & advanced options" = "Tale, språkmodeller, nøkler og avanserte valg";
 "Speech-to-text (STT)" = "Tale-til-tekst (STT)";
 "Split destination already exists" = "Delt mål finnes fra før";
-"Split recordings longer than two hours before uploading." = "Del opptak lengre enn to timer før opplasting.";
+"Split recordings longer than twelve hours before uploading." = "Del opptak som er lengre enn tolv timer før opplasting.";
 "Split selected assignments" = "Skill ut valgte tilknytninger";
 "Stale phone observation" = "Utdatert telefonobservasjon";
 "Start a new chat to choose a different scope" = "Start en ny prat for å velge et annet virkeområde";
@@ -1769,7 +1768,7 @@
 "Voice profile" = "Stemmeprofil";
 "Voice quality duration exceeds recording duration" = "Talekvaliteten varer lenger enn registreringstiden";
 "Voice suggestions passed the configured recording evaluation. Confirm each suggestion before its name or example is saved." = "Stemmeforslag passerte den oppsatte opptaksevalueringen. Bekreft hvert forslag før dets navn eller eksempel lagres.";
-"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file." = "WAV, M4A, MP3, og andre lydformater støttet av iPhone. Inntil 100 MB og to timer per fil.";
+"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file." = "WAV, M4A, MP3 og andre lydformater som støttes av iPhone. Opptil tolv timer per fil.";
 "Wait for this conversation's transcription to finish" = "Vent på at utskriften av denne samtalen skal bli ferdig";
 "Waiting for Wi-Fi" = "Venter på Wi-Fi";
 "Waiting for connection" = "Venter på tilkobling";
@@ -2713,3 +2712,9 @@
 "Display item changed; refresh and try again" = "Visningselementet er endret; oppdater og prøv igjen";
 "Display translation failed. Original text is available." = "Oversettelsen mislyktes. Originalteksten er tilgjengelig.";
 "Topic end must follow its start" = "Emnets slutt må komme etter starten";
+"Invalid audio range" = "Ugyldig lydintervall";
+"Recording audio is incomplete" = "Lyden i opptaket er ufullstendig";
+"Recording audio no longer matches its capture bounds" = "Lyden i opptaket samsvarer ikke lenger med opptakets tidsgrenser";
+"Recording audio unavailable" = "Lyden i opptaket er ikke tilgjengelig";
+"Recording unavailable" = "Opptaket er ikke tilgjengelig";
+"Recording upload is incomplete" = "Opplastingen av opptaket er ufullstendig";

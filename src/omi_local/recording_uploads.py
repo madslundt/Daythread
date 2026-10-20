@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
-from .domain import stamp, utc_now
+from .domain import MAX_RECORDING_PARTS, MAX_RECORDING_SECONDS, stamp, utc_now
 from .source_matching import MANUAL_UPLOAD_SQL, UploadGrouping
 from .vendor_catalog import file_vendor
 
@@ -39,8 +39,8 @@ class FileCheck(BaseModel):
 class PrepareUpload(BaseModel):
     vendor_id: str = Field(default="manual", max_length=80)
     file_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    digests: list[str] = Field(min_length=1, max_length=60)
-    sample_count: int = Field(ge=1, le=16000 * 7200)
+    digests: list[str] = Field(min_length=1, max_length=MAX_RECORDING_PARTS)
+    sample_count: int = Field(ge=1, le=16000 * MAX_RECORDING_SECONDS)
     source_id: str = Field(min_length=1, max_length=255)
     started_at: AwareDatetime
     ended_at: AwareDatetime

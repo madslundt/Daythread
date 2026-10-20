@@ -244,7 +244,6 @@
 "Choose a profile in Settings → Profiles to import conversations." = "Välj en profil under Inställningar → Profil för att importera konversationer.";
 "Choose a profile to open recordings, diary and other pages. All settings remain available." = "Välj en profil för att öppna inspelningar, dagbok och andra sidor. Alla inställningar är fortfarande tillgängliga.";
 "Choose a profile…" = "Välj en profil…";
-"Choose a recording no larger than 100 MB." = "Välj en inspelning som inte är större än 100 MB.";
 "Choose a translation language enabled in Settings" = "Välj ett översättningspråk som är aktiverat i Inställningar";
 "Choose a valid recording date and time." = "Välj ett giltigt datum och tid för inspelningen.";
 "Choose after checking evidence" = "Välj efter kontroll av bevis";
@@ -1518,7 +1517,7 @@
 "Speech, language models, keys & advanced options" = "Tal, språkmodeller, nycklar och avancerade alternativ";
 "Speech-to-text (STT)" = "Tal-till-text (STT)";
 "Split destination already exists" = "Dela mål finns redan";
-"Split recordings longer than two hours before uploading." = "Split inspelningar längre än två timmar innan uppladdning.";
+"Split recordings longer than twelve hours before uploading." = "Dela upp inspelningar som är längre än tolv timmar innan du laddar upp dem.";
 "Split selected assignments" = "Dela upp markerade kopplingar";
 "Stale phone observation" = "Inaktuell telefonobservation";
 "Start a new chat to choose a different scope" = "Starta en ny chatt för att välja ett annat tillämpningsområde";
@@ -1769,7 +1768,7 @@
 "Voice profile" = "Röstprofil";
 "Voice quality duration exceeds recording duration" = "Röstkvalitetstiden överskrider registreringstiden";
 "Voice suggestions passed the configured recording evaluation. Confirm each suggestion before its name or example is saved." = "Röstförslagen klarade den konfigurerade inspelningsutvärderingen. Bekräfta varje förslag innan dess namn eller exempel sparas.";
-"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to 100 MB and two hours per file." = "WAV, M4A, MP3, och andra ljudformat som stöds av iPhone. Upp till 100 MB och två timmar per fil.";
+"WAV, M4A, MP3, and other audio formats supported by iPhone. Up to twelve hours per file." = "WAV, M4A, MP3 och andra ljudformat som stöds av iPhone. Upp till tolv timmar per fil.";
 "Wait for this conversation's transcription to finish" = "Vänta tills samtalets transkription är klar.";
 "Waiting for Wi-Fi" = "Väntar på Wi-Fi";
 "Waiting for connection" = "Väntar på anslutning";
@@ -2713,3 +2712,9 @@
 "Display item changed; refresh and try again" = "Visningselementet har ändrats; uppdatera och försök igen";
 "Display translation failed. Original text is available." = "Översättningen misslyckades. Originaltexten är tillgänglig.";
 "Topic end must follow its start" = "Ämnets slut måste komma efter dess början";
+"Invalid audio range" = "Ogiltigt ljudintervall";
+"Recording audio is incomplete" = "Ljudet i inspelningen är ofullständigt";
+"Recording audio no longer matches its capture bounds" = "Ljudet i inspelningen stämmer inte längre med inspelningens tidsgränser";
+"Recording audio unavailable" = "Inspelningens ljud är inte tillgängligt";
+"Recording unavailable" = "Inspelningen är inte tillgänglig";
+"Recording upload is incomplete" = "Uppladdningen av inspelningen är ofullständig";

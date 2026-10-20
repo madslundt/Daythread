@@ -8,6 +8,7 @@ import { ErrorState, Loading } from "./UI";
 import { timeLabel } from "./format";
 import type { Source, Timeline } from "./types";
 import { useResource } from "./useResource";
+import { MergedRecording } from "./MergedRecording";
 
 export type RecordingGroup = {
   id: string;
@@ -15,6 +16,7 @@ export type RecordingGroup = {
   ended_at: string;
   title: string;
   recording_count: number;
+  recording_id?: string;
   topic_count?: number;
   estimated_times?: boolean;
   tags?: ConversationTag[];
@@ -31,7 +33,7 @@ export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, o
 }) {
   return <div className="source-list source-list-compact recording-groups">
     {groups.map((group) => <div className="recording-group" key={group.id}>
-      {group.recording_count === 1 ? (
+      {!group.recording_id && group.recording_count === 1 ? (
         <SourceList compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
       ) : <RecordingSession group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />}
     </div>)}
@@ -48,12 +50,15 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
     <summary>
       <span className="source-time"><span>{timeLabel(group.started_at, timezone)}</span><span className="source-time-end">{recordingDuration(group.started_at, group.ended_at)}</span></span>
       <span className="source-overview"><span className="source-preview">{group.title}</span>
-        <span className="source-glance">{group.recording_count} {t("recordings")}{group.topic_count ? ` · ${group.topic_count} ${group.topic_count === 1 ? t("topic") : t("topics")}` : ""}{group.estimated_times ? t("· estimated times") : ""}</span></span>
+        <span className="source-glance">{group.topic_count
+          ? `${group.topic_count} ${group.topic_count === 1 ? t("topic") : t("topics")}`
+          : group.recording_id ? t("Recording") : `${group.recording_count} ${t("recordings")}`}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
       <div className="recording-organization"><ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} /></div>
-      {open ? <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
+      {open ? group.recording_id ? <MergedRecording recordingID={group.recording_id} />
+        : <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
     </div>
   </details>;
 }
@@ -71,10 +76,11 @@ function recordingDuration(startedAt: string, endedAt: string): string {
     });
 }
 
-function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+export function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
   group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
 }) {
   const [page, setPage] = useState(0);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
   if (zoneID) params.set("zone_id", zoneID);
   if (tagID) params.set("tag_id", tagID);
@@ -82,15 +88,21 @@ function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect,
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
     <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />
-    <p className="caption">{t("Nearby recordings, grouped for browsing. Each recording keeps its own audio and transcript.")}</p>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}
-    {resource.data ? <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} /> : null}
-    {resource.data && (resource.data.total > 30 || page > 0) ? <div className="pagination">
-      <span className="caption">{t("Recordings")}{" "}{page * 30 + 1}–{page * 30 + resource.data.items.length} {t("of")}{" "}{resource.data.total}</span>
-      <button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t("Previous recordings")}</button>
-      <button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>{t("Next recordings")}</button>
-    </div> : null}
+    {resource.data ? <details className="recording-disclosure recording-originals" open={toolsOpen} onToggle={(event) => {
+      if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);
+    }}>
+      <summary>{t("Full recording & tools")}</summary>
+      {toolsOpen ? <>
+        <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} />
+        {resource.data.total > 30 || page > 0 ? <div className="pagination">
+          <span className="caption">{t("Recordings")}{" "}{page * 30 + 1}–{page * 30 + resource.data.items.length} {t("of")}{" "}{resource.data.total}</span>
+          <button className="button small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t("Previous recordings")}</button>
+          <button className="button small" disabled={(page + 1) * 30 >= resource.data.total} onClick={() => setPage((value) => value + 1)}>{t("Next recordings")}</button>
+        </div> : null}
+      </> : null}
+    </details> : null}
   </>;
 }
 

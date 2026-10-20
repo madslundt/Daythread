@@ -6,19 +6,23 @@ import "./recordingAudioPlayer.css";
 
 type Props = {
   src: string;
+  waveformSrc?: string;
   label?: string;
   active?: boolean;
   durationHint?: number;
   autoPlay?: boolean;
   audioRef?: RefCallback<HTMLAudioElement>;
   onError?: () => void;
+  onPositionChange?: (seconds: number) => void;
+  onReady?: () => void;
+  initialSpeed?: number;
 };
 
 export function RecordingAudioPlayer(props: Props) {
   return <Player key={props.src} {...props} />;
 }
 
-function Player({ src, label, active = true, durationHint = 0, autoPlay, audioRef, onError }: Props) {
+function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1 }: Props) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const scrubbing = useRef(false);
   const resumeAfterScrub = useRef(false);
@@ -26,7 +30,7 @@ function Player({ src, label, active = true, durationHint = 0, autoPlay, audioRe
   const [duration, setDuration] = useState(Number.isFinite(durationHint) ? Math.max(0, durationHint) : 0);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(Number.isFinite(initialSpeed) ? Math.min(2, Math.max(0.5, initialSpeed)) : 1);
   const [peaks, setPeaks] = useState<number[]>([]);
   const [waveformState, setWaveformState] = useState("loading");
   const [error, setError] = useState("");
@@ -49,6 +53,15 @@ function Player({ src, label, active = true, durationHint = 0, autoPlay, audioRe
     setWaveformState("loading");
     void (async () => {
       try {
+        if (waveformSrc) {
+          const response = await fetch(waveformSrc, { signal: controller.signal });
+          if (!response.ok) throw new Error(String(response.status));
+          const waveform: { peaks: number[]; duration: number } = await response.json();
+          controller.signal.throwIfAborted();
+          setPeaks(waveform.peaks);
+          setWaveformState("ready");
+          return;
+        }
         const response = await fetch(src.split("#")[0], { signal: controller.signal });
         if (!response.ok) throw new Error(String(response.status));
         const bytes = await response.arrayBuffer();
@@ -75,7 +88,7 @@ function Player({ src, label, active = true, durationHint = 0, autoPlay, audioRe
       }
     })();
     return () => { controller.abort(); element?.pause(); };
-  }, [active, src, retry, start, requestedEnd]);
+  }, [active, src, waveformSrc, retry, start, requestedEnd]);
 
   async function play() {
     const element = audio.current;
@@ -121,11 +134,13 @@ function Player({ src, label, active = true, durationHint = 0, autoPlay, audioRe
         element.currentTime = Math.min(start, element.duration);
         element.playbackRate = speed;
         setReady(true);
+        onReady?.();
       }}
       onTimeUpdate={(event) => {
         const element = event.currentTarget;
         if (scrubbing.current) return;
         setPosition(Math.max(0, Math.min(duration, element.currentTime - start)));
+        onPositionChange?.(element.currentTime - start);
         if (element.currentTime >= clipEnd.current) element.pause();
       }}
       onPlay={(event) => {

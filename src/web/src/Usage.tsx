@@ -2,9 +2,14 @@ import { displayLocale, t } from "./i18n";
 import { useState } from "react";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
+import { usageDuration } from "./usageDuration";
 import "./usage.css";
 
-export type UsageMetrics = {
+type TextTask = "translation" | "chat";
+type TextMeasurement = "credits" | "requests" | "submitted_characters" | "input_tokens" |
+  "output_tokens" | "unknown_token_requests" | "unknown_character_requests";
+
+export type UsageMetrics = Partial<Record<`${TextTask}_${TextMeasurement}`, number>> & {
   recordings: number;
   captured_minutes: number;
   retained_minutes: number;
@@ -31,6 +36,8 @@ export type UsageMetrics = {
   summary_filtered_percent?: number | null;
   summary_source_minutes?: number;
   summary_unknown_duration_runs?: number;
+  summary_unique_source_minutes?: number;
+  summary_unknown_coverage_runs?: number;
 };
 export type UsageReport = {
   month: string;
@@ -49,7 +56,8 @@ function dayLabel(value: string): string {
     .format(new Date(`${value}T12:00:00Z`));
 }
 function knownCredits(metrics: UsageMetrics): number {
-  return metrics.transcription_credits + metrics.summary_credits + metrics.other_credits;
+  return metrics.transcription_credits + metrics.summary_credits + metrics.other_credits +
+    (metrics.translation_credits ?? 0) + (metrics.chat_credits ?? 0);
 }
 
 function measured(value: number | undefined): string {
@@ -79,13 +87,14 @@ function summaryCharacters(metrics: UsageMetrics): string {
   return measured(metrics.summary_submitted_characters);
 }
 
-function summarySourceMinutes(metrics: UsageMetrics, withUnit = false): string {
-  const minutes = metrics.summary_source_minutes;
+function summarySourceDuration(metrics: UsageMetrics, unique = false): string {
+  const minutes = unique ? metrics.summary_unique_source_minutes : metrics.summary_source_minutes;
   const runs = metrics.summary_filter_runs ?? 0;
+  const unknown = unique ? metrics.summary_unknown_coverage_runs : metrics.summary_unknown_duration_runs;
   if (minutes === undefined || runs === 0 ||
-      minutes === 0 && (metrics.summary_unknown_duration_runs ?? 0) >= runs)
+      minutes === 0 && (unknown ?? 0) >= runs)
     return t("Not measured");
-  return withUnit ? t("{value0} min", { value0: number(minutes) }) : number(minutes);
+  return usageDuration(minutes);
 }
 
 function SummaryUsage({ metrics }: { metrics: UsageMetrics }) {
@@ -97,10 +106,13 @@ function SummaryUsage({ metrics }: { metrics: UsageMetrics }) {
   return <>
     <h3>{t("Summary usage")}</h3>
     <dl className="usage-metrics usage-summary-metrics">
-      <div><dt>{t("Source audio considered for summaries")}</dt><dd>{summarySourceMinutes(metrics, true)}</dd></div>
+      <div><dt>{t("Unique audio covered by summaries")}</dt><dd>{summarySourceDuration(metrics, true)}</dd></div>
       <div><dt>{t("Known summary credits")}</dt><dd>{number(metrics.summary_credits, 3)}</dd></div>
     </dl>
-    <p className="caption">{t("Source minutes describe recording coverage; summaries are charged for text and tokens. Each pass counts selected recordings again, including skipped content; overlaps count once per pass. Retries and reduction add no minutes.")}</p>
+    <p className="caption">{t("Unique audio counts overlapping recording time once for the selected period, even when summarized again. It includes imported transcripts. Summaries are charged for text and tokens.")}</p>
+    {(metrics.summary_unknown_coverage_runs ?? 0) > 0 ? <p className="notice" role="status">{t("Unique audio coverage is incomplete. Older passes or sources with missing recording times cannot be deduplicated.")}</p> : null}
+    <dl className="usage-credits"><div><dt>{t("Audio across summary passes")}</dt><dd>{summarySourceDuration(metrics)}</dd></div></dl>
+    <p className="caption">{t("Audio across passes counts the same recordings again on each summary pass, including skipped content. This can exceed captured audio. Retries and reduction add no recording time.")}</p>
     {(metrics.summary_unknown_duration_runs ?? 0) > 0 ? <p className="notice" role="status">{t("Summary source minutes are incomplete. Passes with unknown recording duration: {value0}.", { value0: number(metrics.summary_unknown_duration_runs ?? 0, 0) })}</p> : null}
     <p className="caption">{t("Summary text is measured in characters. Submitted text includes instructions, source references, reduction passes and retries.")}</p>
     <dl className="usage-metrics usage-summary-metrics">
@@ -125,23 +137,53 @@ function SummaryUsage({ metrics }: { metrics: UsageMetrics }) {
   </>;
 }
 
+function TextTaskUsage({ metrics, task }: { metrics: UsageMetrics; task: TextTask }) {
+  const requests = metrics[`${task}_requests`];
+  const characters = metrics[`${task}_submitted_characters`];
+  const input = metrics[`${task}_input_tokens`];
+  const output = metrics[`${task}_output_tokens`];
+  const credits = metrics[`${task}_credits`];
+  const unknownTokens = metrics[`${task}_unknown_token_requests`] ?? 0;
+  const unknownCharacters = metrics[`${task}_unknown_character_requests`] ?? 0;
+  const tokensUnmeasured = unknownTokens > 0 && unknownTokens === requests && input === 0 && output === 0;
+  const charactersUnmeasured = unknownCharacters > 0 && unknownCharacters === requests && characters === 0;
+  return <>
+    <h3>{task === "translation" ? t("Translation usage") : t("Chat usage")}</h3>
+    <p className="caption">{task === "translation"
+      ? t("Transcript and summary translations are counted separately from summaries and chat.")
+      : t("Chat includes supporting requests that prepare evidence for an answer.")}</p>
+    <dl className="usage-credits">
+      <div><dt>{t("Requests")}</dt><dd>{measured(requests)}</dd></div>
+      <div><dt>{t("Submitted text (characters)")}</dt><dd>{charactersUnmeasured ? t("Not measured") : measured(characters)}</dd></div>
+      <div><dt>{t("Known input tokens")}</dt><dd>{tokensUnmeasured ? t("Not measured") : measured(input)}</dd></div>
+      <div><dt>{t("Known output tokens")}</dt><dd>{tokensUnmeasured ? t("Not measured") : measured(output)}</dd></div>
+      <div><dt>{t("Known credits")}</dt><dd>{credits === undefined ? t("Not measured") : number(credits, 3)}</dd></div>
+    </dl>
+    {unknownTokens > 0 || unknownCharacters > 0 ? <p className="notice" role="status">{t("Measurements are incomplete. Requests with unknown token usage: {value0}. Requests with unknown submitted text size: {value1}.", { value0: number(unknownTokens, 0), value1: number(unknownCharacters, 0) })}</p> : null}
+  </>;
+}
+
 export function UsageDetails({ report }: { report: UsageReport }) {
   const totals = report.totals;
   return <>
     <p className="caption">{t("Measurements start when a recording is processed. Queued audio and older usage are excluded. Original audio follows your retention settings.")}</p>
     <dl className="usage-metrics">
-      <div><dt>{t("Captured audio")}</dt><dd>{t("{value0} min", { value0: number(totals.captured_minutes) })}</dd></div>
-      <div><dt>{t("Kept for transcription")}</dt><dd>{t("{value0} min", { value0: number(totals.retained_minutes) })}</dd></div>
-      <div><dt>{t("Submitted to transcription")}</dt><dd>{t("{value0} min", { value0: number(totals.submitted_minutes) })}</dd></div>
+      <div><dt>{t("Captured audio")}</dt><dd>{usageDuration(totals.captured_minutes)}</dd></div>
+      <div><dt>{t("Kept for transcription")}</dt><dd>{usageDuration(totals.retained_minutes)}</dd></div>
+      <div><dt>{t("Submitted to transcription")}</dt><dd>{usageDuration(totals.submitted_minutes)}</dd></div>
       <div><dt>{t("Audio filtered out")}</dt><dd>{totals.filtered_percent === null ? t("No audio yet")
         : new Intl.NumberFormat(displayLocale(), { style: "percent", maximumFractionDigits: 1 }).format(totals.filtered_percent / 100)}</dd></div>
     </dl>
     <p className="caption">{t("Kept audio includes a little context around speech. Submitted minutes include extra transcription passes and retries, so they can exceed kept minutes.")}</p>
     <SummaryUsage metrics={totals} />
+    <TextTaskUsage metrics={totals} task="translation" />
+    <TextTaskUsage metrics={totals} task="chat" />
     <h3>{t("Known Daythread credits")}</h3>
     <dl className="usage-credits">
       <div><dt>{t("Transcription")}</dt><dd>{number(totals.transcription_credits, 3)}</dd></div>
       <div><dt>{t("Summaries & recaps")}</dt><dd>{number(totals.summary_credits, 3)}</dd></div>
+      <div><dt>{t("Translations")}</dt><dd>{totals.translation_credits === undefined ? t("Not measured") : number(totals.translation_credits, 3)}</dd></div>
+      <div><dt>{t("Chat")}</dt><dd>{totals.chat_credits === undefined ? t("Not measured") : number(totals.chat_credits, 3)}</dd></div>
       <div><dt>{t("Other AI tasks")}</dt><dd>{number(totals.other_credits, 3)}</dd></div>
     </dl>
     {!report.credits_complete ? <p className="notice" role="status">{t("Credit totals are incomplete. Requests with unknown charges: {value0}. Pending requests and failures may still incur charges.", { value0: number(totals.unknown_credit_attempts) })}</p> : null}
@@ -151,16 +193,19 @@ export function UsageDetails({ report }: { report: UsageReport }) {
     <p className="caption">{t("Grouped by processing date in {value0} for the selected month.", { value0: report.timezone })}</p>
     {report.days.length === 0 ? <p>{t("No usage recorded for this month.")}</p> : <div className="usage-table-scroll" tabIndex={0} role="region" aria-label={t("Daily usage")}>
       <table className="usage-table">
-        <thead><tr><th scope="col">{t("Date")}</th><th scope="col">{t("Captured minutes")}</th>
-          <th scope="col">{t("Kept minutes")}</th><th scope="col">{t("Submitted minutes")}</th>
-          <th scope="col">{t("Summary source minutes")}</th>
+        <thead><tr><th scope="col">{t("Date")}</th><th scope="col">{t("Captured audio")}</th>
+          <th scope="col">{t("Kept for transcription")}</th><th scope="col">{t("Submitted to transcription")}</th>
+          <th scope="col">{t("Unique summary audio")}</th>
           <th scope="col">{t("Summary submitted characters")}</th><th scope="col">{t("Summary requests")}</th>
-          <th scope="col">{t("Summary tokens (in / out)")}</th><th scope="col">{t("Known credits")}</th></tr></thead>
+          <th scope="col">{t("Summary tokens (in / out)")}</th>
+          <th scope="col">{t("Translation requests")}</th><th scope="col">{t("Chat requests")}</th>
+          <th scope="col">{t("Known credits")}</th></tr></thead>
         <tbody>{report.days.map((day) => <tr key={day.date}>
-          <th scope="row">{dayLabel(day.date)}</th><td>{number(day.captured_minutes)}</td><td>{number(day.retained_minutes)}</td>
-          <td>{number(day.submitted_minutes)}</td><td>{summarySourceMinutes(day)}{(day.summary_unknown_duration_runs ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
+          <th scope="row">{dayLabel(day.date)}</th><td>{usageDuration(day.captured_minutes)}</td><td>{usageDuration(day.retained_minutes)}</td>
+          <td>{usageDuration(day.submitted_minutes)}</td><td>{summarySourceDuration(day, true)}{(day.summary_unknown_coverage_runs ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
           <td>{summaryCharacters(day)}{(day.summary_unknown_character_requests ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
           <td>{measured(day.summary_requests)}</td><td>{summaryTokens(day)}{(day.summary_unknown_token_requests ?? 0) > 0 ? <small>{t("(incomplete)")}</small> : null}</td>
+          <td>{measured(day.translation_requests)}</td><td>{measured(day.chat_requests)}</td>
           <td>{number(knownCredits(day), 3)}{day.unknown_credit_attempts > 0 ? <small> {t("(incomplete)")}</small> : null}</td>
         </tr>)}</tbody>
       </table>

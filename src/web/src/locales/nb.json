@@ -2852,5 +2852,8 @@
   "Recording audio no longer matches its capture bounds": "Lyden i opptaket samsvarer ikke lenger med opptakets tidsgrenser",
   "Recording audio unavailable": "Lyden i opptaket er ikke tilgjengelig",
   "Recording unavailable": "Opptaket er ikke tilgjengelig",
-  "Recording upload is incomplete": "Opplastingen av opptaket er ufullstendig"
+  "Recording upload is incomplete": "Opplastingen av opptaket er ufullstendig",
+  "Browse all topics": "Bla gjennom alle emner",
+  "Back to daily recap": "Tilbake til dagsoppsummeringen",
+  "Search recap topics": "Søk i sammendragets emner"
 }

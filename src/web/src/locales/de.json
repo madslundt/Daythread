@@ -2852,5 +2852,8 @@
   "Recording audio no longer matches its capture bounds": "Die Audiodaten stimmen nicht mehr mit dem Aufnahmezeitraum überein",
   "Recording audio unavailable": "Audioaufnahme nicht verfügbar",
   "Recording unavailable": "Aufnahme nicht verfügbar",
-  "Recording upload is incomplete": "Der Upload der Aufnahme ist unvollständig"
+  "Recording upload is incomplete": "Der Upload der Aufnahme ist unvollständig",
+  "Browse all topics": "Alle Themen durchsuchen",
+  "Back to daily recap": "Zurück zum Tagesrückblick",
+  "Search recap topics": "Themen der Zusammenfassung suchen"
 }

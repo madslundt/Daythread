@@ -2852,5 +2852,8 @@
   "Recording audio no longer matches its capture bounds": "Recording audio no longer matches its capture bounds",
   "Recording audio unavailable": "Recording audio unavailable",
   "Recording unavailable": "Recording unavailable",
-  "Recording upload is incomplete": "Recording upload is incomplete"
+  "Recording upload is incomplete": "Recording upload is incomplete",
+  "Browse all topics": "Browse all topics",
+  "Back to daily recap": "Back to daily recap",
+  "Search recap topics": "Search recap topics"
 }

@@ -81,8 +81,9 @@ describe("recap summary translation composition", () => {
     const html = renderToStaticMarkup(<RecapSection day="2026-10-19" timezone="UTC" onChat={() => {}} />);
     expect(html).toContain("Send lanceringsoplægget");
     expect(html).toContain("Begynd med et mindre pilotprojekt");
-    expect(html).toContain("Weekendplaner");
-    expect(html).toContain('data-topic-id="original:chapter"');
+    expect(html).toContain("Browse all topics");
+    expect(html).not.toContain("Weekendplaner");
+    expect(html).not.toContain('data-topic-id="original:chapter"');
     expect(html).toContain('aria-label="Mark complete: Send lanceringsoplægget"');
     expect(html).toContain("Review action");
     expect(html).toContain("Review decision");

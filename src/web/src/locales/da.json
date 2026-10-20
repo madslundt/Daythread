@@ -2852,5 +2852,8 @@
   "Recording audio no longer matches its capture bounds": "Optagelsens lyd svarer ikke længere til optagelsens tidsgrænser",
   "Recording audio unavailable": "Optagelsens lyd er ikke tilgængelig",
   "Recording unavailable": "Optagelsen er ikke tilgængelig",
-  "Recording upload is incomplete": "Uploaden af optagelsen er ufuldstændig"
+  "Recording upload is incomplete": "Uploaden af optagelsen er ufuldstændig",
+  "Browse all topics": "Gennemse alle emner",
+  "Back to daily recap": "Tilbage til dagens opsummering",
+  "Search recap topics": "Søg i opsummeringens emner"
 }

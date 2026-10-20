@@ -213,15 +213,25 @@ transcript excerpts when the selective daily synthesis has no description for th
 Timeline topic lists group matching titles within each recording. Adjacent passages form one
 recording span; a later return after another topic or a missing transcript interval forms a
 separately selectable span under the same topic. Counts refer to these spans, not upload chunks.
-Day recap browsing groups matching titles across the whole day and retains the distinct source
-passages and summary details. Canonical titles determine grouping even when translations differ.
+The daily recap shows synthesized topics separately from the complete recording-topic index.
+**Browse all topics** opens original chapters, including chapters represented in the synthesis;
+returning clears search and topic focus. A selective empty recap still offers this browser.
+Canonical titles determine web index grouping even when translations differ; iPhone original
+chapter continuations retain backend chapter identity. Both clients show every synthesized daily
+topic without a numeric target, cap or overflow cutoff. A new recap version clears topic focus
+so a reorganized row cannot inherit another subject's evidence or action selection.
 A separate background consumer backfills existing recordings without repeating transcription.
 Analysis is cached by prompt/model/language and the versions of every source in its context.
 Dependencies in `recording_topic_sources` invalidate sibling chapters on correction, deletion or
 transcript expiry; atomic publication rejects evidence or grouping changes during generation.
 Recap preparation shares this cached subject map, sends exact per-subject transcript copies with
-original UUIDs, and treats titles as navigation hints rather than facts. Daily synthesis merges
-continued subjects across recordings under specific headings while retaining source citations.
+original UUIDs, and treats titles as navigation hints rather than facts. Daily synthesis reviews
+the selected whole day's grounded notes on each update, merging continued subjects across
+recordings and allowing useful general topics for smaller related updates. Later context can
+merge earlier topics or split a substantial subject from a broad one, preserving unique details,
+changed plans, qualifications and original citations. It does not build on the previous daily
+recap as factual evidence or impose per-recording subject counts. Grouping quality depends on
+the configured model; structural citation checks alone do not establish semantic correctness.
 The source UUID, capture bounds, audio and canonical transcript remain unchanged.
 
 Rewind returns original chunk evidence, pending transcription count, missing-audio intervals, optional generated summary, and clipped audio separately. Speech timestamps are chunk-level by default; compatible HTTP STT providers can supply segment timestamps when enabled. Local speech filtering is enabled by default for STT copies, retaining padded speech spans and original source offsets; full archive audio is unchanged. Detection failure retains the entire request, and the old RMS floor remains a separate explicit opt-out from preserve-quiet mode. Optional speaker diarization processes complete meeting/conversation audio in a separate local Community-1 service. SQLite stores anonymous turns, user-assigned names and correction events separately from canonical transcripts; version checks reject concurrent edits and stale evidence. Playback joins original intervals for one speaker. Source deletion/transcript expiry removes dependent speaker metadata, and profiles retain separate assignments. Optional remembered voices use only explicit confirmed enrollment, clean speech embeddings and immutable weights/code fingerprints. Suggestions require two independent confirmed conversations and an exact-gallery held-out evaluation report, then user confirmation. Audio retention, deletion and corrections remove dependent examples; duplicate source evidence cannot count twice. Automatic naming and simultaneous-speaker separation remain unimplemented.

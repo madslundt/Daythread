@@ -23,24 +23,28 @@ type TopicRow = RecapBrowserTopic & { displayTitle: string; displayParts: RecapT
 
 export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage }: Props) {
   const [query, setQuery] = useState("");
+  const [browsingRecordings, setBrowsingRecordings] = useState(false);
   const [selected, setSelected] = useState<string>();
   useEffect(() => () => onFocus?.(undefined), [onFocus]);
   const id = useId();
   const language = interfaceLanguage();
   const display = useMemo(() => translatedText === undefined ? undefined
     : recapTranslationDisplay(text, translatedText, translationStructure), [text, translatedText, translationStructure]);
+  const recordingTopics = useMemo(() => recapBrowserTopics([], sources), [sources]);
   const canonicalRows = useMemo(() => {
+    if (browsingRecordings) return recordingTopics.map((topic): TopicRow => ({ ...topic,
+      displayTitle: topic.title, displayParts: topic.parts }));
     const parts = recapParts(text);
     const original = recapTopics(parts, day);
     const translated = display === undefined ? original : recapTopics(parts, day, recapParts(text, display));
-    const topics: TopicRow[] = recapBrowserTopics(original.topics, sources).map((topic, index) => ({ ...topic,
+    const topics: TopicRow[] = recapBrowserTopics(original.topics, sources).filter((topic) => !topic.originalPassages).map((topic, index) => ({ ...topic,
       displayTitle: translated.topics[index]?.title || topic.title, displayParts: translated.topics[index]?.parts || topic.parts }));
     if (original.introduction.length) topics.unshift({ id: "recap:introduction", title: source("Day recap"), parts: original.introduction,
       displayTitle: t("Day recap"), displayParts: translated.introduction });
     if (original.followups.length) topics.push({ id: "recap:followups", title: source("Follow-ups mentioned in the recap"), parts: original.followups,
       displayTitle: t("Follow-ups mentioned in the recap"), displayParts: translated.followups, followups: true });
     return topics;
-  }, [text, display, day, sources, language]);
+  }, [text, display, day, sources, language, browsingRecordings, recordingTopics]);
   const labels = useDisplayTranslations(canonicalRows.map(originalTopicTranslation).filter((item): item is DisplayTranslationInput => !!item), `${day}:${version}`);
   const rows = useMemo(() => canonicalRows.map((topic) => {
     const input = originalTopicTranslation(topic);
@@ -66,13 +70,19 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     {translatedText !== undefined && display === undefined ? <p className="caption recap-translation-warning" role="status">
       {t("Update this translation to keep the recap’s topics and layout.")}
     </p> : null}
-    {!text.trim() ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
+    {!text.trim() && !browsingRecordings ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
     <div className="recap-topic-browser">
+      {recordingTopics.length ? <button type="button" className="text-button" aria-pressed={browsingRecordings}
+        onClick={() => { setBrowsingRecordings((value) => !value); setQuery(""); setSelected(undefined); onFocus?.(undefined); }}>
+        <Icon name={browsingRecordings ? "chevron-left" : "search"} size={16} />
+        {browsingRecordings ? t("Back to daily recap") : t("Browse all topics")}
+      </button> : null}
       <label className="recap-topic-search" htmlFor={`${id}-search`}>
         <Icon name="search" size={17} />
         <input id={`${id}-search`} type="search" value={query} onChange={(event) => {
           setQuery(event.target.value); setSelected(undefined); onFocus?.(undefined);
-        }} placeholder={t("Find a topic in this day")} aria-label={t("Find a topic in this day")} />
+        }} placeholder={browsingRecordings ? t("Find a topic in this day") : t("Search recap topics")}
+          aria-label={browsingRecordings ? t("Find a topic in this day") : t("Search recap topics")} />
       </label>
       <DisplayTranslationStatus value={labels} />
       <div className="recap-topic-list">
@@ -85,7 +95,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
           ? t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: query.trim() }) : undefined)}>
           <Icon name="chat" size={16} />{t("Ask about this day")}
         </button> : null}
-        {text.trim() ? <CopySummary text={recapReadingText(display ?? text)} context={t("Day recap")} /> : null}
+        {text.trim() && !browsingRecordings ? <CopySummary text={recapReadingText(display ?? text)} context={t("Day recap")} /> : null}
       </div>
     </div>
   </div>;

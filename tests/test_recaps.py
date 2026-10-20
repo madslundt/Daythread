@@ -148,6 +148,63 @@ def test_conversation_notes_are_reused_and_silence_does_not_regenerate_recap(cli
     assert len(memory.inference.calls) == 4  # Only the new conversation plus synthesis.
 
 
+def test_later_context_resynthesizes_all_earlier_topics_without_reusing_the_old_recap(client):
+    travel = insert(client, AT - timedelta(hours=2), "Compare train routes", "manual_upload")
+    hotel = insert(client, AT - timedelta(hours=1), "Reserve the hotel", "manual_upload")
+    link = None
+
+    class EvolvingDay(FakeInference):
+        async def summarize(self, sources, purpose):
+            if not purpose.startswith("a readable diary recap"):
+                return await super().summarize(sources, purpose)
+            self.calls.append((sources, purpose))
+            texts = "\n".join(source["text"] for source in sources)
+            assert "Compare train routes" in texts and "Reserve the hotel" in texts
+            # Saved recap wording is navigation, not evidence for the next generation.
+            assert "Earlier travel summary" not in texts
+            assert "Earlier hotel summary" not in texts
+            if link is None:
+                return (f"## Travel options\nEarlier travel summary [{travel}].\n"
+                        f"## Hotel booking\nEarlier hotel summary [{hotel}].")
+            assert "Both bookings are for our Lisbon trip" in texts
+            assert {source["id"] for source in sources} == {travel, hotel, link}
+            return (f"## Weekend trip\nCompare train routes [{travel}] and reserve the hotel "
+                    f"[{hotel}] for the same Lisbon trip [{link}].")
+
+    memory = client.app.state.memory
+    memory.inference = EvolvingDay()
+    initial = client.post("/v1/recaps/2026-10-16").json()
+    assert initial["summary"].count("## ") == 2
+    link = insert(client, text="Both bookings are for our Lisbon trip", kind="manual_upload")
+    assert client.get("/v1/recaps/2026-10-16").json()["stale"]
+    updated = client.post("/v1/recaps/2026-10-16").json()
+    assert updated["output_id"] != initial["output_id"]
+    assert updated["summary"].count("## ") == 1
+    assert {source["id"] for source in updated["sources"]} == {travel, hotel, link}
+    assert all(f"[{key}]" in updated["summary"] for key in (travel, hotel, link))
+    # Two original preparations, first synthesis, one new preparation, full-day synthesis.
+    assert len(memory.inference.calls) == 5
+    versions = client.get("/v1/diary/2026-10-16/versions").json()["items"]
+    assert any(item["content"]["summary"] == initial["summary"] for item in versions)
+
+
+def test_daily_publication_preserves_all_distinct_model_topics_without_truncating(client):
+    key = insert(client, kind="manual_upload")
+
+    class VariedDay(FakeInference):
+        async def summarize(self, sources, purpose):
+            if not purpose.startswith("a readable diary recap"):
+                return await super().summarize(sources, purpose)
+            return "\n\n".join(f"## Subject {i}\nUseful detail {i} [{key}]."
+                               for i in range(1, 13))
+
+    client.app.state.memory.inference = VariedDay()
+    recap = client.post("/v1/recaps/2026-10-16").json()
+    assert recap["summary"].count("## ") == 12
+    assert f"Useful detail 12 [{key}]" in recap["summary"]
+    assert not recap["stale"]
+
+
 def test_low_value_fragments_are_cached_without_inventing_a_daily_event(client):
     from omi_local.recaps import NO_CONTENT
 
@@ -388,13 +445,15 @@ def test_prompt_upgrade_refreshes_saved_recap(client, monkeypatch, version, expe
     # Conversation prompt changes must rewrite notes as well as the daily recap.
     assert len(memory.inference.calls) == expected_calls
     purpose = memory.inference.calls[-1][1]
-    assert "fewest meaningful topic sections" in purpose
+    assert "no target, minimum or maximum number of topics" in purpose
     assert "one coherent summary per topic" in purpose
     assert "Do not create separate short and long summaries" in purpose
     assert "do not mix in unrelated subjects" in purpose
     assert "without a recap title, date heading" in purpose
     assert "do not create separate decisions/commitments or open-questions sections" in purpose
     assert "Rewrite, rename, merge or reorganize" in purpose
+    assert "Reconsider relationships among all earlier discussions" in purpose
+    assert "Split a substantial growing subject out of a broad topic" in purpose
     asyncio.run(scheduled_recaps(memory))
     assert len(memory.inference.calls) == expected_calls
 

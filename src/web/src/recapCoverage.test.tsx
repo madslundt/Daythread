@@ -70,12 +70,13 @@ describe("transcribed recording recap display", () => {
     const html = render();
     expect(html).not.toContain("Day overview");
     expect(html).not.toContain("Explore topics");
-    expect(html).toContain("Garden tools");
-    expect(html).toContain("Original passages");
-    expect(html).toContain('class="recap-topic-option" aria-expanded="false"');
+    expect(html).toContain("Browse all topics");
+    expect(html).not.toContain("Garden tools");
+    expect(html).not.toContain("Original passages");
+    expect(html).not.toContain('class="recap-topic-option"');
     expect(html).not.toContain("The story of your day starts here.");
     expect(html.match(/No useful recap content in transcribed recordings yet/g)).toHaveLength(1);
-    expect(html).toContain("We compared garden tools.");
+    expect(html).not.toContain("We compared garden tools.");
     expect(html).not.toContain('aria-label="Summary language"');
     expect(html).not.toContain('aria-label="Copy summary: Day recap"');
   });

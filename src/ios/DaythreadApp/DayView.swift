@@ -215,7 +215,7 @@ struct DayView: View {
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
                     onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } },
                     onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } })
-                    .id(scopeKey + recap["scope_fingerprint"].text)
+                    .id(scopeKey + recap["scope_fingerprint"].text + recap["output_id"].text + recap["summary"].text)
             } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }

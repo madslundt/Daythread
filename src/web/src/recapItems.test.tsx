@@ -16,7 +16,7 @@ describe("day recap interactions", () => {
   it("offers one searchable topic list without duplicate views or separate task state", () => {
     const html = renderToStaticMarkup(<RecapContent text={"## Cocoa\nA test with dark chocolate.\n## Follow-ups\n- Buy cocoa"}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} />);
-    expect(html).toContain('aria-label="Find a topic in this day"');
+    expect(html).toContain('aria-label="Search recap topics"');
     expect(html).toContain('class="recap-topic-list"');
     expect(html).toContain('data-topic-id="recap:0:Cocoa"');
     expect(html).not.toContain("Day overview");
@@ -291,13 +291,22 @@ describe("day recap interactions", () => {
       section: source.sections![1], text: second }]);
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[source]} timezone="UTC" onCorrect={() => {}} />);
     expect(html).toContain("A useful cocoa trial.");
-    expect(html).toContain("Garden tools");
-    expect(html).toContain("Original passages");
-    expect(html).toContain(second);
+    expect(html).toContain("Browse all topics");
+    expect(html).not.toContain("Garden tools");
+    expect(html).not.toContain("Original passages");
+    expect(html).not.toContain(second);
     const separate = { ...source, id: sources[1].id, sections: [source.sections![0]] };
     const acrossDay = recapBrowserTopics(synthesized, [source, separate]);
     expect(acrossDay.map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools"]);
     expect(acrossDay[0].evidencePassages?.map((passage) => passage.source_id)).toEqual([source.id, separate.id]);
+  });
+
+  it.each([1, 10, 12])("shows all %i meaningful daily topics without a quota or overflow cutoff", (count) => {
+    const text = Array.from({ length: count }, (_, i) => `## Subject ${i + 1}\nUseful details for subject ${i + 1}.`).join("\n\n");
+    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test"
+      sources={[]} timezone="UTC" onCorrect={() => {}} />);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(count);
+    expect(html).not.toContain("More from today");
   });
 
   it("groups explicitly shared original chapters across parts and rejects invalid bounds", () => {

@@ -1,9 +1,13 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
+import { playbackTime } from "./recordingWaveform";
+import { useRecordingSeek } from "./useRecordingSeek";
+import { groupTopicRuns } from "./topicOccurrences";
+import { RecordingTopicList } from "./RecordingTopicList";
 
 export type CombinedRecording = {
   id: string; title: string; started_at: string; ended_at: string;
@@ -11,7 +15,7 @@ export type CombinedRecording = {
   audio_availability?: string;
   text: string | null; transcript_version: string;
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
-    start_seconds?: number; end_seconds?: number }[];
+    start_seconds?: number; end_seconds?: number; start_estimated?: boolean }[];
 };
 
 export function MergedRecording({ recordingID }: { recordingID: string }) {
@@ -24,34 +28,29 @@ export function MergedRecording({ recordingID }: { recordingID: string }) {
 }
 
 export function MergedRecordingContent({ recording }: { recording: CombinedRecording }) {
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const bindAudio = useCallback((element: HTMLAudioElement | null) => { audio.current = element; }, []);
-  const pendingSeek = useRef<number | null>(null);
-  const seekWhenReady = useCallback(() => {
-    if (audio.current && pendingSeek.current !== null) {
-      audio.current.currentTime = pendingSeek.current;
-      pendingSeek.current = null;
-    }
-  }, []);
+  const playback = useRecordingSeek();
+  const topics = useMemo(() => groupTopicRuns(recording.sections, (section) => section.title,
+    (left, right) => left.end_offset === right.start_offset), [recording.sections]);
+  const occurrences = useMemo(() => topics.flatMap((topic) => topic.occurrences.map((sections, index) => ({
+    ...sections[0], id: `${sections[0].chapter_id}:${sections[0].start_offset}`,
+    end_offset: sections.at(-1)!.end_offset, end_seconds: sections.at(-1)!.end_seconds,
+    occurrenceNumber: index + 1, occurrenceCount: topic.occurrences.length,
+  }))), [topics]);
   const [selectedTopic, setSelectedTopic] = useState("");
-  const topicIndex = Math.max(0, recording.sections.findIndex((section) => section.chapter_id === selectedTopic));
-  const topic = recording.sections[topicIndex];
+  const topic = occurrences.find((section) => section.id === selectedTopic) || occurrences[0];
   const followPosition = useCallback((seconds: number) => {
     // Untimed topics remain readable without inventing a seek position.
-    if (!recording.sections.every((section) => section.start_seconds !== undefined)) return;
-    for (let index = recording.sections.length - 1; index >= 0; index--) {
-      if (recording.sections[index].start_seconds! <= seconds) {
-        setSelectedTopic(recording.sections[index].chapter_id);
-        break;
-      }
+    const chronological = occurrences.filter((section) => section.start_seconds !== undefined)
+      .sort((a, b) => a.start_offset - b.start_offset);
+    for (let index = chronological.length - 1; index >= 0; index--) {
+      if (chronological[index].start_seconds! <= seconds) { setSelectedTopic(chronological[index].id); break; }
     }
-  }, [recording.sections]);
-  function selectTopic(index: number) {
-    const section = recording.sections[index];
+  }, [occurrences]);
+  function selectTopic(id: string) {
+    const section = occurrences.find((section) => section.id === id);
     if (!section) return;
-    setSelectedTopic(section.chapter_id);
-    pendingSeek.current = section.start_seconds ?? null;
-    if (audio.current && audio.current.readyState >= 1) seekWhenReady();
+    setSelectedTopic(section.id);
+    playback.seekTo(section.start_seconds);
   }
   const base = `/v1/recordings/${encodeURIComponent(recording.id)}`;
   const text = Array.from(recording.text || "");
@@ -59,7 +58,12 @@ export function MergedRecordingContent({ recording }: { recording: CombinedRecor
     {recording.audio_available ? <RecordingAudioPlayer
       src={profileResourceUrl(`${base}/audio`)} waveformSrc={profileResourceUrl(`${base}/waveform`)}
       label={recording.title || t("Recording")} durationHint={recording.duration_seconds}
-      audioRef={bindAudio} onPositionChange={followPosition} onReady={seekWhenReady} /> : null}
+      bookmarks={occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
+        label: section.title + (section.occurrenceCount > 1 ? ` · ${t("Recording")} ${section.occurrenceNumber}` : "")
+          + (section.start_estimated ? ` ${t("· estimated times")}` : ""),
+        seconds: section.start_seconds, onSelect: () => selectTopic(section.id),
+      }])}
+      audioRef={playback.audioRef} onPositionChange={followPosition} onReady={playback.onReady} /> : null}
     {!recording.audio_available && recording.state === "done" ? <p className="caption">
       {recording.audio_availability === "missing"
         ? t("The archive expects audio, but the file is missing.")
@@ -67,18 +71,11 @@ export function MergedRecordingContent({ recording }: { recording: CombinedRecor
     </p> : null}
     {topic ? <div className="recording-sections">
       <h3>{t("Topics")}</h3>
-      <div className="recording-topic-navigation" role="group" aria-label={t("Topics")}>
-        <button type="button" className="button small" disabled={topicIndex === 0}
-          onClick={() => selectTopic(topicIndex - 1)}>{t("Previous")}</button>
-        <select aria-label={t("Topics")} value={topic.chapter_id}
-          onChange={(event) => selectTopic(recording.sections.findIndex((section) => section.chapter_id === event.target.value))}>
-          {recording.sections.map((section) => <option key={section.chapter_id} value={section.chapter_id}>{section.title}</option>)}
-        </select>
-        <button type="button" className="button small" disabled={topicIndex === recording.sections.length - 1}
-          onClick={() => selectTopic(topicIndex + 1)}>{t("Next")}</button>
-      </div>
-      <p className="caption" aria-live="polite">{topicIndex + 1} / {recording.sections.length}</p>
-      <p className="transcript-text">{text.slice(topic.start_offset, topic.end_offset).join("")}</p>
+      <RecordingTopicList topics={topics.map((group) => ({ key: group.key, title: group.title,
+        occurrences: group.occurrences.map(([section]) => ({ id: `${section.chapter_id}:${section.start_offset}`,
+          label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated })) }))}
+        selected={topic.id} onSelect={selectTopic} />
+      <p className="transcript-text" aria-live="polite">{text.slice(topic.start_offset, topic.end_offset).join("")}</p>
     </div> : null}
     {recording.text !== null ? recording.sections.length ? <details className="recording-disclosure">
       <summary>{t("Full transcript")}</summary>

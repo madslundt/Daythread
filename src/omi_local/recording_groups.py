@@ -131,7 +131,8 @@ def recording_groups(
             items.append(bounds | {
                 "title": title, "recording_count": 1 if recording_id else len(members),
                 **({"recording_id": recording_id} if recording_id else {}),
-                "topic_count": len(chapter_navigation(members)),
+                "topic_count": len({" ".join(chapter["title"].casefold().split())
+                                    for chapter in chapter_navigation(members)}),
                 "tags": list({
                     tag["id"]: tag for row in members
                     for tag in upload_tags[row["upload_key"]].values()

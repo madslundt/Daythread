@@ -47,7 +47,9 @@ describe("compact recording sessions", () => {
       parts: [0, 1].map((index) => ({ source_id: `source-${index}`, source_index: index,
         transcript_version: "version", start_offset: 0, end_offset: 100 })),
     }]} timezone="UTC" onCorrect={() => {}} />);
-    expect(html.match(/<summary>Launch review<\/summary>/g)).toHaveLength(1);
+    expect(html.match(/<summary>/g)).toHaveLength(1);
+    expect(html).toContain("Launch review");
+    expect(html).toContain("1 recording");
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("Loading recordings");
   });

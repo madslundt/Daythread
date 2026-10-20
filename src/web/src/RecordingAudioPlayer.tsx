@@ -16,13 +16,14 @@ type Props = {
   onPositionChange?: (seconds: number) => void;
   onReady?: () => void;
   initialSpeed?: number;
+  bookmarks?: { label: string; seconds: number; onSelect: () => void }[];
 };
 
 export function RecordingAudioPlayer(props: Props) {
   return <Player key={props.src} {...props} />;
 }
 
-function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1 }: Props) {
+function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1, bookmarks }: Props) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const scrubbing = useRef(false);
   const resumeAfterScrub = useRef(false);
@@ -96,7 +97,11 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
     if (element.currentTime >= clipEnd.current || element.ended) element.currentTime = start;
     element.playbackRate = speed;
     try { await element.play(); setError(""); }
-    catch { setError(t("Unable to play recording.")); }
+    catch (error) {
+      // A topic selection or Pause can cancel a pending play request normally.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setError(t("Unable to play recording."));
+    }
   }
 
   function seek(seconds: number) {
@@ -177,6 +182,14 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
           audio.current?.pause();
         }} onPointerUp={finishScrubbing} onPointerCancel={finishScrubbing} onLostPointerCapture={finishScrubbing} />
     </div>
+    {duration > 0 && bookmarks?.length ? <div className="recording-player-bookmarks" role="group" aria-label={t("Topics")}>
+      {bookmarks.filter((bookmark) => Number.isFinite(bookmark.seconds) && bookmark.seconds >= 0 && bookmark.seconds <= duration)
+        .map((bookmark, index) => <button key={`${bookmark.seconds}:${index}`} type="button"
+          style={{ left: `${bookmark.seconds / duration * 100}%` }}
+          title={`${playbackTime(bookmark.seconds)} · ${bookmark.label}`}
+          aria-label={`${playbackTime(bookmark.seconds)} · ${bookmark.label}`}
+          onClick={bookmark.onSelect}><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><path d="M1 1h10v14l-5-4-5 4Z" /></svg></button>)}
+    </div> : null}
     <div className="recording-player-controls">
       <div className="recording-player-transport">
         <button type="button" className="recording-player-play" disabled={!available}

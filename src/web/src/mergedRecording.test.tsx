@@ -15,6 +15,18 @@ const recording: CombinedRecording = {
 };
 
 describe("combined uploaded recording", () => {
+  it("lists a returning topic once and counts adjacent passages as one recording", () => {
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording, sections: [
+      { ...recording.sections[0], end_offset: 10, end_seconds: 10 },
+      { ...recording.sections[0], chapter_id: "launch-continuation", start_offset: 10, end_offset: 20, start_seconds: 10, end_seconds: 20 },
+      { ...recording.sections[1], start_offset: 20, end_offset: 30, start_seconds: 20, end_seconds: 30 },
+      { ...recording.sections[0], chapter_id: "launch-return", start_offset: 30, start_seconds: 30 },
+    ] }} />);
+    expect(html.match(/<li /g)).toHaveLength(2);
+    expect(html).toContain("2 recordings");
+    expect(html).toContain('aria-label="Recording 2 · 00:30"');
+    expect(html.match(/<audio /g)).toHaveLength(1);
+  });
   it("renders one continuous player, one full transcript and topics without chunk rows", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={recording} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
@@ -26,9 +38,11 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("source-row");
     expect(html).not.toContain("Full recording &amp; tools");
     expect(html).not.toContain("Next recordings");
-    expect(html).toContain(">Previous</button>");
-    expect(html).toContain(">Next</button>");
-    expect(html).toContain('<select aria-label="Topics"');
+    expect(html).toContain('class="recording-topic-bookmarks"');
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain('26:40');
+    expect(html).not.toContain('<select');
+    expect(html.indexOf('<audio')).toBeLessThan(html.indexOf('class="recording-topic-bookmarks"'));
     expect(html.match(/class="recording-player-play"/g)).toHaveLength(1);
   });
   it("uses the combined recording view even though the upload counts as one recording", () => {
@@ -41,6 +55,15 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("2 topics");
     expect(html).toContain("recording-session");
     expect(html).not.toContain("1 recordings");
+  });
+  it("labels chunk-based bookmarks as approximate while keeping their topics readable", () => {
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording, sections: [
+      { ...recording.sections[0], start_estimated: true }, recording.sections[1],
+    ] }} />);
+    expect(html).toContain("estimated times");
+    expect(html).toContain('title="00:00 · Launch · estimated times"');
+    expect(html).toContain('title="26:40 · Garden"');
+    expect(html.match(/<audio /g)).toHaveLength(1);
   });
   it("does not present an incomplete upload's partial transcript or audio as complete", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{

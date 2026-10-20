@@ -1,5 +1,6 @@
 import type { Source } from "./types";
 import type { DisplayTranslationInput } from "./displayTranslations";
+import { topicTitleKey } from "./topicOccurrences";
 
 export type RecapPart =
   | { kind: "text"; text: string }
@@ -17,7 +18,7 @@ export type OriginalRecapPassage = {
   source_id: string; source_version?: string; transcript_version?: string;
   section: NonNullable<Source["sections"]>[number]; text: string;
 };
-export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[] };
+export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[]; evidencePassages?: OriginalRecapPassage[] };
 
 export function originalTopicTranslation(topic: RecapBrowserTopic): DisplayTranslationInput | undefined {
   const passage = topic.originalPassages?.[0];
@@ -33,6 +34,14 @@ export function recapTopics(parts: RecapPart[], day: string, displayParts = part
   const topics: RecapTopicGroup[] = [];
   const introduction: RecapPart[] = [];
   const followups: RecapPart[] = [];
+  const byTitle = new Map<string, RecapTopicGroup>();
+  function append(canonicalTitle: string, title: string, parts: RecapPart[]) {
+    const key = topicTitleKey(canonicalTitle);
+    let topic = byTitle.get(key);
+    if (!topic) { topic = { title, parts: [] }; topics.push(topic); byTitle.set(key, topic); }
+    topic.parts.push(...parts);
+    return topic;
+  }
   const displays = new Map(parts.map((part, index) => [part, displayParts[index] || part]));
   const displayGroups = recapGroups(parts, day, displayParts);
   for (const [index, group] of recapGroups(parts, day).entries()) {
@@ -40,7 +49,7 @@ export function recapTopics(parts: RecapPart[], day: string, displayParts = part
     followups.push(...group.parts.filter((part) => part.kind === "item" && part.action).map((part) => displays.get(part)!));
     const labelled = narrative.some((part) => part.kind === "item" && /^\*\*[^*]+\*\*/.test(part.text));
     if (group.title && narrative.length && !labelled) {
-      topics.push({ title: displayGroups[index].title!.replace(/\*\*/g, ""), parts: narrative.map((part) => displays.get(part)!) });
+      append(group.title.replace(/\*\*/g, ""), displayGroups[index].title!.replace(/\*\*/g, ""), narrative.map((part) => displays.get(part)!));
       continue;
     }
     let current: RecapTopicGroup | undefined;
@@ -49,8 +58,7 @@ export function recapTopics(parts: RecapPart[], day: string, displayParts = part
       const display = displays.get(part)!;
       if (label) {
         const displayLabel = display.text.match(/^\*\*([^*]+)\*\*\s*(?:[—–:-]\s*)?([\s\S]*)$/);
-        current = { title: displayLabel?.[1] || label[1], parts: [{ kind: "text", text: displayLabel?.[2] || display.text }] };
-        topics.push(current);
+        current = append(label[1], displayLabel?.[1] || label[1], [{ kind: "text", text: displayLabel?.[2] || display.text }]);
       } else if (current) current.parts.push(display);
       else introduction.push(display);
     }
@@ -67,7 +75,7 @@ export function topicFocus(topic: RecapTopicGroup, sources: Source[]): RecapFocu
 // The day synthesis is selective; original chapters remain available for deliberate exploration.
 export function recapBrowserTopics(topics: RecapTopicGroup[], sources: Source[]): RecapBrowserTopic[] {
   const result: RecapBrowserTopic[] = topics.map((topic, index) => ({ ...topic, id: `recap:${index}:${topic.title}` }));
-  const represented = topics.flatMap((topic) => topicFocus(topic, sources).passages);
+  const represented = result.map((topic) => ({ topic, passages: topicFocus(topic, sources).passages }));
   const originals = new Map<string, RecapBrowserTopic>();
   const seen = new Set<string>();
   for (const source of sources) {
@@ -76,19 +84,22 @@ export function recapBrowserTopics(topics: RecapTopicGroup[], sources: Source[])
     for (const section of source.sections || []) {
       if (!section.title.trim() || !Number.isInteger(section.start_offset) || !Number.isInteger(section.end_offset)
         || section.start_offset < 0 || section.end_offset <= section.start_offset || section.end_offset > characters.length) continue;
-      if (represented.some((passage) => passage.source_id === source.id
-        && passage.start <= section.start_offset && passage.end >= section.end_offset)) continue;
       const identity = `${source.id}:${source.source_version || ""}:${source.transcript_version || ""}:${section.start_offset}:${section.end_offset}`;
       if (seen.has(identity)) continue;
       seen.add(identity);
       const passage: OriginalRecapPassage = { source_id: source.id, source_version: source.source_version,
         transcript_version: source.transcript_version, section,
         text: characters.slice(section.start_offset, section.end_offset).join("") };
-      // Only the backend's explicit chapter identity joins passages across audio parts.
+      const synthesized = represented.find(({ passages }) => passages.some((span) => span.source_id === source.id
+        && span.start <= section.start_offset && span.end >= section.end_offset))?.topic
+        || result.find((topic) => topicTitleKey(topic.title) === topicTitleKey(section.title));
+      if (synthesized) { (synthesized.evidencePassages ??= []).push(passage); continue; }
+      // Recap browsing groups the day's matching titles while preserving each source span.
       const chapter = section.chapter_id || identity;
-      const existing = originals.get(chapter);
+      const key = topicTitleKey(section.title);
+      const existing = originals.get(key);
       if (existing) existing.originalPassages!.push(passage);
-      else originals.set(chapter, { id: `original:${chapter}`, title: section.title, parts: [], originalPassages: [passage] });
+      else originals.set(key, { id: `original:${chapter}`, title: section.title, parts: [], originalPassages: [passage] });
     }
   }
   return [...result, ...originals.values()];
@@ -103,6 +114,15 @@ export function currentRecapPassage(passage: OriginalRecapPassage, source: Sourc
     && candidate.chapter_id === passage.section.chapter_id);
   if (!section || Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("") !== passage.text) return;
   return { ...source, sections: [section] };
+}
+
+// Original-only topics still need readable descriptions when the selective recap is empty.
+// Keep these as labeled excerpts, and reject text from changed or expired sources.
+export function originalRecapText(passages: OriginalRecapPassage[] | undefined, sources: Source[]): string {
+  return (passages || []).filter((passage) => {
+    const source = sources.find((candidate) => candidate.id === passage.source_id);
+    return source && currentRecapPassage(passage, source);
+  }).map((passage) => passage.text.trim()).filter(Boolean).join("\n\n");
 }
 
 // Group the reading view without rewriting saved text or its importance keys.

@@ -75,7 +75,7 @@ describe("transcribed recording recap display", () => {
     expect(html).toContain('class="recap-topic-option" aria-expanded="false"');
     expect(html).not.toContain("The story of your day starts here.");
     expect(html.match(/No useful recap content in transcribed recordings yet/g)).toHaveLength(1);
-    expect(html).not.toContain("We compared garden tools.");
+    expect(html).toContain("We compared garden tools.");
     expect(html).not.toContain('aria-label="Summary language"');
     expect(html).not.toContain('aria-label="Copy summary: Day recap"');
   });

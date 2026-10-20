@@ -4,7 +4,7 @@ import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
 import { RecapEvidence } from "./RecapEvidence";
-import { currentRecapPassage, itemSources, recapTopicText, type OriginalRecapPassage, type RecapFocus, type RecapPart } from "./recapItems";
+import { currentRecapPassage, itemSources, originalRecapText, recapTopicText, type OriginalRecapPassage, type RecapFocus, type RecapPart } from "./recapItems";
 import type { ChatScope, Source } from "./types";
 import { ErrorState, InlineText, Loading, RichText } from "./UI";
 import { useResource } from "./useResource";
@@ -15,17 +15,19 @@ type Props = {
   onCorrect: () => void; compact: boolean;
   day?: string; expanded?: boolean; onExplore?: () => void;
   originalPassages?: OriginalRecapPassage[];
+  evidencePassages?: OriginalRecapPassage[];
   onFocus?: (focus?: RecapFocus) => void;
   onChat?: (scope: ChatScope, question?: string) => void;
 };
 
-export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, onFocus }: Props) {
+export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, evidencePassages, onFocus }: Props) {
   const [showEvidence, setShowEvidence] = useState(false);
   const passageId = useId();
   const text = recapTopicText(parts);
   const plain = text.replace(/\*\*/g, "");
   const heading = title.replace(/\*\*/g, "");
   const displayText = recapTopicText(displayParts);
+  const originalText = displayText ? "" : originalRecapText(originalPassages, sources);
   const displayHeading = displayTitle.replace(/\*\*/g, "");
   const reportFocus = useCallback((focus?: RecapFocus) => onFocus?.(focus ? { ...focus, displayTitle: displayHeading } : undefined), [onFocus, displayHeading]);
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
@@ -34,6 +36,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
   const body = <>
     {displayText ? inline ? <div className="recap-topic-summary"><RichText text={displayText} /></div> : <RecapSummary text={displayText} /> : null}
+    {originalText ? <><p className="caption">{t("Original passages")}</p><RecapSummary text={originalText} /></> : null}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
         t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: heading }))}>
@@ -45,7 +48,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
       <button type="button" className="text-button" aria-expanded={showEvidence} aria-controls={passageId}
         onClick={() => setShowEvidence((value) => !value)}>{showEvidence ? t("Hide original passages") : t("Show original passages")}</button>
       <div id={passageId} hidden={!showEvidence}>
-        {originalPassages ? <OriginalTopicEvidence title={title} passages={originalPassages} visible={showEvidence}
+        {originalPassages || evidencePassages ? <OriginalTopicEvidence title={title} passages={(originalPassages || evidencePassages)!} visible={showEvidence}
           timezone={timezone} onCorrect={onCorrect} onFocus={reportFocus} /> : showEvidence ? evidence : null}
       </div>
     </div>}

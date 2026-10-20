@@ -16,6 +16,8 @@ import { Speakers } from "./Speakers";
 import { RecordingSections } from "./RecordingSections";
 import { Icon } from "./Icon";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
+import { useRecordingSeek } from "./useRecordingSeek";
+import { groupTopicRuns } from "./topicOccurrences";
 import type { Source } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
@@ -91,6 +93,8 @@ function SourceRow({
   const [deleted, setDeleted] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const topicPlayback = useRecordingSeek();
+  const [selectedTopicOffset, setSelectedTopicOffset] = useState<number>();
   useEffect(() => {
     setSaved(undefined);
   }, [source.id, source.source_version]);
@@ -177,6 +181,14 @@ function SourceRow({
               src={audioUrl(source.id)}
               durationHint={(Date.parse(source.ended_at) - Date.parse(source.started_at)) / 1000}
               label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
+              audioRef={topicPlayback.audioRef} onReady={topicPlayback.onReady}
+              bookmarks={compact ? groupTopicRuns(currentSource.sections || [], (section) => section.title,
+                (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.map(([section]) => ({
+                label: section.title + (section.start_seconds === undefined ? ` ${t("· estimated times")}` : ""),
+                seconds: section.start_seconds ?? 0, onSelect: () => {
+                  setSelectedTopicOffset(section.start_offset); topicPlayback.seekTo(section.start_seconds ?? 0);
+                },
+              }))) : undefined}
             />
             {!compact ? <a
               className="text-link caption"
@@ -334,7 +346,8 @@ function SourceRow({
           </>
         )}
         </div>
-        {compact && !editing ? <RecordingSections source={currentSource} compact /> : null}
+        {compact && !editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo}
+          selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
         <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
           setDraft(text || "");
           setEditing(true);

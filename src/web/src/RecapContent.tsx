@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { interfaceLanguage, source, t } from "./i18n";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
-import { originalTopicTranslation, recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
+import { originalRecapText, originalTopicTranslation, recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
 import { RecapTopic } from "./RecapTopic";
 import { recapTranslationDisplay } from "./recapTranslationDisplay";
 import type { SummaryTranslationStructure } from "./transcriptTranslationRequests";
@@ -96,10 +96,13 @@ export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
   topic: TopicRow; expanded: boolean; onToggle: () => void;
 } & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus">) {
   const id = useId();
-  const preview = topic.originalPassages ? t("Original passages") : recapTopicText(topic.displayParts).replace(/\*\*/g, "");
+  const preview = (recapTopicText(topic.displayParts) || originalRecapText(topic.originalPassages, props.sources)).replace(/\*\*/g, "");
   return <article className="recap-topic-row" data-topic-id={topic.id}>
     <h3><button type="button" className="recap-topic-option" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
-      <span><strong><InlineText text={topic.displayTitle} /></strong>{!expanded || topic.originalPassages ? <span>{preview}</span> : null}</span>
+      <span><strong><InlineText text={topic.displayTitle} /></strong>{!expanded ? <>
+        {topic.originalPassages ? <small className="caption">{t("Original passages")}</small> : null}
+        <span>{preview}</span>
+      </> : null}</span>
       <Icon name="chevron-right" size={16} />
     </button></h3>
     <div id={id} hidden={!expanded}>

@@ -28,6 +28,13 @@ const translated = `## Kakao ☕️\nEt kakaoforsøg [${source.id}].\n\n## Opfø
 const props = { day, version: "original-output", sources: [source], timezone: "UTC", onCorrect: () => {} };
 
 describe("canonical recap translation display", () => {
+  it("groups repeated headings by their canonical subject even when translations differ", () => {
+    const before = "## Work\nMorning review.\n## Garden\nGarden plans.\n## WORK\nAfternoon decision.";
+    const after = "## Arbejde\nMorgenmøde.\n## Have\nHaveplaner.\n## Job\nEftermiddagens beslutning.";
+    const display = recapTopics(recapParts(before), day, recapParts(before, after));
+    expect(display.topics.map((topic) => topic.title)).toEqual(["Arbejde", "Have"]);
+    expect(display.topics[0].parts.map((part) => part.text)).toEqual(["Morgenmøde.", "Eftermiddagens beslutning."]);
+  });
   it("projects translated physical lines at Unicode scalar offsets without changing topic identities or action grouping", () => {
     const mapped = structure(original, translated);
     expect(recapTranslationDisplay(original, translated, mapped)).toBe(translated);

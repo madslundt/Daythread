@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { RecapContent, RecapTopicRow } from "./RecapContent";
 import { RecapEvidence } from "./RecapEvidence";
 import { RecapTopic } from "./RecapTopic";
-import { currentRecapPassage, itemSources, recapBrowserTopics, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText, recapTopics, topicFocus } from "./recapItems";
+import { currentRecapPassage, itemSources, originalRecapText, recapBrowserTopics, recapGroups, recapGroupSummary, recapParts, recapReadingText, recapSourceSections, recapTopicText, recapTopics, topicFocus } from "./recapItems";
 import type { Source } from "./types";
 
 const sources: Source[] = [
@@ -139,14 +139,20 @@ describe("day recap interactions", () => {
       onCorrect={() => {}} compact={false} expanded onFocus={() => {}} />);
     expect(html).toContain("Show original passages");
     expect(html).not.toContain("Loading recordings…");
-    expect(html).not.toContain("No.");
-    expect(html).not.toContain("recap-topic-summary");
+    expect(html).toContain("No.");
+    expect(html).toContain("recap-topic-summary");
     expect(html).not.toContain("<audio");
   });
 
   it("copies the complete topic text, removing citations and exact repeated paragraphs", () => {
     const parts = recapParts(`A useful detail [${sources[0].id}].\n- A useful detail [${sources[0].id}].\n- Another useful detail.`);
     expect(recapTopicText(parts)).toBe("A useful detail.\n\nAnother useful detail.");
+  });
+  it("combines repeated recap headings across the day without losing their distinct details", () => {
+    const text = "## Work\nMorning prototype review.\n## Garden\nWatered the roses.\n## WORK\nAfternoon release decision.";
+    const topics = recapTopics(recapParts(text), "2026-10-16").topics;
+    expect(topics.map((topic) => topic.title)).toEqual(["Work", "Garden"]);
+    expect(recapTopicText(topics[0].parts)).toBe("Morning prototype review.\n\nAfternoon release decision.");
   });
 
   it("reveals the matching original passage without repeating unrelated recording topics", () => {
@@ -287,9 +293,11 @@ describe("day recap interactions", () => {
     expect(html).toContain("A useful cocoa trial.");
     expect(html).toContain("Garden tools");
     expect(html).toContain("Original passages");
-    expect(html).not.toContain(second);
+    expect(html).toContain(second);
     const separate = { ...source, id: sources[1].id, sections: [source.sections![0]] };
-    expect(recapBrowserTopics(synthesized, [source, separate]).map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools", "Cocoa"]);
+    const acrossDay = recapBrowserTopics(synthesized, [source, separate]);
+    expect(acrossDay.map((topic) => topic.title)).toEqual(["Cocoa", "Garden tools"]);
+    expect(acrossDay[0].evidencePassages?.map((passage) => passage.source_id)).toEqual([source.id, separate.id]);
   });
 
   it("groups explicitly shared original chapters across parts and rejects invalid bounds", () => {
@@ -303,8 +311,9 @@ describe("day recap interactions", () => {
     const topics = recapBrowserTopics([], [one, two, one]);
     expect(topics).toHaveLength(1);
     expect(topics[0].originalPassages?.map((passage) => passage.source_id)).toEqual([one.id, two.id]);
+    expect(originalRecapText(topics[0].originalPassages, [one, two])).toBe("First part.\n\nSecond part.");
     expect(recapBrowserTopics([], [{ ...one, state: "queued" }, { ...two, text: null }])).toEqual([]);
-    expect(recapBrowserTopics([], [one, { ...two, sections: [{ ...two.sections![0], chapter_id: "chapter-2" }] }])).toHaveLength(2);
+    expect(recapBrowserTopics([], [one, { ...two, sections: [{ ...two.sections![0], chapter_id: "chapter-2" }] }])).toHaveLength(1);
   });
 
   it("revalidates original section offsets, source revisions and exact quoted text before use", () => {
@@ -319,6 +328,10 @@ describe("day recap interactions", () => {
     expect(currentRecapPassage(passage, { ...source, source_version: "source-2" })).toBeUndefined();
     expect(currentRecapPassage(passage, { ...source, text: "Go. Later." })).toBeUndefined();
     expect(currentRecapPassage(passage, { ...source, sections: [source.sections![1]] })).toBeUndefined();
+    expect(originalRecapText([passage], [source])).toBe("No.");
+    expect(originalRecapText([passage], [{ ...source, transcript_version: "text-2" }])).toBe("");
+    expect(originalRecapText([passage], [{ ...source, state: "expired" }])).toBe("");
+    expect(originalRecapText([passage], [])).toBe("");
     const html = renderToStaticMarkup(<RecapEvidence source={current} point="" sections={current.sections} timezone="UTC" onCorrect={() => {}} />);
     expect(html).toContain("No.");
     expect(html).not.toContain("Later.");

@@ -62,6 +62,18 @@ def test_upload_is_one_recording_in_the_timeline(recording):
     assert result["items"][0]["sources"] == []
 
 
+def test_timeline_topic_count_groups_returns_within_the_recording(recording):
+    client, store, _, ids, _, _ = recording
+    with store.connect() as db:
+        details = json.loads(db.execute(
+            "SELECT topic_details FROM audio WHERE id=?", (ids[-1],),
+        ).fetchone()[0])
+        details["sections"][0].update(title="LAUNCH", chapter_id="launch-return")
+        db.execute("UPDATE audio SET topic_details=? WHERE id=?", (json.dumps(details), ids[-1]))
+    result = client.get("/v1/recording-groups?day=2026-10-16").json()
+    assert result["items"][0]["topic_count"] == 2
+
+
 def test_combines_complete_transcript_and_topics_with_global_offsets(recording):
     client, _, recording_id, _, texts, _ = recording
     response = client.get(f"/v1/recordings/{recording_id}")
@@ -93,6 +105,23 @@ def test_combines_sample_exact_audio_and_seeks_across_a_part_boundary(recording)
     assert seek.headers["content-range"] == f"bytes {start}-{end}/{len(response.content)}"
     assert client.get(url, headers={"Range": "bytes=-10"}).content == pcm[-10:]
     assert client.get(url, headers={"Range": "bytes=999999-"}).status_code == 416
+
+
+def test_unaligned_topics_bookmark_the_containing_part_without_claiming_exact_timing(recording):
+    client, store, recording_id, ids, _, _ = recording
+    with store.connect() as db:
+        for key in ids:
+            details = json.loads(db.execute(
+                "SELECT topic_details FROM audio WHERE id=?", (key,),
+            ).fetchone()[0])
+            for section in details["sections"]:
+                section.pop("start_seconds", None)
+                section.pop("end_seconds", None)
+            db.execute("UPDATE audio SET topic_details=? WHERE id=?", (json.dumps(details), key))
+    result = client.get(f"/v1/recordings/{recording_id}").json()
+    assert [section["start_seconds"] for section in result["sections"]] == [0, 2]
+    assert all(section["start_estimated"] for section in result["sections"])
+    assert all("end_seconds" not in section for section in result["sections"])
 
 
 def test_waveform_covers_all_parts_without_joining_them_in_memory(recording, monkeypatch):

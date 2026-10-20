@@ -73,6 +73,11 @@ class Recording:
                         for key in ("start_seconds", "end_seconds"):
                             if key in section:
                                 span[key] = seconds + section[key]
+                        if "start_seconds" not in span:
+                            # Without word alignment, the containing upload part is the
+                            # narrowest known audio interval. Do not invent a word timestamp.
+                            span["start_seconds"] = seconds
+                            span["start_estimated"] = True
                         if sections and sections[-1]["chapter_id"] == chapter:
                             sections[-1]["end_offset"] = span["end_offset"]
                             # An unaligned final passage must not reuse an earlier endpoint.

@@ -205,6 +205,16 @@ source text to retain complete, local character spans. Shared chapter IDs let we
 Today views open one subject across several audio parts, independently of member pagination.
 Exact audio seeking is available only when validated STT segment boundaries align with the
 passage; otherwise navigation uses its original transcript and recording interval.
+Combined uploaded recordings keep a bookmark for every topic. When a topic has no aligned
+timestamp, its bookmark seeks to the beginning of the containing upload part and is marked
+as approximate; this does not add timing to the canonical transcript. Topic selection pauses
+the single player and seeks without starting playback. Original-only recap topics show labeled
+transcript excerpts when the selective daily synthesis has no description for them.
+Timeline topic lists group matching titles within each recording. Adjacent passages form one
+recording span; a later return after another topic or a missing transcript interval forms a
+separately selectable span under the same topic. Counts refer to these spans, not upload chunks.
+Day recap browsing groups matching titles across the whole day and retains the distinct source
+passages and summary details. Canonical titles determine grouping even when translations differ.
 A separate background consumer backfills existing recordings without repeating transcription.
 Analysis is cached by prompt/model/language and the versions of every source in its context.
 Dependencies in `recording_topic_sources` invalidate sibling chapters on correction, deletion or

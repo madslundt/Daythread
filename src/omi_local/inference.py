@@ -20,6 +20,7 @@ from .summary_filter import NO_CONTENT, filter_summary_sources
 from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
+SUMMARY_REDUCTION_VERSION = "compact-evidence-7"
 
 
 async def stream_data(response: httpx.Response):
@@ -71,6 +72,20 @@ SYSTEM = (
 )
 
 
+SUMMARY_SYSTEM = SYSTEM.replace(
+    "Respond in the user's language.", "Follow the task's output-language instruction."
+).replace(
+    "Diary recaps are derived navigation notes; "
+    "support factual claims with the original transcript excerpts.",
+    "Summarization input may be original transcripts, prepared conversation notes, or "
+    "intermediate evidence notes. Consolidate the supported content of these inputs and "
+    "preserve their original source UUID citations and qualifications. When source IDs are "
+    "supplied as short keys such as src_1, cite those exact keys in square brackets instead "
+    "of inventing UUIDs. Do not reject "
+    "substantive notes merely because the original transcript is not repeated alongside them."
+)
+
+
 def summary_language_instruction(language: str) -> str:
     if language.lower() == "auto":
         instruction = (
@@ -96,13 +111,17 @@ def validate_citations(text: str, sources: list[dict]) -> str:
     # prompt. Transcripts can contain UUIDs as ordinary content (for example, an
     # event or task identifier), and those must not invalidate an otherwise valid
     # summary.
-    cited = re.findall(
-        r"\[\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*\]",
-        text,
-    )
-    if any(key.lower() not in allowed for key in cited):
-        raise InferenceError("Model cited an unknown source")
+    for group in re.findall(r"\[([^\[\]]+)\]", text):
+        if re.search(r"\bsrc_[A-Za-z0-9_]+\b", group, re.IGNORECASE):
+            raise InferenceError("Model cited an unknown source")
+        if not re.match(r"\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-", group):
+            continue
+        for key in group.split(","):
+            key = key.strip()
+            if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", key):
+                raise InferenceError("Model cited an unknown source")
+            if key.lower() not in allowed:
+                raise InferenceError("Model cited an unknown source")
     return text
 
 
@@ -165,11 +184,7 @@ class Inference(Transcription, InferenceUsage):
         return response
 
     async def generate(self, task: str, evidence: str) -> str:
-        system = (
-            SYSTEM.replace("Respond in the user's language.",
-                           "Follow the task's output-language instruction.")
-            if self.task == "summary" else SYSTEM
-        )
+        system = SUMMARY_SYSTEM if self.task == "summary" else SYSTEM
         return await self._generate(task, evidence, system, 4000)
 
     async def generate_json(self, task: str, evidence: str) -> str:
@@ -345,6 +360,10 @@ class Inference(Transcription, InferenceUsage):
     def prompt_source_ids(payload: str, sources: list[dict]) -> list[str]:
         return [source["id"] for source in sources if source["id"].lower() in payload.lower()]
 
+    async def summarize_daily_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
+        from .daily_synthesis import summarize_daily
+        return await summarize_daily(self, sources)
+
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}
         text = await self.summarize(sources, purpose, trace)
@@ -435,11 +454,15 @@ class Inference(Transcription, InferenceUsage):
             " Cite only original source UUIDs copied exactly from this allowed list; do not "
             "invent or cite any other UUID: " + ", ".join(allowed_ids) + "."
         )
-        for _ in range(8):
+        prepared = any(source.get("citation_source_ids") for source in sources)
+        for level in range(8):
+            # Prepared notes can be consolidated in a larger bounded context than
+            # noisy raw excerpts, avoiding repeated compression of an hour's useful facts.
+            context_budget = 24000 if answer_task is None and (prepared or level) else 12000
             batches: list[str] = []
             current = ""
             for piece in pieces:
-                if len(current) + len(piece) > 12000 and current:
+                if len(current) + len(piece) > context_budget and current:
                     batches.append(current)
                     current = ""
                 current += piece + "\n"
@@ -456,23 +479,129 @@ class Inference(Transcription, InferenceUsage):
                         answer_task, batches[0] if batches else "", on_delta
                     )
                 else:
-                    answer = await self.for_task(
-                        "chat" if answer_task is not None else "summary"
-                    ).generate(
-                        answer_task if answer_task is not None else task,
-                        batches[0] if batches else "",
-                    )
-                return validate_citations(answer, allowed_sources)
+                    if answer_task is None:
+                        answer = await self._summary_generate(
+                            task, batches[0] if batches else "", allowed_sources,
+                            compact_references=bool(prepared or level),
+                        )
+                    else:
+                        answer = await self.for_task("chat").generate(
+                            answer_task, batches[0] if batches else "",
+                        )
+                try:
+                    return validate_citations(answer, allowed_sources)
+                except InferenceError:
+                    if answer_task is not None:
+                        raise
+                if trace is not None:
+                    trace["model_calls"] += 1
+                repaired = await self._summary_generate(
+                    task + " The previous draft contained invalid source citations. Recreate "
+                    "the summary from this evidence, copying citations exactly from the allowed "
+                    "list. Use one complete original UUID per pair of square brackets. Never "
+                    "combine UUID fragments or alter their characters. Preserve qualifications; "
+                    "omit any claim you cannot support with a valid original source citation.",
+                    batches[0] if batches else "", allowed_sources,
+                    compact_references=bool(prepared or level),
+                )
+                return validate_citations(repaired, allowed_sources)
             if trace is not None:
                 trace["reduction_used"] = True
-                trace["model_calls"] += len(batches)
-            pieces = [
-                validate_citations(
-                    await self.for_task("summary").generate(task, batch), allowed_sources
-                )
-                for batch in batches
-            ]
+            pieces = []
+            for batch in batches:
+                if answer_task is None:
+                    note = await self._summary_notes(
+                        batch, allowed_sources, trace, context_budget // 2 - 1
+                    )
+                else:
+                    if trace is not None:
+                        trace["model_calls"] += 1
+                    note = validate_citations(
+                        await self.for_task("summary").generate(task, batch), allowed_sources
+                    )
+                if note != NO_CONTENT:
+                    pieces.append(note)
+            if not pieces:
+                if trace is not None:
+                    trace["final_prompt_source_ids"] = []
+                return NO_CONTENT
         raise InferenceError("Summary reduction exceeded bounded context budget")
+
+    async def _summary_generate(self, task, evidence, sources, *, compact_references):
+        # Long consolidations need not make the model reproduce dozens of 36-character
+        # UUIDs. Short per-request keys reduce copying errors and output-token overhead;
+        # expand them before any citation validation, persistence or client response.
+        ids = sorted({source["id"].lower() for source in sources})
+        uuid_pattern = r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"
+        if not compact_references or len(ids) < 4 or not all(
+            re.fullmatch(uuid_pattern, key) for key in ids
+        ):
+            return await self.for_task("summary").generate(task, evidence)
+        aliases = {key: f"src_{index}" for index, key in enumerate(ids, 1)}
+        originals = {index: key for index, key in enumerate(ids, 1)}
+
+        def shorten(text):
+            return re.sub(uuid_pattern, lambda m: aliases.get(m[0].lower(), m[0]),
+                          text, flags=re.IGNORECASE)
+
+        answer = await self.for_task("summary").generate(
+            shorten(task).replace("UUID", "source ID"), shorten(evidence),
+        )
+        # Unknown keys remain visible to validate_citations and fail safely.
+        return re.sub(r"\bsrc_(\d+)\b", lambda m: originals.get(int(m[1]), m[0]),
+                      answer, flags=re.IGNORECASE)
+
+    async def _summary_notes(self, evidence, allowed_sources, trace, maximum):
+        # Asking for the full final recap at every level can reproduce two notes
+        # indefinitely: each fits one batch, but together they never fit the final call.
+        # Two maximum-sized notes plus their newlines must fit the next
+        # consolidation batch. Leave room for useful details/citations rather than overcompressing.
+        budget = min(maximum, max(1000, len(evidence) * 2 // 3))
+        batch_sources = [source for source in allowed_sources if source["id"] in evidence]
+        batch_ids = ", ".join(source["id"] for source in batch_sources)
+        compact = (
+            "This is an intermediate reduction pass. Produce compact intermediate "
+            "evidence notes, not the final recap or its full presentation. "
+            "Do not force category sections; omit empty sections. "
+            f"Use at most {budget // 18} words and {budget} characters including citations; "
+            "aim for "
+            f"{budget * 2 // 3} characters to leave a safety margin. "
+            "Use terse factual sentences, without headings, bold text or repeated introductions. "
+            "Omit fillers, unintelligible fragments and unsupported guesses about garbled names "
+            "or abbreviations. Retain meaningful outcomes, plans, follow-ups, unresolved concerns "
+            "and useful durable information. Consolidate repeated context while preserving "
+            "distinct useful "
+            "details, dates, conditions, uncertainty and original UUID citations for each point. "
+            "Keep useful material from the beginning and end of this batch. Do not impose a "
+            "topic quota or discard a subject merely because it occurs late. The final synthesis "
+            "will organize all batches together. Cite only original source UUIDs copied exactly "
+            "from this batch; do not invent or cite any other UUID. UUIDs present in this "
+            "batch, copied exactly without shortening or changing them: " + batch_ids + "."
+            + summary_language_instruction(self.settings.summary_language)
+        )
+        for attempt in range(2):
+            if trace is not None:
+                trace["model_calls"] += 1
+            note = (await self._summary_generate(
+                compact, evidence, batch_sources, compact_references=maximum > 5999,
+            )).strip()
+            try:
+                validate_citations(note, batch_sources)
+            except InferenceError:
+                if attempt:
+                    raise
+                compact += (" The previous draft cited an unknown source. Use only the exact "
+                            "batch UUIDs listed above and keep within the reduction budget.")
+                continue
+            if len(note) <= budget:
+                return note
+            evidence = note
+            compact += (f" The previous draft had {len(note)} characters, exceeding the "
+                        f"{budget}-character limit. Rewrite that draft in at most "
+                        f"{budget // 30} words, "
+                        "retaining useful evidence and citations. Group related facts and "
+                        "share citations where appropriate; do not repeat context.")
+        raise InferenceError("The summary could not be shortened safely. Try again.")
 
     async def chat(
         self,

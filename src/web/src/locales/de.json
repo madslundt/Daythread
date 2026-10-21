@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "Der Upload der Aufnahme ist unvollständig",
   "Browse all topics": "Alle Themen durchsuchen",
   "Back to daily recap": "Zurück zum Tagesrückblick",
-  "Search recap topics": "Themen der Zusammenfassung suchen"
+  "Search recap topics": "Themen der Zusammenfassung suchen",
+  "The summary could not be shortened safely. Try again.": "Die Zusammenfassung konnte nicht ohne Inhaltsverlust gekürzt werden. Versuche es erneut.",
+  "Day recap summary": "Zusammenfassung des Tages",
+  "The whole day, in five minutes or less.": "Der ganze Tag in höchstens fünf Minuten.",
+  "Generating recap…": "Zusammenfassung wird erstellt…",
+  "Update recap": "Zusammenfassung aktualisieren",
+  "Recap": "Zusammenfassen",
+  "Generating your day recap. You can keep reading the topics below.": "Deine Tageszusammenfassung wird erstellt. Du kannst unten in den Themen weiterlesen.",
+  "Loading saved recap…": "Gespeicherte Zusammenfassung wird geladen…",
+  "{value0} min read": "{value0} Min. Lesezeit",
+  "New recordings are available. Update the recap to include them.": "Neue Aufnahmen sind verfügbar. Aktualisiere die Zusammenfassung, um sie einzubeziehen.",
+  "Generate a short recap of this day. It will be saved here for later.": "Erstelle eine kurze Zusammenfassung dieses Tages. Sie wird hier für später gespeichert.",
+  "Your day recap will be available when there is something to recap.": "Deine Tageszusammenfassung ist verfügbar, sobald es etwas zusammenzufassen gibt.",
+  "This topic has changed. These are the details saved with your recap.": "Dieses Thema hat sich geändert. Dies sind die mit deiner Zusammenfassung gespeicherten Details.",
+  "Browse the topics below for the latest details.": "Die aktuellen Details findest du in den Themen unten.",
+  "Day recap did not contain a supported overview": "Die Tageszusammenfassung enthielt keine unterstützte Übersicht",
+  "Day recap exceeded the five-minute reading limit": "Die Tageszusammenfassung überschritt die Lesezeit von fünf Minuten"
 }

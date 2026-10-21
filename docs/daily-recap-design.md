@@ -1,8 +1,8 @@
 # Daily recap: coherent topics that evolve throughout the day
 
 Status: implemented in backend, web and iOS, 20 October 2026. The rules below
-describe the intended model behavior; semantic grouping still needs evaluation on
-real days. The existing flat Markdown format is retained.
+describe the intended model behavior. Follow-up checks below use an uploaded hour
+and an explicitly synthetic later-link scenario. The existing flat Markdown format is retained.
 
 ## Recommendation
 
@@ -41,8 +41,10 @@ See [`recapItems.ts`](../src/web/src/recapItems.ts),
 Tests now expect deliberate recording-topic browsing instead of including original
 chapters in the initial daily recap.
 
-This audit did not inspect the uploaded recording or establish which mechanism
-produced its particular twelve rows. Preserve the existing preparation, batched
+The original audit did not inspect the uploaded recording or establish which mechanism
+produced its particular twelve rows. Follow-up inspection found twelve original recording
+chapters alongside cached empty conversation notes; those chapters were not twelve
+independently synthesized daily topics. Preserve the existing preparation, batched
 reduction, source citations, evidence checks and version history.
 
 ## Reading structure
@@ -161,7 +163,8 @@ These are examples, not an analysis of the uploaded recording.
 Both clients separate the generated recap from original-topic browsing, reusing
 existing search, translations, source validation and playback. An empty selective
 recap still offers recording access without showing raw chapters as recap topics.
-This needs no additional inference or saved Markdown format change.
+The backend now plans and reviews groups before writing scoped summaries, adding local
+inference stages with at most two concurrent writers. The saved Markdown format is unchanged.
 
 The daily prompt replaces the per-recording subject-count example with day-level
 granularity and reconciliation rules, including general-topic and merge/split
@@ -200,3 +203,57 @@ snapshots of each evolving day. Assess fragmentation, inappropriate merging,
 duplication, findability, unnecessary layout changes and retention of useful
 details. Topic count is an observation, not a pass/fail metric. Prompt-string
 assertions alone cannot establish good organization.
+
+## Follow-up validation
+
+The uploaded recording contained 34 transcript parts spanning about 66 minutes and
+12 recording chapters. The first daily result grouped too much under a team/project
+status heading. Rebuilding topics from the note bodies produced eight daily sections,
+with hiring, the catalog project and beta feedback individually findable, and related
+monitoring/analytics material consolidated. Eight is an observed result, not a target.
+Prepared headings must remain provisional; a named project must not absorb other
+substantial projects under its heading.
+
+The real-model run exposed stalled long-recording reduction, cached empty preparation
+and malformed source references. Compact intermediate evidence extraction, a larger
+bounded consolidation window for prepared notes, versioned cache invalidation and
+bounded citation correction address these failures. All original transcript parts
+were reviewed by the extraction pass; its validated real-model notes were reused
+while reviewing consolidation and organization. No transcript was truncated to
+reach a topic count.
+
+A separate synthetic scenario initially produced two topics for a launch and an
+onboarding email refresh. A third recording explicitly connected the workstreams;
+the next recap merged them into one topic while retaining both owners, the Friday
+deadline and the payment-check dependency. These fixtures are confined to a temporary
+archive and are not user history. Reference validation establishes citation integrity,
+not factual certainty where speech recognition or model interpretation is ambiguous.
+
+The final implementation makes organization an explicit intermediate plan rather than relying
+on a single writing prompt to regroup prepared headings. Plan reconciliation retains selected
+fact IDs; individual coherence checks reject mixed project-status groupings. Summaries are
+written only from each topic's supporting items. Substantial repeated exact excerpts preserve
+the original recordings but reuse the same unique-information synthesis, so repeating words
+does not itself increase topic count or importance. New substantive information still triggers
+a complete reconsideration of earlier topics.
+
+### Final replay results
+
+| Selected input in the temporary day | Source parts | Daily topics |
+| --- | ---: | ---: |
+| Uploaded 66-minute recording | 34 | 8 |
+| Plus the existing 32-minute ingestion recording | 50 | 10 |
+| Plus the existing short Azure hosting recording | 52 | 11 |
+| Plus a verbatim architecture excerpt replay | 53 | 11 |
+
+The two additional real uploads were retimed only in a temporary archive to simulate later
+arrivals. The excerpt replay was transcript-only and explicitly marked as evaluation data.
+The ingestion investigation's related technical details stay in a workflow topic; hiring,
+the catalog launch and beta feedback remain separately findable. The short hosting discussion
+adds an independent deployment topic. Repeating the excerpt reuses identical unique input
+without adding a topic. These counts are observations, never configured limits.
+
+Unchanged requests can replay previously captured real-model responses during controller
+verification; changed requests run against the configured model. All plans, source references
+and publication guards are revalidated. No model output was fabricated and no replay source,
+shifted timestamp or synthetic scenario is copied into the production archive.

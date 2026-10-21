@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { interfaceLanguage, source, t } from "./i18n";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
@@ -17,14 +17,29 @@ type Props = {
   onCorrect: () => void; compact?: boolean;
   onFocus?: (focus?: RecapFocus) => void;
   emptyMessage?: string;
+  topicRequest?: { title: string; request: number };
 };
 
 type TopicRow = RecapBrowserTopic & { displayTitle: string; displayParts: RecapTopicGroup["parts"]; followups?: boolean };
 
-export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage }: Props) {
+export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage, topicRequest }: Props) {
   const [query, setQuery] = useState("");
   const [browsingRecordings, setBrowsingRecordings] = useState(false);
   const [selected, setSelected] = useState<string>();
+  const workspace = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!topicRequest) return;
+    const index = recapTopics(recapParts(text), day).topics.findIndex((topic) => topic.title === topicRequest.title);
+    if (index < 0) return;
+    setBrowsingRecordings(false); setQuery(""); setSelected(`recap:${index}:${topicRequest.title}`);
+  }, [topicRequest, text, day]);
+  useEffect(() => {
+    if (!topicRequest || !selected) return;
+    const row = Array.from(workspace.current?.querySelectorAll<HTMLElement>("[data-topic-id]") || [])
+      .find((element) => element.dataset.topicId === selected);
+    row?.querySelector<HTMLButtonElement>(".recap-topic-option")?.focus({ preventScroll: true });
+    row?.scrollIntoView?.({ block: "nearest" });
+  }, [topicRequest, selected]);
   useEffect(() => () => onFocus?.(undefined), [onFocus]);
   const id = useId();
   const language = interfaceLanguage();
@@ -66,7 +81,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     const displayTitle = rows.find((row) => row.id === topic.id)?.displayTitle;
     onFocus?.(!next ? undefined : { ...(topic.originalPassages ? { title: topic.title, basis: "original" as const, passages: [] } : topicFocus(topic, sources)), displayTitle });
   }
-  return <div className={`recap-workspace ${compact ? "recap-reading-view" : ""}`}>
+  return <div ref={workspace} className={`recap-workspace ${compact ? "recap-reading-view" : ""}`}>
     {translatedText !== undefined && display === undefined ? <p className="caption recap-translation-warning" role="status">
       {t("Update this translation to keep the recap’s topics and layout.")}
     </p> : null}

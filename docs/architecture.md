@@ -250,7 +250,35 @@ Uploaded recordings and finished transcript imports become eligible for the dail
 
 Automatic generation batches eligible evidence for 15 seconds without upload/transcription changes, waiting for known pending file uploads for up to 60 seconds. Ongoing live speech neither resets an eligible upload's timer nor becomes eligible through that timer's maximum wait. The independent consumer checks every five seconds; model processing and client polling add latency. Restarting reconstructs work from the archive and restarts the short batching window. Additional independent eligible recordings during inference leave the selected snapshot valid and the saved recap stale for the next update; changed selected evidence or a reopened live boundary still rejects publication.
 
-Daily generation uses the configured local calendar boundaries, including 23/25-hour daylight-saving days. Large days are reduced in batches instead of silently dropping the end of the transcript. Accepted important/meeting hints are passed to the summarizer as approximate context. The diary exports source UUIDs, and late evidence invalidates the cache, including a hint just outside the calendar day whose context overlaps it. Generated diary versions and transcript corrections have history. In-flight inference checks its evidence before persisting output, so corrections/deletions cannot silently restore stale derived content.
+Daily generation uses the configured local calendar boundaries, including 23/25-hour daylight-saving days. Large days are reduced in batches instead of silently dropping the end of the transcript. Raw excerpts use 12,000-character batches; prepared and intermediate notes can consolidate within a bounded 24,000-character context, avoiding unnecessary recompression of a useful hour. Intermediate summary passes request compact evidence notes with a character budget, retaining useful details, qualifications and original citations; the final recap has no topic-count quota. An oversized intermediate draft gets one repair attempt before failing visibly, preventing repeated equally large notes from stalling reduction. Empty intermediate markers are excluded from later evidence. The reduction-policy version invalidates cached conversation preparation so old rejected notes do not bypass the updated pipeline. Accepted important/meeting hints are passed to the summarizer as approximate context. The diary exports source UUIDs, and late evidence invalidates the cache, including a hint just outside the calendar day whose context overlaps it. Generated diary versions and transcript corrections have history. In-flight inference checks its evidence before persisting output, so corrections/deletions cannot silently restore stale derived content.
+
+Summarization has its own system instruction allowing source-cited conversation and intermediate
+notes as derived input. Chat retains its requirement to ground recall in original excerpts.
+Long prepared-note consolidation requests use short per-request source keys to avoid UUID
+copying errors and excess output tokens. These keys expand back to original UUIDs before
+validation or persistence; unknown keys fail the same bounded citation check.
+Intermediate notes may cite only sources present in that batch; invalid citations get one repair
+attempt before failing. Final summary consolidation also gets one correction attempt against
+the same evidence when citation validation fails; invalid results are never saved. Citation validation checks grouped UUIDs and rejects malformed UUID-like
+references as well as unknown sources. These checks establish reference integrity, not semantic
+accuracy; model grouping and factual qualifications still require review against the recording.
+
+Daily synthesis plans organization separately from prose. Prepared notes become individually
+addressable fact items with original source references retained. Citation-free planning copies
+prevent source IDs from distracting topic grouping. A reviewed plan must preserve every selected
+item; a focused coherence check splits mixed independent projects while retaining related
+workflow details. Scoped writers receive only their selected supporting items, with at most two
+writers running concurrently. The server renders the final Markdown headings from this plan.
+Planning has no numeric topic quota. Invalid item references or malformed plans get one repair
+attempt and cannot publish partial results.
+
+Substantial exact transcript excerpts already included earlier in the selected day add no new
+recap input unless the new group carries contextual hints. Every recording, original timestamp
+and source remains in the archive and recap coverage; the pipeline records which excerpts were
+repeated. Identical unique prepared input reuses a guarded synthesis cache keyed by preparation
+and daily policy, model, language and input evidence. New useful information changes that key
+and rebuilds the whole topic plan. Repetition alone cannot create new significance or needless
+regrouping; corrections and deletions retain the existing invalidation and publication guards.
 
 Web weekly reviews compare one Monday–Sunday calendar week with its predecessor without requiring daily summaries. A separate single-consumer SQLite job queue performs bounded original-evidence extraction and reduction; typed JSON candidates retain exact source quotes, dates and week roles. Intermediate resolution observations preserve explicit completion/cancellation across batches. Final commitments remain explicitly open or follow-through unconfirmed; absence is never completion. Recurrence and changes require distinct dated original evidence. The full source snapshots remain with immutable versions, while client source inspection resolves current transcripts. Mechanical citation checks cannot establish semantic accuracy.
 

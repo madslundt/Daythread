@@ -6,7 +6,8 @@ import { profileResourceUrl } from "./profiles";
 import { dateTimeLabel, timeLabel } from "./format";
 import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { ActionPoints } from "./ActionPoints";
-import { recapBrowserTopics, type RecapFocus } from "./recapItems";
+import { recapBrowserTopics, recapParts, recapTopics, type RecapFocus } from "./recapItems";
+import { DayRecapOverview } from "./DayRecapOverview";
 import { SourceList } from "./SourceList";
 import { RecapContent } from "./RecapContent";
 import { SummaryTranslation } from "./SummaryTranslation";
@@ -65,6 +66,7 @@ export function RecapSection({
     (status?.generation?.stages.summarizing || 0) > 0;
   const [showVersions, setShowVersions] = useState(false);
   const [focus, setFocus] = useState<RecapFocus>();
+  const [topicRequest, setTopicRequest] = useState<{ title: string; request: number }>();
   const summary = recap.data?.summary || "";
   const version = recap.data?.output_id || recap.data?.generated_at || "unversioned";
   const sources = recap.data?.sources || emptySources;
@@ -86,6 +88,12 @@ export function RecapSection({
           <h2>{filtered ? t("Filtered recap") : t("Day recap")}</h2>
         </div>
       </div>
+      {!filtered ? <DayRecapOverview key={day} day={day} timezone={timezone} onTopic={(title) => {
+        if (!recapTopics(recapParts(summary), day).topics.some((topic) => topic.title === title)) return false;
+        setTopicRequest((previous) => ({ title, request: (previous?.request || 0) + 1 }));
+        return true;
+      }} /> : null}
+      {!filtered ? <h3>{t("Topics")}</h3> : null}
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
       {filtered && recap.data?.generation_state === "failed" ? <ErrorState
         message={retryError || recap.data.generation_error || t("The filtered recap could not be generated.")}
@@ -116,12 +124,13 @@ export function RecapSection({
                 onChat={scopedChat}
                 onFocus={setFocus}
                 compact={compact}
+                topicRequest={topicRequest}
               /></DisplayTranslationLanguage>
             } /> : <RecapContent
             key={`${day}:${dayFilterKey(filters)}:${recap.data.output_id || recap.data.generated_at || "originals"}:${recap.data.summary || ""}`}
             text={recap.data.summary || ""} day={day} version={recap.data.output_id || "originals"}
             sources={sources} timezone={timezone} onCorrect={recap.refresh} onChat={scopedChat}
-            onFocus={setFocus} compact={compact} emptyMessage={filtered ? filteredMessage : undefined} />}
+            onFocus={setFocus} compact={compact} topicRequest={topicRequest} emptyMessage={filtered ? filteredMessage : undefined} />}
           {filtered || !recap.data.summary ? overview() : null}
           {recap.data.pending_chunks ? (
             <p className="caption">

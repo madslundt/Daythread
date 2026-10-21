@@ -48,7 +48,7 @@ vi.mock("./displayTranslations", async (importOriginal) => {
   } };
 });
 vi.mock("./useResource", () => ({ useResource: (path: string | null) => ({
-  data: path?.startsWith("/v1/recaps/") ? { day: "2026-10-19", summary: original,
+  data: path?.startsWith("/v1/recaps/") && !path.endsWith("/overview") ? { day: "2026-10-19", summary: original,
     output_id: "11111111-1111-4111-8111-111111111111", sources: [originalSource] }
     : path?.startsWith("/v1/inbox?") ? { items: path.includes("status=pending") ? [item] : [], total: path.includes("status=pending") ? 1 : 0 }
     : path?.startsWith("/v1/decisions?") ? { items: [decision], total: 1 } : undefined,

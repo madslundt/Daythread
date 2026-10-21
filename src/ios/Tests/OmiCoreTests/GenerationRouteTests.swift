@@ -10,7 +10,7 @@ final class GenerationRouteTests: XCTestCase {
         XCTAssertEqual(GenerationRoute(path: "v1/outputs/output-1/translation", method: "POST")?.kind, "summary_translation")
         XCTAssertEqual(GenerationRoute(path: "v1/outputs/output-1/translation", method: "POST")?.parameters, ["output_id": "output-1"])
         XCTAssertEqual(GenerationRoute(path: "v1/meetings/meeting-1/recap", method: "POST")?.kind, "meeting_recap")
-        for path in ["v1/rewind/audio", "v1/recaps/2026-10-17/feedback", "v1/transcripts/source-1/corrections", "v1/jobs", "v1/weekly-reviews/2026-10-12"] {
+        for path in ["v1/rewind/audio", "v1/recaps/2026-10-17/feedback", "v1/recaps/2026-10-17/overview", "v1/transcripts/source-1/corrections", "v1/jobs", "v1/weekly-reviews/2026-10-12"] {
             XCTAssertNil(GenerationRoute(path: path, method: "POST"))
         }
         XCTAssertNil(GenerationRoute(path: "v1/transcripts/source-1/translation", method: "GET"))

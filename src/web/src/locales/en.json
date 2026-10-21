@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "Recording upload is incomplete",
   "Browse all topics": "Browse all topics",
   "Back to daily recap": "Back to daily recap",
-  "Search recap topics": "Search recap topics"
+  "Search recap topics": "Search recap topics",
+  "The summary could not be shortened safely. Try again.": "The summary could not be shortened safely. Try again.",
+  "Day recap summary": "Day recap summary",
+  "The whole day, in five minutes or less.": "The whole day, in five minutes or less.",
+  "Generating recap…": "Generating recap…",
+  "Update recap": "Update recap",
+  "Recap": "Recap",
+  "Generating your day recap. You can keep reading the topics below.": "Generating your day recap. You can keep reading the topics below.",
+  "Loading saved recap…": "Loading saved recap…",
+  "{value0} min read": "{value0} min read",
+  "New recordings are available. Update the recap to include them.": "New recordings are available. Update the recap to include them.",
+  "Generate a short recap of this day. It will be saved here for later.": "Generate a short recap of this day. It will be saved here for later.",
+  "Your day recap will be available when there is something to recap.": "Your day recap will be available when there is something to recap.",
+  "This topic has changed. These are the details saved with your recap.": "This topic has changed. These are the details saved with your recap.",
+  "Browse the topics below for the latest details.": "Browse the topics below for the latest details.",
+  "Day recap did not contain a supported overview": "Day recap did not contain a supported overview",
+  "Day recap exceeded the five-minute reading limit": "Day recap exceeded the five-minute reading limit"
 }

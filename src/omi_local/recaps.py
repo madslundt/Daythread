@@ -13,7 +13,7 @@ from .completion_events import publish_recap
 from .conversation_state import Conversation, activity, finished_file, manual_upload, recordings
 from .domain import EvidenceChanged, stamp
 from .embedding_chunking import topic_regions
-from .inference import InferenceError, validate_citations
+from .inference import SUMMARY_REDUCTION_VERSION, InferenceError, validate_citations
 from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
 from .summary_filter import NO_CONTENT
@@ -24,8 +24,9 @@ from .voice_activity import analyze_voice
 if TYPE_CHECKING:
     from .service import Memory
 
-PROMPT_VERSION = f"subject-chapters-9-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
-DAY_PROMPT_VERSION = "daily-topics-5-adaptive-whole-day"
+PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
+                  f"-{SUMMARY_REDUCTION_VERSION}")
+DAY_PROMPT_VERSION = "daily-topics-15-stable-coherent-scopes"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
@@ -278,11 +279,20 @@ class Recaps:
         start, end = memory.day_window(day)
         ready = [g for g in groups if g.ready]
         blocked = sum(r["state"] == "blocked" for r in result["sources"])
-        sources, inputs = [], []
+        sources, inputs, seen, repeated = [], [], set(), []
         for group in ready:
-            notes = await self.prepare_group(group, guard)
             originals = self.sources(group)
             sources.extend(originals)
+            texts = [" ".join((source.get("text") or "").split()) for source in originals]
+            # Repeating a substantial exact excerpt adds no new information or importance.
+            # Keep every source and timestamp in the archive/result; omit only repeated input.
+            exact_repeat = bool(texts) and all(text in seen for text in texts)
+            hinted = bool(group.hints["markers"] or group.hints["meetings"])
+            seen.update(text for text in texts if len(text) >= 500 and len(text.split()) >= 80)
+            if exact_repeat and not hinted:
+                repeated.extend(source["id"] for source in originals)
+                continue
+            notes = await self.prepare_group(group, guard)
             if notes != NO_CONTENT and originals:
                 inputs.extend(
                     {
@@ -299,63 +309,82 @@ class Recaps:
                       generated_at=stamp(now), no_recap_content=bool(ready) and not inputs,
                       stale=False)
         trace = {"conversation_preparation": "cached_transcribed_recordings",
-                 "conversation_count": len(ready)}
+                 "conversation_count": len(ready), "exact_repeated_excerpt_ids": repeated}
         if inputs:
             purpose = (
                 f"a readable diary recap for {day.isoformat()} from transcribed recording notes. "
                 + RELEVANCE +
                 "Include only topics with useful supported substance. "
                 f"If none qualify, return exactly {NO_CONTENT} and nothing else. "
-                "Let the useful substance of the whole selected day determine topic count and "
-                "granularity. There is no target, minimum or maximum number of topics. Never "
-                "fill a quota, hide useful subjects to meet a count, or merge unrelated subjects "
-                "just to reduce their number. "
-                "Group related discussions across recordings, rather than making a section "
-                "for each recording, utterance or minor detail. Use short, specific subject "
-                "headings (##) that make the subject recognizable when scanning. Merge continued "
-                "subjects even when the recording notes use different titles for them. "
-                "Use a specific topic for a substantial independently useful subject. Broader "
-                "topics such as Home and errands, Family plans or Work updates are appropriate "
-                "for smaller related updates when they make the day easier to understand. "
-                "Do not force a fixed category taxonomy, empty categories or an Other bucket. "
-                "Keep independent arrangements clear within a broad topic. Shared vocabulary "
-                "alone does not connect different projects, people or plans. "
-                "Upload boundaries, pauses and elapsed time alone do not define recap topics. "
-                "Write one coherent summary per topic: one concise paragraph, "
-                "or two when needed to retain important details. Do not create separate short "
-                "and long summaries, a preview followed by repeated bullet points, nested point "
-                "lists or subheadings. Each topic summary must contain only that topic's "
-                "relevant details; do not mix in unrelated subjects from the same recording. "
-                "A brief update can be one sentence; substantial subjects may need more detail. "
-                "Start directly with useful content, without a recap title, date heading, "
-                "introductory overview or generic highlights/events section. "
-                "Keep decisions, commitments and genuine unresolved questions in their relevant "
-                "topic section; do not create separate decisions/commitments or open-questions "
-                "sections. Never add empty sections, placeholders or statements such as "
-                "'no open questions were recorded'. "
-                "Merge new details into the relevant topic. Rewrite, rename, merge or reorganize "
-                "sections whenever that makes the whole recap clearer; "
-                "do not just append sections. "
+                "First identify the coherent projects, plans, goals and workflows across ALL "
+                "note bodies, then write the recap. Prepared headings are provisional; do not "
+                "copy their structure. Organize at the project or useful everyday-subject level, "
+                "not one heading per technical issue. For example, latency, locked files, "
+                "fetching status, synchronization and scaling in the SAME ingestion workflow "
+                "belong in one coherent topic. Preserve consequential details within that topic. "
+                "Different projects stay separate even if they share vocabulary. A named project "
+                "must not absorb other projects, hiring or a separate beta program. "
+                "There is no target, minimum or maximum number of topics. Do not fill a quota, "
+                "drop a useful independent subject to reduce a count, or preserve fragmented "
+                "headings just because the recording notes contain them. Smaller RELATED updates "
+                "can share a general topic such as Home and errands; do not make an Other bucket, "
+                "a language-based topic, or an unrelated Project status catch-all. "
                 "Reconsider relationships among all earlier discussions as well as new material. "
-                "Later context can connect earlier topics: travel options and hotel booking can "
-                "become one trip topic only when the evidence establishes the same trip. Split "
-                "a substantial growing subject out of a broad topic, removing its details from "
-                "the broad topic so they appear once. Preserve all useful unique details and "
-                "their original citations through regrouping. Keep a natural order and avoid "
-                "needless renaming. Describe changed plans and conflicting readings explicitly; "
-                "later mentions alone do not establish agreement, cancellation or completion. "
-                "State each fact or decision only once, even when repeated across conversations, "
-                "while preserving unique useful details and original source citations. "
-                "Keep claims and suggestions qualified as recorded, without turning them into "
-                "verified facts or decisions. Omit fillers and unsupported fragments. "
-                "Do not describe pending conversations or claim the entire day is complete"
+                "Rewrite, rename, merge or reorganize earlier topics when their substance "
+                "connects; "
+                "do not merely append new headings. Split a substantial growing subject out of a "
+                "broad topic and remove its details there so they appear once. Later context can "
+                "connect earlier subjects, but later mentions alone do not prove agreement, "
+                "completion or cancellation. Preserve useful unique details, original citations, "
+                "conditions, changed plans and conflicts through regrouping. "
+                "State each fact or decision only once, even when recordings repeat it. "
+                "Output only short specific ## subject headings and one coherent summary per topic "
+                "in a few focused sentences, with a second paragraph only when needed. "
+                "Do not create separate short and long summaries, previews, bullet lists or "
+                "subheadings; do not mix in unrelated subjects. Start directly with useful content "
+                "without a recap title, date heading or overview. Keep decisions, follow-ups and "
+                "unresolved questions in their subject; do not create separate "
+                "decisions/commitments "
+                "or open-questions sections. Omit opaque fragments, incidental technical "
+                "background, "
+                "empty sections and placeholders. Keep proposals and unclear names/relationships "
+                "qualified. Before finishing, merge technical subtopics of the same workflow, "
+                "and split headings that mix independent substantial subjects. Never combine a "
+                "named project with other projects in its heading. Recruitment, a catalog launch "
+                "and a different application's beta feedback must be individually findable when "
+                "each has useful substance. Do not describe pending conversations or claim "
+                "the day is complete"
             )
-            if hasattr(memory.inference, "summarize_traced"):
-                summary, pipeline = await memory.inference.summarize_traced(inputs, purpose)
-                trace["daily_synthesis"] = pipeline
+            synthesis_key = digest({
+                "kind": "unique_daily_synthesis", "inputs": inputs,
+                "prompt": DAY_PROMPT_VERSION, "purpose": purpose,
+                "preparation_policy": PROMPT_VERSION,
+                "model": memory.settings.llm_route("summary").identity,
+                "language": memory.settings.summary_language.lower(),
+            })
+            summary = memory.store.recap_summary(synthesis_key)
+            if summary is not None:
+                trace["daily_synthesis"] = {
+                    "model_calls": 0, "reduction_used": False,
+                    "cache_hit": "identical_unique_notes",
+                    "final_prompt_source_ids": sorted({
+                        source["id"] for source in sources
+                        if any(source["id"] in item["text"] for item in inputs)
+                    }),
+                }
             else:
-                summary = await memory.inference.summarize(inputs, purpose)
-            summary = validate_citations(summary, sources).strip()
+                if hasattr(memory.inference, "summarize_daily_traced"):
+                    summary, pipeline = await memory.inference.summarize_daily_traced(
+                        inputs, purpose,
+                    )
+                    trace["daily_synthesis"] = pipeline
+                elif hasattr(memory.inference, "summarize_traced"):
+                    summary, pipeline = await memory.inference.summarize_traced(inputs, purpose)
+                    trace["daily_synthesis"] = pipeline
+                else:
+                    summary = await memory.inference.summarize(inputs, purpose)
+                summary = validate_citations(summary, sources).strip()
+                memory.store.save_recap_summary(synthesis_key, summary, sources, guard)
             if summary == NO_CONTENT:
                 result.update(summary=None, no_recap_content=True)
             else:

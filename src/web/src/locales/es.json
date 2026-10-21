@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "La carga de la grabación está incompleta",
   "Browse all topics": "Explorar todos los temas",
   "Back to daily recap": "Volver al resumen diario",
-  "Search recap topics": "Buscar temas del resumen"
+  "Search recap topics": "Buscar temas del resumen",
+  "The summary could not be shortened safely. Try again.": "No se pudo acortar el resumen sin perder contenido. Inténtalo de nuevo.",
+  "Day recap summary": "Resumen del día",
+  "The whole day, in five minutes or less.": "Todo el día en cinco minutos o menos.",
+  "Generating recap…": "Generando resumen…",
+  "Update recap": "Actualizar resumen",
+  "Recap": "Resumir",
+  "Generating your day recap. You can keep reading the topics below.": "Generando el resumen del día. Puedes seguir leyendo los temas de abajo.",
+  "Loading saved recap…": "Cargando resumen guardado…",
+  "{value0} min read": "{value0} min de lectura",
+  "New recordings are available. Update the recap to include them.": "Hay nuevas grabaciones. Actualiza el resumen para incluirlas.",
+  "Generate a short recap of this day. It will be saved here for later.": "Genera un breve resumen de este día. Se guardará aquí para más adelante.",
+  "Your day recap will be available when there is something to recap.": "El resumen del día estará disponible cuando haya algo que resumir.",
+  "This topic has changed. These are the details saved with your recap.": "Este tema ha cambiado. Estos son los detalles guardados con tu resumen.",
+  "Browse the topics below for the latest details.": "Consulta los temas de abajo para ver los detalles más recientes.",
+  "Day recap did not contain a supported overview": "El resumen del día no contenía una descripción general compatible",
+  "Day recap exceeded the five-minute reading limit": "El resumen del día superó el límite de cinco minutos de lectura"
 }

@@ -566,3 +566,20 @@ def test_resumed_speech_restarts_the_live_pause_requirement(client, monkeypatch)
     now = AT + timedelta(minutes=9, seconds=30)
     ready = client.post("/v1/recaps/2026-10-16").json()
     assert {source["id"] for source in ready["sources"]} == {first, second}
+
+
+def test_repeated_long_excerpt_keeps_all_sources_without_regrouping_identical_information(client):
+    text = ('The deployment needs a review on Friday before invitations can be sent. '
+            'Payment checks remain a dependency and the owner must report any failed checks. ') * 8
+    first = insert(client, text=text, kind='manual_upload')
+    before = client.post('/v1/recaps/2026-10-16').json()
+    memory = client.app.state.memory
+    calls = len(memory.inference.calls)
+    duplicate = insert(client, AT + timedelta(minutes=20), text=text, kind='manual_upload')
+    after = client.post('/v1/recaps/2026-10-16').json()
+    assert after['summary'] == before['summary']
+    assert {source['id'] for source in after['sources']} == {first, duplicate}
+    assert len(memory.inference.calls) == calls
+    assert after['evidence']['pipeline']['exact_repeated_excerpt_ids'] == [duplicate]
+    assert after['evidence']['pipeline']['daily_synthesis']['cache_hit'] == 'identical_unique_notes'
+    assert memory.store.get_audio(duplicate)['text'] == text

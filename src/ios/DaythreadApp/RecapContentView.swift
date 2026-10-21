@@ -199,3 +199,135 @@ struct RecapDisclosureStyle: DisclosureGroupStyle {
         }
     }
 }
+
+/// Reading a saved overview never starts inference; only the Recap button does.
+struct DayRecapOverview: View {
+    let day: String
+    let recap: JSONValue
+    let onCorrect: () -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.locale) private var interfaceLocale
+    @State private var overview: JSONValue = .null
+    @State private var error: String?
+    @State private var generating = false
+    @State private var operation: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var selectedTopic: SavedTopic?
+    private var currentDayRecap: JSONValue {
+        guard recap["day"].text == day, recap["scope"]["tag_id"].text.isEmpty,
+              recap["scope"]["zone_id"].text.isEmpty else { return .null }
+        return recap
+    }
+
+    private struct SavedTopic: Identifiable {
+        let id: String
+        let title: String
+        let summary: String
+    }
+
+    var body: some View {
+        let _ = interfaceLocale
+        VStack(alignment: .leading, spacing: 12) {
+            if !overview["summary"].text.isEmpty {
+                Text(markdown(overview["summary"].text))
+                    .textSelection(.enabled)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard url.scheme == "topic" else { return .discarded }
+                        let encoded = String(url.absoluteString.dropFirst("topic:".count))
+                        guard let title = encoded.removingPercentEncoding,
+                              let topic = overview["topics"].array.first(where: { $0["id"].text == title }) else { return .discarded }
+                        selectedTopic = .init(id: title, title: topic["title"].text, summary: topic["summary"].text)
+                        return .handled
+                    })
+                    .accessibilityIdentifier("recap.overview.summary")
+                if let date = AppModel.date(overview["generated_at"].text) {
+                    Text(DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM HHmm"))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel(L10n.text("Saved recap") + " " + date.formatted())
+                }
+                if overview["stale"] == .bool(true) {
+                    Text(L10n.text("New recordings are available. Generate again to include them."))
+                        .font(.caption).foregroundStyle(Theme.accent)
+                }
+            } else if overview["can_generate"] == .bool(true) {
+                Text(L10n.text("Get a recap of this day in up to 5 minutes of reading. It is saved for later."))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            ErrorNote(message: error)
+            if error != nil && overview == .null {
+                Button(L10n.text("Retry recap")) { Task { await load() } }
+            }
+            if generating {
+                ProgressView(L10n.text("Generating day recap…"))
+                    .accessibilityIdentifier("recap.overview.generating")
+            } else if overview["can_generate"] == .bool(true),
+                      overview["summary"].text.isEmpty || overview["stale"] == .bool(true) {
+                Button(overview["summary"].text.isEmpty ? L10n.text("Recap") : L10n.text("Generate again")) {
+                    operation = Task { await generate() }
+                }.accessibilityIdentifier("recap.overview.generate")
+            }
+        }
+        .task(id: String(describing: phase)) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                if !generating { await load() }
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            }
+        }
+        .sheet(item: $selectedTopic) { topic in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let current = RecapTranslationMapping.original(currentDayRecap["summary"].text, day: day).topics.first(where: {
+                            $0.original.title?.replacingOccurrences(of: "**", with: "") == topic.id
+                        }) {
+                            RecapTopicRow(topic: current, display: current.display, sources: currentDayRecap["sources"].array,
+                                day: day, filters: .init(), scopeFingerprint: "", expanded: .constant(true),
+                                onCorrect: { selectedTopic = nil; overview = .null; onCorrect(); Task { await load() } },
+                                onFocus: { _ in })
+                        } else {
+                            Text(topic.title).font(.headline)
+                            Text(markdown(topic.summary)).textSelection(.enabled)
+                        }
+                    }.padding()
+                }.navigationTitle(L10n.text("Topics")).navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) {
+                        Button(L10n.text("Done")) { selectedTopic = nil }
+                    } }
+            }
+        }
+        .onChange(of: overview) { _, value in
+            if let selectedTopic, value["summary"].text.isEmpty || !value["topics"].array.contains(where: { $0["id"].text == selectedTopic.id }) {
+                self.selectedTopic = nil
+            }
+        }
+        .onDisappear { operation?.cancel(); requestID = UUID(); generating = false }
+    }
+
+    private func markdown(_ value: String) -> AttributedString {
+        (try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(value)
+    }
+
+    private func load() async {
+        let token = UUID()
+        requestID = token
+        do {
+            let result = try await model.client().request("v1/recaps/\(day)/overview")
+            guard !Task.isCancelled, requestID == token else { return }
+            overview = result; error = nil
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
+    }
+
+    private func generate() async {
+        guard !generating else { return }
+        let token = UUID()
+        requestID = token; generating = true; error = nil
+        defer { if requestID == token { generating = false } }
+        do {
+            let result = try await model.client().request("v1/recaps/\(day)/overview", method: "POST")
+            guard !Task.isCancelled, requestID == token else { return }
+            overview = result
+        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
+    }
+}

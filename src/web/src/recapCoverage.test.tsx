@@ -9,7 +9,7 @@ const resource = vi.hoisted(() => ({ data: undefined as Recap | undefined, useRe
 vi.mock("./useResource", () => ({
   useResource: (path: string, interval: number) => {
     resource.useResource(path, interval);
-    return { data: path?.startsWith("/v1/recaps/") ? resource.data : undefined,
+    return { data: path?.startsWith("/v1/recaps/") && !path.endsWith("/overview") ? resource.data : undefined,
       loading: false, error: "", refresh: () => {}, setData: () => {} };
   },
 }));
@@ -32,7 +32,7 @@ describe("transcribed recording recap display", () => {
     expect(html).toContain('data-topic-id="recap:0:Cocoa"');
     expect(html).toContain('class="recap-topic-option" aria-expanded="false"');
   });
-  it("has no manual generation button and explains automatic updates", () => {
+  it("keeps detailed topic updates automatic independently of the on-demand overview", () => {
     resource.data = { ...resource.data!, stale: true };
     const html = render();
     expect(html).not.toContain("Generate recap");

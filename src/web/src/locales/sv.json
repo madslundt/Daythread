@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "Uppladdningen av inspelningen är ofullständig",
   "Browse all topics": "Bläddra bland alla ämnen",
   "Back to daily recap": "Tillbaka till dagens sammanfattning",
-  "Search recap topics": "Sök bland sammanfattningens ämnen"
+  "Search recap topics": "Sök bland sammanfattningens ämnen",
+  "The summary could not be shortened safely. Try again.": "Sammanfattningen kunde inte förkortas utan att förlora innehåll. Försök igen.",
+  "Day recap summary": "Dagens sammanfattning",
+  "The whole day, in five minutes or less.": "Hela dagen på högst fem minuter.",
+  "Generating recap…": "Skapar sammanfattning…",
+  "Update recap": "Uppdatera sammanfattning",
+  "Recap": "Sammanfatta",
+  "Generating your day recap. You can keep reading the topics below.": "Skapar dagens sammanfattning. Du kan fortsätta läsa ämnena nedan.",
+  "Loading saved recap…": "Läser in sparad sammanfattning…",
+  "{value0} min read": "{value0} min läsning",
+  "New recordings are available. Update the recap to include them.": "Nya inspelningar finns tillgängliga. Uppdatera sammanfattningen för att ta med dem.",
+  "Generate a short recap of this day. It will be saved here for later.": "Skapa en kort sammanfattning av dagen. Den sparas här till senare.",
+  "Your day recap will be available when there is something to recap.": "Dagens sammanfattning blir tillgänglig när det finns något att sammanfatta.",
+  "This topic has changed. These are the details saved with your recap.": "Det här ämnet har ändrats. Här är detaljerna som sparades med din sammanfattning.",
+  "Browse the topics below for the latest details.": "Se ämnena nedan för de senaste detaljerna.",
+  "Day recap did not contain a supported overview": "Dagens sammanfattning innehöll ingen översikt som stöds",
+  "Day recap exceeded the five-minute reading limit": "Dagens sammanfattning överskred gränsen på fem minuters lästid"
 }

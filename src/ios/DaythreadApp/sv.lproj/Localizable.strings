@@ -2724,3 +2724,14 @@
 "Back to daily recap" = "Tillbaka till dagens sammanfattning";
 
 "Find a topic in this day" = "Hitta ett ämne från den här dagen";
+
+"The summary could not be shortened safely. Try again." = "Sammanfattningen kunde inte förkortas utan att förlora innehåll. Försök igen.";
+
+"Recap" = "Sammanfatta";
+"Generate again" = "Skapa igen";
+"Generating day recap…" = "Skapar dagens sammanfattning…";
+"New recordings are available. Generate again to include them." = "Nya inspelningar finns. Skapa sammanfattningen igen för att ta med dem.";
+"Get a recap of this day in up to 5 minutes of reading. It is saved for later." = "Få en sammanfattning av dagen som tar högst 5 minuter att läsa. Den sparas till senare.";
+
+"Day recap did not contain a supported overview" = "Dagens sammanfattning innehöll ingen översikt som stöds";
+"Day recap exceeded the five-minute reading limit" = "Dagens sammanfattning överskred läsgränsen på fem minuter";

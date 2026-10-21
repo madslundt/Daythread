@@ -200,6 +200,10 @@ struct DayView: View {
         let focusedScope = scopeKey
         let hasContent = !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty })
         return Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day recap")) {
+            if !filters.isFiltered {
+                DayRecapOverview(day: dayKey, recap: recap, onCorrect: { Task { await reloadMembership() } })
+                    .id(model.archiveIdentity + model.archiveRevision + dayKey)
+            }
             ErrorNote(message: loadedScope == scopeKey ? recapError : nil)
             if loadedScope == scopeKey && recapError != nil { Button(L10n.text("Retry recap")) { Task { await retryRecap() } } }
             if recap["generation_state"].text == "failed" {
@@ -212,6 +216,7 @@ struct DayView: View {
             }
             if !hasContent && ["queued", "running"].contains(recap["generation_state"].text) { ProgressView(L10n.text("Preparing a recap for the selected filters…")) }
             if hasContent {
+                Text(L10n.text("Topics")).font(.headline)
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
                     onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } },
                     onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } })

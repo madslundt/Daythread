@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "L’importation de l’enregistrement est incomplète",
   "Browse all topics": "Parcourir tous les sujets",
   "Back to daily recap": "Retour au récapitulatif quotidien",
-  "Search recap topics": "Rechercher des sujets du résumé"
+  "Search recap topics": "Rechercher des sujets du résumé",
+  "The summary could not be shortened safely. Try again.": "Le résumé n’a pas pu être raccourci sans perdre de contenu. Réessayez.",
+  "Day recap summary": "Résumé de la journée",
+  "The whole day, in five minutes or less.": "Toute la journée en cinq minutes ou moins.",
+  "Generating recap…": "Génération du résumé…",
+  "Update recap": "Actualiser le résumé",
+  "Recap": "Résumer",
+  "Generating your day recap. You can keep reading the topics below.": "Génération du résumé de votre journée. Vous pouvez continuer à lire les sujets ci-dessous.",
+  "Loading saved recap…": "Chargement du résumé enregistré…",
+  "{value0} min read": "{value0} min de lecture",
+  "New recordings are available. Update the recap to include them.": "De nouveaux enregistrements sont disponibles. Actualisez le résumé pour les inclure.",
+  "Generate a short recap of this day. It will be saved here for later.": "Générez un bref résumé de cette journée. Il sera enregistré ici pour plus tard.",
+  "Your day recap will be available when there is something to recap.": "Le résumé de votre journée sera disponible dès qu’il y aura quelque chose à résumer.",
+  "This topic has changed. These are the details saved with your recap.": "Ce sujet a changé. Voici les détails enregistrés avec votre résumé.",
+  "Browse the topics below for the latest details.": "Consultez les sujets ci-dessous pour les dernières informations.",
+  "Day recap did not contain a supported overview": "Le résumé de la journée ne contenait pas de vue d’ensemble prise en charge",
+  "Day recap exceeded the five-minute reading limit": "Le résumé de la journée dépassait la limite de cinq minutes de lecture"
 }

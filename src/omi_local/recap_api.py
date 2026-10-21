@@ -5,11 +5,22 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response
 
+from .day_overview import DayOverview
 from .scoped_recap_jobs import with_generation
 
 
 def recap_routes(get_memory, get_jobs):
     router = APIRouter(prefix="/v1/recaps")
+
+    @router.get("/{day}/overview")
+    def read_overview(day: date, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        return DayOverview(get_memory()).cached(day)
+
+    @router.post("/{day}/overview")
+    async def generate_overview(day: date, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        return await DayOverview(get_memory()).generate(day)
 
     @router.get("/{day}")
     def read(day: date, response: Response, tag_id: UUID | None = None,

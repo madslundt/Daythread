@@ -2855,5 +2855,21 @@
   "Recording upload is incomplete": "Uploaden af optagelsen er ufuldstændig",
   "Browse all topics": "Gennemse alle emner",
   "Back to daily recap": "Tilbage til dagens opsummering",
-  "Search recap topics": "Søg i opsummeringens emner"
+  "Search recap topics": "Søg i opsummeringens emner",
+  "The summary could not be shortened safely. Try again.": "Opsummeringen kunne ikke forkortes uden at miste indhold. Prøv igen.",
+  "Day recap summary": "Dagens opsummering",
+  "The whole day, in five minutes or less.": "Hele dagen på højst fem minutter.",
+  "Generating recap…": "Genererer opsummering…",
+  "Update recap": "Opdater opsummering",
+  "Recap": "Opsummer",
+  "Generating your day recap. You can keep reading the topics below.": "Genererer dagens opsummering. Du kan læse videre i emnerne nedenfor.",
+  "Loading saved recap…": "Indlæser gemt opsummering…",
+  "{value0} min read": "{value0} min. læsning",
+  "New recordings are available. Update the recap to include them.": "Der er nye optagelser. Opdater opsummeringen for at få dem med.",
+  "Generate a short recap of this day. It will be saved here for later.": "Generer en kort opsummering af dagen. Den gemmes her til senere.",
+  "Your day recap will be available when there is something to recap.": "Dagens opsummering bliver tilgængelig, når der er noget at opsummere.",
+  "This topic has changed. These are the details saved with your recap.": "Dette emne er ændret. Her er detaljerne, der blev gemt med din opsummering.",
+  "Browse the topics below for the latest details.": "Se emnerne nedenfor for de seneste detaljer.",
+  "Day recap did not contain a supported overview": "Dagens opsummering indeholdt ikke en understøttet oversigt",
+  "Day recap exceeded the five-minute reading limit": "Dagens opsummering overskred grænsen på fem minutters læsning"
 }

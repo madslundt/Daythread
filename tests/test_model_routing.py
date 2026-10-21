@@ -132,6 +132,16 @@ async def test_chat_and_recap_provenance_and_cache_use_the_right_models(tmp_path
     store.complete(str(key), "Kitchen discussion")
 
     def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        if payload["task"].startswith(("Organize useful recorded", "Decide whether ONE proposed")):
+            data = json.loads(payload["evidence"])
+            topics = data['proposed_topics'] if isinstance(data, dict) else [{
+                'title': 'Kitchen', 'scope': 'Recorded arrangements',
+                'items': [row['id'] for row in data],
+            }]
+            return httpx.Response(200, json={'choices': [{'message': {
+                'content': json.dumps({'topics': topics}),
+            }}]})
         return httpx.Response(
             200, json={"choices": [{"message": {"content": f"Recorded [{key}]"}}]}
         )

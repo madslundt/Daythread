@@ -543,8 +543,11 @@ def test_reduction_tracks_source_ids_remaining_in_final_prompt_without_claiming_
         async with httpx.AsyncClient() as client:
             inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
 
-            async def generate(*args):
-                return f"Reduced only [{sources[0]['id']}]"
+            async def generate(task, evidence):
+                # A retained ID must belong to the current batch; simulate
+                # omission of later batches without fabricating a cross-batch cite.
+                return (f"Reduced only [{sources[0]['id']}]" if sources[0]["id"] in evidence
+                        else "[[NO_RECAP_CONTENT]]")
 
             inference.generate = generate
             answer, trace = await inference.summarize_traced(sources, "fixture recap")

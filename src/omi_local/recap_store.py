@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from .day_overview import SCHEMA as DAY_OVERVIEW_SCHEMA
 from .scoped_recap_cache import SCHEMA as SCOPED_RECAP_SCHEMA
+from .weekly_overview import SCHEMA as WEEK_OVERVIEW_SCHEMA
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS recap_activity (
@@ -25,6 +26,7 @@ END;
 """
 SCHEMA += SCOPED_RECAP_SCHEMA
 SCHEMA += DAY_OVERVIEW_SCHEMA
+SCHEMA += WEEK_OVERVIEW_SCHEMA
 
 
 class RecapStore:

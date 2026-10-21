@@ -148,3 +148,69 @@ async def test_local_coherence_splits_unrelated_projects_and_keeps_one_workflow(
         assert result.startswith('## Draft updates\n')
     assert len(re.findall(r'^## ', result, re.M)) == (3 if mixed else 1)
     assert trace['model_calls'] == (6 if mixed else 4)
+
+
+@pytest.mark.anyio
+async def test_topic_writer_grounds_action_state_in_scoped_originals_not_drifting_notes(tmp_path):
+    key, other_key = str(uuid4()), str(uuid4())
+    notes = [{'id': key, 'started_at': '2026-10-20T10:00:00Z',
+              'text': f'## Catalog\nThe team is deploying directly to production. '
+                      f'Atlas integration was selected for Q1. [{key}]'}]
+    original = ('The team is looking into how to deploy directly in production. '
+                'The risk assessment was completed. We agreed to add user metrics in Q1. '
+                'Atlas could be an option; the solution remains open.')
+    originals = [{'id': key, 'started_at': '2026-10-20T10:00:00Z', 'text': original},
+                 {'id': other_key, 'started_at': '2026-10-20T11:00:00Z',
+                  'text': 'The unrelated beta application was released last Thursday. '
+                          'That other project selected Atlas.'}]
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Organize useful recorded information'):
+            return reply(json.dumps({'topics': [
+                {'title': 'Catalog', 'scope': 'Catalog rollout', 'items': ['n1']}]}))
+        assert original in payload['evidence']
+        assert 'The team is deploying directly' not in payload['evidence']
+        assert 'Atlas integration was selected' not in payload['evidence']
+        assert 'unrelated beta application' not in payload['evidence']
+        return reply(f'The team is considering direct deployment; the risk assessment '
+                     f'was reported completed. User metrics are planned for Q1, with '
+                     f'Atlas one option and the solution still open. [{key}]')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result, trace = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                        ).summarize_daily_traced(
+                                            notes, 'a daily recap', original_sources=originals)
+    assert 'considering direct deployment' in result
+    assert 'risk assessment was reported completed' in result
+    assert 'Atlas one option and the solution still open' in result
+    assert trace['writing_evidence'] == 'original_transcripts'
+    assert trace['final_prompt_source_ids'] == [key]
+
+
+@pytest.mark.anyio
+async def test_topic_writer_keeps_action_updates_in_recording_order(tmp_path):
+    first = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    last = '00000000-0000-4000-8000-000000000001'
+    notes = [{'id': first, 'started_at': '2026-10-20T10:00:00Z',
+              'text': f'## Launch\nDeployment status changed. [{first}] [{last}]',
+              'citation_source_ids': [first, last]}]
+    originals = [{'id': first, 'started_at': '2026-10-20T10:00:00Z',
+                  'text': 'We are considering deployment.'},
+                 {'id': last, 'started_at': '2026-10-20T11:00:00Z',
+                  'text': 'The deployment has now completed.'}]
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Organize useful recorded information'):
+            return reply(json.dumps({'topics': [
+                {'title': 'Launch', 'scope': 'Deployment status', 'items': ['n1']}]}))
+        evidence = payload['evidence']
+        assert evidence.index('considering deployment') < evidence.index('has now completed')
+        return reply(f'Deployment was proposed and later reported completed. [{first}] [{last}]')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result, _ = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                    ).summarize_daily_traced(
+                                        notes, 'a daily recap', original_sources=originals)
+    assert 'later reported completed' in result

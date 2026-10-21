@@ -13,6 +13,7 @@ from .weekly_models import (
     VersionHistory,
     markdown,
 )
+from .weekly_overview import WeekOverview
 
 
 def weekly_routes(get_weekly) -> APIRouter:
@@ -57,6 +58,20 @@ def weekly_routes(get_weekly) -> APIRouter:
     def versions(week_start: date) -> dict:
         read(week_start)
         return {"items": get_weekly().store.versions(week_start.isoformat())}
+
+    @router.get("/{week_start}/overview")
+    def overview(week_start: date) -> dict:
+        try:
+            return WeekOverview(get_weekly().memory).cached(week_start)
+        except (ValueError, OverflowError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/{week_start}/overview")
+    async def generate_overview(week_start: date) -> dict:
+        try:
+            return await WeekOverview(get_weekly().memory).generate(week_start)
+        except (ValueError, OverflowError) as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @router.post("/{week_start}/generate", response_model=GenerationResult)
     def generate(week_start: date, body: GenerateReview, response: Response) -> dict:

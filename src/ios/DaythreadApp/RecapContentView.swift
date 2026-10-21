@@ -214,6 +214,7 @@ struct DayRecapOverview: View {
     @State private var operation: Task<Void, Never>?
     @State private var requestID = UUID()
     @State private var selectedTopic: SavedTopic?
+    @State private var expanded = false
     private var currentDayRecap: JSONValue {
         guard recap["day"].text == day, recap["scope"]["tag_id"].text.isEmpty,
               recap["scope"]["zone_id"].text.isEmpty else { return .null }
@@ -230,23 +231,20 @@ struct DayRecapOverview: View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             if !overview["summary"].text.isEmpty {
-                Text(markdown(overview["summary"].text))
-                    .textSelection(.enabled)
-                    .environment(\.openURL, OpenURLAction { url in
-                        guard url.scheme == "topic" else { return .discarded }
-                        let encoded = String(url.absoluteString.dropFirst("topic:".count))
-                        guard let title = encoded.removingPercentEncoding,
-                              let topic = overview["topics"].array.first(where: { $0["id"].text == title }) else { return .discarded }
-                        selectedTopic = .init(id: title, title: topic["title"].text, summary: topic["summary"].text)
-                        return .handled
-                    })
-                    .accessibilityIdentifier("recap.overview.summary")
+                SummaryTranslationView(output: overview, languageLabel: L10n.source("Recap language"), renderedContent: { translation, showing in
+                    let text = showing ? translation?["text"].text ?? overview["summary"].text : overview["summary"].text
+                    RecapOverviewDisclosure(text: text, expanded: $expanded, identifier: "recap.overview") {
+                        overviewText(text)
+                    }
+                })
                 if let date = AppModel.date(overview["generated_at"].text) {
                     Text(DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM HHmm"))
                         .font(.caption).foregroundStyle(.secondary)
                         .accessibilityLabel(L10n.text("Saved recap") + " " + date.formatted())
                 }
-                if overview["stale"] == .bool(true) {
+                Text(L10n.text("\(overview["reading_minutes"].integer) min read"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if overview["can_generate"] == .bool(true) {
                     Text(L10n.text("New recordings are available. Generate again to include them."))
                         .font(.caption).foregroundStyle(Theme.accent)
                 }
@@ -261,8 +259,7 @@ struct DayRecapOverview: View {
             if generating {
                 ProgressView(L10n.text("Generating day recap…"))
                     .accessibilityIdentifier("recap.overview.generating")
-            } else if overview["can_generate"] == .bool(true),
-                      overview["summary"].text.isEmpty || overview["stale"] == .bool(true) {
+            } else if overview["can_generate"] == .bool(true) {
                 Button(overview["summary"].text.isEmpty ? L10n.text("Recap") : L10n.text("Generate again")) {
                     operation = Task { await generate() }
                 }.accessibilityIdentifier("recap.overview.generate")
@@ -302,6 +299,7 @@ struct DayRecapOverview: View {
                 self.selectedTopic = nil
             }
         }
+        .onChange(of: overview["output_id"]) { _, _ in expanded = false }
         .onDisappear { operation?.cancel(); requestID = UUID(); generating = false }
     }
 
@@ -309,25 +307,41 @@ struct DayRecapOverview: View {
         (try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(value)
     }
 
+    private func overviewText(_ text: String) -> some View {
+        Text(markdown(text))
+            .textSelection(.enabled)
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == "topic" else { return .discarded }
+                let encoded = String(url.absoluteString.dropFirst("topic:".count))
+                guard let id = encoded.removingPercentEncoding,
+                      let topic = overview["topics"].array.first(where: { $0["id"].text == id }) else { return .discarded }
+                selectedTopic = .init(id: id, title: topic["title"].text, summary: topic["summary"].text)
+                return .handled
+            })
+            .accessibilityIdentifier("recap.overview.summary")
+    }
+
     private func load() async {
         let token = UUID()
+        let identity = model.archiveIdentity
         requestID = token
         do {
             let result = try await model.client().request("v1/recaps/\(day)/overview")
-            guard !Task.isCancelled, requestID == token else { return }
+            guard !Task.isCancelled, requestID == token, identity == model.archiveIdentity else { return }
             overview = result; error = nil
-        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
+        } catch { if !Task.isCancelled, requestID == token, identity == model.archiveIdentity { self.error = L10n.error(error) } }
     }
 
     private func generate() async {
-        guard !generating else { return }
+        guard !generating, overview["can_generate"] == .bool(true) else { return }
         let token = UUID()
+        let identity = model.archiveIdentity
         requestID = token; generating = true; error = nil
         defer { if requestID == token { generating = false } }
         do {
             let result = try await model.client().request("v1/recaps/\(day)/overview", method: "POST")
-            guard !Task.isCancelled, requestID == token else { return }
+            guard !Task.isCancelled, requestID == token, identity == model.archiveIdentity else { return }
             overview = result
-        } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
+        } catch { if !Task.isCancelled, requestID == token, identity == model.archiveIdentity { self.error = L10n.error(error) } }
     }
 }

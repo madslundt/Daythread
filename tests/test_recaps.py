@@ -36,6 +36,13 @@ class FakeInference:
         self.calls.append((sources, purpose))
         return "\n".join(f"{s['text']} [{s['id']}]" for s in sources)
 
+    async def review_summary(self, sources, draft, **kwargs):
+        return draft, {"model_calls": 0, "correction_count": 0,
+                       "checked_source_ids": [source["id"] for source in sources]}
+
+    async def summarize_day_overview(self, sources, purpose):
+        return await self.summarize(sources, purpose)
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):

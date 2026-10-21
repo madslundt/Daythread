@@ -1,8 +1,10 @@
 import asyncio
 import codecs
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable
+from copy import copy
 
 import httpx
 
@@ -20,7 +22,7 @@ from .summary_filter import NO_CONTENT, filter_summary_sources
 from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
-SUMMARY_REDUCTION_VERSION = "compact-evidence-7"
+SUMMARY_REDUCTION_VERSION = "compact-evidence-9-action-scope"
 
 
 async def stream_data(response: httpx.Response):
@@ -72,6 +74,28 @@ SYSTEM = (
 )
 
 
+ACTION_STATE_RULES = (
+    " Preserve the recorded state of EACH specific action and its scope. Exploring, considering, "
+    "'looking into how', suggestions, options, 'could', 'should' and tentative dates describe "
+    "proposed or planned work, not execution. Agreement, a deadline, readiness or a roadmap "
+    "entry does not establish that work started. Describe work as underway only when the "
+    "recording explicitly reports it started or is being worked on; describe completion only "
+    "when it explicitly reports that specific work finished. Keep actual ongoing work and "
+    "reported completed work as such; do not downgrade everything to a proposal. A completed "
+    "fix, assessment, component or other project's release does not establish completion of "
+    "remaining corrections, implementation or deployment. Preserve attribution, negation, "
+    "conditions and uncertainty. Distinguish a proposed benefit from an achieved result. "
+    "An agreed goal, requirement or roadmap item does not select a suggested implementation, "
+    "tool or design. Keep candidate solutions as options unless the recording explicitly "
+    "selects them. 'Can' describes capability, not work underway; 'will test' is planned "
+    "testing, not testing in progress. Preserve the action's object: hoping to finish "
+    "processing does not mean expecting performance problems to be fixed. Preserve its "
+    "temporal frame: a historical aspiration is not a new future commitment, especially when "
+    "the speaker goes on to report later progress. Preserve hopes as hopes, not forecasts. "
+    "Do not infer action state from topic labels, organizational scopes or earlier summaries."
+)
+
+
 SUMMARY_SYSTEM = SYSTEM.replace(
     "Respond in the user's language.", "Follow the task's output-language instruction."
 ).replace(
@@ -83,7 +107,7 @@ SUMMARY_SYSTEM = SYSTEM.replace(
     "supplied as short keys such as src_1, cite those exact keys in square brackets instead "
     "of inventing UUIDs. Do not reject "
     "substantive notes merely because the original transcript is not repeated alongside them."
-)
+) + ACTION_STATE_RULES
 
 
 def summary_language_instruction(language: str) -> str:
@@ -360,9 +384,11 @@ class Inference(Transcription, InferenceUsage):
     def prompt_source_ids(payload: str, sources: list[dict]) -> list[str]:
         return [source["id"] for source in sources if source["id"].lower() in payload.lower()]
 
-    async def summarize_daily_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
+    async def summarize_daily_traced(
+        self, sources: list[dict], purpose: str, *, original_sources: list[dict] | None = None,
+    ) -> tuple[str, dict]:
         from .daily_synthesis import summarize_daily
-        return await summarize_daily(self, sources)
+        return await summarize_daily(self, sources, original_sources=original_sources)
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}
@@ -379,6 +405,44 @@ class Inference(Transcription, InferenceUsage):
     async def summarize(self, sources: list[dict], purpose: str, trace: dict | None = None) -> str:
         with summary_usage():
             return await self._reduce(sources, purpose, trace)
+
+    async def review_summary(
+        self, sources: list[dict], draft: str, *, topics: list[dict] | None = None,
+    ) -> tuple[str, dict]:
+        from .summary_accuracy import review_summary
+        with summary_usage():
+            try:
+                return await review_summary(self, sources, draft, topics=topics)
+            except InferenceError as exc:
+                logging.getLogger(__name__).warning("Day recap accuracy review failed: %s", exc)
+                raise
+
+    async def summarize_day_overview(self, sources: list[dict], purpose: str) -> str:
+        # Keep qualifications in the final writer's original context when the day
+        # fits. Reducing an already bounded day can turn proposed work into progress.
+        from .summary_accuracy import EVIDENCE_BUDGET
+        with summary_usage():
+            useful, filtering = filter_summary_sources(sources)
+            self.record_summary_filter(filtering, sources)
+            evidence = json.dumps([
+                {"id": source["id"], "started_at": source.get("started_at", ""),
+                 "text": source["text"]} for source in useful
+            ], ensure_ascii=False)
+            if len(evidence) > EVIDENCE_BUDGET:
+                # Reducers share the recap's language without changing detailed topics
+                # or concurrent summary requests on the configured inference instance.
+                recap = copy(self)
+                recap.settings = self.settings.model_copy(update={
+                    "summary_language": self.settings.recap_language,
+                })
+                return await recap.summarize(sources, purpose)
+            if not useful:
+                return NO_CONTENT
+            task = (f"Create {purpose}. Use only the original speech below, preserving its "
+                    "qualifications and original source citations. "
+                    + summary_language_instruction(self.settings.recap_language))
+            return validate_citations(await self._summary_generate(
+                task, evidence, sources, compact_references=True), sources)
 
     async def translate(self, text: str, language: str) -> str:
         return await self.for_task("summary")._generate(
@@ -572,6 +636,9 @@ class Inference(Transcription, InferenceUsage):
             "and useful durable information. Consolidate repeated context while preserving "
             "distinct useful "
             "details, dates, conditions, uncertainty and original UUID citations for each point. "
+            "Retain the short original phrases that establish whether work is proposed, "
+            "planned, underway or reported completed. Do not compress away 'looking into', "
+            "'maybe', 'in the process of', 'not yet' or the scope of a completed subtask. "
             "Keep useful material from the beginning and end of this batch. Do not impose a "
             "topic quota or discard a subject merely because it occurs late. The final synthesis "
             "will organize all batches together. Cite only original source UUIDs copied exactly "
@@ -583,7 +650,9 @@ class Inference(Transcription, InferenceUsage):
             if trace is not None:
                 trace["model_calls"] += 1
             note = (await self._summary_generate(
-                compact, evidence, batch_sources, compact_references=maximum > 5999,
+                # Raw maps need reversible short keys too: copying many UUIDs can
+                # fabricate a nearly matching ID before consolidation ever runs.
+                compact, evidence, batch_sources, compact_references=True,
             )).strip()
             try:
                 validate_citations(note, batch_sources)

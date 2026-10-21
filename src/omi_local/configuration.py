@@ -47,7 +47,7 @@ def group(key: str) -> str:
     if key.startswith("stt_"):
         return "Transcription"
     if key.startswith(("llm_", "chat_")) or key in {
-        "summary_language", "translation_languages"
+        "summary_language", "recap_language", "translation_languages"
     }:
         return "Language models & chat"
     if key.startswith(("embedding_", "retrieval_", "reranker_")):
@@ -178,6 +178,9 @@ DESCRIPTIONS = {
     "web_dir": "Optional custom web asset directory on home-core. Empty uses bundled assets.",
     "summary_language": "Language for summaries, independently of transcription. "
     "auto follows the source language; use a language code such as da or en to choose one.",
+    "recap_language": "Language for day and week recaps, independently of detailed summaries and "
+    "transcription. auto follows the source language; use a language code such as da or en "
+    "to choose one.",
     "translation_languages": "Languages available for transcript and summary translation, "
     "independently of the generated summary language. Use language codes such as en or da; "
     "the first is the default target. An empty list disables translation until a language "

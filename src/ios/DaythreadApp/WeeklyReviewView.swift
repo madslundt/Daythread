@@ -47,6 +47,12 @@ struct WeeklyReviewView: View {
                 }.padding(.vertical, 8)
             }.listRowBackground(Color.clear)
             navigation
+            if selectedVersion.isEmpty {
+                Section(L10n.text("Weekly recap")) {
+                    WeeklyRecapOverview(week: week)
+                        .id([model.archiveIdentity, model.archiveRevision, diary.calendar.timeZone.identifier, week].joined(separator: "|"))
+                }
+            }
             if error != nil {
                 Section { ErrorNote(message: error); Button(L10n.text("Try again")) { refresh = UUID() } }
             }

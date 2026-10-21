@@ -2735,3 +2735,52 @@
 
 "Day recap did not contain a supported overview" = "Le résumé de la journée ne contenait pas de vue d’ensemble prise en charge";
 "Day recap exceeded the five-minute reading limit" = "Le résumé de la journée dépassait la limite de cinq minutes de lecture";
+"Day recap did not contain a readable overview" = "Le résumé de la journée ne contenait pas de vue d’ensemble lisible";
+
+"Recap language" = "Langue des résumés quotidiens et hebdomadaires";
+
+"Choose the language for day recaps. Automatic follows the source language." = "Choisissez la langue des résumés de la journée. Le mode automatique suit la langue de la source.";
+
+"Choose the language for summaries and topics. Automatic follows the source language." = "Choisissez la langue des résumés et des sujets. Le mode automatique suit la langue de la source.";
+
+"Choose the languages offered by Translate for transcripts, summaries, and recaps. Translations are generated only when you click Translate." = "Choisissez les langues proposées par Traduire pour les transcriptions, les résumés et les résumés quotidiens et hebdomadaires. Les traductions sont générées uniquement lorsque vous cliquez sur Traduire.";
+
+"Accuracy corrections exceed the review budget" = "Les corrections factuelles dépassent la limite de vérification";
+
+"Accuracy corrections still overlap; retry the recap" = "Les corrections factuelles se chevauchent encore ; réessayez le récapitulatif";
+
+"Draft exceeds the accuracy review budget" = "Le brouillon dépasse la limite de vérification factuelle";
+
+"Invalid cross-recording accuracy review" = "Vérification factuelle entre enregistrements non valide";
+
+"Invalid source-grounded accuracy review" = "Vérification factuelle fondée sur les sources non valide";
+
+"Unknown accuracy-review source" = "Source inconnue pour la vérification factuelle";
+
+"Choose summary and recap languages separately. Automatic follows the source language. The time zone sets the day boundaries in your archive." = "Choisissez séparément la langue des résumés et celle des résumés quotidiens et hebdomadaires. Automatique suit la langue source. Le fuseau horaire définit les limites des journées dans votre archive.";
+
+"Transcript, summary & recap translations" = "Traductions des transcriptions, résumés et résumés quotidiens et hebdomadaires";
+
+"Language for day recaps, independently of detailed summaries and transcription. auto follows the source language; use a language code such as da or en to choose one." = "Langue des résumés de la journée, indépendante des résumés détaillés et de la transcription. auto suit la langue de la source ; utilisez un code de langue comme da ou en pour en choisir une.";
+"Topics and decision proposals update automatically as transcripts become available, including recordings added to earlier days." = "Les sujets et les propositions de décision sont mis à jour automatiquement à mesure que les transcriptions deviennent disponibles, y compris pour les enregistrements ajoutés à des journées précédentes.";
+"Recap language changed; retry the recap" = "La langue du récapitulatif a changé ; réessayez de le générer";
+"Weekly recap" = "Résumé de la semaine";
+"The whole week, in five minutes or less." = "Toute la semaine, en cinq minutes ou moins.";
+"Generate a short recap of this week. It will be saved here for later." = "Générez un bref résumé de cette semaine. Il sera conservé ici pour plus tard.";
+"Your weekly recap will be available when there is something to recap." = "Votre résumé de la semaine sera disponible dès qu’il y aura quelque chose à résumer.";
+"Generating your weekly recap…" = "Génération de votre résumé de la semaine…";
+"Loading saved weekly recap…" = "Chargement du résumé de la semaine enregistré…";
+"New recordings are available. Update the weekly recap to include them." = "De nouveaux enregistrements sont disponibles. Actualisez le résumé de la semaine pour les inclure.";
+"Expand recap" = "Développer le résumé";
+"Collapse recap" = "Réduire le résumé";
+"Open day" = "Ouvrir la journée";
+"Choose the language for day and week recaps. Automatic follows the source language." = "Choisissez la langue des résumés quotidiens et hebdomadaires. Automatique suit la langue source.";
+"Get a recap of this week in up to 5 minutes of reading. It is saved for later." = "Obtenez un résumé de cette semaine à lire en cinq minutes maximum. Il est conservé pour plus tard.";
+"Generating weekly recap…" = "Génération du résumé de la semaine…";
+"Choose summary and recap languages separately. Recap language applies to day and week recaps. Automatic follows the source language. The time zone sets the day boundaries in your archive." = "Choisissez séparément la langue des résumés et celle des récapitulatifs. La langue des récapitulatifs s’applique aux résumés quotidiens et hebdomadaires. Automatique suit la langue source. Le fuseau horaire définit les limites des journées dans votre archive.";
+"{value0} min read" = "{value0} min de lecture";
+"Language for day and week recaps, independently of detailed summaries and transcription. auto follows the source language; use a language code such as da or en to choose one." = "Langue des résumés quotidiens et hebdomadaires, indépendamment des résumés détaillés et de la transcription. auto suit la langue source ; utilisez un code de langue comme da ou en pour en choisir une.";
+"Weekly recap did not contain a supported overview" = "Le résumé de la semaine ne contenait pas de vue d’ensemble étayée par les sources";
+"Weekly recap did not contain a readable overview" = "Le résumé de la semaine ne contenait pas de vue d’ensemble lisible";
+"Weekly recap exceeded the five-minute reading limit" = "Le résumé de la semaine dépassait la limite de cinq minutes de lecture";
+"Weekly recap evidence changed; retry the recap" = "Les sources du résumé de la semaine ont changé ; réessayez de le générer";

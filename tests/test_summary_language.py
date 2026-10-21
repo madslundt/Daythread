@@ -65,6 +65,53 @@ def test_summary_language_loads_from_environment(tmp_path, monkeypatch):
     assert config(tmp_path).summary_language == "da"
 
 
+def test_recap_language_is_independent_validated_live_and_persisted(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMI_RECAP_LANGUAGE", "da")
+    settings = config(tmp_path, summary_language="en")
+    assert settings.recap_language == "da"
+    with TestClient(create_app(settings)) as client:
+        field = next(field for field in client.get("/v1/configuration").json()["fields"]
+                     if field["key"] == "recap_language")
+        assert field["group"] == "Language models & chat" and not field["restart_required"]
+        assert save(client, {"recap_language": "pt-BR"}).status_code == 200
+        assert client.app.state.memory.inference.settings.recap_language == "pt-BR"
+        assert client.get("/v1/settings").json()["summary_language"] == "en"
+        for invalid in (None, "", "e", "en_US", "en instructions", "a" * 17, 123):
+            assert save(client, {"recap_language": invalid}).status_code == 422
+            assert client.patch("/v1/settings", json={"recap_language": invalid}).status_code == 422
+    with TestClient(create_app(settings)) as client:
+        values = client.get("/v1/settings").json()
+        assert values["recap_language"] == "pt-BR" and values["summary_language"] == "en"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("large", [False, True])
+async def test_day_overview_uses_recap_language_without_changing_topic_language(tmp_path, large):
+    settings = config(tmp_path, summary_language="fr", recap_language="da")
+    key = str(uuid4())
+    sources = [{"id": key, "started_at": stamp(AT),
+                "text": "We proposed reviewing the budget before tomorrow's meeting. "
+                * (1500 if large else 1)}]
+    tasks = []
+
+    def handler(request):
+        tasks.append(json.loads(json.loads(request.content)["messages"][1]["content"])["task"])
+        return httpx.Response(200, json={"choices": [{
+            "message": {"content": f"Et forslag blev drøftet [{key}]"},
+        }]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        inference = Inference(settings, http)
+        await inference.summarize_day_overview(sources, "a high-level day recap")
+        assert tasks and all("language with code da" in task for task in tasks)
+        assert len(tasks) > 1 if large else len(tasks) == 1
+        assert inference.settings.summary_language == "fr"
+        tasks.clear()
+        await inference.summarize([sources[0] | {"text": "The budget review was proposed."}],
+                                  "a detailed topic")
+        assert all("language with code fr" in task for task in tasks)
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("truncated", [False, True])
 async def test_translation_uses_summary_route_and_preserves_full_transcript(tmp_path, truncated):

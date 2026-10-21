@@ -197,6 +197,7 @@ export type Settings = {
   timezone: string;
   language: string;
   summary_language: string;
+  recap_language: string;
   translation_languages?: string[];
   meeting_max_minutes: number;
   meeting_min_seconds: number;

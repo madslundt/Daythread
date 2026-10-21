@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
                   f"-{SUMMARY_REDUCTION_VERSION}")
-DAY_PROMPT_VERSION = "daily-topics-15-stable-coherent-scopes"
+DAY_PROMPT_VERSION = "daily-topics-17-action-scope"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
@@ -375,7 +375,7 @@ class Recaps:
             else:
                 if hasattr(memory.inference, "summarize_daily_traced"):
                     summary, pipeline = await memory.inference.summarize_daily_traced(
-                        inputs, purpose,
+                        inputs, purpose, original_sources=sources,
                     )
                     trace["daily_synthesis"] = pipeline
                 elif hasattr(memory.inference, "summarize_traced"):

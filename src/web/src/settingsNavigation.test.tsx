@@ -48,13 +48,13 @@ describe("simplified settings", () => {
 it("excludes all meeting policy fields from preferences even when a legacy draft contains them", () => {
   expect(matchesSettings("meetings", "quiet")).toBe(false);
   const draft: Settings = {
-    timezone: "Europe/Copenhagen", summary_language: "auto", meeting_quiet_minutes: 15,
+    timezone: "Europe/Copenhagen", summary_language: "auto", recap_language: "da", meeting_quiet_minutes: 15,
     audio_retention_days: 7, transcript_retention_days: 30,
     language: "auto", capture_paused: true, translation_languages: ["da"],
     meeting_max_minutes: 120, meeting_min_seconds: 60, meeting_context_seconds: 60,
     marker_context_seconds: 60, marker_after_seconds: 60, marker_cooldown_seconds: 60, recap_hour: 22,
   };
-  expect(preferenceChanges(draft, false)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto",
+  expect(preferenceChanges(draft, false)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto", recap_language: "da",
     translation_languages: ["da"], audio_retention_days: 7, transcript_retention_days: 30 });
-  expect(preferenceChanges(draft, true)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto", translation_languages: ["da"] });
+  expect(preferenceChanges(draft, true)).toEqual({ timezone: "Europe/Copenhagen", summary_language: "auto", recap_language: "da", translation_languages: ["da"] });
 });

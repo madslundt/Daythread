@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RecapSection } from "./RecapSection";
 import { SummaryTranslation } from "./SummaryTranslation";
+import { DayRecapOverview } from "./DayRecapOverview";
 import { ActionPoints } from "./ActionPoints";
 import { DisplayTranslationLanguage } from "./displayTranslations";
 import type { TranscriptTranslationData } from "./transcriptTranslationRequests";
@@ -48,7 +49,9 @@ vi.mock("./displayTranslations", async (importOriginal) => {
   } };
 });
 vi.mock("./useResource", () => ({ useResource: (path: string | null) => ({
-  data: path?.startsWith("/v1/recaps/") && !path.endsWith("/overview") ? { day: "2026-10-19", summary: original,
+  data: path?.endsWith("/overview") ? { day: "2026-10-19", summary: "We discussed [cocoa](topic:Cocoa).",
+    output_id: "overview-output", can_generate: false, topics: [{ id: "Cocoa", title: "Cocoa" }] }
+    : path?.startsWith("/v1/recaps/") ? { day: "2026-10-19", summary: original,
     output_id: "11111111-1111-4111-8111-111111111111", sources: [originalSource] }
     : path?.startsWith("/v1/inbox?") ? { items: path.includes("status=pending") ? [item] : [], total: path.includes("status=pending") ? 1 : 0 }
     : path?.startsWith("/v1/decisions?") ? { items: [decision], total: 1 } : undefined,
@@ -57,6 +60,13 @@ vi.mock("./useResource", () => ({ useResource: (path: string | null) => ({
 beforeEach(() => { state.translated = true; });
 
 describe("recap summary translation composition", () => {
+  it("offers translation for the saved day recap without generating another recap", () => {
+    const html = renderToStaticMarkup(<DayRecapOverview day="2026-10-19" timezone="UTC" onTopic={() => false} />);
+    expect(html).toContain("Medbring den mørke chokolade.");
+    expect(html).toContain('role="tablist"');
+    expect(html).not.toContain(">Recap</button>");
+    expect(html).not.toContain(">Update recap</button>");
+  });
   it("renders translated recap through the same interactive topic component", () => {
     const html = renderToStaticMarkup(<RecapSection day="2026-10-19" timezone="UTC" onChat={() => {}} />);
     expect(html).toContain('class="recap-workspace');

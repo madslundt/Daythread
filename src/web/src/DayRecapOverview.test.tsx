@@ -1,7 +1,7 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DayOverviewText, DayRecapOverview, type DayOverview } from "./DayRecapOverview";
+import { DayOverviewText, DayRecapOverview, WeeklyRecapOverview, type DayOverview } from "./DayRecapOverview";
 import { RecapSection } from "./RecapSection";
 
 const state = vi.hoisted(() => ({ overview: undefined as DayOverview | undefined, paths: vi.fn(), post: vi.fn() }));
@@ -45,13 +45,24 @@ describe("on-demand saved day recap", () => {
     expect(state.post).not.toHaveBeenCalled();
   });
   it("loads the saved recap without another generation action while it is current", () => {
-    state.overview = overview({ can_generate: true, summary: "A quiet day in the garden.",
+    state.overview = overview({ can_generate: false, summary: "A quiet day in the garden.",
       generated_at: "2026-10-15T18:00:00Z", reading_minutes: 1 });
     const html = render();
     expect(html).toContain("A quiet day in the garden.");
     expect(html).toContain("1 min read");
-    expect(html).not.toContain("<button");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(">Expand recap</button>");
+    expect(html).not.toContain(">Recap</button>");
+    expect(html).not.toContain(">Update recap</button>");
     expect(state.post).not.toHaveBeenCalled();
+  });
+  it("does not offer generation or announce new recordings for a settings-only stale recap", () => {
+    state.overview = overview({ can_generate: false, stale: true, summary: "The saved recap." });
+    const html = render();
+    expect(html).toContain("The saved recap.");
+    expect(html).not.toContain(">Recap</button>");
+    expect(html).not.toContain(">Update recap</button>");
+    expect(html).not.toContain("New recordings are available");
   });
   it("keeps saved prose readable and offers Update recap after new recordings arrive", () => {
     state.overview = overview({ can_generate: true, stale: true, summary: "The saved morning recap.",
@@ -77,6 +88,36 @@ describe("on-demand saved day recap", () => {
   });
 });
 
+describe("saved weekly recap", () => {
+  const renderWeek = () => renderToStaticMarkup(<WeeklyRecapOverview week="2026-10-12" timezone="UTC" />);
+  it("reads the selected week without generating and offers no action for an empty week", () => {
+    const html = renderWeek();
+    expect(state.paths).toHaveBeenCalledWith("/v1/weekly-reviews/2026-10-12/overview", 15_000);
+    expect(html).toContain("Your weekly recap will be available");
+    expect(html).not.toContain("<button");
+    expect(state.post).not.toHaveBeenCalled();
+  });
+  it("offers on-demand generation only for new eligible weekly recordings", () => {
+    state.overview = overview({ can_generate: true });
+    expect(renderWeek()).toContain(">Recap</button>");
+    state.overview = overview({ summary: "A short week with family plans.", stale: true });
+    const html = renderWeek();
+    expect(html).toContain("A short week with family plans.");
+    expect(html).toContain(">Expand recap</button>");
+    expect(html).not.toContain(">Recap</button>");
+    expect(html).not.toContain(">Update recap</button>");
+  });
+  it("distinguishes two days with the same topic title", () => {
+    const topics = ["2026-10-12", "2026-10-13"].map((day) => ({ ...topic, day, id: `${day}:${topic.id}` }));
+    const onTopic = vi.fn();
+    const node = DayOverviewText({ topics, onTopic, text: topics.map((item) => `[Garden](topic:${encodeURIComponent(item.id)})`).join(" and ") });
+    const links = anchors(node);
+    expect(links).toHaveLength(2);
+    links[1].props.onClick!({ preventDefault: () => {} });
+    expect(onTopic).toHaveBeenCalledWith(topics[1]);
+  });
+});
+
 describe("day recap topic links", () => {
   it("opens the canonical saved topic from an encoded link including Unicode", () => {
     const onTopic = vi.fn();
@@ -95,6 +136,15 @@ describe("day recap topic links", () => {
     expect(html).toContain("broken");
     expect(html).not.toContain("<a");
     expect(html).not.toContain("topic:");
+  });
+  it("retains the canonical topic when only the inline label is translated", () => {
+    const onTopic = vi.fn();
+    const rendered = DayOverviewText({ text: `Vi talte om [haveplanerne](topic:${encodeURIComponent(topic.id)}).`, topics: [topic], onTopic });
+    const links = anchors(rendered);
+    expect(links).toHaveLength(1);
+    links[0].props.onClick!({ preventDefault: () => {} });
+    expect(onTopic).toHaveBeenCalledWith(topic);
+    expect(renderToStaticMarkup(rendered)).toContain("haveplanerne");
   });
   it("escapes markup and never turns model-provided external or script URLs into links", () => {
     const html = renderToStaticMarkup(<DayOverviewText

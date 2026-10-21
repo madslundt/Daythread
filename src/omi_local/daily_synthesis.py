@@ -142,13 +142,15 @@ def parse_plan(answer, known, required=None):
         raise InferenceError('Invalid LLM response') from None
 
 
-async def summarize_daily(inference, sources):
+async def summarize_daily(inference, sources, *, original_sources=None):
     original = sources
     sources, filtering = filter_summary_sources(sources)
     inference.record_summary_filter(filtering, original)
     items = note_items(sources)
     trace = {'model_calls': 0, 'reduction_used': False, 'input_filtering': filtering,
-             'final_prompt_source_ids': [], 'organization': 'planned_scoped_topics'}
+             'final_prompt_source_ids': [], 'organization': 'planned_scoped_topics',
+             'writing_evidence': 'original_transcripts' if original_sources is not None
+             else 'prepared_notes'}
     if not items:
         return NO_CONTENT, trace
     lookup = {item['id']: item for item in items}
@@ -252,9 +254,17 @@ async def summarize_daily(inference, sources):
         selected = [lookup[key] for key in topic['items']]
         refs = sorted({key for item in selected for key in item['sources']})
         evidence = '\n\n'.join(item['context'] + '\n' + item['text'] for item in selected)
-        # A large single topic still uses the existing bounded, citation-checked reducer.
-        inputs = [{'id': refs[0], 'text': evidence, 'started_at': '',
-                   'citation_source_ids': refs}]
+        # Notes organize topics but cannot establish action state. Write from the
+        # original cited speech, including its qualifications and surrounding context.
+        # Large topics retain the existing bounded, citation-checked reducer.
+        if original_sources is not None:
+            originals = {source['id']: source for source in original_sources}
+            if any(key not in originals for key in refs):
+                raise InferenceError('Model cited an unknown source')
+            inputs = [source for source in original_sources if source['id'] in refs]
+        else:
+            inputs = [{'id': refs[0], 'text': evidence, 'started_at': '',
+                       'citation_source_ids': refs}]
         task = (
             'a concise paragraph for ONLY the planned topic '
             + json.dumps(topic['title'], ensure_ascii=False) + '. Scope: '
@@ -264,6 +274,12 @@ async def summarize_daily(inference, sources):
             'opaque fragments. Do not add a title, headings, bullets, introduction or conclusion. '
             'State each point once. Keep changed plans and conflicts explicit; a later mention '
             'alone does not establish agreement, cancellation or completion. '
+            'Resolve proposed, planned, underway and completed states from the original speech, '
+            'not the topic label or scope. Do not upgrade exploring an option to execution, '
+            'readiness to deployment, or a completed component to a completed project. '
+            'An agreed requirement or roadmap goal does not select a suggested tool or '
+            'implementation. Keep open solutions open. Before returning, check each action '
+            'against the original wording for its specific object, modality and temporal frame. '
             'Cite original sources for the facts you retain'
         )
         async with semaphore:

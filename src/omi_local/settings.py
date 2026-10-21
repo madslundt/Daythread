@@ -220,6 +220,9 @@ class Settings(BaseSettings):
     summary_language: str = Field(
         default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
     )
+    recap_language: str = Field(
+        default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
+    )
     translation_languages: list[str] = Field(default_factory=lambda: ["en"])
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     meeting_quiet_minutes: int = Field(default=10, ge=1, le=30)
@@ -456,6 +459,7 @@ RUNTIME_FIELDS = (
     "recap_interval_minutes",
     "recap_quiet_minutes",
     "summary_language",
+    "recap_language",
     "translation_languages",
     "capture_paused",
     "audio_retention_days",

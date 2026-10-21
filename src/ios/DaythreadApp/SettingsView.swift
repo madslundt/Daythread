@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var status: String?
     @State private var loading = false
     @State private var summaryLanguage = "auto"
+    @State private var recapLanguage = "auto"
     @State private var translationLanguages: [String] = []
     @State private var translationLanguagesLoaded = false
     @State private var timezone = TimeZone.current.identifier
@@ -72,13 +73,19 @@ struct SettingsView: View {
                         Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
                     }
                 }.accessibilityIdentifier("settings.summaryLanguage")
+                Picker(L10n.text("Recap language"), selection: $recapLanguage) {
+                    Text(L10n.text("Automatic / follow source language")).tag("auto")
+                    ForEach(translationLanguageChoices(including: recapLanguage == "auto" ? [] : [recapLanguage]), id: \.self) { code in
+                        Text(L10n.locale.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    }
+                }.accessibilityIdentifier("settings.recapLanguage")
                 Picker(L10n.text("Time zone"), selection: $timezone) {
                     ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { zone in Text(zone).tag(zone) }
                 }.accessibilityIdentifier("settings.timezone")
                 Button(L10n.text("Save preferences")) { Task { await saveGeneral() } }
                     .disabled(loading || !settingsLoaded).accessibilityIdentifier("settings.saveSummaryLanguage")
             } footer: {
-                Text(L10n.text("Automatic summaries follow the source language. The time zone sets the day boundaries in your archive."))
+                Text(L10n.text("Choose summary and recap languages separately. Recap language applies to day and week recaps. Automatic follows the source language. The time zone sets the day boundaries in your archive."))
             }
             Section {
                 NavigationLink {
@@ -88,8 +95,8 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("settings.translationLanguages")
                 Button(L10n.text("Save translation languages")) { Task { await saveTranslationLanguages() } }
                     .accessibilityIdentifier("settings.saveTranslationLanguages")
-            } header: { Text(L10n.text("Transcript & summary translations")) } footer: {
-                Text(L10n.text("Choose the languages offered by the transcript and summary Translate buttons. The first selected language is the default. Translation languages are independent of the generated summary language, including Automatic. Save an empty list to disable translation."))
+            } header: { Text(L10n.text("Transcript, summary & recap translations")) } footer: {
+                Text(L10n.text("Choose the languages offered by Translate for transcripts, summaries, and recaps. Translations are generated only when you click Translate."))
             }.disabled(loading || !translationLanguagesLoaded)
             CompletionNotificationSettings()
             saveFeedback
@@ -227,6 +234,7 @@ struct SettingsView: View {
             let settings = try await model.client().request("v1/settings")
             guard !Task.isCancelled else { return }
             if !settings["summary_language"].text.isEmpty { summaryLanguage = settings["summary_language"].text }
+            if !settings["recap_language"].text.isEmpty { recapLanguage = settings["recap_language"].text }
             if case .array = settings["translation_languages"] {
                 translationLanguages = settings["translation_languages"].array.map(\.text)
                 translationLanguagesLoaded = true
@@ -262,8 +270,9 @@ struct SettingsView: View {
         guard settingsLoaded else { return }
         loading = true; error = nil; status = nil; defer { loading = false }
         do {
-            let settings = try await model.client().request("v1/settings", method: "PATCH", body: ["summary_language": summaryLanguage, "timezone": timezone])
+            let settings = try await model.client().request("v1/settings", method: "PATCH", body: ["summary_language": summaryLanguage, "recap_language": recapLanguage, "timezone": timezone])
             summaryLanguage = settings["summary_language"].text
+            if !settings["recap_language"].text.isEmpty { recapLanguage = settings["recap_language"].text }
             timezone = settings["timezone"].text
             model.serverTimeZoneIdentifier = timezone
             status = L10n.text("Preferences saved")

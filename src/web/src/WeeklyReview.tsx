@@ -7,6 +7,7 @@ import { SourceList } from "./SourceList";
 import type { ChatScope, Source } from "./types";
 import { ErrorState, Loading, Notice } from "./UI";
 import { useResource } from "./useResource";
+import { WeeklyRecapOverview } from "./DayRecapOverview";
 
 type Coverage = {
   sources: number; speech_sources: number; speech_days: number; pending_chunks: number;
@@ -125,6 +126,10 @@ export function WeeklyReview({ timezone, onChat }: {
         <button className="text-button" onClick={() => select(currentWeek)}>{t("This week so far")}</button>
       </div>
       <h2>{dayLabel(week, true)} – {dayLabel(shiftDay(week, 6), true)}</h2>
+      {!selectedVersion ? <>
+        <h3>{t("Weekly recap")}</h3>
+        <WeeklyRecapOverview key={week} week={week} timezone={timezone} />
+      </> : null}
       <p className="caption">{t("Compared with")}{" "}{dayLabel(shiftDay(week, -7), true)} – {dayLabel(shiftDay(week, -1), true)} · {timezone}</p>
       <p className="caption">{t("Two weeks of recorded evidence, including commitments needing follow-up. This is not a complete backlog of older commitments. Absence of later mention never establishes completion.")}</p>
       {error || review.error || jobResource.error ? <ErrorState message={error || review.error || jobResource.error} retry={review.refresh} /> : null}

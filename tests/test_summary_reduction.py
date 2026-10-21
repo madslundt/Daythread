@@ -138,6 +138,41 @@ async def test_intermediate_citations_are_repaired_against_the_current_batch_onl
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("invalid_first,repair_succeeds", [
+    (False, True), (True, True), (True, False),
+])
+async def test_raw_map_notes_use_compact_batch_references_and_validate_expansion(
+    tmp_path, invalid_first, repair_succeeds,
+):
+    ids = [f"00000000-0000-4000-8000-{index:012}" for index in range(1, 6)]
+    allowed = [{"id": key} for key in ids]
+    batch = "\n".join(f"[{key}] A release was proposed, subject to testing." for key in ids[:4])
+    calls = []
+
+    def provider(request):
+        supplied = json.loads(json.loads(request.content)["messages"][1]["content"])
+        calls.append(supplied)
+        # Raw map passes use the same reversible aliases as later consolidation.
+        assert all(key not in supplied["task"] + supplied["evidence"] for key in ids)
+        assert "src_1" in supplied["evidence"] and "src_4" in supplied["evidence"]
+        assert "src_5" not in supplied["task"] + supplied["evidence"]
+        invalid = invalid_first and (len(calls) == 1 or not repair_succeeds)
+        return response("A release was proposed [src_5]" if invalid else
+                        "A release was proposed, subject to testing [src_1, SRC_4]")
+
+    trace = {"model_calls": 0}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        model = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+        if repair_succeeds:
+            result = await model._summary_notes(batch, allowed, trace, 5999)
+            assert result == f"A release was proposed, subject to testing [{ids[0]}, {ids[3]}]"
+        else:
+            with pytest.raises(InferenceError, match="unknown source"):
+                await model._summary_notes(batch, allowed, trace, 5999)
+    assert len(calls) == trace["model_calls"] == (2 if invalid_first else 1)
+
+
+@pytest.mark.anyio
 async def test_summary_system_accepts_grounded_notes_while_chat_keeps_original_evidence_policy(
     tmp_path,
 ):

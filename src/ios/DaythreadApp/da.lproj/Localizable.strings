@@ -2737,3 +2737,52 @@
 
 "Day recap did not contain a supported overview" = "Dagens opsummering indeholdt ikke et understøttet overblik";
 "Day recap exceeded the five-minute reading limit" = "Dagens opsummering overskred læsegrænsen på fem minutter";
+"Day recap did not contain a readable overview" = "Dagens opsummering indeholdt ikke et læsbart overblik";
+
+"Recap language" = "Sprog for dags- og ugeopsummeringer";
+
+"Choose the language for day recaps. Automatic follows the source language." = "Vælg sprog for dagsopsummeringer. Automatisk følger kildesproget.";
+
+"Choose the language for summaries and topics. Automatic follows the source language." = "Vælg sprog for opsummeringer og emner. Automatisk følger kildesproget.";
+
+"Choose the languages offered by Translate for transcripts, summaries, and recaps. Translations are generated only when you click Translate." = "Vælg de sprog, som Oversæt tilbyder for transskriptioner, opsummeringer samt dags- og ugeopsummeringer. Oversættelser genereres kun, når du vælger Oversæt.";
+
+"Accuracy corrections exceed the review budget" = "Rettelserne overskrider grænsen for faktatjekket";
+
+"Accuracy corrections still overlap; retry the recap" = "Rettelserne overlapper stadig. Prøv opsummeringen igen";
+
+"Draft exceeds the accuracy review budget" = "Kladden overskrider grænsen for faktatjekket";
+
+"Invalid cross-recording accuracy review" = "Ugyldigt faktatjek på tværs af optagelser";
+
+"Invalid source-grounded accuracy review" = "Ugyldigt faktatjek mod kilderne";
+
+"Unknown accuracy-review source" = "Ukendt kilde til faktatjek";
+
+"Choose summary and recap languages separately. Automatic follows the source language. The time zone sets the day boundaries in your archive." = "Vælg sprog for opsummeringer samt dags- og ugeopsummeringer hver for sig. Automatisk følger kildesproget. Tidszonen bestemmer dagsgrænserne i dit arkiv.";
+
+"Transcript, summary & recap translations" = "Oversættelser af transskriptioner, opsummeringer samt dags- og ugeopsummeringer";
+
+"Language for day recaps, independently of detailed summaries and transcription. auto follows the source language; use a language code such as da or en to choose one." = "Sprog for dagsopsummeringer, uafhængigt af detaljerede opsummeringer og transskription. auto følger kildesproget; brug en sprogkode som da eller en for at vælge et bestemt sprog.";
+"Topics and decision proposals update automatically as transcripts become available, including recordings added to earlier days." = "Emner og beslutningsforslag opdateres automatisk, efterhånden som transskriptioner bliver tilgængelige, også for optagelser, der føjes til tidligere dage.";
+"Recap language changed; retry the recap" = "Sproget for opsummeringen er ændret; prøv at generere den igen";
+"Weekly recap" = "Ugens opsummering";
+"The whole week, in five minutes or less." = "Hele ugen på højst fem minutter.";
+"Generate a short recap of this week. It will be saved here for later." = "Generer en kort opsummering af ugen. Den gemmes her til senere.";
+"Your weekly recap will be available when there is something to recap." = "Ugens opsummering bliver tilgængelig, når der er noget at opsummere.";
+"Generating your weekly recap…" = "Genererer ugens opsummering…";
+"Loading saved weekly recap…" = "Indlæser gemt ugeopsummering…";
+"New recordings are available. Update the weekly recap to include them." = "Der er nye optagelser. Opdater ugens opsummering for at få dem med.";
+"Expand recap" = "Fold opsummering ud";
+"Collapse recap" = "Fold opsummering sammen";
+"Open day" = "Åbn dagen";
+"Choose the language for day and week recaps. Automatic follows the source language." = "Vælg sprog for dags- og ugeopsummeringer. Automatisk følger kildesproget.";
+"Get a recap of this week in up to 5 minutes of reading. It is saved for later." = "Få en opsummering af ugen med højst fem minutters læsning. Den gemmes til senere.";
+"Generating weekly recap…" = "Genererer ugeopsummering…";
+"Choose summary and recap languages separately. Recap language applies to day and week recaps. Automatic follows the source language. The time zone sets the day boundaries in your archive." = "Vælg sprog for opsummeringer og korte overblik hver for sig. Sproget for korte overblik gælder både dags- og ugeopsummeringer. Automatisk følger kildesproget. Tidszonen bestemmer dagsgrænserne i dit arkiv.";
+"{value0} min read" = "{value0} min. læsning";
+"Language for day and week recaps, independently of detailed summaries and transcription. auto follows the source language; use a language code such as da or en to choose one." = "Sprog for dags- og ugeopsummeringer, uafhængigt af detaljerede opsummeringer og transskription. auto følger kildesproget; brug en sprogkode som da eller en for at vælge et bestemt sprog.";
+"Weekly recap did not contain a supported overview" = "Ugens opsummering indeholdt ikke en understøttet oversigt";
+"Weekly recap did not contain a readable overview" = "Ugens opsummering indeholdt ikke et læsbart overblik";
+"Weekly recap exceeded the five-minute reading limit" = "Ugens opsummering overskred grænsen på fem minutters læsning";
+"Weekly recap evidence changed; retry the recap" = "Kilderne til ugens opsummering er ændret; prøv at generere den igen";

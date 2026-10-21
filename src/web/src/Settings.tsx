@@ -22,7 +22,7 @@ import { Usage } from "./Usage";
 
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
 export const editableSettings: (keyof SettingsData)[] = [
-  "timezone", "summary_language", "translation_languages", "audio_retention_days", "transcript_retention_days",
+  "timezone", "summary_language", "recap_language", "translation_languages", "audio_retention_days", "transcript_retention_days",
 ];
 const serverHiddenFields = [...editableSettings, "language", "translation_languages", "capture_paused",
   "meeting_quiet_minutes", "meeting_max_minutes", "meeting_min_seconds", "meeting_context_seconds", "marker_context_seconds",
@@ -284,11 +284,25 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   ))}
                 </select>
                 <small id="summary-language-hint">
-                  {t("Choose the language for recaps and summaries. Automatic follows the source language.")}{" "}</small>
+                  {t("Choose the language for summaries and topics. Automatic follows the source language.")}{" "}</small>
+              </label>
+              <label className="setting-field" htmlFor="recap-language">
+                <span id="recap-language-label">{t("Recap language")}</span>
+                <select id="recap-language" value={draft.recap_language}
+                  aria-labelledby="recap-language-label" aria-describedby="recap-language-hint"
+                  onChange={(event) => update("recap_language", event.target.value)}>
+                  <option value="auto">{t("Automatic / follow source language")}</option>
+                  {!languageCodes.includes(draft.recap_language) && draft.recap_language !== "auto" ? (
+                    <option value={draft.recap_language}>{languageLabel(draft.recap_language)} {t("(current value)")}</option>
+                  ) : null}
+                  {languages.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <small id="recap-language-hint">
+                  {t("Choose the language for day and week recaps. Automatic follows the source language.")}</small>
               </label>
               <div className="setting-field translation-language-settings">
                 <span id="translation-languages-label">{t("Translation languages")}</span>
-                <small id="translation-languages-hint">{t("Choose the languages offered by the transcript and summary Translate buttons. These are independent of the generated summary language. Translations are generated only when you click Translate.")}</small>
+                <small id="translation-languages-hint">{t("Choose the languages offered by Translate for transcripts, summaries, and recaps. Translations are generated only when you click Translate.")}</small>
                 <ul className="translation-language-list" aria-labelledby="translation-languages-label">
                   {(draft.translation_languages ?? ["en"]).map((code) => <li key={code}>
                     <span>{languageLabel(code)}</span>
@@ -306,7 +320,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
                   ))}
                 </select>
               </div>
-              <p className="caption">{t("Recaps and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
+              <p className="caption">{t("Topics and decision proposals update automatically as transcripts become available, including recordings added to earlier days.")}</p>
             </div>
           </fieldset>
           <fieldset disabled={busy} hidden={!show("storage", "storage")}>

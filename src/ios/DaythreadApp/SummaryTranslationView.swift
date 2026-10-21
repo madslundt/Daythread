@@ -1,6 +1,38 @@
 import SwiftUI
 import OmiCore
 
+/// Collapsed recaps contain plain text only, so hidden topic links are never focusable.
+struct RecapOverviewDisclosure<Content: View>: View {
+    let text: String
+    @Binding var expanded: Bool
+    let identifier: String
+    @ViewBuilder let content: () -> Content
+
+    private var preview: String {
+        let markdown = (try? AttributedString(markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        let plain = String(markdown.characters).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return plain.count > 240 ? String(plain.prefix(240)) + "…" : plain
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if expanded { content() }
+            else {
+                Text(verbatim: preview).lineLimit(3).foregroundStyle(.secondary)
+                    .accessibilityIdentifier(identifier + ".preview")
+            }
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                Label(expanded ? L10n.text("Collapse recap") : L10n.text("Expand recap"),
+                    systemImage: expanded ? "chevron.up" : "chevron.down")
+            }.buttonStyle(.borderless)
+                .accessibilityValue(expanded ? L10n.text("Expanded") : L10n.text("Collapsed"))
+                .accessibilityIdentifier(identifier + ".expand")
+        }
+    }
+}
 /// A saved summary has a separate translation while its original actions and evidence retain their identity.
 struct SummaryTranslationView<Original: View>: View {
     let output: JSONValue
@@ -8,6 +40,7 @@ struct SummaryTranslationView<Original: View>: View {
     private let renderedContent: ((JSONValue?, Bool) -> Original)?
     private let translationIsCompatible: ((JSONValue) -> Bool)?
     private let onContentLanguageChange: ((String?) -> Void)?
+    private let languageLabel: String
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var interfaceLocale
@@ -32,14 +65,16 @@ struct SummaryTranslationView<Original: View>: View {
 
     init(output: JSONValue, @ViewBuilder original: @escaping () -> Original) {
         self.output = output; self.original = original; renderedContent = nil; translationIsCompatible = nil; onContentLanguageChange = nil
+        languageLabel = L10n.source("Summary language")
     }
 
-    init(output: JSONValue, translationIsCompatible: ((JSONValue) -> Bool)? = nil,
+    init(output: JSONValue, languageLabel: String = L10n.source("Summary language"), translationIsCompatible: ((JSONValue) -> Bool)? = nil,
          onContentLanguageChange: ((String?) -> Void)? = nil,
          @ViewBuilder renderedContent: @escaping (JSONValue?, Bool) -> Original) {
         self.output = output; self.renderedContent = renderedContent
         self.translationIsCompatible = translationIsCompatible
         self.onContentLanguageChange = onContentLanguageChange
+        self.languageLabel = languageLabel
         original = { renderedContent(nil, false) }
     }
 
@@ -65,7 +100,7 @@ struct SummaryTranslationView<Original: View>: View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             if hasTranslation {
-                Picker(L10n.text("Summary language"), selection: $showingTranslation) {
+                Picker(L10n.key(languageLabel), selection: $showingTranslation) {
                     Text(L10n.text("Original")).tag(false)
                     Text(L10n.text("\(languageName) translation")).tag(true)
                 }.pickerStyle(.segmented).accessibilityIdentifier("summary.language")

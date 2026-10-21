@@ -411,6 +411,5 @@
 .day-recap-overview-heading > button { min-height: 44px; }
 .day-recap-prose { max-width: 75ch; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .day-recap-topic-link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.day-recap-saved-topic { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
 .recap-summary-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-width: 75ch; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .recap-summary-toggle { min-height: 44px; margin-top: 6px; }

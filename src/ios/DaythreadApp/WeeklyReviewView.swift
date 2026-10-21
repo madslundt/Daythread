@@ -25,6 +25,11 @@ struct WeeklyReviewView: View {
     @State private var generationRequest: (context: String, force: Bool, id: UUID)?
     @State private var export: ArchiveMarkdownExport?
     @State private var selectedSource: SourceSelection?
+    @State private var selectedRecapTopic: RecapDestination?
+    private struct RecapDestination: Hashable {
+        let day: String
+        let title: String
+    }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var currentWeek: String { diary.dayKey(diary.dateRange(for: .week, containing: model.now).lowerBound) }
     private var week: String { selectedWeek.isEmpty ? shift(currentWeek, by: -7) : selectedWeek }
@@ -49,7 +54,9 @@ struct WeeklyReviewView: View {
             navigation
             if selectedVersion.isEmpty {
                 Section(L10n.text("Weekly recap")) {
-                    WeeklyRecapOverview(week: week)
+                    WeeklyRecapOverview(week: week, onTopic: { day, title in
+                        selectedRecapTopic = .init(day: day, title: title)
+                    })
                         .id([model.archiveIdentity, model.archiveRevision, diary.calendar.timeZone.identifier, week].joined(separator: "|"))
                 }
             }
@@ -83,9 +90,12 @@ struct WeeklyReviewView: View {
             .refreshable { refresh = UUID() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refresh = UUID() } }
             .onChange(of: context) { _, _ in
-                operation?.cancel(); operation = nil; busy = false; selectedSource = nil; export?.remove(); export = nil
+                operation?.cancel(); operation = nil; busy = false; selectedSource = nil; selectedRecapTopic = nil; export?.remove(); export = nil
             }
             .onDisappear { requestID = UUID(); operation?.cancel(); operation = nil; busy = false }
+            .navigationDestination(item: $selectedRecapTopic) { topic in
+                if let date = diary.date(for: topic.day) { DayView(date: date, topicTitle: topic.title) }
+            }
             .sheet(item: $export) { ArchiveMarkdownShareSheet(export: $0) }
             .sheet(item: $selectedSource) { selection in
                 SourceDetail(source: selection.source, onCorrect: { selectedVersion = ""; refresh = UUID() })

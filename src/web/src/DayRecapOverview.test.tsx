@@ -13,7 +13,7 @@ vi.mock("./useResource", () => ({ useResource: (path: string | null, interval: n
   loading: false, error: "", refresh: () => {}, setData: () => {} };
 } }));
 
-const topic = { id: "Garden plans ☘️", title: "Garden plans ☘️", summary: "Detailed planting plans." };
+const topic = { id: "Garden plans ☘️", title: "Garden plans ☘️", summary: "Detailed planting plans.", day: "2026-10-15" };
 function overview(overrides: Partial<DayOverview> = {}): DayOverview {
   return { day: "2026-10-15", summary: null, generated_at: null, stale: false,
     can_generate: false, topics: [], reading_minutes: 0, ...overrides };
@@ -21,7 +21,7 @@ function overview(overrides: Partial<DayOverview> = {}): DayOverview {
 function render() {
   return renderToStaticMarkup(<DayRecapOverview day="2026-10-15" timezone="UTC" onTopic={() => false} />);
 }
-type NodeProps = { children?: ReactNode; onClick?: (event: { preventDefault: () => void }) => void };
+type NodeProps = { children?: ReactNode; href?: string; onClick?: (event: { preventDefault: () => void; ctrlKey?: boolean }) => void };
 function anchors(node: ReactNode): ReactElement<NodeProps>[] {
   if (Array.isArray(node)) return node.flatMap(anchors);
   if (!isValidElement<NodeProps>(node)) return [];
@@ -115,6 +115,15 @@ describe("saved weekly recap", () => {
     expect(links).toHaveLength(2);
     links[1].props.onClick!({ preventDefault: () => {} });
     expect(onTopic).toHaveBeenCalledWith(topics[1]);
+    expect(links[0].props.href).toContain("/diary/2026-10-12?topic=");
+    expect(links[1].props.href).toContain("/diary/2026-10-13?topic=");
+  });
+  it("navigates weekly links to the existing day recap without a copied topic section", () => {
+    const html = renderToStaticMarkup(<DayOverviewText topics={[topic]}
+      text={`We discussed [the garden](topic:${encodeURIComponent(topic.id)}).`} />);
+    expect(html).toContain('href="/diary/2026-10-15?topic=Garden+plans+%E2%98%98%EF%B8%8F"');
+    expect(html).not.toContain("Detailed planting plans.");
+    expect(html).not.toContain("day-recap-saved-topic");
   });
 });
 
@@ -145,6 +154,15 @@ describe("day recap topic links", () => {
     links[0].props.onClick!({ preventDefault: () => {} });
     expect(onTopic).toHaveBeenCalledWith(topic);
     expect(renderToStaticMarkup(rendered)).toContain("haveplanerne");
+  });
+  it("preserves new-tab clicks for the canonical day and topic destination", () => {
+    const onTopic = vi.fn();
+    const link = anchors(DayOverviewText({ text: `[Garden](topic:${encodeURIComponent(topic.id)})`, topics: [topic], onTopic }))[0];
+    const event = { preventDefault: vi.fn(), ctrlKey: true };
+    link.props.onClick!(event);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(onTopic).not.toHaveBeenCalled();
+    expect(link.props.href).toContain("/diary/2026-10-15?topic=");
   });
   it("escapes markup and never turns model-provided external or script URLs into links", () => {
     const html = renderToStaticMarkup(<DayOverviewText

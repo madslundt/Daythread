@@ -47,11 +47,15 @@ struct DayView: View {
     @State private var recapFocusScope = ""
     @State private var contentLanguage: String?
     @State private var contentLanguageScope = ""
+    @State private var requestedTopic: RecapTopicRequest?
+    @State private var preparedTopicRequestID: UUID?
+    private static let topicListAnchor = "day.recap.topics"
 
-    init(date: Date? = nil, filters: DayFilterScope = .init()) {
+    init(date: Date? = nil, filters: DayFilterScope = .init(), topicTitle: String? = nil) {
         _selectedDate = State(initialValue: date)
         _tagID = State(initialValue: filters.tagID)
         _zoneID = State(initialValue: filters.zoneID)
+        _requestedTopic = State(initialValue: topicTitle.map { RecapTopicRequest(title: $0) })
     }
 
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
@@ -71,6 +75,10 @@ struct DayView: View {
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
+        ScrollViewReader { scroll in dayContent(scroll: scroll) }
+    }
+
+    private func dayContent(scroll: ScrollViewProxy) -> some View {
         List {
             Section {
                 DayQuickActions(importAudio: { sheet = .importAudio }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) }, showsDayChat: !filters.isFiltered)
@@ -83,7 +91,7 @@ struct DayView: View {
                 Label(L10n.text("Saved on this iPhone · pull to refresh"), systemImage: "internaldrive")
                     .font(.caption).foregroundStyle(.secondary).editorialRow()
             }
-            recapSection
+            recapSection(scroll: scroll)
             DayAtGlanceSections(day: dayKey, topicSources: currentFocus?.sourceIDs, topicPassages: currentFocus?.passages ?? [],
                 topicVersions: currentFocus?.versions ?? [:], filters: filters, topicTitle: currentFocus?.displayTitle ?? currentFocus?.title,
                 contentLanguage: currentContentLanguage)
@@ -179,7 +187,9 @@ struct DayView: View {
             async let tags: Void = loadTags()
             _ = await (zones, tags)
         }
-        .onChange(of: model.archiveIdentity) { _, _ in zones = []; zoneID = ""; tags = []; tagID = ""; tagRevision = "" }
+        .onChange(of: model.archiveIdentity) { _, _ in zones = []; zoneID = ""; tags = []; tagID = ""; tagRevision = ""; requestedTopic = nil }
+        .onChange(of: dayKey) { _, _ in requestedTopic = nil }
+        .onChange(of: filters.identity) { _, _ in requestedTopic = nil }
         .task(id: cacheKey) {
             if !query.isEmpty { do { try await Task.sleep(for: .milliseconds(300)) } catch { return } }
             await load()
@@ -192,16 +202,23 @@ struct DayView: View {
             }
         }
         .refreshable { await load() }
+        .task(id: scopeKey + (requestedTopic?.id.uuidString ?? "") + String(!currentRecap["summary"].text.isEmpty)) {
+            guard let request = requestedTopic, preparedTopicRequestID != request.id,
+                  !currentRecap["summary"].text.isEmpty else { return }
+            // List can instantiate this stable row before the nested topic anchors exist.
+            scroll.scrollTo(Self.topicListAnchor, anchor: .top)
+            preparedTopicRequestID = request.id
+        }
         .onDisappear { requestID = UUID() }
     }
 
-    private var recapSection: some View {
+    private func recapSection(scroll: ScrollViewProxy) -> some View {
         let recap = currentRecap
         let focusedScope = scopeKey
         let hasContent = !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty })
         return Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day recap")) {
             if !filters.isFiltered {
-                DayRecapOverview(day: dayKey, recap: recap, onCorrect: { Task { await reloadMembership() } })
+                DayRecapOverview(day: dayKey, onTopic: { requestedTopic = RecapTopicRequest(title: $0) })
                     .id(model.archiveIdentity + model.archiveRevision + dayKey)
             }
             ErrorNote(message: loadedScope == scopeKey ? recapError : nil)
@@ -219,8 +236,15 @@ struct DayView: View {
                 Text(L10n.text("Topics")).font(.headline)
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
                     onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } },
-                    onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } })
+                    onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } },
+                    requestedTopic: preparedTopicRequestID == requestedTopic?.id ? requestedTopic : nil,
+                    onTopicOpened: { id in
+                        guard scopeKey == focusedScope else { return }
+                        withAnimation(.easeInOut(duration: 0.2)) { scroll.scrollTo(id, anchor: .top) }
+                        requestedTopic = nil; preparedTopicRequestID = nil
+                    })
                     .id(scopeKey + recap["scope_fingerprint"].text + recap["output_id"].text + recap["summary"].text)
+                    .id(Self.topicListAnchor)
             } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
                 Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }

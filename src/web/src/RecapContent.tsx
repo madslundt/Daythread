@@ -30,15 +30,15 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
   useEffect(() => {
     if (!topicRequest) return;
     const index = recapTopics(recapParts(text), day).topics.findIndex((topic) => topic.title === topicRequest.title);
-    if (index < 0) return;
+    if (index < 0) { setSelected(undefined); return; }
     setBrowsingRecordings(false); setQuery(""); setSelected(`recap:${index}:${topicRequest.title}`);
   }, [topicRequest, text, day]);
   useEffect(() => {
-    if (!topicRequest || !selected) return;
+    if (!topicRequest || !selected || !selected.endsWith(`:${topicRequest.title}`)) return;
     const row = Array.from(workspace.current?.querySelectorAll<HTMLElement>("[data-topic-id]") || [])
       .find((element) => element.dataset.topicId === selected);
     row?.querySelector<HTMLButtonElement>(".recap-topic-option")?.focus({ preventScroll: true });
-    row?.scrollIntoView?.({ block: "nearest" });
+    row?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }, [topicRequest, selected]);
   useEffect(() => () => onFocus?.(undefined), [onFocus]);
   const id = useId();

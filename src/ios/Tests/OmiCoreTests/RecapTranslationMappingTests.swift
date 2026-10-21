@@ -88,6 +88,16 @@ final class RecapTranslationMappingTests: XCTestCase {
         XCTAssertEqual(mapped.followUps.map(\.text), ["Opfølgning: send en mail til Alice og bekræft tidspunktet."])
     }
 
+    func testTopicNavigationResolvesCanonicalOriginalTitleWhenDisplayIsTranslated() throws {
+        let original = "## Work\nKeep the plan [\(first)].\n## Garden & home\nOrder seeds [\(second)]."
+        let translated = "## Arbejde\nBehold planen [\(first)].\n## Have og hjem\nBestil frø [\(second)]."
+        let mapped = try XCTUnwrap(map(original, translated))
+        XCTAssertEqual(RecapTranslationMapping.topicID(for: "Garden & home", in: mapped), "recap:1")
+        XCTAssertNil(RecapTranslationMapping.topicID(for: "Have og hjem", in: mapped))
+        XCTAssertNil(RecapTranslationMapping.topicID(for: "Garden", in: mapped))
+        XCTAssertNil(RecapTranslationMapping.topicID(for: "Removed topic", in: mapped))
+    }
+
     func testTranslatedLinkAndImageLabelsKeepOriginalTargetsAndOrder() throws {
         let original = "## Project\nRead [the plan](https://example.com/plan) and ![the sketch](https://example.com/sketch.png) [\(first)]."
         let translated = "## Projekt\nLæs [planen](https://example.com/plan) og ![skitsen](https://example.com/sketch.png) [\(first)]."

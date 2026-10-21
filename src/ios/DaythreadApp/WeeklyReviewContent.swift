@@ -4,6 +4,7 @@ import OmiCore
 /// The brief selected-week recap is separate from the detailed two-week review below it.
 struct WeeklyRecapOverview: View {
     let week: String
+    let onTopic: (_ day: String, _ title: String) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -13,15 +14,6 @@ struct WeeklyRecapOverview: View {
     @State private var error: String?
     @State private var requestID = UUID()
     @State private var operation: Task<Void, Never>?
-    @State private var selectedTopic: SavedTopic?
-
-    private struct SavedTopic: Identifiable {
-        let id: String
-        let title: String
-        let summary: String
-        let day: String
-    }
-
     private var path: String { "v1/weekly-reviews/\(week)/overview" }
     private var context: String { [model.archiveIdentity, model.archiveRevision, week].joined(separator: "|") }
     private var diary: DiaryCalendar {
@@ -80,29 +72,8 @@ struct WeeklyRecapOverview: View {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
             }
         }
-        .onChange(of: overview["output_id"]) { _, _ in expanded = false; selectedTopic = nil }
+        .onChange(of: overview["output_id"]) { _, _ in expanded = false }
         .onDisappear { operation?.cancel(); requestID = UUID(); generating = false }
-        .sheet(item: $selectedTopic) { topic in
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(topic.title).font(.headline)
-                        if let date = diary.date(for: topic.day) {
-                            Text(diary.label(date, template: "EEEE d MMMM yyyy"))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Text(markdown(topic.summary)).textSelection(.enabled)
-                            .environment(\.openURL, OpenURLAction { _ in .discarded })
-                        if let date = diary.date(for: topic.day) {
-                            NavigationLink(L10n.text("Open day")) { DayView(date: date) }
-                        }
-                    }.padding()
-                }.navigationTitle(L10n.text("Topics")).navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.text("Done")) { selectedTopic = nil }
-                    } }
-            }
-        }
     }
 
     private func markdown(_ value: String) -> AttributedString {
@@ -115,9 +86,9 @@ struct WeeklyRecapOverview: View {
                 guard url.scheme == "topic" else { return .discarded }
                 let encoded = String(url.absoluteString.dropFirst("topic:".count))
                 guard let id = encoded.removingPercentEncoding,
-                      let topic = overview["topics"].array.first(where: { $0["id"].text == id }) else { return .discarded }
-                selectedTopic = .init(id: id, title: topic["title"].text,
-                    summary: topic["summary"].text, day: topic["day"].text)
+                      let topic = overview["topics"].array.first(where: { $0["id"].text == id }),
+                      diary.date(for: topic["day"].text) != nil else { return .discarded }
+                onTopic(topic["day"].text, topic["title"].text)
                 return .handled
             })
             .accessibilityIdentifier("weekly.overview.summary")

@@ -8,6 +8,7 @@ import { RecapSection } from "./Today";
 import type { ChatScope, Recap } from "./types";
 import { useResource } from "./useResource";
 import { EmptyState, ErrorState, Loading } from "./UI";
+import { requestedRecapTopic, subscribeNavigation } from "./routing";
 
 export function Diary({
   day,
@@ -21,6 +22,13 @@ export function Diary({
   onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const [mode, setMode] = useState<"day" | "week">("day");
+  useEffect(() => {
+    const openDayTopic = () => {
+      if (requestedRecapTopic(window.location.pathname, window.location.search, day)) setMode("day");
+    };
+    openDayTopic();
+    return subscribeNavigation(openDayTopic);
+  }, [day]);
   const diaries = useResource<{ items: Recap[] }>("/v1/diary", 15_000);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", diaries.refresh);

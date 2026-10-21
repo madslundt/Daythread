@@ -32,6 +32,13 @@ public enum RecapTranslationMapping {
         public let followUps: [RecapPresentation.Group]
     }
 
+    /// Recap links retain canonical titles even when the displayed topic is translated.
+    public static func topicID(for title: String, in mapping: Mapping) -> String? {
+        mapping.topics.first {
+            $0.original.title?.replacingOccurrences(of: "**", with: "") == title
+        }?.id
+    }
+
     public static func original(_ markdown: String, day: String) -> Mapping {
         .init(topics: RecapPresentation.topics(markdown, day: day).enumerated().map {
             .init(id: "recap:\($0.offset)", original: $0.element, display: $0.element)

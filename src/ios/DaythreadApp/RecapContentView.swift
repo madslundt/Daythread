@@ -1,6 +1,18 @@
 import SwiftUI
 import OmiCore
 
+struct RecapTopicRequest: Equatable {
+    let id = UUID()
+    let title: String
+}
+
+private struct RecapTopicScrollPreference: PreferenceKey {
+    static let defaultValue: [UUID: String] = [:]
+    static func reduce(value: inout [UUID: String], nextValue: () -> [UUID: String]) {
+        value.merge(nextValue()) { _, latest in latest }
+    }
+}
+
 struct RecapContentView: View {
     let recap: JSONValue
     let day: String
@@ -9,6 +21,10 @@ struct RecapContentView: View {
     var filters = DayFilterScope()
     var onFocusChange: ((RecapTopicFocus?) -> Void)? = nil
     var onContentLanguageChange: ((String?) -> Void)? = nil
+    var requestedTopic: RecapTopicRequest? = nil
+    var onTopicOpened: ((String) -> Void)? = nil
+    @State private var openedRequestID: UUID?
+    @State private var scrolledRequestID: UUID?
     @State private var query = ""
     @State private var browsingRecordings = false
     @State private var expandedID: String?
@@ -35,9 +51,17 @@ struct RecapContentView: View {
                 }
             }
         }.buttonStyle(.borderless).disclosureGroupStyle(RecapDisclosureStyle())
-            .onChange(of: query) { _, _ in select(nil, title: "") }
             .onChange(of: recap["summary"]) { _, _ in query = ""; select(nil, title: "") }
             .onDisappear { onFocusChange?(nil); onContentLanguageChange?(nil) }
+            .task(id: (requestedTopic?.id.uuidString ?? "") + recap["summary"].text) {
+                openRequestedTopic()
+            }
+            .onPreferenceChange(RecapTopicScrollPreference.self) { anchors in
+                guard let request = requestedTopic, request.id == openedRequestID,
+                      request.id != scrolledRequestID, let id = anchors[request.id] else { return }
+                scrolledRequestID = request.id
+                onTopicOpened?(id)
+            }
     }
 
     private func topicList(translation: JSONValue?, showingTranslation: Bool) -> RecapTopicsContent {
@@ -47,7 +71,7 @@ struct RecapContentView: View {
             mappingUnavailable: translation != nil && translated == nil, originals: originalTopics,
             contentLanguage: showingTranslation ? translation?["language"].text : nil,
             recap: recap, day: day, filters: effectiveFilters, emptyMessage: emptyMessage,
-            query: $query, browsingRecordings: $browsingRecordings, expandedID: expandedID, onSelect: select, onCorrect: onCorrect,
+            query: Binding(get: { query }, set: { query = $0; select(nil, title: "") }), browsingRecordings: $browsingRecordings, expandedID: expandedID, requestedTopic: requestedTopic, onSelect: select, onCorrect: onCorrect,
             onFocus: { focus in if expandedID == focus.id { onFocusChange?(focus) } })
     }
 
@@ -56,6 +80,15 @@ struct RecapContentView: View {
             from: JSONEncoder().encode(value["structure"])) else { return nil }
         return RecapTranslationMapping.map(original: recap["summary"].text, translated: value["text"].text,
             structure: structure, summaryVersion: value["summary_version"].text, day: day)
+    }
+
+    private func openRequestedTopic() {
+        guard let request = requestedTopic, request.id != openedRequestID,
+              let id = RecapTranslationMapping.topicID(for: request.title,
+                in: RecapTranslationMapping.original(recap["summary"].text, day: day)) else { return }
+        query = ""; browsingRecordings = false
+        select(id, title: request.title)
+        openedRequestID = request.id
     }
 
     private func select(_ id: String?, title: String) {
@@ -78,6 +111,7 @@ private struct RecapTopicsContent: View {
     @Binding var query: String
     @Binding var browsingRecordings: Bool
     let expandedID: String?
+    let requestedTopic: RecapTopicRequest?
     let onSelect: (String?, String) -> Void
     let onCorrect: (() -> Void)?
     let onFocus: (RecapTopicFocus) -> Void
@@ -159,6 +193,15 @@ private struct RecapTopicsContent: View {
                     filters: filters, scopeFingerprint: recap["scope_fingerprint"].text,
                     expanded: Binding(get: { expandedID == topic.id }, set: { select($0 ? topic.id : nil, title: title) }),
                     onCorrect: onCorrect, onFocus: acceptFocus)
+                    .id(topic.id)
+                    .background {
+                        if expandedID == topic.id, let request = requestedTopic {
+                            GeometryReader { _ in
+                                Color.clear.preference(key: RecapTopicScrollPreference.self,
+                                    value: [request.id: topic.id])
+                            }
+                        }
+                    }
                 Divider()
             }
             ForEach(visibleOriginals) { topic in
@@ -203,8 +246,7 @@ struct RecapDisclosureStyle: DisclosureGroupStyle {
 /// Reading a saved overview never starts inference; only the Recap button does.
 struct DayRecapOverview: View {
     let day: String
-    let recap: JSONValue
-    let onCorrect: () -> Void
+    let onTopic: (String) -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -213,20 +255,7 @@ struct DayRecapOverview: View {
     @State private var generating = false
     @State private var operation: Task<Void, Never>?
     @State private var requestID = UUID()
-    @State private var selectedTopic: SavedTopic?
     @State private var expanded = false
-    private var currentDayRecap: JSONValue {
-        guard recap["day"].text == day, recap["scope"]["tag_id"].text.isEmpty,
-              recap["scope"]["zone_id"].text.isEmpty else { return .null }
-        return recap
-    }
-
-    private struct SavedTopic: Identifiable {
-        let id: String
-        let title: String
-        let summary: String
-    }
-
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
@@ -272,33 +301,6 @@ struct DayRecapOverview: View {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
             }
         }
-        .sheet(item: $selectedTopic) { topic in
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if let current = RecapTranslationMapping.original(currentDayRecap["summary"].text, day: day).topics.first(where: {
-                            $0.original.title?.replacingOccurrences(of: "**", with: "") == topic.id
-                        }) {
-                            RecapTopicRow(topic: current, display: current.display, sources: currentDayRecap["sources"].array,
-                                day: day, filters: .init(), scopeFingerprint: "", expanded: .constant(true),
-                                onCorrect: { selectedTopic = nil; overview = .null; onCorrect(); Task { await load() } },
-                                onFocus: { _ in })
-                        } else {
-                            Text(topic.title).font(.headline)
-                            Text(markdown(topic.summary)).textSelection(.enabled)
-                        }
-                    }.padding()
-                }.navigationTitle(L10n.text("Topics")).navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.text("Done")) { selectedTopic = nil }
-                    } }
-            }
-        }
-        .onChange(of: overview) { _, value in
-            if let selectedTopic, value["summary"].text.isEmpty || !value["topics"].array.contains(where: { $0["id"].text == selectedTopic.id }) {
-                self.selectedTopic = nil
-            }
-        }
         .onChange(of: overview["output_id"]) { _, _ in expanded = false }
         .onDisappear { operation?.cancel(); requestID = UUID(); generating = false }
     }
@@ -315,7 +317,7 @@ struct DayRecapOverview: View {
                 let encoded = String(url.absoluteString.dropFirst("topic:".count))
                 guard let id = encoded.removingPercentEncoding,
                       let topic = overview["topics"].array.first(where: { $0["id"].text == id }) else { return .discarded }
-                selectedTopic = .init(id: id, title: topic["title"].text, summary: topic["summary"].text)
+                onTopic(topic["title"].text)
                 return .handled
             })
             .accessibilityIdentifier("recap.overview.summary")

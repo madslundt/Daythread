@@ -1,8 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dayFromPath, pageFromPath, pagePath, profileRoute, legacyRoutePath, navigatePath, subscribeNavigation } from "./routing";
+import { dayFromPath, pageFromPath, pagePath, profileRoute, legacyRoutePath, navigatePath, subscribeNavigation, recapTopicPath, requestedRecapTopic } from "./routing";
 import { localDay } from "./format";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+describe("recap topic navigation", () => {
+  it("encodes canonical titles without confusing query characters or translated labels", () => {
+    const title = "Garden & plans / ☘️ + #1";
+    const path = recapTopicPath("2026-10-20", title)!;
+    const url = new URL(path, "https://daythread.home.arpa");
+    expect(url.pathname).toBe("/diary/2026-10-20");
+    expect(requestedRecapTopic(url.pathname, url.search, "2026-10-20")).toBe(title);
+    expect(requestedRecapTopic(url.pathname, url.search, "2026-10-19")).toBeUndefined();
+  });
+  it("keeps identical titles on different days distinct", () => {
+    expect(recapTopicPath("2026-10-19", "Garden")).not.toBe(recapTopicPath("2026-10-20", "Garden"));
+  });
+  it("rejects missing, malformed or ambiguous topic destinations", () => {
+    expect(recapTopicPath("2026-02-30", "Garden")).toBeUndefined();
+    expect(recapTopicPath(undefined, "Garden")).toBeUndefined();
+    expect(recapTopicPath("2026-10-20", " ")).toBeUndefined();
+    expect(requestedRecapTopic("/settings", "?topic=Garden", "2026-10-20")).toBeUndefined();
+    expect(requestedRecapTopic("/diary/2026-10-20", "?topic=Garden&topic=Other", "2026-10-20")).toBeUndefined();
+  });
+});
 
 describe("date deep links", () => {
   it.each(["today", "diary"] as const)("restores a selected date on %s after refresh", (page) => {
@@ -50,6 +71,19 @@ describe("date deep links", () => {
 });
 
 describe("path navigation", () => {
+  it("reopens a topic at the same URL without duplicating browser history", () => {
+    const browser = new EventTarget();
+    const location = new URL("https://daythread.home.arpa/diary/2026-10-20?topic=Garden");
+    const pushState = vi.fn();
+    Object.assign(browser, { location, history: { pushState } });
+    vi.stubGlobal("window", browser);
+    const listener = vi.fn();
+    const unsubscribe = subscribeNavigation(listener);
+    navigatePath("/diary/2026-10-20?topic=Garden", { reselect: true });
+    expect(listener).toHaveBeenCalledOnce();
+    expect(pushState).not.toHaveBeenCalled();
+    unsubscribe();
+  });
   it.each(["today/2026-10-16", "diary/2026-10-16", "settings/connections", "labels/person-id"])("converts an old bookmark for %s", (route) => {
     expect(legacyRoutePath("/", `#${route}`)).toBe(`/${route}`);
   });

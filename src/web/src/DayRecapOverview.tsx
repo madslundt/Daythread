@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage, post } from "./api";
-import { dateTimeLabel, dayLabel } from "./format";
+import { dateTimeLabel } from "./format";
 import { t } from "./i18n";
 import { RecapSummary } from "./RecapSummary";
 import { useResource } from "./useResource";
-import { ErrorState, InlineText, Loading, RichText } from "./UI";
+import { navigatePath, recapTopicPath } from "./routing";
+import { ErrorState, InlineText, Loading } from "./UI";
 
 export type DayOverviewTopic = { id: string; title: string; summary?: string; day?: string };
 export type DayOverview = {
@@ -15,23 +16,21 @@ export type DayOverview = {
 type SavedOverview = Omit<DayOverview, "day"> & { day?: string; week_start?: string; partial?: boolean; cutoff?: string };
 
 export function DayRecapOverview({ day, timezone, onTopic }: {
-  day: string; timezone: string; onTopic: (title: string) => boolean;
+  day: string; timezone: string; onTopic: (title: string) => void;
 }) {
-  return <SavedRecapOverview key={day} path={`/v1/recaps/${day}/overview`} timezone={timezone} onTopic={onTopic} />;
+  return <SavedRecapOverview key={day} day={day} path={`/v1/recaps/${day}/overview`} timezone={timezone} onTopic={onTopic} />;
 }
 
 export function WeeklyRecapOverview({ week, timezone }: { week: string; timezone: string }) {
   return <SavedRecapOverview key={week} path={`/v1/weekly-reviews/${week}/overview`} timezone={timezone} weekly />;
 }
 
-function SavedRecapOverview({ path, timezone, onTopic, weekly = false }: {
-  path: string; timezone: string; onTopic?: (title: string) => boolean; weekly?: boolean;
+function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false }: {
+  path: string; day?: string; timezone: string; onTopic?: (title: string) => void; weekly?: boolean;
 }) {
   const resource = useResource<SavedOverview>(path, 15_000);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
-  const [detail, setDetail] = useState<DayOverviewTopic>();
-  const detailRef = useRef<HTMLElement>(null);
   const busy = useRef(false);
   const active = useRef(true);
   const generation = useRef(0);
@@ -41,11 +40,9 @@ function SavedRecapOverview({ path, timezone, onTopic, weekly = false }: {
     return () => window.removeEventListener("omi:archive-changed", resource.refresh);
   }, [resource.refresh]);
   const data = resource.data;
-  useEffect(() => { setDetail(undefined); }, [data?.generated_at, data?.summary]);
-  useEffect(() => { if (detail) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [detail]);
   async function generate() {
     if (busy.current || !data?.can_generate) return;
-    busy.current = true; setGenerating(true); setError(""); setDetail(undefined);
+    busy.current = true; setGenerating(true); setError("");
     const attempt = ++generation.current;
     try {
       const result = await post<SavedOverview>(path);
@@ -59,18 +56,6 @@ function SavedRecapOverview({ path, timezone, onTopic, weekly = false }: {
       if (active.current && attempt === generation.current) setGenerating(false);
     }
   }
-  function openTopic(topic: DayOverviewTopic) {
-    setDetail(onTopic?.(topic.title) ? undefined : topic);
-  }
-  const savedDetail = detail ? <section ref={detailRef} className="day-recap-saved-topic" aria-label={detail.title}>
-    <h3><InlineText text={detail.title} /></h3>
-    {!weekly ? <p className="caption">{t("This topic has changed. These are the details saved with your recap.")}</p> : null}
-    {detail.summary ? <RichText text={detail.summary} /> : <p className="caption">{t("Browse the topics below for the latest details.")}</p>}
-    {weekly && detail.day && /^\d{4}-\d{2}-\d{2}$/.test(detail.day) ? <p>
-      <a href={`/today/${detail.day}`}>{t("Open day")} · {dayLabel(detail.day, true)}</a>
-    </p> : null}
-    <button className="text-button" onClick={() => setDetail(undefined)}>{t("Close")}</button>
-  </section> : null;
   return <div className={`day-recap-overview${weekly ? " weekly-recap-overview" : ""}`}
     aria-label={weekly ? t("Weekly recap") : t("Day recap summary")} aria-busy={generating}>
     <div className="day-recap-overview-heading">
@@ -89,9 +74,8 @@ function SavedRecapOverview({ path, timezone, onTopic, weekly = false }: {
     {resource.loading && !data ? <Loading>{weekly ? t("Loading saved weekly recap…") : t("Loading saved recap…")}</Loading> : null}
     {data?.summary ? <>
       <RecapSummary key={data.output_id || data.generated_at || path} outputId={data.output_id} text={data.summary}
-        renderContent={(text) => <DayOverviewText text={text} topics={data.topics || []} onTopic={openTopic} />}>
-        {savedDetail}
-      </RecapSummary>
+        renderContent={(text) => <DayOverviewText text={text} day={day} topics={data.topics || []}
+          onTopic={onTopic ? (topic) => onTopic(topic.title) : undefined} />} />
       <p className="caption">{data.generated_at ? <>{t("Generated at")} {dateTimeLabel(data.generated_at, timezone)} · </> : null}
         {t("{value0} min read", { value0: data.reading_minutes || 1 })}</p>
       {data.can_generate ? <p className="caption" role="status">{weekly
@@ -104,8 +88,8 @@ function SavedRecapOverview({ path, timezone, onTopic, weekly = false }: {
 }
 
 // Only validated topic links become interactive; model output never becomes HTML or an external URL.
-export function DayOverviewText({ text, topics, onTopic }: {
-  text: string; topics: DayOverviewTopic[]; onTopic: (topic: DayOverviewTopic) => void;
+export function DayOverviewText({ text, day, topics, onTopic }: {
+  text: string; day?: string; topics: DayOverviewTopic[]; onTopic?: (topic: DayOverviewTopic) => void;
 }) {
   function inline(value: string): ReactNode[] {
     return value.split(/(\[[^\]\n]+\]\(topic:[^\s)]*\))/g).map((part, index) => {
@@ -114,8 +98,14 @@ export function DayOverviewText({ text, topics, onTopic }: {
       let title: string;
       try { title = decodeURIComponent(match[2]); } catch { return match[1]; }
       const topic = topics.find((item) => item.id === title);
-      return topic ? <a key={index} className="day-recap-topic-link" href={`#topic-${encodeURIComponent(title)}`}
-        onClick={(event) => { event.preventDefault(); onTopic(topic); }}><InlineText text={match[1]} /></a> : match[1];
+      const href = topic ? recapTopicPath(topic.day || day, topic.title) : undefined;
+      return topic && href ? <a key={index} className="day-recap-topic-link" href={href}
+        onClick={(event) => {
+          if ((event.button ?? 0) !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          if (onTopic) onTopic(topic);
+          else navigatePath(href, { reselect: true });
+        }}><InlineText text={match[1]} /></a> : match[1];
     });
   }
   return <div className="prose day-recap-prose">{text.split(/\n\s*\n/).map((block, index) => {

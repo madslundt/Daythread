@@ -6,7 +6,7 @@ import { profileResourceUrl } from "./profiles";
 import { dateTimeLabel, timeLabel } from "./format";
 import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { ActionPoints } from "./ActionPoints";
-import { recapBrowserTopics, recapParts, recapTopics, type RecapFocus } from "./recapItems";
+import { recapBrowserTopics, type RecapFocus } from "./recapItems";
 import { DayRecapOverview } from "./DayRecapOverview";
 import { SourceList } from "./SourceList";
 import { RecapContent } from "./RecapContent";
@@ -16,6 +16,7 @@ import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice, RichText } from "./UI";
 import { Icon } from "./Icon";
 import { DisplayTranslationLanguage } from "./displayTranslations";
+import { requestedRecapTopic, subscribeNavigation } from "./routing";
 
 const emptySources: Source[] = [];
 
@@ -67,6 +68,15 @@ export function RecapSection({
   const [showVersions, setShowVersions] = useState(false);
   const [focus, setFocus] = useState<RecapFocus>();
   const [topicRequest, setTopicRequest] = useState<{ title: string; request: number }>();
+  useEffect(() => {
+    const openRequestedTopic = () => {
+      if (filtered) return;
+      const title = requestedRecapTopic(window.location.pathname, window.location.search, day);
+      if (title) setTopicRequest((previous) => ({ title, request: (previous?.request || 0) + 1 }));
+    };
+    openRequestedTopic();
+    return subscribeNavigation(openRequestedTopic);
+  }, [day, filtered]);
   const summary = recap.data?.summary || "";
   const version = recap.data?.output_id || recap.data?.generated_at || "unversioned";
   const sources = recap.data?.sources || emptySources;
@@ -89,9 +99,7 @@ export function RecapSection({
         </div>
       </div>
       {!filtered ? <DayRecapOverview key={day} day={day} timezone={timezone} onTopic={(title) => {
-        if (!recapTopics(recapParts(summary), day).topics.some((topic) => topic.title === title)) return false;
         setTopicRequest((previous) => ({ title, request: (previous?.request || 0) + 1 }));
-        return true;
       }} /> : null}
       {!filtered ? <h3>{t("Topics")}</h3> : null}
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}

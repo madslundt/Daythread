@@ -27,6 +27,17 @@ export function pagePath(page: Page, day?: string): string {
   return `/${page}${isDayPage(page) && day ? `/${day}` : ""}`;
 }
 
+export function recapTopicPath(day: string | undefined, title: string): string | undefined {
+  if (!day || dayFromPath(`/diary/${day}`) !== day || !title.trim()) return;
+  return `/diary/${day}?${new URLSearchParams({ topic: title })}`;
+}
+
+export function requestedRecapTopic(path: string, search: string, day: string): string | undefined {
+  if (dayFromPath(path) !== day) return;
+  const topics = new URLSearchParams(search).getAll("topic");
+  return topics.length === 1 && topics[0].trim() ? topics[0] : undefined;
+}
+
 function isAppPath(path: string): boolean {
   return path === "/" || pages.some((page) => page.id === path.split("/")[1]);
 }
@@ -37,8 +48,11 @@ export function legacyRoutePath(pathname: string, hash: string): string | undefi
   return path !== "/" && isAppPath(path) ? path : undefined;
 }
 
-export function navigatePath(path: string, { replace = false } = {}): void {
-  if (`${window.location.pathname}${window.location.search}${window.location.hash}` === path) return;
+export function navigatePath(path: string, { replace = false, reselect = false } = {}): void {
+  if (`${window.location.pathname}${window.location.search}${window.location.hash}` === path) {
+    if (reselect) window.dispatchEvent(new Event("omi:navigate"));
+    return;
+  }
   if (replace) window.history.replaceState(null, "", path);
   else window.history.pushState(null, "", path);
   window.dispatchEvent(new Event("omi:navigate"));

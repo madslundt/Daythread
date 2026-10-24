@@ -8,7 +8,7 @@ struct ImportRecording: Identifiable {
     let name: String
     let size: Int
     let digest: String
-    let suggestedEnd: Bool
+    let dateSource: String?
     var recordedAt: Date
     var timeConfirmed: Bool
     var reference = RecordingTimeReference.end
@@ -45,6 +45,7 @@ final class RecordingImporter {
     var conversationSourceID = ""
     var vendorID = "manual"
     var selectedTagIDs: Set<String> = []
+    var selectedTagNames: Set<String> = []
     var selectedPlace: (zoneID: String, locationID: String)?
     var currentLocation: CaptureLocation?
     private let workspace = ImportWorkspace()
@@ -216,17 +217,26 @@ final class RecordingImporter {
     }
 
     private func applyOptionalDetails(_ plan: RecordingUploadPlan, client: BackendClient) async throws {
-        guard !selectedTagIDs.isEmpty || selectedPlace != nil || currentLocation != nil else { return }
+        guard !selectedTagIDs.isEmpty || !selectedTagNames.isEmpty || selectedPlace != nil || currentLocation != nil else { return }
         stage = L10n.source("Saving optional tags and location…")
         for part in plan.parts {
             let sourceID = part.id.uuidString.lowercased()
-            if !selectedTagIDs.isEmpty {
+            if !selectedTagIDs.isEmpty || !selectedTagNames.isEmpty {
                 var selection = try await client.request("v1/sources/\(sourceID)/tags")
                 for tagID in selectedTagIDs.sorted() {
                     selection = try await client.request("v1/sources/\(sourceID)/tags", method: "PUT", body: [
                         "expected_revision": selection["revision"].text,
                         "expected_membership": selection["membership"].text,
                         "action": "add", "tag_id": tagID,
+                    ])
+                }
+                // Creating by name uses the same guarded, idempotent operation as
+                // conversation tagging. A retry reuses the existing normalized tag.
+                for name in selectedTagNames.sorted() {
+                    selection = try await client.request("v1/sources/\(sourceID)/tags", method: "PUT", body: [
+                        "expected_revision": selection["revision"].text,
+                        "expected_membership": selection["membership"].text,
+                        "action": "add", "name": name,
                     ])
                 }
             }
@@ -265,11 +275,11 @@ final class RecordingImporter {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: copy.path)
             try Task.checkCancellation()
             let digest = try RecordingAudioConverter.fileDigest(copy)
-            let embeddedDate = await RecordingImport.embeddedRecordingDate(in: source)
-            let suggested = RecordingImport.suggestedEnd(modifiedAt: embeddedDate)
-                ?? RecordingImport.suggestedEnd(modifiedAt: values.contentModificationDate)
+            let suggested = await RecordingImport.dateSuggestion(in: source, modifiedAt: values.contentModificationDate)
             return ImportRecording(url: copy, name: source.lastPathComponent, size: values.fileSize ?? 0,
-                                   digest: digest, suggestedEnd: suggested != nil, recordedAt: suggested ?? Date(), timeConfirmed: suggested != nil)
+                                   digest: digest, dateSource: suggested?.source, recordedAt: suggested?.date ?? Date(),
+                                   timeConfirmed: suggested.map { !$0.needsConfirmation } ?? false,
+                                   reference: suggested?.reference ?? .end)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error

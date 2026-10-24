@@ -2786,3 +2786,17 @@
 "Weekly recap did not contain a readable overview" = "Ugens opsummering indeholdt ikke et læsbart overblik";
 "Weekly recap exceeded the five-minute reading limit" = "Ugens opsummering overskred grænsen på fem minutters læsning";
 "Weekly recap evidence changed; retry the recap" = "Kilderne til ugens opsummering er ændret; prøv at generere den igen";
+"New tags are saved with imported recordings." = "Nye tags gemmes sammen med de importerede optagelser.";
+"Suggested date source: {value0}" = "Kilde til foreslået dato: {value0}";
+"Time on this iPhone: {value0}. The other end is calculated from the audio duration." = "Tid på denne iPhone: {value0}. Det andet tidspunkt beregnes ud fra lydens varighed.";
+"Review the recording date and time before importing." = "Kontrollér optagelsens dato og tidspunkt, før du importerer.";
+"Embedded recording date" = "Indlejret optagelsesdato";
+"Embedded creation date" = "Indlejret oprettelsesdato";
+"WAV recording date" = "WAV-optagelsesdato";
+"WAV creation date" = "WAV-oprettelsesdato";
+"File modification date" = "Filens ændringsdato";
+"Recording date and time" = "Optagelsens dato og tidspunkt";
+"Enter a tag name of 1 to 80 characters." = "Indtast et tagnavn på 1 til 80 tegn.";
+"Reading recording dates…" = "Læser optagelsesdatoer…";
+"Review each recording’s date and time before importing." = "Kontrollér dato og tidspunkt for hver optagelse, før du importerer.";
+"Create tag…" = "Opret tag…";

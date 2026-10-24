@@ -12,6 +12,7 @@ struct AudioImportView: View {
     @State private var vendorError: String?
     @State private var vendorRevision = 0
     @State private var availableTags: [ManualTag] = []
+    @State private var newTagName = ""
     @State private var locationZones: [LocationZone] = []
     @State private var locationChoice = ""
     @State private var currentLocation: CaptureLocation?
@@ -79,6 +80,22 @@ struct AudioImportView: View {
                                     ))
                                 }
                             }
+                            ForEach(importer.selectedTagNames.sorted(), id: \.self) { name in
+                                HStack {
+                                    Text(name)
+                                    Spacer()
+                                    Button(L10n.text("Remove tag"), role: .destructive) {
+                                        importer.selectedTagNames.remove(name)
+                                    }.buttonStyle(.borderless)
+                                }
+                            }
+                            TextField(L10n.text("New tag name"), text: $newTagName)
+                                .accessibilityIdentifier("import.newTagName")
+                            Button(L10n.text("Create and add tag"), action: addTag)
+                                .disabled(!canAddTag)
+                                .accessibilityIdentifier("import.createTag")
+                            Text(L10n.text("New tags are saved with imported recordings."))
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                         Picker(L10n.text("Location"), selection: $locationChoice) {
                             Text(L10n.text("No location")).tag("")
@@ -227,12 +244,20 @@ struct AudioImportView: View {
                 Picker(L10n.text("Time refers to"), selection: recording.reference) {
                     ForEach(RecordingTimeReference.allCases) { reference in Text(reference.title).tag(reference) }
                 }
+                .accessibilityIdentifier("import.timeReference.\(value.id)")
                 DatePicker(value.reference.title, selection: Binding(get: { value.recordedAt }, set: {
                     recording.wrappedValue.recordedAt = $0
                     recording.wrappedValue.timeConfirmed = true
                 }), in: ...Date(), displayedComponents: [.date, .hourAndMinute])
+                    .accessibilityIdentifier("import.recordedAt.\(value.id)")
+                if let source = value.dateSource {
+                    Label(L10n.text("Suggested date source: \(L10n.key(source))"), systemImage: "info.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !value.timeConfirmed {
-                    Label(L10n.text("This file has no reliable date. Set when it was recorded."), systemImage: "clock.badge.exclamationmark")
+                    Label(value.dateSource == nil
+                          ? L10n.text("This file has no reliable date. Set when it was recorded.")
+                          : L10n.text("Review the recording date and time before importing."), systemImage: "clock.badge.exclamationmark")
                         .font(.caption).foregroundStyle(.secondary)
                     Button(L10n.text("Use the time shown")) { recording.wrappedValue.timeConfirmed = true }
                 }
@@ -248,9 +273,27 @@ struct AudioImportView: View {
             if !value.handled {
                 Text(value.plan != nil
                      ? L10n.text("The original time and filename are saved for this upload. Retry resumes the same parts.")
-                     : L10n.text("Time on this iPhone: \(TimeZone.current.identifier). \(value.suggestedEnd && value.reference == .end ? L10n.text("The file’s last-modified time is suggested; correct it if needed. ") : "")The other end is calculated from the audio duration."))
+                     : L10n.text("Time on this iPhone: \(TimeZone.current.identifier). The other end is calculated from the audio duration."))
             }
         }.disabled(importer.busy || value.locked)
+    }
+
+    private var canAddTag: Bool {
+        let name = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.unicodeScalars.count <= 80
+            && !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+            && importer.selectedTagIDs.count + importer.selectedTagNames.count < 50
+    }
+
+    private func addTag() {
+        guard canAddTag else { return }
+        let name = newTagName.precomposedStringWithCanonicalMapping.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if let tag = availableTags.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            importer.selectedTagIDs.insert(tag.id)
+        } else if !importer.selectedTagNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            importer.selectedTagNames.insert(name)
+        }
+        newTagName = ""
     }
 
     private var progressSection: some View {

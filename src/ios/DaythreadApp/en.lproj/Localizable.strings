@@ -2786,3 +2786,17 @@
 "Weekly recap did not contain a readable overview" = "Weekly recap did not contain a readable overview";
 "Weekly recap exceeded the five-minute reading limit" = "Weekly recap exceeded the five-minute reading limit";
 "Weekly recap evidence changed; retry the recap" = "Weekly recap evidence changed; retry the recap";
+"New tags are saved with imported recordings." = "New tags are saved with imported recordings.";
+"Suggested date source: {value0}" = "Suggested date source: {value0}";
+"Time on this iPhone: {value0}. The other end is calculated from the audio duration." = "Time on this iPhone: {value0}. The other end is calculated from the audio duration.";
+"Review the recording date and time before importing." = "Review the recording date and time before importing.";
+"Embedded recording date" = "Embedded recording date";
+"Embedded creation date" = "Embedded creation date";
+"WAV recording date" = "WAV recording date";
+"WAV creation date" = "WAV creation date";
+"File modification date" = "File modification date";
+"Recording date and time" = "Recording date and time";
+"Enter a tag name of 1 to 80 characters." = "Enter a tag name of 1 to 80 characters.";
+"Reading recording dates…" = "Reading recording dates…";
+"Review each recording’s date and time before importing." = "Review each recording’s date and time before importing.";
+"Create tag…" = "Create tag…";

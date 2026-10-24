@@ -2784,3 +2784,17 @@
 "Weekly recap did not contain a readable overview" = "Der Wochenrückblick enthielt keine lesbare Übersicht";
 "Weekly recap exceeded the five-minute reading limit" = "Der Wochenrückblick überschritt die Lesezeit von fünf Minuten";
 "Weekly recap evidence changed; retry the recap" = "Die Quellen für den Wochenrückblick wurden geändert; erstelle ihn erneut";
+"New tags are saved with imported recordings." = "Neue Tags werden mit den importierten Aufnahmen gespeichert.";
+"Suggested date source: {value0}" = "Quelle des vorgeschlagenen Datums: {value0}";
+"Time on this iPhone: {value0}. The other end is calculated from the audio duration." = "Zeit auf diesem iPhone: {value0}. Der andere Zeitpunkt wird anhand der Audiodauer berechnet.";
+"Review the recording date and time before importing." = "Prüfe Datum und Uhrzeit der Aufnahme vor dem Import.";
+"Embedded recording date" = "Eingebettetes Aufnahmedatum";
+"Embedded creation date" = "Eingebettetes Erstellungsdatum";
+"WAV recording date" = "WAV-Aufnahmedatum";
+"WAV creation date" = "WAV-Erstellungsdatum";
+"File modification date" = "Änderungsdatum der Datei";
+"Recording date and time" = "Datum und Uhrzeit der Aufnahme";
+"Enter a tag name of 1 to 80 characters." = "Gib einen Tag-Namen mit 1 bis 80 Zeichen ein.";
+"Reading recording dates…" = "Aufnahmedaten werden gelesen…";
+"Review each recording’s date and time before importing." = "Prüfe Datum und Uhrzeit jeder Aufnahme vor dem Import.";
+"Create tag…" = "Tag erstellen…";

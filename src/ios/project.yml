@@ -95,8 +95,24 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
             NSExtensionActivationRule: 'SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio").@count > 0).@count > 0'
+  DaythreadShareTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [DaythreadShare, Tests/DaythreadShareTests]
+    dependencies:
+      - package: OmiCore
+      - target: Daythread
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.daythread.share.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Daythread.app/Daythread
+        BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Daythread:
     build:
       targets:
         Daythread: all
+    test:
+      targets: [DaythreadShareTests]

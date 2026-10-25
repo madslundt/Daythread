@@ -7,7 +7,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from omi_local.daily_synthesis import batches, note_items, parse_plan
+from omi_local.daily_synthesis import batches, note_items, parse_plan, parse_review
 from omi_local.inference import Inference, InferenceError
 from omi_local.settings import Settings
 
@@ -37,7 +37,8 @@ async def test_plan_controls_flexible_count_and_writers_receive_only_supporting_
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
         calls.append(payload)
-        if payload['task'].startswith('Organize useful recorded information'):
+        if payload['task'].startswith(('Organize useful recorded information',
+                                       'Review the complete daily topic plan')):
             rows = json.loads(payload['evidence'])
             if isinstance(rows, dict):
                 return reply(json.dumps({'topics': rows['proposed_topics']}))
@@ -55,7 +56,7 @@ async def test_plan_controls_flexible_count_and_writers_receive_only_supporting_
                                         ).summarize_daily_traced(sources, 'a daily recap')
     assert re.findall(r'^## (.+)$', result, re.M) == [f'Subject {n}' for n in range(count)]
     assert all(key in result for key in ids)
-    assert len(calls) == trace['model_calls'] == count + 2
+    assert len(calls) == trace['model_calls'] == count + 3
     assert trace['topic_count'] == count
 
 
@@ -68,6 +69,8 @@ async def test_unknown_plan_items_get_one_repair_before_any_topic_is_written(tmp
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Review the complete daily topic plan'):
+            return reply(json.dumps({'topics': json.loads(payload['evidence'])['proposed_topics']}))
         if payload['task'].startswith('Organize useful recorded information'):
             plans.append(payload)
             return reply(json.dumps({'topics': [{'title': 'Launch', 'scope': 'Release review',
@@ -78,7 +81,7 @@ async def test_unknown_plan_items_get_one_repair_before_any_topic_is_written(tmp
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         result, trace = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
                                         ).summarize_daily_traced(sources, 'a daily recap')
-    assert result.startswith('## Launch\n') and trace['model_calls'] == 4
+    assert result.startswith('## Launch\n') and trace['model_calls'] == 5
     assert 'previous plan was invalid' in plans[1]['task']
 
 
@@ -119,6 +122,8 @@ async def test_local_coherence_splits_unrelated_projects_and_keeps_one_workflow(
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Review the complete daily topic plan'):
+            return reply(json.dumps({'topics': json.loads(payload['evidence'])['proposed_topics']}))
         if payload['task'].startswith('Decide whether ONE proposed'):
             checks.append(payload)
             supplied = json.loads(payload['evidence'])
@@ -147,7 +152,7 @@ async def test_local_coherence_splits_unrelated_projects_and_keeps_one_workflow(
     if not mixed:
         assert result.startswith('## Draft updates\n')
     assert len(re.findall(r'^## ', result, re.M)) == (3 if mixed else 1)
-    assert trace['model_calls'] == (6 if mixed else 4)
+    assert trace['model_calls'] == (7 if mixed else 5)
 
 
 @pytest.mark.anyio
@@ -166,7 +171,8 @@ async def test_topic_writer_grounds_action_state_in_scoped_originals_not_driftin
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
-        if payload['task'].startswith('Organize useful recorded information'):
+        if payload['task'].startswith(('Organize useful recorded information',
+                                       'Review the complete daily topic plan')):
             return reply(json.dumps({'topics': [
                 {'title': 'Catalog', 'scope': 'Catalog rollout', 'items': ['n1']}]}))
         assert original in payload['evidence']
@@ -202,7 +208,8 @@ async def test_topic_writer_keeps_action_updates_in_recording_order(tmp_path):
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
-        if payload['task'].startswith('Organize useful recorded information'):
+        if payload['task'].startswith(('Organize useful recorded information',
+                                       'Review the complete daily topic plan')):
             return reply(json.dumps({'topics': [
                 {'title': 'Launch', 'scope': 'Deployment status', 'items': ['n1']}]}))
         evidence = payload['evidence']
@@ -214,3 +221,179 @@ async def test_topic_writer_keeps_action_updates_in_recording_order(tmp_path):
                                     ).summarize_daily_traced(
                                         notes, 'a daily recap', original_sources=originals)
     assert 'later reported completed' in result
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('split_before_review', [False, True])
+async def test_whole_day_review_merges_recurring_themes_and_accounts_for_incidental_items(
+    tmp_path, split_before_review,
+):
+    ids = [str(uuid4()) for _ in range(4)]
+    facts = [
+        'AI governance: agree human approval before autonomous agents deploy.',
+        'Agent autonomy: monitor agents and require human approval for deployment.',
+        'The speaker thanked everyone and invited LinkedIn connections.',
+        'Remember to collect the repaired bicycle on Monday.',
+    ]
+    notes = [{'id': key, 'started_at': '2026-10-23T10:00:00Z',
+              'text': f'## Recording {index}\n{fact} [{key}]'}
+             for index, (key, fact) in enumerate(zip(ids, facts, strict=True))]
+    reviews, writers = [], []
+    purpose = 'Keep ordinary errands; omit routine closing remarks and speaker introductions.'
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        task = payload['task']
+        if task.startswith('Organize useful recorded information'):
+            supplied = json.loads(payload['evidence'])
+            topics = supplied['proposed_topics'] if isinstance(supplied, dict) else [
+                {'title': f'Draft {n}', 'scope': fact, 'items': [f'n{n+1}']}
+                for n, fact in enumerate(facts)]
+            if split_before_review:
+                topics = [{'title': 'Session', 'scope': 'All session notes',
+                           'items': ['n1', 'n2', 'n3', 'n4']}]
+            return reply(json.dumps({'topics': topics}))
+        if task.startswith('Decide whether ONE proposed'):
+            assert split_before_review
+            return reply(json.dumps({'split_required': True, 'topics': [
+                {'title': f'Draft {n}', 'scope': fact, 'items': [f'n{n+1}']}
+                for n, fact in enumerate(facts)]}))
+        if task.startswith('Review the complete daily topic plan'):
+            reviews.append(payload)
+            assert purpose in task
+            supplied = json.loads(payload['evidence'])
+            assert {key for topic in supplied['proposed_topics'] for key in topic['items']} == {
+                'n1', 'n2', 'n3', 'n4',
+            }
+            return reply(json.dumps({'topics': [
+                {'title': 'AI governance and autonomy', 'scope': 'Human approval and monitoring',
+                 'items': ['n1', 'n2']},
+                {'title': 'Bicycle collection', 'scope': 'Collect on Monday', 'items': ['n4']},
+            ], 'omitted_items': [{'id': 'n3', 'reason': 'Routine closing remarks.'}]}))
+        writers.append(payload)
+        refs = list(dict.fromkeys(re.findall(r'\[([0-9a-f-]{36})\]', payload['evidence'])))
+        return reply('Useful recorded information. ' + ' '.join(f'[{key}]' for key in refs))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result, trace = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                        ).summarize_daily_traced(notes, purpose)
+    assert re.findall(r'^## (.+)$', result, re.M) == [
+        'AI governance and autonomy', 'Bicycle collection',
+    ]
+    assert len(reviews) == 1 and len(writers) == 2
+    assert all(key in result for key in (ids[0], ids[1], ids[3]))
+    assert ids[2] not in result
+    assert trace['topic_count'] == 2
+    assert trace['omitted_item_count'] == 1
+
+
+@pytest.mark.parametrize('omitted,selected', [
+    ([], ['n1']),
+    ([{'id': 'n2', 'reason': ''}], ['n1']),
+    ([{'id': 'n999', 'reason': 'Chatter'}], ['n1', 'n2']),
+    ([{'id': 'n2', 'reason': 'Chatter'}], ['n1', 'n2']),
+    ([{'id': 'n2', 'reason': 'Chatter'}] * 2, ['n1']),
+])
+def test_final_review_rejects_unaccounted_or_invalid_omissions(omitted, selected):
+    answer = json.dumps({'topics': [{'title': 'Plan', 'scope': 'Next steps', 'items': selected}],
+                         'omitted_items': omitted})
+    with pytest.raises(InferenceError):
+        parse_review(answer, {'n1', 'n2'})
+
+
+@pytest.mark.parametrize('answer', ['[]', 'null', '"not a plan"'])
+def test_malformed_review_roots_raise_repairable_inference_errors(answer):
+    with pytest.raises(InferenceError):
+        parse_review(answer, {'n1'})
+
+
+def test_final_review_can_explicitly_reject_all_incidental_material():
+    answer = json.dumps({'topics': [], 'omitted_items': [
+        {'id': 'n1', 'reason': 'Routine thanks with no later use.'},
+    ]})
+    assert parse_review(answer, {'n1'}) == ([], 1)
+    with pytest.raises(InferenceError):
+        parse_review(answer, {'n1'}, allow_omissions=False)
+
+
+@pytest.mark.anyio
+async def test_all_incidental_topics_across_review_batches_produce_no_content(
+    tmp_path, monkeypatch,
+):
+    from omi_local import daily_synthesis
+    from omi_local.summary_filter import NO_CONTENT
+
+    monkeypatch.setattr(daily_synthesis, 'BUDGET', 600)
+    key = str(uuid4())
+    notes = [{'id': key, 'text': '\n'.join(
+        f'* Routine closing remark {n}. [{key}]' for n in range(3)
+    )}]
+    reviews = []
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        task = payload['task']
+        if task.startswith('Organize useful recorded'):
+            return reply(json.dumps({'topics': [{
+                'title': 'Session closing', 'scope': 'Closing remarks',
+                'items': ['n1', 'n2', 'n3'],
+            }]}))
+        if task.startswith('Decide whether ONE proposed'):
+            return reply(json.dumps({'split_required': True, 'topics': [
+                {'title': f'Closing {n}', 'scope': 'Routine thanks. ' * 25, 'items': [f'n{n+1}']}
+                for n in range(3)
+            ]}))
+        assert task.startswith('Review the complete daily topic plan')
+        supplied = json.loads(payload['evidence'])
+        reviews.append(supplied)
+        return reply(json.dumps({'topics': [], 'omitted_items': [
+            {'id': item['id'], 'reason': 'Routine closing remark without later use.'}
+            for item in supplied['supporting_items']
+        ]}))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result, trace = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                        ).summarize_daily_traced(notes, 'a selective daily recap')
+    assert result == NO_CONTENT
+    assert len(reviews) == 3
+    assert trace['omitted_item_count'] == 3 and trace['topic_count'] == 0
+
+
+@pytest.mark.anyio
+async def test_review_without_supporting_facts_cannot_omit_a_hidden_useful_item(tmp_path):
+    key = str(uuid4())
+    notes = [{'id': key, 'text': ('Background. ' * 2600)
+              + f'Remember to collect the bicycle on Monday. [{key}]'}]
+    item_ids = [item['id'] for item in note_items(notes)]
+    topic = {'title': 'Personal updates', 'scope': 'Background and later arrangements',
+             'items': item_ids}
+    reviews = []
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        task = payload['task']
+        if task.startswith('Organize useful recorded'):
+            supplied = json.loads(payload['evidence'])
+            rows = supplied['proposed_topics'] if isinstance(supplied, dict) else supplied
+            selected = [key for row in rows for key in
+                        ([row['id']] if 'id' in row else row['items'])]
+            return reply(json.dumps({'topics': [{**topic, 'items': selected}]}))
+        if task.startswith('Decide whether ONE proposed'):
+            return reply(json.dumps({'split_required': False, 'topics': [topic]}))
+        if task.startswith('Review the complete daily topic plan'):
+            reviews.append(payload)
+            assert 'supporting_items' not in json.loads(payload['evidence'])
+            assert 'preserve EVERY supplied item ID and return no omitted_items' in task
+            if len(reviews) == 1:
+                return reply(json.dumps({'topics': [], 'omitted_items': [
+                    {'id': item, 'reason': 'Only background.'} for item in item_ids
+                ]}))
+            return reply(json.dumps({'topics': [topic]}))
+        return reply(f'Collect the bicycle on Monday. [{key}]')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result, trace = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                        ).summarize_daily_traced(notes, 'a daily recap')
+    assert 'Collect the bicycle on Monday' in result
+    assert len(reviews) == 2 and 'previous plan was invalid' in reviews[1]['task']
+    assert trace['omitted_item_count'] == 0

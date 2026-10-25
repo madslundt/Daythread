@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
                   f"-{SUMMARY_REDUCTION_VERSION}")
-DAY_PROMPT_VERSION = "daily-topics-17-action-scope"
+DAY_PROMPT_VERSION = "daily-topics-18-global-relevance-review"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "

@@ -44,6 +44,28 @@ CHECK = (
     "return the independently useful subjects separately. No summaries or citations."
 )
 
+REVIEW = (
+    "Review the complete daily topic plan for relevance and fragmentation AFTER local split "
+    "checks. Make the final organization global across recordings and speakers. Merge "
+    "overlapping discussions of the same subject, goal or workflow, including recurring "
+    "conference themes such as AI adoption, governance and agent autonomy when their facts "
+    "belong together. Different speakers, sessions, tools and technical aspects do not by "
+    "themselves justify separate daily topics. Keep genuinely independent projects and "
+    "personal arrangements separately findable; shared vocabulary alone is insufficient. "
+    "Keep consequential differences, qualifications and unique useful details inside their "
+    "subject. Do not preserve the draft topic count or impose a numeric limit. "
+    "Reassess incidental background, speaker introductions, routine closing remarks, generic "
+    "networking invitations and opaque fragments; omit these unless the facts establish "
+    "a concrete later use or meaningful personal significance. Preserve explicit requests "
+    "to remember ordinary errands. Never remove useful independent subjects to shorten a list. "
+    "Return only JSON: {\"topics\":[{\"title\":\"specific subject\","
+    "\"scope\":\"what belongs here\",\"items\":[\"n1\",\"n2\"]}],"
+    "\"omitted_items\":[{\"id\":\"n3\","
+    "\"reason\":\"why this item lacks lasting relevance\"}]}. omitted_items is optional. "
+    "Account for EVERY supplied item ID either in topics or in omitted_items with a specific "
+    "reason, never both. Use only supplied IDs. No summaries, citations or Markdown."
+)
+
 
 def note_items(sources):
     allowed = {source['id'] for source in sources} | {
@@ -142,7 +164,30 @@ def parse_plan(answer, known, required=None):
         raise InferenceError('Invalid LLM response') from None
 
 
-async def summarize_daily(inference, sources, *, original_sources=None):
+def parse_review(
+    answer: str, required: set[str], *, allow_omissions: bool = True,
+) -> tuple[list[dict], int]:
+    try:
+        text = re.sub(r'^```(?:json)?\s*|\s*```$', '', answer.strip())
+        value = json.loads(text)
+        if not isinstance(value, dict):
+            raise ValueError()
+        omitted = value.get('omitted_items', [])
+        if not isinstance(omitted, list) or (omitted and not allow_omissions):
+            raise ValueError()
+        rejected = set()
+        for item in omitted:
+            key, reason = item['id'], item['reason']
+            if (not isinstance(key, str) or key not in required or key in rejected
+                    or not isinstance(reason, str) or not reason.strip() or len(reason) > 1000):
+                raise ValueError()
+            rejected.add(key)
+        return parse_plan(answer, required - rejected, required - rejected), len(rejected)
+    except (ValueError, KeyError, TypeError):
+        raise InferenceError('Invalid LLM response') from None
+
+
+async def summarize_daily(inference, sources, purpose='', *, original_sources=None):
     original = sources
     sources, filtering = filter_summary_sources(sources)
     inference.record_summary_filter(filtering, original)
@@ -150,19 +195,23 @@ async def summarize_daily(inference, sources, *, original_sources=None):
     trace = {'model_calls': 0, 'reduction_used': False, 'input_filtering': filtering,
              'final_prompt_source_ids': [], 'organization': 'planned_scoped_topics',
              'writing_evidence': 'original_transcripts' if original_sources is not None
-             else 'prepared_notes'}
+             else 'prepared_notes', 'omitted_item_count': 0}
     if not items:
         return NO_CONTENT, trace
     lookup = {item['id']: item for item in items}
     language = summary_language_instruction(inference.settings.summary_language)
 
-    async def plan(rows, required=None, single_topic=False):
-        task = (CHECK if single_topic else PLAN) + language
-        if required is not None and not single_topic:
+    async def plan(rows, required=None, single_topic=False, final_review=False):
+        task = (REVIEW if final_review else CHECK if single_topic else PLAN) + language
+        if purpose:
+            task += (' Recap requirements for relevance and organization only: ' + purpose
+                     + ' This call is planning only: the JSON schema above takes precedence '
+                     'over any prose or Markdown formatting requested in those requirements.')
+        if required is not None and not single_topic and not final_review:
             task += (' Reconcile these provisional topics across all batches. Preserve EVERY '
                      'selected item ID, while merging related workflows and splitting unrelated '
                      'subjects. Titles and scopes are navigation hints, not additional facts.')
-        payload = rows
+        payload = {'proposed_topics': rows} if final_review else rows
         if required is not None:
             facts = [planning_item(item) for item in items if item['id'] in required]
             if single_topic:
@@ -173,17 +222,28 @@ async def summarize_daily(inference, sources, *, original_sources=None):
                 reviewed = {'proposed_topics': rows, 'supporting_items': facts}
             if len(json.dumps(reviewed, ensure_ascii=False)) <= 24000:
                 payload = reviewed
-            if not single_topic:
+            if not single_topic and not final_review:
                 task += (' Audit the proposed grouping, not just its wording. Merge separate '
                      'latency, locked-file, fetching-status, synchronization and scaling '
                      'topics when the facts establish the same workflow. Keep genuinely '
                      'independent projects findable. Do not preserve a draft topic count.')
+        allow_omissions = isinstance(payload, dict) and 'supporting_items' in payload
+        if final_review and not allow_omissions:
+            task += (' Supporting facts exceed this review context. Merge and reorganize only; '
+                     'preserve EVERY supplied item ID and return no omitted_items. Titles and '
+                     'scopes alone cannot justify discarding an item.')
         for attempt in range(2):
             trace['model_calls'] += 1
             answer = await inference.for_task('summary').generate(
                 task, json.dumps(payload, ensure_ascii=False),
             )
             try:
+                if final_review:
+                    result, omitted = parse_review(
+                        answer, required, allow_omissions=allow_omissions,
+                    )
+                    trace['omitted_item_count'] += omitted
+                    return result
                 if single_topic:
                     raw = answer.strip()
                     if raw.startswith('```'):
@@ -217,7 +277,7 @@ async def summarize_daily(inference, sources, *, original_sources=None):
             required = {key for topic in group for key in topic['items']}
             next_topics.extend(await plan(group, required))
         topics = next_topics
-        if len(groups) == 1:
+        if len(groups) == 1 or not topics:
             break
     else:
         raise InferenceError('Summary reduction exceeded bounded context budget')
@@ -249,6 +309,24 @@ async def summarize_daily(inference, sources, *, original_sources=None):
             seen[key] = len(revised)
             revised.append(child)
     topics = revised
+
+    # Local checks can split two parents into overlapping themes. The last
+    # organizational decision must see the whole plan and can reject incidental
+    # items explicitly instead of turning every provisional detail into a topic.
+    for _ in range(8):
+        groups = batches(topics)
+        reviewed = []
+        for group in groups:
+            required = {key for topic in group for key in topic['items']}
+            reviewed.extend(await plan(group, required, final_review=True))
+        topics = reviewed
+        if len(groups) == 1 or not topics:
+            break
+    else:
+        raise InferenceError('Summary reduction exceeded bounded context budget')
+    if not topics:
+        trace['topic_count'] = 0
+        return NO_CONTENT, trace
 
     async def write(topic):
         selected = [lookup[key] for key in topic['items']]

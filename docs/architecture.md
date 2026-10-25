@@ -265,10 +265,14 @@ accuracy; model grouping and factual qualifications still require review against
 
 Daily synthesis plans organization separately from prose. Prepared notes become individually
 addressable fact items with original source references retained. Citation-free planning copies
-prevent source IDs from distracting topic grouping. A reviewed plan must preserve every selected
+prevent source IDs from distracting topic grouping. A reviewed plan must account for every selected
 item; a focused coherence check splits mixed independent projects while retaining related
-workflow details. Scoped writers receive only their selected supporting items, with at most two
-writers running concurrently. The server renders the final Markdown headings from this plan.
+workflow details. A final whole-day review merges overlapping themes across recordings and can
+explicitly omit incidental items with a reason when their supporting facts fit its context.
+Reviews without those facts preserve every item. The caller's relevance and organization
+requirements reach every planning pass. Scoped writers receive only their selected supporting
+items, with at most two writers running concurrently. The server renders the final Markdown
+headings from this plan.
 Planning has no numeric topic quota. Invalid item references or malformed plans get one repair
 attempt and cannot publish partial results.
 

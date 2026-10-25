@@ -388,7 +388,7 @@ class Inference(Transcription, InferenceUsage):
         self, sources: list[dict], purpose: str, *, original_sources: list[dict] | None = None,
     ) -> tuple[str, dict]:
         from .daily_synthesis import summarize_daily
-        return await summarize_daily(self, sources, original_sources=original_sources)
+        return await summarize_daily(self, sources, purpose, original_sources=original_sources)
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}

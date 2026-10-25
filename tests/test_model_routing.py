@@ -133,7 +133,8 @@ async def test_chat_and_recap_provenance_and_cache_use_the_right_models(tmp_path
 
     def handler(request):
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
-        if payload["task"].startswith(("Organize useful recorded", "Decide whether ONE proposed")):
+        if payload["task"].startswith(("Organize useful recorded", "Decide whether ONE proposed",
+                                       "Review the complete daily topic plan")):
             data = json.loads(payload["evidence"])
             topics = data['proposed_topics'] if isinstance(data, dict) else [{
                 'title': 'Kitchen', 'scope': 'Recorded arrangements',

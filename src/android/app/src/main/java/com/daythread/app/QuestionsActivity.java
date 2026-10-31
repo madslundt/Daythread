@@ -2,6 +2,8 @@ package com.daythread.app;
 
 import android.app.Activity;
 import android.app.DatePickerDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -24,6 +26,7 @@ public final class QuestionsActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ArrayList<TimeLabel> dates = new ArrayList<>();
+    private final Set<String> expandedAnswers = new HashSet<>();
     private record TimeLabel(TextView view, Instant askedAt) {}
     private QuestionsRoute route;
     private QuestionDay day;
@@ -43,7 +46,11 @@ public final class QuestionsActivity extends Activity {
         super.onCreate(saved);
         try { route = QuestionsRoute.parse(saved == null ? getIntent().getStringExtra(ROUTE) : saved.getString(ROUTE, getIntent().getStringExtra(ROUTE))); }
         catch (RuntimeException error) { finish(); return; }
-        if (saved != null) { focused = saved.getBoolean("focused", false); restoredPosition = saved.getInt("scroll_y", 0); }
+        if (saved != null) {
+            focused = saved.getBoolean("focused", false); restoredPosition = saved.getInt("scroll_y", 0);
+            ArrayList<String> expanded = saved.getStringArrayList("expanded_answers");
+            if (expanded != null) expandedAnswers.addAll(expanded);
+        }
         scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(0xfffaf8f4);
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
@@ -62,7 +69,7 @@ public final class QuestionsActivity extends Activity {
         ui.removeCallbacks(clock); ui.post(clock);
     }
     @Override protected void onPause() { active = false; ui.removeCallbacks(poll); ui.removeCallbacks(clock); super.onPause(); }
-    @Override protected void onSaveInstanceState(Bundle out) { out.putBoolean("focused", focused); if (route != null) out.putString(ROUTE, route.json().toString()); if (scroll != null) out.putInt("scroll_y", scroll.getScrollY()); super.onSaveInstanceState(out); }
+    @Override protected void onSaveInstanceState(Bundle out) { out.putBoolean("focused", focused); out.putStringArrayList("expanded_answers", new ArrayList<>(expandedAnswers)); if (route != null) out.putString(ROUTE, route.json().toString()); if (scroll != null) out.putInt("scroll_y", scroll.getScrollY()); super.onSaveInstanceState(out); }
     @Override protected void onDestroy() { ui.removeCallbacksAndMessages(null); io.shutdownNow(); super.onDestroy(); }
 
     private void load() {
@@ -97,6 +104,7 @@ public final class QuestionsActivity extends Activity {
     }
     private void openDay(LocalDate chosen) {
         route = chosen == null ? QuestionsRoute.today(route.destination()) : QuestionsRoute.forDay(route.destination(), chosen);
+        expandedAnswers.clear();
         requestGeneration++; ui.removeCallbacks(poll); loading = false; day = null; focused = false; restoredPosition = -1;
         getIntent().putExtra(ROUTE, route.json().toString()); render(); load();
     }
@@ -153,7 +161,23 @@ public final class QuestionsActivity extends Activity {
                 first = false;
                 TextView label = text(question.question(), 18, INK); label.setTypeface(null, Typeface.BOLD); label.setTextIsSelectable(true); row.addView(label);
                 TextView time = text("", 13, MUTED); time.setPadding(0, dp(4), 0, dp(8)); row.addView(time); dates.add(new TimeLabel(time, question.askedAt()));
-                if (!question.answer().isEmpty()) { TextView answer = text(question.answer(), 16, INK); answer.setTextIsSelectable(true); row.addView(answer); }
+                if (!question.answer().isEmpty()) {
+                    String answerKey = group.rowKey(question);
+                    TextView answer = text(question.answer(), 16, INK);
+                    answerPreview(answer, expandedAnswers.contains(answerKey));
+                    answer.setOnClickListener(view -> {
+                        boolean expanded = !expandedAnswers.remove(answerKey);
+                        if (expanded) expandedAnswers.add(answerKey);
+                        answerPreview(answer, expanded);
+                    });
+                    answer.setOnCreateContextMenuListener((menu, view, info) ->
+                        menu.add(android.R.string.copy).setOnMenuItemClickListener(item -> {
+                            ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+                            if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(null, question.answer()));
+                            return true;
+                        }));
+                    row.addView(answer);
+                }
             }
         }
         updateTimes();
@@ -163,6 +187,12 @@ public final class QuestionsActivity extends Activity {
             else scroll.scrollTo(0, position);
             if (day != null) restoredPosition = -1;
         });
+    }
+    private void answerPreview(TextView answer, boolean expanded) {
+        answer.setMaxLines(expanded ? Integer.MAX_VALUE : 3);
+        answer.setEllipsize(expanded ? null : android.text.TextUtils.TruncateAt.END);
+        answer.setClickable(true);
+        answer.setLongClickable(true);
     }
     private void updateTimes() {
         if (day == null) return;

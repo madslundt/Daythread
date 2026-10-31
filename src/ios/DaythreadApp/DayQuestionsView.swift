@@ -100,11 +100,11 @@ struct DayQuestionsView: View {
             }
             Text(question.question).font(.headline).textSelection(.enabled)
             if let answer = question.answer, !answer.isEmpty {
-                Text(answer).textSelection(.enabled)
+                QuestionAnswerPreview(answer: answer)
             }
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("day-question-" + row.id)
     }
 
@@ -137,6 +137,32 @@ struct DayQuestionsView: View {
                     page = nil; loadedScope = ""
                 }
                 self.error = L10n.error(error)
+            }
+        }
+    }
+}
+
+private struct QuestionAnswerPreview: View {
+    let answer: String
+    @State private var expanded = false
+
+    var body: some View {
+        Button {
+            withAnimation { expanded.toggle() }
+        } label: {
+            Text(answer)
+                .lineLimit(expanded ? nil : 3)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(expanded ? L10n.text("Expanded") : L10n.text("Collapsed"))
+        .accessibilityHint(expanded ? L10n.text("Show less") : L10n.text("Read more"))
+        .contextMenu {
+            Button(L10n.text("Copy"), systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = answer
             }
         }
     }

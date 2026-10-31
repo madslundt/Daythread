@@ -121,4 +121,9 @@
     <string name="click_paused">Recording is paused. This action was not performed.</string>
     <string name="click_unavailable">Capture is unavailable. This action was not performed.</string>
     <string name="click_failed">The click was registered, but the action could not be completed.</string>
+    <plurals name="latest_answer_question_count">
+        <item quantity="one">%1$d question · Latest answer</item>
+        <item quantity="other">%1$d questions · Latest answer</item>
+    </plurals>
+    <string name="no_recent_question_count">%1$d questions · No question found</string>
 </resources>

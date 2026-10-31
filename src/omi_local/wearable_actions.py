@@ -81,7 +81,10 @@ async def generate_wearable_action(memory: Memory, parameters: dict) -> dict:
                                   or row.get("approximate_window") for row in selected),
     }
     if not selected:
-        return result | {"text": "No transcribed speech is available in this window."}
+        text = "No transcribed speech is available in this window."
+        counted = ({"question_count": 0, "question": None, "answer": text}
+                   if action == "answer" else {})
+        return result | {"text": text} | counted
     memory.settings.require_inference("llm")
     if action == "translate":
         language = translation_target(memory, parameters.get("language"))
@@ -90,8 +93,9 @@ async def generate_wearable_action(memory: Memory, parameters: dict) -> dict:
         )
         result["language"] = language
     elif action == "answer":
-        text = await memory.inference.answer_recent(selected)
-        text = validate_citations(text, selected)
+        answer = await memory.inference.answer_recent(selected)
+        text = validate_citations(answer.text, selected)
+        result.update(answer.model_dump())
     else:
         text = await memory.inference.summarize(
             selected, "a concise recap of this recent audio window, suitable for a notification",
@@ -109,6 +113,10 @@ def wearable_notice(result: dict) -> tuple[str, str]:
     title = {"summarize": "Recent audio summary", "answer": "Answer to recent question",
              "translate": "Recent audio translation"}[result["action"]]
     if result["action"] == "answer":
+        count = result.get("question_count")
+        if type(count) is int and 0 <= count <= 1000:
+            noun = "question" if count == 1 else "questions"
+            title = f"{count} {noun} · " + ("Latest answer" if count else "No question found")
         # Keep the question above its answer and preserve literal math operators.
         body = "\n".join(" ".join(line.split()) for line in result["text"].splitlines()
                          if line.strip())

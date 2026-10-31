@@ -14,6 +14,7 @@ from omi_local.api import create_app
 from omi_local.domain import stamp
 from omi_local.generation_jobs import GenerationJobs, GenerationRequest
 from omi_local.inference import Inference
+from omi_local.recent_questions import RecentAnswer
 from omi_local.settings import Settings
 
 END = datetime(2026, 10, 31, 12, tzinfo=UTC)
@@ -61,7 +62,7 @@ class Model:
 
     async def answer_recent(self, sources):
         self.calls.append(("answer", sources))
-        return "What is Spain's capital?\nMadrid."
+        return RecentAnswer(question_count=1, question="What is Spain's capital?", answer="Madrid.")
 
     async def translate(self, text, language):
         self.calls.append(("translate", text, language))
@@ -299,7 +300,7 @@ def test_correction_during_inference_cannot_publish_a_stale_answer(jobs):
 
     async def answer(sources):
         jobs.store.complete(key, "Corrected evidence")
-        return "Stale answer"
+        return RecentAnswer(question_count=1, question="Old question?", answer="Stale answer")
 
     jobs.memory.inference.answer_recent = answer
     body = request()
@@ -315,7 +316,8 @@ def test_answer_prompt_requests_an_answer_and_explicitly_handles_missing_questio
     def respond(req):
         requests.append(json.loads(req.content))
         return httpx.Response(200, json={"choices": [{"message": {
-            "content": "What is Spain's capital?\nMadrid.",
+            "content": json.dumps({"question_count": 1, "question": "What is Spain's capital?",
+                                   "answer": "Madrid."}),
         }}]})
 
     async def answer():
@@ -323,11 +325,11 @@ def test_answer_prompt_requests_an_answer_and_explicitly_handles_missing_questio
             model = Inference(jobs.memory.settings, client)
             return await model.answer_recent([{"id": str(uuid4()), "text": "Spain's capital?"}])
 
-    assert asyncio.run(answer()) == "What is Spain's capital?\nMadrid."
+    assert asyncio.run(answer()).text == "What is Spain's capital?\nMadrid."
     payload = json.loads(requests[0]["messages"][1]["content"])
     assert "Do not summarize" in payload["task"]
     assert "No clear question" in payload["task"]
-    assert "short question on the first line" in payload["task"]
+    assert "latest short question" in payload["task"]
     assert "12 words" in payload["task"]
     assert "80 characters" in payload["task"]
     assert "oldest to newest" in payload["task"]
@@ -345,14 +347,15 @@ def test_recent_question_evidence_keeps_chronological_position_and_capture_times
     def respond(req):
         messages.append(json.loads(req.content))
         return httpx.Response(200, json={"choices": [{"message": {
-            "content": "When did World War II start?\n1 September 1939.",
+            "content": json.dumps({"question_count": 1, "question": "When did World War II start?",
+                                   "answer": "1 September 1939."}),
         }}]})
 
     async def answer():
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             return await Inference(jobs.memory.settings, client).answer_recent(sources)
 
-    assert asyncio.run(answer()).startswith("When did World War II start?")
+    assert asyncio.run(answer()).text.startswith("When did World War II start?")
     payload = json.loads(messages[0]["messages"][1]["content"])
     evidence = json.loads(payload["evidence"])
     assert [row["id"] for row in evidence] == [row["id"] for row in sources]
@@ -364,7 +367,7 @@ def test_recent_question_evidence_keeps_chronological_position_and_capture_times
 @pytest.mark.parametrize("question", ["What is 2+2?", "What is 2*2?"])
 def test_answer_notification_preserves_short_question_above_answer(jobs, question):
     async def answer(_):
-        return question + "\n4"
+        return RecentAnswer(question_count=1, question=question, answer="4")
 
     jobs.memory.inference = Model()
     jobs.memory.inference.answer_recent = answer
@@ -381,15 +384,19 @@ def test_answer_notification_preserves_short_question_above_answer(jobs, questio
     "No clear question was found in the recent audio.",
 ])
 def test_recent_answer_bounds_question_and_preserves_no_question_result(jobs, content):
+    question, separator, answer = content.partition("\n")
+    reply = {"question_count": 1 if separator else 0, "question": question if separator else None,
+             "answer": answer if separator else content}
+
     async def answer():
         async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(
-            200, json={"choices": [{"message": {"content": content}}]},
+            200, json={"choices": [{"message": {"content": json.dumps(reply)}}]},
         ))) as client:
             return await Inference(jobs.memory.settings, client).answer_recent([
                 {"id": str(uuid4()), "text": "Recorded question"},
             ])
 
-    result = asyncio.run(answer())
+    result = asyncio.run(answer()).text
     if "\n" in content:
         question, answer = result.split("\n", 1)
         assert len(question) <= 80

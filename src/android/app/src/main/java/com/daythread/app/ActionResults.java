@@ -36,8 +36,11 @@ final class ActionResults {
                 String state = job.getString("state");
                 if (!state.equals("completed") && !state.equals("failed")) continue;
                 String title = context.getString(state.equals("failed") ? R.string.action_failed : WearableControls.label(WearableAction.stored(saved.getString("action"), WearableAction.NONE)));
-                String body = state.equals("failed") ? job.optString("error", context.getString(R.string.action_failed))
-                    : job.getJson("result").optString("text", job.getJson("result").optString("summary", context.getString(R.string.action_result_ready)));
+                WearableResultPreview preview = state.equals("completed") ? WearableResultPreview.from(saved.getString("action"), job.getJson("result"), context.getString(R.string.action_result_ready)) : null;
+                if (preview != null && preview.questionCount() != null)
+                    title = preview.questionCount() == 0 ? context.getString(R.string.no_recent_question_count, 0)
+                        : context.getResources().getQuantityString(R.plurals.latest_answer_question_count, preview.questionCount(), preview.questionCount());
+                String body = preview == null ? job.optString("error", context.getString(R.string.action_failed)) : preview.text();
                 if (state.equals("completed") && job.getJson("result").has("approximate_window") && job.getJson("result").get("approximate_window").toString().equals("true"))
                     body += "\n\n" + context.getString(R.string.approximate_audio_window);
                 show(context, id, title, body);

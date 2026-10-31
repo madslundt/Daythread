@@ -121,4 +121,9 @@
     <string name="click_paused">Optagelsen er på pause. Handlingen blev ikke udført.</string>
     <string name="click_unavailable">Optagelse er ikke tilgængelig. Handlingen blev ikke udført.</string>
     <string name="click_failed">Klikket blev registreret, men handlingen kunne ikke udføres.</string>
+    <plurals name="latest_answer_question_count">
+        <item quantity="one">%1$d spørgsmål · Seneste svar</item>
+        <item quantity="other">%1$d spørgsmål · Seneste svar</item>
+    </plurals>
+    <string name="no_recent_question_count">%1$d spørgsmål · Intet spørgsmål fundet</string>
 </resources>

@@ -2,12 +2,16 @@
 
 import asyncio
 import json
+import ssl
 import time
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import certifi
 import httpx
 import jwt
-from cryptography.hazmat.primitives import serialization
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from omi_local.notifications import NotificationService
@@ -15,6 +19,41 @@ from omi_local.settings import Settings
 from omi_local.store import Store
 
 TOKEN = "ab" * 32
+
+
+def test_apns_trusts_public_roots_alongside_private_gateway_ca(tmp_path, monkeypatch):
+    private = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "Private gateway")])
+    now = datetime.now(UTC)
+    certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+                   .public_key(private.public_key()).serial_number(x509.random_serial_number())
+                   .not_valid_before(now - timedelta(days=1))
+                   .not_valid_after(now + timedelta(days=1))
+                   .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+                   .sign(private, hashes.SHA256()))
+    ca_file = tmp_path / "gateway.crt"
+    ca_file.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    monkeypatch.setenv("SSL_CERT_FILE", str(ca_file))
+    public_roots = ssl.create_default_context(cafile=certifi.where()).get_ca_certs(binary_form=True)
+    contexts = []
+    client = httpx.AsyncClient
+
+    def capture_client(**kwargs):
+        contexts.append(kwargs.get("verify"))
+        return client(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", capture_client)
+    service = NotificationService(Store(tmp_path), settings(tmp_path))
+    try:
+        context = contexts[0]
+        assert isinstance(context, ssl.SSLContext)
+        roots = context.get_ca_certs(binary_form=True)
+        assert set(public_roots) <= set(roots)
+        assert certificate.public_bytes(serialization.Encoding.DER) in roots
+        assert context.check_hostname
+        assert context.verify_mode == ssl.CERT_REQUIRED
+    finally:
+        asyncio.run(service.close())
 
 
 def event(service, key="recap:1"):
@@ -278,12 +317,14 @@ def test_transcript_deletion_or_correction_purges_notification_previews(tmp_path
     with service.store.connect() as db:
         db.execute("UPDATE audio SET text='original' WHERE id=?", (source,))
     service.store.register_notification_device("phone", TOKEN, "sandbox", False)
-    event(service)
+    service.publish("translation", "Translation ready", "Original words",
+                    {"source_id": source}, "translation:1")
     with service.store.connect() as db:
         db.execute("UPDATE audio SET text='corrected' WHERE id=?", (source,))
     assert service.store.notifications_after(0)["notifications"] == []
     assert service.store.pending_notifications() == []
-    event(service, "recap:2")
+    service.publish("translation", "Translation ready", "Corrected words",
+                    {"source_id": source}, "translation:2")
     service.store.delete_audio(source)
     assert service.store.notifications_after(0)["notifications"] == []
     assert service.store.pending_notifications() == []

@@ -24,22 +24,59 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
  retry_at REAL NOT NULL DEFAULT 0, expires_at REAL NOT NULL,
  PRIMARY KEY(notification_id,device_id)
 );
+CREATE TABLE IF NOT EXISTS notification_sources (
+ notification_id TEXT NOT NULL, source_id TEXT NOT NULL,
+ PRIMARY KEY(notification_id,source_id)
+);
+CREATE INDEX IF NOT EXISTS notification_source ON notification_sources(source_id,notification_id);
+-- This shared relation may predate initialization of the durable generation worker.
+CREATE TABLE IF NOT EXISTS generation_job_sources (
+ job_id TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY(job_id,source_id)
+);
+-- Recover provenance for notices queued before source-scoped invalidation existed.
+INSERT OR IGNORE INTO notification_sources(notification_id,source_id)
+WITH unbound AS MATERIALIZED (
+ SELECT id,kind,target FROM notifications
+ WHERE id NOT IN (SELECT notification_id FROM notification_sources)
+)
+SELECT n.id,s.source_id FROM unbound n JOIN generation_job_sources s
+ ON s.job_id=json_extract(n.target,'$.job_id')
+UNION
+SELECT id,json_extract(target,'$.source_id') FROM unbound
+ WHERE json_extract(target,'$.source_id') IS NOT NULL
+UNION
+SELECT n.id,json_extract(value,'$.id') FROM unbound n
+ JOIN diary d ON d.day=coalesce(json_extract(n.target,'$.day'),json_extract(n.target,'$.date'))
+ CROSS JOIN json_each(json_extract(d.content,'$.sources'))
+ WHERE n.kind='recap' AND json_extract(value,'$.id') IS NOT NULL
+UNION
+SELECT n.id,json_extract(value,'$.id') FROM unbound n
+ JOIN weekly_versions w ON w.id=json_extract(n.target,'$.version_id')
+ CROSS JOIN json_each(json_extract(w.content,'$.sources'))
+ WHERE n.kind='weekly' AND json_extract(value,'$.id') IS NOT NULL;
 CREATE INDEX IF NOT EXISTS notification_due ON notification_deliveries(state,retry_at);
+DROP TRIGGER IF EXISTS notification_removed;
 CREATE TRIGGER IF NOT EXISTS notification_removed AFTER DELETE ON notifications BEGIN
  DELETE FROM notification_deliveries WHERE notification_id=OLD.id;
+ DELETE FROM notification_sources WHERE notification_id=OLD.id;
 END;
 CREATE TRIGGER IF NOT EXISTS notification_device_removed
 AFTER DELETE ON notification_devices BEGIN
  DELETE FROM notification_deliveries WHERE device_id=OLD.id;
 END;
+DROP TRIGGER IF EXISTS notification_source_removed;
 CREATE TRIGGER IF NOT EXISTS notification_source_removed AFTER DELETE ON audio BEGIN
- DELETE FROM notifications;
+ DELETE FROM notifications WHERE id IN (
+ SELECT notification_id FROM notification_sources WHERE source_id=OLD.id);
 END;
+DROP TRIGGER IF EXISTS notification_source_corrected;
 CREATE TRIGGER IF NOT EXISTS notification_source_corrected
-AFTER UPDATE OF text,state,transcript_version ON audio
-WHEN OLD.text IS NOT NULL AND (OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state
- OR OLD.transcript_version IS NOT NEW.transcript_version) BEGIN
- DELETE FROM notifications;
+AFTER UPDATE OF text,state,transcript_version,source_version ON audio
+WHEN OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state
+ OR OLD.transcript_version IS NOT NEW.transcript_version
+ OR OLD.source_version IS NOT NEW.source_version BEGIN
+ DELETE FROM notifications WHERE id IN (
+ SELECT notification_id FROM notification_sources WHERE source_id=OLD.id);
 END;
 """
 
@@ -51,6 +88,23 @@ def public_notification(row) -> dict:
 
 
 class NotificationStore:
+    @staticmethod
+    def _notification_source_ids(db: sqlite3.Connection, kind: str, target: dict) -> set[str]:
+        if target.get("job_id"):
+            return {row["source_id"] for row in db.execute(
+                "SELECT source_id FROM generation_job_sources WHERE job_id=?", (target["job_id"],),
+            )}
+        if target.get("source_id"):
+            return {target["source_id"]}
+        row = None
+        if kind == "recap" and (day := target.get("day") or target.get("date")):
+            row = db.execute("SELECT content FROM diary WHERE day=?", (day,)).fetchone()
+        elif kind == "weekly" and target.get("version_id"):
+            row = db.execute("SELECT content FROM weekly_versions WHERE id=?",
+                             (target["version_id"],)).fetchone()
+        return {source["id"] for source in json.loads(row["content"]).get("sources", [])
+                if source.get("id")} if row else set()
+
     def publish_notification(
         self, kind: str, title: str, body: str, target: dict, event_key: str,
         *, guard: Callable[[sqlite3.Connection], None] | None = None,
@@ -72,6 +126,10 @@ class NotificationStore:
                 "SELECT * FROM notifications WHERE event_key=?", (event_key,)
             ).fetchone()
             if inserted.rowcount:
+                db.executemany("INSERT OR IGNORE INTO notification_sources VALUES(?,?)", [
+                    (row["id"], source_id)
+                    for source_id in self._notification_source_ids(db, kind, target)
+                ])
                 db.execute(
                     "INSERT INTO notification_deliveries(notification_id,device_id,expires_at) "
                     "SELECT ?,id,? FROM notification_devices", (row["id"], time.time() + 86400),

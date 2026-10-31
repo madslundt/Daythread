@@ -4,10 +4,12 @@ import asyncio
 import json
 import logging
 import sqlite3
+import ssl
 import time
 from collections.abc import Callable
 from uuid import UUID
 
+import certifi
 import httpx
 import jwt
 
@@ -21,7 +23,13 @@ logger = logging.getLogger(__name__)
 class APNsSender:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = httpx.AsyncClient(http2=True, timeout=15, follow_redirects=False)
+        # Home gateways may set SSL_CERT_FILE to a private CA. Keep that trust
+        # while also validating Apple's public certificate chain for APNs.
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=certifi.where())
+        self.client = httpx.AsyncClient(
+            http2=True, timeout=15, follow_redirects=False, verify=context,
+        )
         self._jwt = ""
         self._jwt_at = 0.0
         self._credentials = None

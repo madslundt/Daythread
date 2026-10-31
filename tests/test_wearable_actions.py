@@ -232,6 +232,43 @@ def test_source_correction_invalidates_saved_wearable_answer_and_notification(jo
     assert not jobs.store.notifications_after(0)["notifications"]
 
 
+@pytest.mark.parametrize("mutation", ["complete", "correct", "delete"])
+def test_unrelated_transcript_changes_preserve_pending_wearable_result(jobs, mutation):
+    jobs.memory.inference = Model()
+    source(jobs)
+    unrelated = source(jobs, "Unrelated conversation", device="other-device", complete=False)
+    jobs.store.register_notification_device("phone", "ab" * 32, "sandbox", False)
+    body = request()
+    run(jobs, body)
+    jobs.notify_completed()
+    notification = jobs.store.notifications_after(0)["notifications"][0]
+    jobs.store.finish_notification_delivery(notification["id"], "phone", "pending", 1)
+    with jobs.store.connect() as db:
+        original_delivery = dict(db.execute(
+            "SELECT * FROM notification_deliveries WHERE notification_id=?",
+            (notification["id"],),
+        ).fetchone())
+    if mutation == "complete":
+        jobs.store.complete(unrelated, "An unrelated recording finished transcribing")
+    elif mutation == "correct":
+        jobs.store.complete(unrelated, "Original unrelated words")
+        jobs.store.correct_transcript(unrelated, "Corrected unrelated words")
+    else:
+        jobs.store.delete_audio(unrelated)
+    assert jobs.get(str(body.id))["state"] == "completed"
+    assert jobs.store.notifications_after(0)["notifications"] == [notification]
+    with jobs.store.connect() as db:
+        delivery = db.execute("SELECT * FROM notification_deliveries WHERE notification_id=?",
+                              (notification["id"],)).fetchone()
+    assert delivery is not None and delivery["state"] == "pending"
+    assert delivery["attempts"] == 1
+    assert dict(delivery) == original_delivery
+    with jobs.store.connect() as db:
+        db.execute("UPDATE notification_deliveries SET retry_at=0 WHERE notification_id=?",
+                   (notification["id"],))
+    assert [item["id"] for item in jobs.store.pending_notifications()] == [notification["id"]]
+
+
 def test_correction_during_inference_cannot_publish_a_stale_answer(jobs):
     key = source(jobs)
 

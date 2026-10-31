@@ -378,6 +378,18 @@ class PostgresConnection:
 
     def execute(self, statement, parameters=None):
         sql = statement.strip().rstrip(";")
+        if dropped := re.fullmatch(r"DROP TRIGGER IF EXISTS (\w+)", sql, re.I):
+            name = identifier(dropped[1])
+            tables = self.connection.execute(
+                "SELECT DISTINCT event_object_table FROM information_schema.triggers "
+                "WHERE trigger_schema=%s AND trigger_name=%s",
+                (self.database.schema, name),
+            ).fetchall()
+            for table in tables:
+                self.connection.execute(
+                    f'DROP TRIGGER IF EXISTS "{name}" ON "{identifier(table[0])}"'
+                )
+            return self.connection.cursor()
         if re.fullmatch(r"BEGIN(?: IMMEDIATE)?", sql, re.I):
             if "IMMEDIATE" in sql.upper():
                 self._write_lock()

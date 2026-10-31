@@ -19,6 +19,7 @@ public struct OmiReassembler {
     private var fragment: UInt8?
     private var payload = Data()
     public init() {}
+    public var hasPendingFrame: Bool { !payload.isEmpty }
 
     public struct Result {
         public let frame: Data?

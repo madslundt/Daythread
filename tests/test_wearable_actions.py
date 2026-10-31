@@ -330,7 +330,35 @@ def test_answer_prompt_requests_an_answer_and_explicitly_handles_missing_questio
     assert "short question on the first line" in payload["task"]
     assert "12 words" in payload["task"]
     assert "80 characters" in payload["task"]
+    assert "oldest to newest" in payload["task"]
+    assert "Do not answer an older question" in payload["task"]
     assert "general knowledge" in requests[0]["messages"][0]["content"]
+
+
+def test_recent_question_evidence_keeps_chronological_position_and_capture_times(jobs):
+    messages = []
+    sources = [{"id": str(uuid4()), "text": "An earlier clear question?",
+                "started_at": "2026-10-31T12:00:00Z", "ended_at": "2026-10-31T12:00:10Z"},
+               {"id": str(uuid4()), "text": "World War II started when",
+                "started_at": "2026-10-31T12:00:10Z", "ended_at": "2026-10-31T12:00:20Z"}]
+
+    def respond(req):
+        messages.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": "When did World War II start?\n1 September 1939.",
+        }}]})
+
+    async def answer():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await Inference(jobs.memory.settings, client).answer_recent(sources)
+
+    assert asyncio.run(answer()).startswith("When did World War II start?")
+    payload = json.loads(messages[0]["messages"][1]["content"])
+    evidence = json.loads(payload["evidence"])
+    assert [row["id"] for row in evidence] == [row["id"] for row in sources]
+    assert [row["position"] for row in evidence] == [1, 2]
+    assert [row["started_at"] for row in evidence] == [row["started_at"] for row in sources]
+    assert [row["ended_at"] for row in evidence] == [row["ended_at"] for row in sources]
 
 
 @pytest.mark.parametrize("question", ["What is 2+2?", "What is 2*2?"])

@@ -276,6 +276,9 @@ final class AppModel {
     @ObservationIgnored private let playbackDelegate = AudioPlaybackDelegate()
     var playbackStatus = ""
     @ObservationIgnored var store: DurableStore?
+    @ObservationIgnored private var audioCutoffs = WearableAudioCutoff()
+    @ObservationIgnored private var audioCutoffTimeouts: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var audioCutoffExecutions: [UUID: ClickBackgroundExecution] = [:]
     @ObservationIgnored private var uploader: BackgroundUploader?
     @ObservationIgnored private var reassembler = OmiReassembler()
     @ObservationIgnored private var decoder: FrameDecoder?
@@ -655,12 +658,19 @@ final class AppModel {
         self.lastNotification = date
         let result = reassembler.consume(data)
         if result.lost {
+            expireClickAudioCutoffs()
             do { try store?.finish() } catch { failCapture(error); return }
             addGap(start: nextAudioDate ?? date.addingTimeInterval(-0.02), end: date, reason: L10n.source("BLE sequence or fragment loss"), cause: "packet_loss")
             pendingClock = nil; nextAudioDate = nil
             do { decoder = try FrameDecoder(codec: bluetooth.codec ?? -1) } catch { failCapture(error); return }
         }
-        if let frame = result.frame, let clock = pendingClock { record(frame, clock: clock) }
+        if let frame = result.frame, let clock = pendingClock {
+            record(frame, clock: clock)
+            if captureFailure == nil, let store {
+                do { finishClickAudioCutoffs(try audioCutoffs.completedFrame(clock, store: store)) }
+                catch { self.error = L10n.error(error) }
+            }
+        }
         if result.startedFrame {
             if let disconnectedAt {
                 addGap(start: disconnectedAt, end: date, reason: disconnectedCause == "connection" ? L10n.source("Capture disconnected") : L10n.source("Capture disconnected or paused"), cause: disconnectedCause)
@@ -692,6 +702,8 @@ final class AppModel {
         } catch { failCapture(error) }
     }
     func flush() {
+        // Without a following frame boundary a pending tail is incomplete evidence for a click.
+        expireClickAudioCutoffs()
         if let clock = pendingClock, let decoder, let store {
             if let final = reassembler.flush(using: decoder) {
                 append(final.frame, pcm: final.pcm, clock: clock, store: store, codec: decoder.codec)
@@ -705,6 +717,8 @@ final class AppModel {
         do { try store?.finish(); refreshLocal(); uploader?.pump() } catch { failCapture(error) }
     }
     func checkpoint() {
+        // A click cutoff keeps its question context together until the pre-click frame completes.
+        guard audioCutoffs.pendingIDs.isEmpty else { return }
         // Preserve the pending fragmented frame while ending only the fully decoded segment.
         do { try store?.finish(); refreshLocal(); uploader?.pump() } catch { failCapture(error) }
     }
@@ -729,6 +743,7 @@ final class AppModel {
         disconnectedAt = nextAudioDate ?? clock.date(at: ProcessInfo.processInfo.systemUptime); nextAudioDate = nil
         reassembler.reset(); pendingClock = nil
         do { try store?.finish() } catch { self.error = L10n.source("\(self.error ?? "") · Could not close segment: \(L10n.error(error))") }
+        expireClickAudioCutoffs()
         refreshLocal()
     }
     private func button(_ data: Data) {
@@ -770,21 +785,44 @@ final class AppModel {
             uploader?.pump()
             return (pause ? .capturePaused : .captureResumed, nil)
         case .summarize, .answer, .translate:
-            error = nil; checkpoint()
-            if let error { return (.failed(L10n.key(error)), nil) }
+            error = nil
             guard let store else {
                 error = L10n.source("Capture storage unavailable")
                 return (.failed(L10n.text("Capture storage unavailable")), nil)
             }
             do {
-                let jobID = try store.wearableAction(deviceID: bluetooth.identifier, at: end, action: action,
-                                                    durationSeconds: recentAudioSeconds)
+                let tail = reassembler.hasPendingFrame ? pendingClock : nil
+                let jobID = try audioCutoffs.enqueue(store: store, deviceID: bluetooth.identifier, end: end,
+                                                     action: action, durationSeconds: recentAudioSeconds, pendingFrame: tail)
+                if tail != nil { waitForClickAudioTail(jobID) }
                 notice = L10n.source("Recent audio request queued. The result will appear in Notifications.")
                 refreshLocal()
                 return (.queued(action, seconds: recentAudioSeconds), jobID)
             } catch { self.error = L10n.error(error); return (.failed(L10n.error(error)), nil) }
         case .none: return (.noAction, nil)
         }
+    }
+    private func waitForClickAudioTail(_ id: UUID) {
+        let execution = ClickBackgroundExecution(pending: [.submission], maximumSeconds: 2)
+        audioCutoffExecutions[id] = execution
+        execution.onExpiration = { [weak self] in self?.expireClickAudioCutoffs([id]) }
+        audioCutoffTimeouts[id] = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            self?.expireClickAudioCutoffs([id])
+        }
+    }
+    private func expireClickAudioCutoffs(_ ids: Set<UUID>? = nil) {
+        guard let store else { return }
+        do { finishClickAudioCutoffs(try audioCutoffs.expire(ids, store: store)) }
+        catch { self.error = L10n.error(error) }
+    }
+    private func finishClickAudioCutoffs(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            audioCutoffTimeouts.removeValue(forKey: id)?.cancel()
+            audioCutoffExecutions.removeValue(forKey: id)?.complete(.submission)
+        }
+        refreshLocal(); uploader?.pump()
     }
     @discardableResult
     func event(_ action: SemanticAction) -> ClickActionFeedback {

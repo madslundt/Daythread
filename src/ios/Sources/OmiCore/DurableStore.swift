@@ -18,6 +18,8 @@ public struct OutboxItem: Codable, Identifiable {
     public var durationSeconds: Int?
     public var language: String?
     public var audioDependencyIDs: [UUID]?
+    public var awaitingAudioTailAt: Date?
+    public var cutoffGapID: UUID?
     public var userInitiated: Bool?
     public var prioritizesUpload: Bool { kind == .generation || kind == .event || userInitiated == true }
     public var meetingIntent: String?
@@ -97,6 +99,9 @@ public final class DurableStore {
         guard let request = items.first(where: { $0.id == id }), request.destinationID == destinationID,
               request.prioritizesUpload, !request.acknowledged, request.ready, request.retryAt <= date,
               !excluded.contains(id) else { return nil }
+        if let gapID = request.cutoffGapID, let gap = items.first(where: { $0.id == gapID && !$0.acknowledged }) {
+            return gap.ready && gap.retryAt <= date && !excluded.contains(gapID) ? gap : nil
+        }
         let audio = audioDependencies(for: request)
         if !audio.isEmpty {
             return audio.first { $0.ready && $0.retryAt <= date && !excluded.contains($0.id) }
@@ -236,16 +241,54 @@ public final class DurableStore {
     }
     @discardableResult
     public func wearableAction(deviceID: String, at date: Date, action: WearableAction,
-                               durationSeconds: Int, language: String? = nil) throws -> UUID {
+                               durationSeconds: Int, language: String? = nil, awaitingAudioTailAt: Date? = nil) throws -> UUID {
         guard action.usesRecentAudio, ClickControls.durations.contains(durationSeconds) else { throw CaptureError.corruptedStore }
         var item = OutboxItem(id: UUID(), kind: .generation, deviceID: deviceID, capturedAt: date)
-        item.wearableAction = action; item.durationSeconds = durationSeconds; item.language = language; item.ready = true
+        item.wearableAction = action; item.durationSeconds = durationSeconds; item.language = language
+        item.awaitingAudioTailAt = awaitingAudioTailAt; item.ready = awaitingAudioTailAt == nil
+        item.cutoffGapID = awaitingAudioTailAt == nil ? nil : UUID()
         let start = date.addingTimeInterval(-Double(durationSeconds))
         item.audioDependencyIDs = items.filter {
             $0.kind == .audio && $0.destinationID == destinationID && $0.resolvedProfileID == profileID &&
             $0.deviceID == deviceID && $0.capturedAt < date && ($0.endedAt ?? date) > start
         }.map(\.id)
         return try appendMetadata(item)
+    }
+    public func finishWearableAudioCutoffs(_ ids: Set<UUID>, missingTail: Bool) throws {
+        for id in ids {
+            guard let original = items.first(where: { $0.id == id }), original.kind == .generation,
+                  let tail = original.awaitingAudioTailAt, let duration = original.durationSeconds else { continue }
+            var gapID: UUID?
+            if missingTail {
+                let stableID = original.cutoffGapID ?? UUID()
+                if original.cutoffGapID == nil, let index = items.firstIndex(where: { $0.id == id }) {
+                    var prepared = items; prepared[index].cutoffGapID = stableID; try commit(prepared)
+                }
+                if let existing = items.first(where: { $0.id == stableID }) {
+                    guard existing.kind == .gap, existing.destinationID == original.destinationID,
+                          existing.resolvedProfileID == original.resolvedProfileID,
+                          existing.deviceID == original.deviceID, existing.endedAt == original.capturedAt else { throw CaptureError.corruptedStore }
+                    gapID = stableID
+                } else {
+                    var gap = OutboxItem(id: stableID, kind: .gap, deviceID: original.deviceID,
+                                        capturedAt: min(tail, original.capturedAt.addingTimeInterval(-0.001)))
+                    gap.profileID = original.profileID; gap.destinationID = original.destinationID
+                    gap.endedAt = original.capturedAt; gap.reason = AppLocalization.source("Incomplete final BLE frame discarded")
+                    gap.cause = "incomplete_frame"; gap.ready = true
+                    gapID = try appendMetadata(gap, preserveOwnership: true)
+                }
+            }
+            guard let index = items.firstIndex(where: { $0.id == id }) else { continue }
+            let start = original.capturedAt.addingTimeInterval(-Double(duration))
+            var updated = items
+            updated[index].audioDependencyIDs = items.filter {
+                $0.kind == .audio && $0.ready && $0.destinationID == original.destinationID &&
+                $0.resolvedProfileID == original.resolvedProfileID && $0.deviceID == original.deviceID &&
+                $0.capturedAt < original.capturedAt && ($0.endedAt ?? original.capturedAt) > start
+            }.map(\.id)
+            updated[index].awaitingAudioTailAt = nil; updated[index].cutoffGapID = gapID; updated[index].ready = true
+            try commit(updated)
+        }
     }
     private func metadata(_ item: OutboxItem) throws -> Data {
         var body: [String: Any]
@@ -274,10 +317,9 @@ public final class DurableStore {
         if item.kind == .gap, let cause = item.cause { body["cause"] = cause }
         return try JSONSerialization.data(withJSONObject: body, options: .sortedKeys)
     }
-    private func appendMetadata(_ original: OutboxItem) throws -> UUID {
+    private func appendMetadata(_ original: OutboxItem, preserveOwnership: Bool = false) throws -> UUID {
         var item = original
-        item.profileID = profileID
-        item.destinationID = destinationID
+        if !preserveOwnership { item.profileID = profileID; item.destinationID = destinationID }
         let body = try metadata(item)
         let updated = items + [item]
         let indexBytes = try encoder.encode(updated).count
@@ -354,6 +396,8 @@ public final class DurableStore {
             } catch { items[index].error = AppLocalization.source("Recovery requires attention: \(error.localizedDescription)") }
         }
         try save()
+        let interrupted = Set(items.filter { $0.kind == .generation && !$0.ready && $0.awaitingAudioTailAt != nil }.map(\.id))
+        try finishWearableAudioCutoffs(interrupted, missingTail: true)
     }
     /// Uses the same archive and time window as playback, including acknowledged buffer audio.
     public func canRewind(minutes: Int, end: Date) -> Bool {

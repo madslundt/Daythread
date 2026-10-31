@@ -20,7 +20,7 @@ public final class Outbox {
         this.directory = directory;
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot open recording storage");
     }
-    public record Item(String id, String kind, Destination destination, Json data, File file, boolean clickPriority) {}
+    public record Item(String id, String kind, Destination destination, Json data, File file, boolean clickPriority, List<String> audioDependencies) {}
     public synchronized boolean hasPending() throws IOException {
         for (File file : files()) if (file.getName().endsWith(".json")) return true;
         return false;
@@ -42,10 +42,17 @@ public final class Outbox {
                 for (int i = 0; i < array.length(); i++) endpoints.add(array.getString(i));
                 String kind = json.getString("kind");
                 if (!Set.of("audio", "event", "gap", "state", "generation").contains(kind)) throw new IOException("Unknown queued item");
+                if (json.has("awaiting_audio") && Boolean.TRUE.equals(json.get("awaiting_audio"))) continue;
                 File audio = new File(directory, id + ".wav");
                 if (kind.equals("audio") && !audio.isFile()) throw new IOException("Queued audio is missing");
                 boolean clickPriority = json.has("click_priority") && Boolean.TRUE.equals(json.get("click_priority"));
-                items.add(new Item(id, kind, new Destination(endpoints, json.getString("profile")), json.getJson("data"), audio, clickPriority));
+                List<String> dependencies = null;
+                if (json.has("audio_dependencies")) {
+                    dependencies = new ArrayList<>(); JsonArray arrayIDs = json.getJsonArray("audio_dependencies");
+                    for (int i = 0; i < arrayIDs.length(); i++) dependencies.add(UUID.fromString(arrayIDs.getString(i)).toString());
+                    dependencies = List.copyOf(dependencies);
+                }
+                items.add(new Item(id, kind, new Destination(endpoints, json.getString("profile")), json.getJson("data"), audio, clickPriority, dependencies));
             } catch (RuntimeException e) { throw new IOException("Cannot read saved recording details; files were preserved", e); }
         }
         items.sort(Comparator.comparing((Item item) -> item.kind.equals("generation")
@@ -69,6 +76,7 @@ public final class Outbox {
             for (Item audio : chronological) {
                 if (!audio.kind.equals("audio") || !audio.destination.equals(request.destination)
                     || !audio.data.getString("device_id").equals(device)) continue;
+                if (request.audioDependencies != null && !request.audioDependencies.contains(audio.id)) continue;
                 if (Instant.parse(audio.data.getString("started_at")).isBefore(end)
                     && Instant.parse(audio.data.getString("ended_at")).isAfter(start))
                     plan.putIfAbsent(audio.id, audio);
@@ -100,14 +108,65 @@ public final class Outbox {
         return enqueue(kind, destination, data, false);
     }
     public synchronized String enqueue(String kind, Destination destination, Json data, boolean clickPriority) throws IOException {
+        return enqueue(kind, destination, data, clickPriority, false);
+    }
+    public synchronized String stageRecentAction(Destination destination, Json request) throws IOException {
+        return stageRecentAction(destination, request, null);
+    }
+    public synchronized String stageRecentAction(Destination destination, Json request, Instant prefixEnd) throws IOException {
+        return enqueue("generation", destination, request, false, true, prefixEnd);
+    }
+    private String enqueue(String kind, Destination destination, Json data, boolean clickPriority, boolean awaitingAudio) throws IOException {
+        return enqueue(kind, destination, data, clickPriority, awaitingAudio, null);
+    }
+    private String enqueue(String kind, Destination destination, Json data, boolean clickPriority, boolean awaitingAudio, Instant prefixEnd) throws IOException {
         checkSpace(8192);
         String id = UUID.randomUUID().toString();
         String key = switch (kind) { case "event" -> "event_id"; case "gap" -> "gap_id"; case "generation" -> "id"; default -> null; };
         if (key != null) data.put(key, id);
         Json saved = manifest(id, kind, destination, data);
         if (clickPriority) saved.put("click_priority", true);
+        if (awaitingAudio) {
+            Json parameters = data.getJson("parameters"); Instant end = Instant.parse(parameters.getString("end"));
+            Instant start = prefixEnd != null && prefixEnd.isBefore(end) ? prefixEnd : end.minusMillis(20);
+            String gapID = UUID.nameUUIDFromBytes((id + ":pending-audio").getBytes(StandardCharsets.UTF_8)).toString();
+            saved.put("awaiting_audio", true).put("pending_audio_gap", new Json().put("gap_id", gapID)
+                .put("device_id", parameters.getString("device_id")).put("started_at", start.toString()).put("ended_at", end.toString())
+                .put("cause", "incomplete_frame").put("reason", "The final pre-click audio frame was unavailable when this request was released"));
+        }
+        else if (kind.equals("generation")) freezeDependencies(saved, destination);
         atomic(new File(directory, id + ".json"), saved.toString().getBytes(StandardCharsets.UTF_8));
         return id;
+    }
+    private void freezeDependencies(Json saved, Destination destination) throws IOException {
+        Json parameters = saved.getJson("data").getJson("parameters");
+        Instant end = Instant.parse(parameters.getString("end")), start = end.minusSeconds(parameters.getInt("duration_seconds"));
+        ArrayList<String> dependencies = new ArrayList<>();
+        for (Item audio : pending()) if (audio.kind.equals("audio") && audio.destination.equals(destination)
+            && audio.data.getString("device_id").equals(parameters.getString("device_id"))
+            && Instant.parse(audio.data.getString("started_at")).isBefore(end)
+            && Instant.parse(audio.data.getString("ended_at")).isAfter(start)) dependencies.add(audio.id);
+        saved.put("audio_dependencies", new JsonArray(dependencies));
+    }
+    public synchronized void releaseRecentAction(String id) throws IOException {
+        releaseRecentAction(id, false);
+    }
+    public synchronized void releaseRecentAction(String id, boolean incomplete) throws IOException {
+        UUID.fromString(id);
+        File file = new File(directory, id + ".json");
+        Json saved = new Json(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+        if (!id.equals(saved.getString("id")) || !"generation".equals(saved.getString("kind"))) throw new IOException("Queued request identity is inconsistent");
+        if (!saved.has("awaiting_audio") || !Boolean.TRUE.equals(saved.get("awaiting_audio"))) return;
+        ArrayList<String> endpoints = new ArrayList<>(); JsonArray origins = saved.getJsonArray("endpoints");
+        for (int i = 0; i < origins.length(); i++) endpoints.add(origins.getString(i));
+        Destination destination = new Destination(endpoints, saved.getString("profile"));
+        freezeDependencies(saved, destination);
+        if (incomplete && saved.has("pending_audio_gap")) {
+            Json gap = saved.getJson("pending_audio_gap"); String gapID = gap.getString("gap_id");
+            atomic(new File(directory, gapID + ".json"), manifest(gapID, "gap", destination, gap).toString().getBytes(StandardCharsets.UTF_8));
+        }
+        saved.put("awaiting_audio", false);
+        atomic(file, saved.toString().getBytes(StandardCharsets.UTF_8));
     }
     public synchronized void acknowledge(Item item, Json receipt, String responseProfile) throws IOException {
         Receipt.validate(item, receipt, responseProfile);
@@ -156,6 +215,11 @@ public final class Outbox {
         for (File file : files()) if (file.getName().endsWith(".wav") || file.getName().endsWith(".frames")) {
             String id = file.getName().substring(0, file.getName().lastIndexOf('.'));
             if (!new File(directory, id + ".json").exists() && !new File(directory, id + ".capture").exists()) Files.delete(file.toPath());
+        }
+        // A process restart commits the recovered decoded prefix before releasing its job.
+        if (openWriters.isEmpty()) for (File file : files()) if (file.getName().endsWith(".json")) {
+            Json saved = new Json(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            if (saved.has("awaiting_audio") && Boolean.TRUE.equals(saved.get("awaiting_audio"))) releaseRecentAction(saved.getString("id"), true);
         }
         return recovered;
     }

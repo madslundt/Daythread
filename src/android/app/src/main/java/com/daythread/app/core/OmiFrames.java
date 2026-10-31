@@ -8,9 +8,12 @@ import io.github.jaredmdobson.concentus.OpusDecoder;
 import io.github.jaredmdobson.concentus.OpusException;
 
 public final class OmiFrames {
-    private Integer previous, fragment;
+    private Integer previous, fragment, frameSequence;
     private final ByteArrayOutputStream payload = new ByteArrayOutputStream();
-    public record Result(byte[] frame, boolean lost, boolean started) {}
+    public record Result(byte[] frame, boolean lost, boolean started, Integer completedSequence) {
+        public Result(byte[] frame, boolean lost, boolean started) { this(frame, lost, started, null); }
+    }
+    public Integer pendingSequence() { return payload.size() == 0 ? null : frameSequence; }
 
     public Result consume(byte[] packet) {
         if (packet.length <= 3 || packet.length > 8195) { reset(); return new Result(null, true, false); }
@@ -18,20 +21,21 @@ public final class OmiFrames {
         if (previous != null && sequence == previous) return new Result(null, false, false);
         boolean lost = previous != null && sequence != ((previous + 1) & 65535);
         previous = sequence;
-        if (lost) { payload.reset(); fragment = null; }
+        if (lost) { payload.reset(); fragment = null; frameSequence = null; }
         if (index == 0) {
             byte[] completed = payload.size() == 0 ? null : payload.toByteArray();
-            payload.reset(); payload.write(packet, 3, packet.length - 3); fragment = 0;
-            return new Result(completed, lost, true);
+            Integer completedSequence = frameSequence;
+            payload.reset(); payload.write(packet, 3, packet.length - 3); fragment = 0; frameSequence = sequence;
+            return new Result(completed, lost, true, completedSequence);
         }
         if (fragment == null || fragment == 255 || index != fragment + 1 || payload.size() + packet.length - 3 > 8192) {
-            payload.reset(); fragment = null; return new Result(null, true, false);
+            payload.reset(); fragment = null; frameSequence = null; return new Result(null, true, false);
         }
         payload.write(packet, 3, packet.length - 3); fragment = index;
         return new Result(null, lost, false);
     }
     public byte[] flush() { byte[] frame = payload.size() == 0 ? null : payload.toByteArray(); reset(); return frame; }
-    public void reset() { previous = null; fragment = null; payload.reset(); }
+    public void reset() { previous = null; fragment = null; frameSequence = null; payload.reset(); }
 
     public static final class Decoder {
         private final int codec;

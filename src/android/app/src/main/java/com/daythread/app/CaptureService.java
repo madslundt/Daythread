@@ -11,6 +11,7 @@ import com.daythread.app.core.*;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class CaptureService extends Service {
@@ -30,6 +31,8 @@ public final class CaptureService extends Service {
     private OmiFrames.Decoder decoder;
     private int omiCodec;
     private final OmiFrames frames = new OmiFrames();
+    private record PendingAudioTail(int sequence, Instant end, Runnable timeout) {}
+    private final LinkedHashMap<String, PendingAudioTail> pendingRecentAudio = new LinkedHashMap<>();
     private Instant frameStarted, lastEnd, missingSince;
     private Instant wall;
     private long uptime;
@@ -223,6 +226,7 @@ public final class CaptureService extends Service {
             public void disconnected() {
                 if (generation != inputGeneration) return;
                 try {
+                    finishRecentAudio(null, true);
                     closeChunk(); frames.reset(); decoder = null;
                     releaseWakeLock();
                     if (missingSince == null) missingSince = lastEnd == null ? now() : lastEnd;
@@ -243,6 +247,7 @@ public final class CaptureService extends Service {
                 try {
                     OmiFrames.Result result = frames.consume(bytes);
                     if (result.lost()) {
+                        finishRecentAudio(null, true);
                         closeChunk(); gapCause = "packet_loss"; discontinuity = true;
                         if (missingSince == null) missingSince = lastEnd == null ? now() : lastEnd;
                         decoder = null;
@@ -257,6 +262,7 @@ public final class CaptureService extends Service {
                             captureState("capturing", "resumed");
                         }
                         append(pcm, result.frame(), start);
+                        if (result.completedSequence() != null) finishRecentAudio(result.completedSequence(), false);
                     }
                     if (result.started()) frameStarted = now();
                 } catch (Exception e) { fail(e); }
@@ -280,6 +286,21 @@ public final class CaptureService extends Service {
         if (writer == null) return;
         lastEnd = writer.end(); writer.close(); writer = null;
         UploadJob.schedule(this); UploadJob.pump(this);
+    }
+    private void finishRecentAudio(Integer sequence, boolean incomplete) throws IOException {
+        ArrayList<String> ready = new ArrayList<>();
+        for (var entry : pendingRecentAudio.entrySet())
+            if (sequence == null || entry.getValue().sequence == sequence) ready.add(entry.getKey());
+        if (ready.isEmpty()) return;
+        synchronized (outbox) {
+            closeChunk();
+            for (String id : ready) {
+                PendingAudioTail tail = pendingRecentAudio.get(id);
+                outbox.releaseRecentAction(id, incomplete);
+                handler.removeCallbacks(tail.timeout); pendingRecentAudio.remove(id);
+            }
+        }
+        UploadJob.pump(this); UploadJob.schedule(this);
     }
     private void captureState(String state, String cause) throws IOException {
         outbox.enqueue("state", destination, new Json().put("phone_id", AppState.phone(this)).put("occurred_at", now().toString()).put("state", state).put("cause", cause), prioritizingClickState);
@@ -314,6 +335,7 @@ public final class CaptureService extends Service {
                 boolean resume = !captureAllowed();
                 // Keep the BLE subscription alive while paused so the same click can resume.
                 if (!resume) closeChunk();
+                finishRecentAudio(null, true);
                 controlPaused = !resume;
                 if (!CapturePolicy.manual(this, resume, bluetoothSource ? "omi" : "microphone")) throw new IOException(getString(R.string.click_failed));
                 frames.reset(); frameStarted = null; missingSince = null;
@@ -329,11 +351,21 @@ public final class CaptureService extends Service {
                     fatal || stopped || stopRequested ? ClickFeedback.Outcome.FAILED : ClickFeedback.Outcome.ACCEPTED, wasCapturing, null);
             } else if (action.recentAudio()) {
                 Instant end = now();
-                closeChunk();
+                Integer tail = bluetoothSource && captureAllowed() ? frames.pendingSequence() : null;
+                if (tail == null) closeChunk();
                 // The worker takes this same lock for its queue snapshot. Post the receipt
                 // before allowing an in-flight uploader to see and complete the job.
                 synchronized (outbox) {
-                    String id = outbox.enqueue("generation", destination, action.request(seconds, end, device));
+                    Json request = action.request(seconds, end, device);
+                    Instant prefixEnd = writer != null ? writer.end() : frameStarted;
+                    String id = tail == null ? outbox.enqueue("generation", destination, request) : outbox.stageRecentAction(destination, request, prefixEnd);
+                    if (tail != null) {
+                        Runnable timeout = () -> {
+                            try { finishRecentAudio(tail, true); } catch (Exception e) { fail(e); }
+                        };
+                        pendingRecentAudio.put(id, new PendingAudioTail(tail, end, timeout));
+                        handler.postDelayed(timeout, 1000);
+                    }
                     ClickNotifications.show(this, clickCode, action, seconds, ClickFeedback.Outcome.ACCEPTED, wasCapturing, id);
                 }
                 update(getString(R.string.action_queued));
@@ -375,6 +407,7 @@ public final class CaptureService extends Service {
                 catch (Exception e) { gap(lastEnd == null ? now().minusMillis(20) : lastEnd, now(), "incomplete_frame"); }
             }
             closeChunk();
+            finishRecentAudio(null, true);
             if (missingSince != null && destination != null) { gap(missingSince, now(), gapCause); missingSince = null; }
             if (destination != null && outbox != null) captureState(fatal ? "blocked" : "paused", fatal ? "unknown" : "user_pause");
         } catch (Exception e) { AppState.error(this, e.getMessage()); }

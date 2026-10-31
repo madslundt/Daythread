@@ -82,4 +82,18 @@ public class BackendTest {
             assertArrayEquals(first.body, retry.body); assertEquals(684, first.body.length); assertTrue(item.file().exists());
         }
     }
+    @Test public void wearableRequestsPostStableJobsAndRequireMatchingReceipt() throws Exception {
+        try (Server server = new Server(r -> new Reply(200, new Json(new String(r.body, StandardCharsets.UTF_8)).put("state", "queued"), "default"))) {
+            Outbox outbox = new Outbox(temporary.newFolder());
+            String id = outbox.enqueue("generation", new Destination(List.of(server.origin()), "default"),
+                WearableAction.TRANSLATE.request(30, Instant.parse("2026-10-31T10:00:00Z"), "omi-test"));
+            Backend.upload(outbox, outbox.pending().get(0));
+            Request request = server.requests.poll(1, TimeUnit.SECONDS);
+            assertTrue(request.line.startsWith("POST /v1/jobs "));
+            Json body = new Json(new String(request.body, StandardCharsets.UTF_8));
+            assertEquals(id, body.getString("id"));
+            assertEquals("translate", body.getJson("parameters").getString("action"));
+            assertTrue(outbox.pending().isEmpty());
+        }
+    }
 }

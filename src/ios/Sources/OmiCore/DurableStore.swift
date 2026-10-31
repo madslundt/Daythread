@@ -1,7 +1,7 @@
 import Foundation
 
 public struct OutboxItem: Codable, Identifiable {
-    public enum Kind: String, Codable { case audio, event, gap, captureState }
+    public enum Kind: String, Codable { case audio, event, gap, captureState, generation }
     public let id: UUID
     public let kind: Kind
     public let deviceID: String
@@ -14,6 +14,9 @@ public struct OutboxItem: Codable, Identifiable {
     public var codec: Int?
     public var clock: CaptureClock?
     public var action: SemanticAction?
+    public var wearableAction: WearableAction?
+    public var durationSeconds: Int?
+    public var language: String?
     public var meetingIntent: String?
     public var meetingID: UUID?
     public var meetingMaxMinutes: Int?
@@ -79,6 +82,19 @@ public final class DurableStore {
     deinit { try? source?.close() }
     public var pending: [OutboxItem] { items.filter { !$0.acknowledged && $0.ready }.sorted { $0.capturedAt < $1.capturedAt } }
     public func pending(destinationID: String) -> [OutboxItem] { pending.filter { $0.destinationID == destinationID } }
+    /// A recent-audio job must wait for its original audio, including chunks in retry backoff.
+    public func nextUpload(destinationID: String, at date: Date = Date()) -> OutboxItem? {
+        pending(destinationID: destinationID).first { item in
+            guard item.retryAt <= date else { return false }
+            guard item.kind == .generation, let duration = item.durationSeconds else { return true }
+            let start = item.capturedAt.addingTimeInterval(-Double(duration))
+            return !items.contains { audio in
+                audio.kind == .audio && !audio.acknowledged && audio.destinationID == item.destinationID &&
+                audio.resolvedProfileID == item.resolvedProfileID && audio.capturedAt < item.capturedAt &&
+                (audio.endedAt ?? item.capturedAt) > start
+            }
+        }
+    }
     /// Upgrade only unscoped legacy records, before accepting another account or backend.
     public func bindLegacyDestination(_ identity: String) throws {
         guard items.contains(where: { $0.destinationID == nil }) else { return }
@@ -196,9 +212,22 @@ public final class DurableStore {
         item.captureState = state; item.cause = cause; item.ready = true
         return try appendMetadata(item)
     }
+    @discardableResult
+    public func wearableAction(deviceID: String, at date: Date, action: WearableAction,
+                               durationSeconds: Int, language: String? = nil) throws -> UUID {
+        guard action.usesRecentAudio, ClickControls.durations.contains(durationSeconds) else { throw CaptureError.corruptedStore }
+        var item = OutboxItem(id: UUID(), kind: .generation, deviceID: deviceID, capturedAt: date)
+        item.wearableAction = action; item.durationSeconds = durationSeconds; item.language = language; item.ready = true
+        return try appendMetadata(item)
+    }
     private func metadata(_ item: OutboxItem) throws -> Data {
         var body: [String: Any]
-        if item.kind == .captureState {
+        if item.kind == .generation {
+            guard let action = item.wearableAction, action.usesRecentAudio, let duration = item.durationSeconds else { throw CaptureError.corruptedStore }
+            var parameters: [String: Any] = ["action": action.rawValue, "duration_seconds": duration, "end": Self.stamp(item.capturedAt), "device_id": item.deviceID]
+            if action == .translate, let language = item.language { parameters["language"] = language }
+            body = ["id": item.id.uuidString.lowercased(), "kind": "wearable_action", "parameters": parameters]
+        } else if item.kind == .captureState {
             guard let state = item.captureState, let cause = item.cause else { throw CaptureError.corruptedStore }
             body = ["phone_id": item.deviceID, "occurred_at": Self.stamp(item.capturedAt), "state": state, "cause": cause]
         } else if item.kind == .event {
@@ -299,10 +328,25 @@ public final class DurableStore {
         }
         try save()
     }
+    /// Uses the same archive and time window as playback, including acknowledged buffer audio.
+    public func canRewind(minutes: Int, end: Date) -> Bool {
+        rewindAudio(minutes: minutes, end: end).contains {
+            FileManager.default.fileExists(atPath: file($0.id, extension: "wav").path)
+        }
+    }
+
+    private func rewindAudio(minutes: Int, end: Date) -> [OutboxItem] {
+        let start = end.addingTimeInterval(-Double(max(1, min(60, minutes)) * 60))
+        return items.filter {
+            $0.destinationID == destinationID && $0.resolvedProfileID == profileID && $0.kind == .audio
+                && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start
+        }
+    }
+
     public func rewind(minutes: Int, end: Date) throws -> (url: URL, gaps: Int) {
         let duration = max(1, min(60, minutes)) * 60
         let start = end.addingTimeInterval(-Double(duration))
-        let audio = items.filter { $0.destinationID == destinationID && $0.resolvedProfileID == profileID && $0.kind == .audio && $0.ready && $0.capturedAt < end && ($0.endedAt ?? $0.capturedAt) > start }
+        let audio = rewindAudio(minutes: minutes, end: end)
         guard !audio.isEmpty else { throw CaptureError.invalidAudio(AppLocalization.source("No local audio in this window")) }
         var output = Data(count: duration * 32000); var spans: [(Date, Date)] = []
         for item in audio {

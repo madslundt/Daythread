@@ -80,7 +80,7 @@ struct ChatWelcomeView: View {
                 .frame(width: 64, height: 64).background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.text("Ask your days.")).font(.system(.largeTitle, design: .serif).weight(.medium))
+                Text(L10n.text("Ask your days.")).font(.largeTitle.weight(.bold))
                 Text(L10n.text("Explore a conversation, decision, or commitment. Answers link back to your recorded evidence."))
                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }

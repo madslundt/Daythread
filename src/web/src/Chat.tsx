@@ -158,11 +158,12 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
   }
   return (
     <div className="chat-layout">
-      <aside className="chat-index">
-        <div className="chat-index-heading">
+      <details className="chat-index">
+        <summary className="chat-index-heading">
           <h2>{t("Conversations")}</h2>
           {sessions.data?.items.length ? <span aria-label={t("{value0} saved conversations", { value0: sessions.data.items.length })}>{sessions.data.items.length}</span> : null}
-        </div>
+          <Icon name="chevron-right" size={16} />
+        </summary>
         <button
           type="button"
           className="button"
@@ -196,7 +197,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
         {!sessions.loading && !sessions.error && !sessions.data?.items.length ? (
           <p className="caption">{t("Your conversations will appear here. They stay on your home-core.")}</p>
         ) : null}
-      </aside>
+      </details>
       <section className="conversation-panel" aria-label={t("Conversation")}>
         <div className="chat-scope">
           <label>

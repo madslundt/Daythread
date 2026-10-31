@@ -51,10 +51,11 @@ struct InboxView: View {
     var body: some View {
         let _ = interfaceLocale
         List {
-            Section {
-                EditorialTitle(eyebrow: L10n.text("Follow through"), title: L10n.text("Keep things moving.")).editorialRow()
-                if let day { Text(day).font(.subheadline).foregroundStyle(.secondary) }
-                if filters.isFiltered { Text(L10n.text("Only recordings matching every selected filter are included.")).font(.caption).foregroundStyle(.secondary) }
+            if day != nil || filters.isFiltered {
+                Section {
+                    if let day { Text(day).font(.subheadline).foregroundStyle(.secondary) }
+                    if filters.isFiltered { Text(L10n.text("Only recordings matching every selected filter are included.")).font(.caption).foregroundStyle(.secondary) }
+                }
             }
             Section {
                 Picker(L10n.text("Show"), selection: $status) {
@@ -116,7 +117,7 @@ struct InboxView: View {
             } header: { Text(L10n.text("Recording coverage")) } footer: {
                 Text(L10n.text("Proposals come from your recorded conversations and need your review."))
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Inbox")).navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Inbox")).navigationBarTitleDisplayMode(.large)
             .task(id: queryKey) { page = nil; items = []; error = nil; await load() }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }

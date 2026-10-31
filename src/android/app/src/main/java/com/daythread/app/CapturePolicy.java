@@ -21,9 +21,9 @@ final class CapturePolicy {
         return AppState.preferences(context).getBoolean("recording_override", false)
             ? AppState.preferences(context).getString("recording_manual_source", source(context)) : source(context);
     }
-    static void manual(Context context, boolean enabled, String source) {
+    static boolean manual(Context context, boolean enabled, String source) {
         liveEnabled = enabled;
-        AppState.preferences(context).edit().putBoolean("microphone_enabled", enabled)
+        return AppState.preferences(context).edit().putBoolean("microphone_enabled", enabled)
             .putBoolean("recording_override", true).putString("recording_manual_source", source).commit();
     }
     static void follow(Context context) {

@@ -18,7 +18,7 @@ struct TimelineRecordingGroups: View {
             if !group["recording_id"].text.isEmpty {
                 MergedRecordingView(group: group, day: day, onCorrect: onCorrect)
             } else if group["recording_count"].integer == 1 {
-                SourceList(sources: sourcesWithHints(group["sources"].array, timeline: timeline), onCorrect: onCorrect, onSelect: onSelect)
+                SourceList(sources: sourcesWithHints(group["sources"].array, timeline: timeline), showsDate: false, onCorrect: onCorrect, onSelect: onSelect)
             } else {
                 TimelineRecordingSession(group: group, day: day, query: query, zoneID: zoneID, tagID: tagID, timeline: timeline, onCorrect: onCorrect, onSelect: onSelect)
             }
@@ -65,7 +65,7 @@ private struct TimelineRecordingSession: View {
             DisclosureGroup(L10n.text("Full recording & tools"), isExpanded: $toolsExpanded) {
                 if toolsExpanded {
                     SourceList(
-                        sources: sourcesWithHints(sources, timeline: timeline),
+                        sources: sourcesWithHints(sources, timeline: timeline), showsDate: false,
                         onCorrect: { Task { await load(reset: true) }; onCorrect?() },
                         onSelect: onSelect
                     )

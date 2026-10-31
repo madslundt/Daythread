@@ -34,12 +34,10 @@ struct DayFilterSection: View {
                 }
             }.accessibilityIdentifier("day.filters")
             if scope.isFiltered {
-                Text(L10n.text("Only recordings matching every selected filter are included.")).font(.caption).foregroundStyle(.secondary)
                 Button(L10n.text("Clear filters"), action: clear)
             }
-        } header: { Text(L10n.text("Day filters")) } footer: {
-            Text(L10n.text("Filters apply to the recap, highlights, topics, and timeline."))
-            if scope.isFiltered { Text(L10n.text("Chat and quick rewind use the whole day.")) }
+        } footer: {
+            if scope.isFiltered { Text(L10n.text("Only recordings matching every selected filter are included.")) }
         }
     }
 }

@@ -51,7 +51,8 @@ describe("transcribed recording recap display", () => {
   it("keeps the saved cutoff visible beside newly pending recordings", () => {
     resource.data = { ...resource.data!, included_through: "2026-10-15T12:35:00Z", deferred_conversations: 2, deferred_sources: 2 };
     const html = render();
-    expect(html).toContain("Includes transcribed recordings through Oct 15, 2026, 2:35 PM");
+    expect(html).toContain("Includes transcribed recordings through 14:35");
+    expect(html).not.toContain("Oct 15, 2026");
     expect(html).toContain("Some recordings are awaiting upload or transcription.");
   });
   it("explains irrelevant fragments without implying their recordings were deleted", () => {

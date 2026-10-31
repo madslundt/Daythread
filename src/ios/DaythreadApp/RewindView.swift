@@ -23,9 +23,6 @@ struct RewindView: View {
         let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: L10n.text("Catch up"), title: L10n.text("What did I miss?")).editorialRow()
-            }
-            Section {
                 Stepper(minutes == 1 ? L10n.text("Last \(minutes) minute") : L10n.text("Last \(minutes) minutes"), value: $minutes, in: 1...60)
                     .disabled(loading).accessibilityIdentifier("rewind.minutes")
                 Toggle(L10n.text("Include a quick recap"), isOn: $summarize).disabled(loading)
@@ -90,7 +87,7 @@ struct RewindView: View {
                     }
                 }
             }
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Rewind")).navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Rewind")).navigationBarTitleDisplayMode(.large)
             .onChange(of: minutes) { _, _ in clear() }
             .onChange(of: summarize) { _, _ in clear() }
             .onChange(of: model.archiveIdentity + model.archiveRevision) { _, _ in clear() }

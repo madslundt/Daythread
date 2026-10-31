@@ -9,8 +9,6 @@ import android.media.*;
 import android.os.*;
 import com.daythread.app.core.*;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,6 +44,14 @@ public final class CaptureService extends Service {
     private String address;
     private int inputGeneration;
     private boolean policyWaiting;
+    private boolean controlPaused;
+    private final Runnable actionPoll = new Runnable() {
+        @Override public void run() {
+            if (stopped || stopRequested) return;
+            UploadJob.pump(CaptureService.this);
+            handler.postDelayed(this, 10000);
+        }
+    };
     private final Runnable scheduleTick = this::checkPolicy;
     private final AlarmManager.OnAlarmListener policyAlarm = this::checkPolicy;
     private final BroadcastReceiver clockChanged = new BroadcastReceiver() {
@@ -79,21 +85,22 @@ public final class CaptureService extends Service {
     }
     private void releaseWakeLock() { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); }
     private void reconcilePolicy() throws IOException {
-        if (!policy.enabled()) { finish(); return; }
+        if (policy.enabled() && captureAllowed()) controlPaused = false;
+        if (!policy.enabled() && !controlPaused) { finish(); return; }
         if (!captureAllowed()) {
             if (!policyWaiting) { captureState("paused", "user_pause"); policyWaiting = true; }
             recording.set(false);
             if (microphone != null && readerStarted) {
                 try { microphone.stop(); } catch (IllegalStateException ignored) { }
             }
-            if (omi != null) {
+            if (omi != null && !controlPaused) {
                 inputGeneration++;
                 OmiConnection previous = omi; omi = null; previous.close();
                 frames.reset(); decoder = null; frameStarted = null; missingSince = null;
                 closeChunk(); discontinuity = true; lastEnd = null;
             }
             if (!readerStarted) releaseWakeLock();
-            if (writer == null) update(getString(R.string.schedule_waiting));
+            if (writer == null) update(getString(controlPaused ? R.string.capture_paused_controls : R.string.schedule_waiting));
             return;
         }
         policyWaiting = false;
@@ -122,6 +129,7 @@ public final class CaptureService extends Service {
         if ("reconnect".equals(action)) { if (active) handler.post(() -> { if (omi != null) omi.reconnect(); }); else stopSelf(); return START_NOT_STICKY; }
         if ("stop".equals(action)) { CapturePolicy.manual(this, false, CapturePolicy.source(this)); handler.post(this::finish); return START_NOT_STICKY; }
         if ("mark".equals(action) || "meeting_toggle".equals(action)) { handler.post(() -> event(action)); return START_NOT_STICKY; }
+        if ("capture_toggle".equals(action)) { handler.post(() -> perform(WearableAction.CAPTURE)); return START_NOT_STICKY; }
         if (active) return START_NOT_STICKY;
         active = true; status = getString(R.string.starting_capture);
         boolean bluetooth = "omi".equals(action);
@@ -140,6 +148,7 @@ public final class CaptureService extends Service {
                 wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Daythread:Capture");
                 wakeLock.setReferenceCounted(false);
                 checkPolicy();
+                handler.post(actionPoll);
             } catch (Exception e) { fail(e); }
         });
         return START_NOT_STICKY; // Android must never silently restart microphone capture after process death.
@@ -208,7 +217,7 @@ public final class CaptureService extends Service {
         missingSince = now();
         omi = new OmiConnection(this, address, handler, new OmiConnection.Listener() {
             public void codec(int codec) throws Exception { if (generation != inputGeneration) return; omiCodec = codec; decoder = new OmiFrames.Decoder(codec); frames.reset(); }
-            public void status(String text) { if (generation == inputGeneration) update(text); }
+            public void status(String text) { if (generation == inputGeneration) update(controlPaused ? getString(R.string.capture_paused_controls) : text); }
             public void failure(Exception error) { if (generation == inputGeneration) fail(error); }
             public void disconnected() {
                 if (generation != inputGeneration) return;
@@ -221,9 +230,12 @@ public final class CaptureService extends Service {
                 } catch (Exception e) { fail(e); }
             }
             public void button(byte[] bytes) {
-                if (generation != inputGeneration || !captureAllowed() || bytes.length < 4) return;
-                int code = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
-                if (code == 1) event("mark"); else if (code == 2) event("meeting_toggle");
+                if (generation != inputGeneration || stopped || stopRequested) return;
+                int click = WearableAction.clickCode(bytes);
+                if (click != 0) {
+                    OmiHaptic.forClick(click).ifPresent(preset -> { if (omi != null) omi.vibrate(preset); });
+                    perform(WearableControls.resolve(CaptureService.this, bytes), click);
+                }
             }
             public void audio(byte[] bytes) {
                 if (generation != inputGeneration || decoder == null || !captureAllowed()) return;
@@ -278,12 +290,57 @@ public final class CaptureService extends Service {
             .put("ended_at", end.toString()).put("cause", cause).put("reason", "Android capture interruption"));
     }
     private void event(String action) {
-        if (!active || !captureAllowed() || destination == null) return;
+        try { enqueueEvent(action); } catch (Exception e) { fail(e); }
+    }
+    private boolean enqueueEvent(String action) throws IOException {
+        if (!active || !captureAllowed() || destination == null) return false;
+        // The backend replays the raw gestures and enforces cooldown/minimum duration once.
+        outbox.enqueue("event", destination, new Json().put("device_id", device).put("occurred_at", now().toString()).put("action", action));
+        UploadJob.pump(this); UploadJob.schedule(this); return true;
+    }
+    private void perform(WearableAction action) { perform(action, 0); }
+    private void perform(WearableAction action, int clickCode) {
+        int seconds = WearableControls.duration(this);
+        boolean wasCapturing = captureAllowed();
+        if (!active || stopRequested || stopped || destination == null) {
+            ClickNotifications.show(this, clickCode, action, seconds, ClickFeedback.Outcome.UNAVAILABLE, wasCapturing, null); return;
+        }
+        if (action == WearableAction.NONE) {
+            ClickNotifications.show(this, clickCode, action, seconds, ClickFeedback.Outcome.ACCEPTED, wasCapturing, null); return;
+        }
         try {
-            // The backend replays the raw gestures and enforces cooldown/minimum duration once.
-            outbox.enqueue("event", destination, new Json().put("device_id", device).put("occurred_at", now().toString()).put("action", action));
-            UploadJob.pump(this); UploadJob.schedule(this);
-        } catch (Exception e) { fail(e); }
+            if (action == WearableAction.CAPTURE) {
+                boolean resume = !captureAllowed();
+                // Keep the BLE subscription alive while paused so the same click can resume.
+                if (!resume) closeChunk();
+                controlPaused = !resume;
+                if (!CapturePolicy.manual(this, resume, bluetoothSource ? "omi" : "microphone")) throw new IOException(getString(R.string.click_failed));
+                frames.reset(); frameStarted = null; missingSince = null;
+                if (decoder != null) decoder = new OmiFrames.Decoder(omiCodec);
+                discontinuity = true; lastEnd = null;
+                checkPolicy();
+                ClickNotifications.show(this, clickCode, action, seconds,
+                    fatal || stopped || stopRequested ? ClickFeedback.Outcome.FAILED : ClickFeedback.Outcome.ACCEPTED, wasCapturing, null);
+            } else if (action.recentAudio()) {
+                Instant end = now();
+                closeChunk();
+                // The worker takes this same lock for its queue snapshot. Post the receipt
+                // before allowing an in-flight uploader to see and complete the job.
+                synchronized (outbox) {
+                    String id = outbox.enqueue("generation", destination, action.request(seconds, end, device));
+                    ClickNotifications.show(this, clickCode, action, seconds, ClickFeedback.Outcome.ACCEPTED, wasCapturing, id);
+                }
+                update(getString(R.string.action_queued));
+                UploadJob.pump(this); UploadJob.schedule(this);
+            } else {
+                boolean accepted = enqueueEvent(action.value);
+                ClickNotifications.show(this, clickCode, action, seconds,
+                    accepted ? ClickFeedback.Outcome.ACCEPTED : ClickFeedback.Outcome.PAUSED, wasCapturing, null);
+            }
+        } catch (Exception e) {
+            ClickNotifications.show(this, clickCode, action, seconds, ClickFeedback.Outcome.FAILED, wasCapturing, null);
+            fail(e);
+        }
     }
     private void fail(Exception e) {
         fatal = true; AppState.error(this, e.getMessage() == null ? getString(R.string.capture_failed) : e.getMessage()); finish();
@@ -291,6 +348,7 @@ public final class CaptureService extends Service {
     private void finish() {
         if (stopRequested) return;
         stopRequested = true; recording.set(false); cancelPolicyCheck();
+        handler.removeCallbacks(actionPoll);
         if (microphone != null && readerStarted) {
             try { microphone.stop(); } catch (RuntimeException e) { AppState.error(this, e.getMessage()); }
             return; // The read thread drains its final buffer, then posts finishTail.

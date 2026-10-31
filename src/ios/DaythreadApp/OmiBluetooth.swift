@@ -9,6 +9,8 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     static let codecID = CBUUID(string: "19b10002-e8f2-537e-4f6c-d104768a1214")
     static let buttonService = CBUUID(string: "23ba7924-0000-1000-7450-346eac492e92")
     static let buttonID = CBUUID(string: "23ba7925-0000-1000-7450-346eac492e92")
+    static let hapticService = CBUUID(string: "CAB1AB95-2EA5-4F4D-BB56-874B72CFC984")
+    static let hapticID = CBUUID(string: "CAB1AB96-2EA5-4F4D-BB56-874B72CFC984")
     var status = L10n.source("Bluetooth starting")
     var devices: [CBPeripheral] = []
     var connected = false
@@ -19,11 +21,16 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     var firmware = L10n.source("Unknown")
     var name = "Omi"
     var buttonAvailable = false
+    private(set) var hapticAvailable = false
     var identifier: String { peripheral?.identifier.uuidString ?? "iphone" }
     var captureEnabled = false { didSet { if oldValue != captureEnabled { updateAudioSubscription() } } }
     @ObservationIgnored private var manager: CBCentralManager!
     @ObservationIgnored private var peripheral: CBPeripheral?
     @ObservationIgnored private var audio: CBCharacteristic?
+    @ObservationIgnored private var haptic: CBCharacteristic?
+    @ObservationIgnored private var pendingHapticCompletions: [@MainActor () -> Void] = []
+    @ObservationIgnored private var hapticWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var hapticFaulted = false
     @ObservationIgnored var onAudio: ((Data, Date, TimeInterval) -> Void)?
     @ObservationIgnored var onButton: ((Data) -> Void)?
     @ObservationIgnored var onDisconnect: (() -> Void)?
@@ -32,6 +39,10 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     @ObservationIgnored private var wanted = true
     @ObservationIgnored private var capabilityFailure = false
     @ObservationIgnored private var pendingSubscriptions: Set<CBUUID> = []
+    @ObservationIgnored private var pendingReads: Set<CBUUID> = []
+    @ObservationIgnored private var pendingCharacteristicDiscovery: Set<CBUUID> = []
+    @ObservationIgnored private var discoveryRecovery = OmiDiscoveryRecovery()
+    @ObservationIgnored private var discoveryWatchdog: Task<Void, Never>?
     @ObservationIgnored private var scanTimeout: Task<Void, Never>?
 
     override init() {
@@ -68,8 +79,16 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         UserDefaults.standard.set(device.identifier.uuidString, forKey: "pairedDevice")
         manager.connect(device, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
     }
+    func playHaptic(_ duration: OmiHapticDuration, completion: @escaping @MainActor () -> Void = {}) {
+        guard let command = duration.command, wanted, connected,
+              let peripheral, peripheral.state == .connected,
+              let haptic, hapticAvailable, haptic.properties.contains(.write) else { completion(); return }
+        pendingHapticCompletions.append(completion)
+        peripheral.writeValue(command, for: haptic, type: .withResponse)
+        armHapticWatchdog()
+    }
     func disconnect() {
-        wanted = false; stopScan()
+        wanted = false; stopScan(); cancelDiscoveryRecovery(); finishPendingHaptics()
         if let peripheral { manager.cancelPeripheralConnection(peripheral) }
         UserDefaults.standard.removeObject(forKey: "pairedDevice")
     }
@@ -116,11 +135,76 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         configure(peripheral)
     }
     private func configure(_ device: CBPeripheral) {
-        guard !connected || peripheral?.identifier != device.identifier else { return }
+        if connected, peripheral?.identifier == device.identifier {
+            // Cached services can already exist while their discovery callbacks have stalled.
+            consumeCachedCapabilities(device)
+            finishDiscoveryIfReady()
+            return
+        }
         clearCapabilities(); capabilityFailure = false
         peripheral = device; device.delegate = self; connected = true
         name = device.name ?? "Omi"; status = L10n.source("Reading device capabilities")
-        device.discoverServices([Self.audioService, Self.buttonService, CBUUID(string: "180F"), CBUUID(string: "180A")])
+        discoveryRecovery.start(at: ProcessInfo.processInfo.systemUptime)
+        discoverCapabilities(device)
+        armDiscoveryWatchdog()
+    }
+    private var initialSetupReady: Bool {
+        audio != nil && codec != nil && (!captureEnabled || audio?.isNotifying == true) && buttonAvailable
+    }
+    private func discoverCapabilities(_ device: CBPeripheral) {
+        // A full rediscovery recovered the verified connected-but-uninitialized hardware state.
+        device.discoverServices(nil)
+        consumeCachedCapabilities(device)
+    }
+    private func consumeCachedCapabilities(_ device: CBPeripheral) {
+        for service in device.services ?? [] {
+            if service.characteristics?.isEmpty == false {
+                consumeCharacteristics(device, service: service, authoritative: false)
+            }
+            discoverCharacteristics(device, service: service)
+        }
+    }
+    private func discoverCharacteristics(_ device: CBPeripheral, service: CBService) {
+        guard !capabilityFailure, !pendingCharacteristicDiscovery.contains(service.uuid) else { return }
+        pendingCharacteristicDiscovery.insert(service.uuid)
+        device.discoverCharacteristics(nil, for: service)
+    }
+    private func cancelDiscoveryRecovery() {
+        discoveryWatchdog?.cancel(); discoveryWatchdog = nil; discoveryRecovery.cancel()
+    }
+    private func finishDiscoveryIfReady() {
+        if initialSetupReady { cancelDiscoveryRecovery() }
+    }
+    private func armDiscoveryWatchdog() {
+        discoveryWatchdog?.cancel(); discoveryWatchdog = nil
+        guard let deadline = discoveryRecovery.retryAt, let peripheral else { return }
+        let deviceID = peripheral.identifier
+        let delay = max(0.01, deadline - ProcessInfo.processInfo.systemUptime)
+        discoveryWatchdog = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self, wanted, connected, !capabilityFailure,
+                  let peripheral = self.peripheral, peripheral.identifier == deviceID,
+                  peripheral.state == .connected else { return }
+            discoveryWatchdog = nil
+            switch discoveryRecovery.advance(at: ProcessInfo.processInfo.systemUptime, ready: initialSetupReady) {
+            case .retry:
+                // Retry only incomplete work. Healthy audio and its decoder remain untouched.
+                if codec == nil { pendingReads.remove(Self.codecID) }
+                if audio?.isNotifying != true { pendingSubscriptions.remove(Self.audioID) }
+                if !buttonAvailable { pendingSubscriptions.remove(Self.buttonID) }
+                pendingCharacteristicDiscovery.removeAll()
+                discoverCapabilities(peripheral)
+            case .exhausted:
+                if !buttonAvailable {
+                    let detail = L10n.text("Button notifications") + ": " + L10n.text("Not discovered")
+                    onError?(L10n.source("BLE subscription: \(detail)"))
+                } else {
+                    onError?(L10n.source("Cannot read Omi services: \(L10n.text("Not discovered"))"))
+                }
+            case .wait: break
+            }
+            armDiscoveryWatchdog()
+        }
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier else { return }
@@ -140,12 +224,30 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         if connected { onDisconnect?() }
         connected = false; scanning = false; clearCapabilities()
     }
+    private func armHapticWatchdog() {
+        guard hapticWatchdog == nil, !pendingHapticCompletions.isEmpty else { return }
+        hapticWatchdog = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            guard let self else { return }
+            // Late acknowledgements cannot be correlated safely with another write.
+            hapticFaulted = true; hapticAvailable = false
+            finishPendingHaptics()
+        }
+    }
+    private func finishPendingHaptics() {
+        hapticWatchdog?.cancel(); hapticWatchdog = nil
+        let completions = pendingHapticCompletions; pendingHapticCompletions.removeAll()
+        for completion in completions { completion() }
+    }
     private func clearCapabilities() {
+        finishPendingHaptics()
         audio = nil; codec = nil; buttonAvailable = false; battery = nil
+        haptic = nil; hapticAvailable = false; hapticFaulted = false
         model = L10n.source("Unknown"); firmware = L10n.source("Unknown"); pendingSubscriptions.removeAll()
+        pendingReads.removeAll(); pendingCharacteristicDiscovery.removeAll(); cancelDiscoveryRecovery()
     }
     private func failCapabilities(_ message: String) {
-        capabilityFailure = true; status = message; onError?(message)
+        cancelDiscoveryRecovery(); finishPendingHaptics(); capabilityFailure = true; status = message; onError?(message)
         if let peripheral { manager.cancelPeripheralConnection(peripheral) }
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
@@ -154,39 +256,55 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         guard peripheral.services?.contains(where: { $0.uuid == Self.audioService }) == true else {
             failCapabilities(L10n.source("This device does not expose the Omi audio service. Choose another device.")); return
         }
-        for service in peripheral.services ?? [] { peripheral.discoverCharacteristics(nil, for: service) }
+        consumeCachedCapabilities(peripheral)
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
+        pendingCharacteristicDiscovery.remove(service.uuid)
         if let error {
             if service.uuid == Self.audioService { failCapabilities(L10n.source("Cannot read Omi audio capabilities: \(L10n.error(error))")) }
             else { onError?(L10n.error(error)) }
             return
         }
+        consumeCharacteristics(peripheral, service: service, authoritative: true)
+    }
+    private func consumeCharacteristics(_ peripheral: CBPeripheral, service: CBService, authoritative: Bool) {
         if service.uuid == Self.audioService {
             let characteristics = service.characteristics ?? []
             guard characteristics.contains(where: { $0.uuid == Self.audioID && canNotify($0) }),
                   characteristics.contains(where: { $0.uuid == Self.codecID && $0.properties.contains(.read) }) else {
-                failCapabilities(L10n.source("Omi requires an audio notification characteristic and a readable codec.")); return
+                if authoritative { failCapabilities(L10n.source("Omi requires an audio notification characteristic and a readable codec.")) }
+                return
             }
         }
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
             case Self.audioID: audio = characteristic
+            case Self.hapticID:
+                if !hapticFaulted, service.uuid == Self.hapticService, characteristic.properties.contains(.write) {
+                    haptic = characteristic; hapticAvailable = true
+                }
             case Self.buttonID:
                 if canNotify(characteristic) {
                     buttonAvailable = characteristic.isNotifying
                     subscribe(true, to: characteristic)
                 }
             case Self.codecID, CBUUID(string: "2A19"), CBUUID(string: "2A24"), CBUUID(string: "2A26"):
-                if characteristic.properties.contains(.read) { peripheral.readValue(for: characteristic) }
+                let needsRead = characteristic.uuid == Self.codecID ? codec == nil
+                    : characteristic.uuid == CBUUID(string: "2A19") ? battery == nil
+                    : characteristic.uuid == CBUUID(string: "2A24") ? model == L10n.source("Unknown")
+                    : firmware == L10n.source("Unknown")
+                if needsRead, characteristic.properties.contains(.read), !pendingReads.contains(characteristic.uuid) {
+                    pendingReads.insert(characteristic.uuid)
+                    peripheral.readValue(for: characteristic)
+                }
                 if characteristic.uuid == CBUUID(string: "2A19"), canNotify(characteristic) {
                     subscribe(true, to: characteristic)
                 }
             default: break
             }
         }
-        updateAudioSubscription()
+        updateAudioSubscription(); finishDiscoveryIfReady()
     }
     private func updateAudioSubscription() {
         guard let audio, !capabilityFailure else { return }
@@ -214,9 +332,22 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
             status = characteristic.isNotifying ? L10n.source("Receiving audio") : L10n.source("Capture paused")
             updateAudioSubscription()
         }
+        finishDiscoveryIfReady()
+    }
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard self.peripheral?.identifier == peripheral.identifier, characteristic.uuid == Self.hapticID, !hapticFaulted else { return }
+        hapticWatchdog?.cancel(); hapticWatchdog = nil
+        if let error {
+            hapticFaulted = true; hapticAvailable = false
+            finishPendingHaptics(); onError?(L10n.error(error))
+        } else {
+            if !pendingHapticCompletions.isEmpty { pendingHapticCompletions.removeFirst()() }
+            armHapticWatchdog()
+        }
     }
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
+        pendingReads.remove(characteristic.uuid)
         if let error {
             if characteristic.uuid == Self.codecID || characteristic.uuid == Self.audioID { failCapabilities(L10n.source("Omi audio read failed: \(L10n.error(error))")) }
             else { onError?(L10n.error(error)) }
@@ -231,7 +362,10 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         case Self.buttonID: onButton?(data)
         case Self.codecID:
             guard let id = data.first else { failCapabilities(L10n.source("Omi returned no codec")); return }
-            codec = Int(id); onCodec?(Int(id)); updateAudioSubscription()
+            let changed = codec != Int(id)
+            codec = Int(id)
+            if changed { onCodec?(Int(id)) }
+            updateAudioSubscription(); finishDiscoveryIfReady()
         case CBUUID(string: "2A19"): battery = data.first.map(Int.init)
         case CBUUID(string: "2A24"): model = String(data: data, encoding: .utf8) ?? L10n.source("Unknown")
         case CBUUID(string: "2A26"): firmware = String(data: data, encoding: .utf8) ?? L10n.source("Unknown")

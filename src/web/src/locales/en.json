@@ -2906,5 +2906,12 @@
   "Weekly recap did not contain a supported overview": "Weekly recap did not contain a supported overview",
   "Weekly recap did not contain a readable overview": "Weekly recap did not contain a readable overview",
   "Weekly recap exceeded the five-minute reading limit": "Weekly recap exceeded the five-minute reading limit",
-  "Weekly recap evidence changed; retry the recap": "Weekly recap evidence changed; retry the recap"
+  "Weekly recap evidence changed; retry the recap": "Weekly recap evidence changed; retry the recap",
+  "Recent audio summary": "Recent audio summary",
+  "Answer to recent question": "Answer to recent question",
+  "Recent audio translation": "Recent audio translation",
+  "No transcribed speech is available in this window.": "No transcribed speech is available in this window.",
+  "LLM busy retry enabled": "LLM busy retry enabled",
+  "The local model is temporarily busy; work stays queued": "The local model is temporarily busy; work stays queued",
+  "Filters": "Filters"
 }

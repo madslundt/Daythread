@@ -55,6 +55,16 @@ describe("Today recording activity", () => {
     expect(render({ ...status, phones: [{ ...phone, capture_source: undefined }] })).toContain("Recording in progress");
   });
 
+  it("explains long AI tasks with current part progress and hides it after a failed refresh", () => {
+    const value: Status = { ...status, generation: { queued: 0, running: 1,
+      stages: { organizing: 1 }, active: [{ id: "topics", stage: "organizing",
+        completed_chunks: 2, total_chunks: 8, elapsed_seconds: 340 }] } };
+    const html = render(value);
+    expect(html).toContain("Organizing recording topics · 2 of 8 chunks complete · 340 sec elapsed");
+    expect(html).toContain('value="2" max="8"');
+    expect(render(value, "Offline")).not.toContain("2 of 8 chunks complete");
+  });
+
   it("keeps queued work visible when the worker is stopped without presenting old transcription as active", () => {
     const html = render({ ...status, worker_running: false });
     expect(html).toContain("Recordings: 4 queued · 1 processing");

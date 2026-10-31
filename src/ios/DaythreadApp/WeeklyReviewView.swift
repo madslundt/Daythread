@@ -47,7 +47,7 @@ struct WeeklyReviewView: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L10n.text("A little perspective")).font(.caption.weight(.medium)).foregroundStyle(Theme.accent)
-                    Text(L10n.text("Your week, considered.")).font(.system(.largeTitle, design: .serif).weight(.medium))
+                    Text(L10n.text("Your week, considered.")).font(.system(.largeTitle, weight: .bold).weight(.medium))
                     Text(L10n.text("Decisions, commitments, and conversations worth coming back to.")).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
             }.listRowBackground(Color.clear)

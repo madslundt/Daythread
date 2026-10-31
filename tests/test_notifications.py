@@ -124,6 +124,7 @@ def test_apns_signing_payload_routing_and_size(tmp_path):
             assert request.headers["apns-topic"] == "com.example.daythread"
             assert request.headers["apns-push-type"] == "alert"
             assert request.headers["apns-id"] == delivery["id"]
+            assert request.headers["apns-collapse-id"] == delivery["id"]
             token = request.headers["authorization"].removeprefix("bearer ")
             assert jwt.get_unverified_header(token)["kid"] == "KLMNOPQRST"
             assert jwt.decode(token, private.public_key(), algorithms=["ES256"])["iss"] == (
@@ -141,6 +142,44 @@ def test_apns_signing_payload_routing_and_size(tmp_path):
         await service.deliver_pending()
         with service.store.connect() as db:
             assert db.execute("SELECT state FROM notification_deliveries").fetchone()[0] == "sent"
+        await service.close()
+
+    asyncio.run(scenario())
+
+
+def test_wearable_result_replaces_phone_confirmation_using_original_job_identity(tmp_path):
+    async def scenario():
+        service = NotificationService(Store(tmp_path), settings(tmp_path))
+        service.store.register_notification_device("phone", TOKEN, "sandbox", False)
+        first_job, second_job = uuid4(), uuid4()
+        first = service.publish("wearable_action", "Summary ready", "First summary",
+                                {"job_id": str(first_job).upper()}, "job:1")
+        second = service.publish("wearable_action", "Answer ready", "Second answer",
+                                 {"job_id": str(second_job)}, "job:2")
+        legacy = service.publish("wearable_action", "Ready", "Older result",
+                                 {"job_id": "invalid-id"}, "job:legacy")
+        expected = {
+            first["id"]: "wearable-action:" + str(first_job),
+            second["id"]: "wearable-action:" + str(second_job),
+            legacy["id"]: legacy["id"],
+        }
+        seen = []
+
+        def response(request):
+            payload = json.loads(request.content)
+            event_id = payload["notification"]["id"]
+            assert request.headers["apns-id"] == event_id
+            assert request.headers["apns-collapse-id"] == expected[event_id]
+            assert len(request.headers["apns-collapse-id"].encode()) <= 64
+            seen.append(event_id)
+            return httpx.Response(200)
+
+        service.sender.authorization = lambda: "test-token"
+        await service.sender.client.aclose()
+        service.sender.client = httpx.AsyncClient(transport=httpx.MockTransport(response))
+        for delivery in service.store.pending_notifications():
+            assert await service.sender.send(delivery, "default") == (200, "")
+        assert set(seen) == set(expected)
         await service.close()
 
     asyncio.run(scenario())

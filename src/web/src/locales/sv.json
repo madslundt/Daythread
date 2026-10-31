@@ -2906,5 +2906,12 @@
   "Weekly recap did not contain a supported overview": "Veckoöversikten innehöll ingen översikt med stöd i källorna",
   "Weekly recap did not contain a readable overview": "Veckoöversikten innehöll ingen läsbar översikt",
   "Weekly recap exceeded the five-minute reading limit": "Veckoöversikten överskred gränsen på fem minuters läsning",
-  "Weekly recap evidence changed; retry the recap": "Källorna för veckoöversikten har ändrats; försök skapa den igen"
+  "Weekly recap evidence changed; retry the recap": "Källorna för veckoöversikten har ändrats; försök skapa den igen",
+  "Recent audio summary": "Sammanfattning av senaste ljudet",
+  "Answer to recent question": "Svar på senaste frågan",
+  "Recent audio translation": "Översättning av senaste ljudet",
+  "No transcribed speech is available in this window.": "Det finns inget transkriberat tal i det här tidsintervallet.",
+  "LLM busy retry enabled": "Nya försök när LLM är upptagen är aktiverade",
+  "The local model is temporarily busy; work stays queued": "Den lokala modellen är tillfälligt upptagen; arbetet ligger kvar i kön",
+  "Filters": "Filter"
 }

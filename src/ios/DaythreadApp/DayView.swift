@@ -81,12 +81,12 @@ struct DayView: View {
     private func dayContent(scroll: ScrollViewProxy) -> some View {
         List {
             Section {
-                DayQuickActions(importAudio: { sheet = .importAudio }, rewind: { destination = .rewind }, ask: { destination = .chat(dayKey) }, showsDayChat: !filters.isFiltered)
-                    .editorialRow()
-                CaptureGlance().editorialRow()
+                DayCalendarPicker(selectedDate: $selectedDate)
+                if diary.dayKey(day) == diary.dayKey(model.now) { CaptureGlance() }
             }
-            Section { DayCalendarPicker(selectedDate: $selectedDate) }
-            DayFilterSection(scope: filters, tags: tags, zones: zones, open: { sheet = .filters }, clear: { tagID = ""; zoneID = "" })
+            if filters.isFiltered {
+                DayFilterSection(scope: filters, tags: tags, zones: zones, open: { sheet = .filters }, clear: { tagID = ""; zoneID = "" })
+            }
             if cached && loadedRecordingKey == cacheKey {
                 Label(L10n.text("Saved on this iPhone · pull to refresh"), systemImage: "internaldrive")
                     .font(.caption).foregroundStyle(.secondary).editorialRow()
@@ -94,7 +94,7 @@ struct DayView: View {
             recapSection(scroll: scroll)
             DayAtGlanceSections(day: dayKey, topicSources: currentFocus?.sourceIDs, topicPassages: currentFocus?.passages ?? [],
                 topicVersions: currentFocus?.versions ?? [:], filters: filters, topicTitle: currentFocus?.displayTitle ?? currentFocus?.title,
-                contentLanguage: currentContentLanguage)
+                contentLanguage: currentContentLanguage, compact: true)
                 .id(scopeKey + (currentFocus?.id ?? "day"))
             Section {
                 if total > 0 || !query.isEmpty || !zoneID.isEmpty || !tagID.isEmpty {
@@ -155,15 +155,26 @@ struct DayView: View {
             }
         }
         .listStyle(.insetGrouped).omiScreen()
-        .navigationTitle(L10n.text("Today"))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(selectedDate == nil ? L10n.text("Today") : L10n.text("Your day"))
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Image("DaythreadMark").resizable().scaledToFit().frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityLabel("Daythread")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { InboxView() } label: { Image(systemName: "tray").accessibilityLabel(L10n.text("Open inbox")) }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { sheet = .importAudio } label: { Image(systemName: "plus") }
+                    .accessibilityLabel(L10n.text("Add audio")).accessibilityIdentifier("day.import")
+                Menu {
+                    Button { sheet = .filters } label: { Label(L10n.text("Filters"), systemImage: "line.3.horizontal.decrease") }
+                        .accessibilityIdentifier("day.filters")
+                    if !filters.isFiltered {
+                        Button { destination = .chat(dayKey) } label: { Label(L10n.text("Ask your day"), systemImage: "bubble.left.and.bubble.right") }
+                            .accessibilityIdentifier("day.chat")
+                    }
+                    if model.canRewind {
+                        Button { model.checkpoint(); destination = .rewind } label: { Label(L10n.text("Rewind"), systemImage: "gobackward.10") }
+                            .accessibilityIdentifier("day.rewind")
+                    }
+                    NavigationLink { InboxView() } label: { Label(L10n.text("Open inbox"), systemImage: "tray") }
+                } label: { Image(systemName: filters.isFiltered ? "line.3.horizontal.decrease.circle.fill" : "ellipsis.circle") }
+                    .accessibilityLabel(L10n.text("Day tools")).accessibilityIdentifier("day.tools")
             }
         }
         .navigationDestination(item: $destination) { value in

@@ -14,7 +14,7 @@ public final class UploadJob extends JobService {
     private static final AtomicBoolean requested = new AtomicBoolean();
     private static final RetryBackoff retries = new RetryBackoff(30000, 15 * 60 * 1000);
     static void schedule(Context context) {
-        try { if (!AppState.outbox(context).hasPending()) return; }
+        try { if (!AppState.outbox(context).hasPending() && !ActionResults.pending(context)) return; }
         catch (java.io.IOException e) { AppState.error(context, e.getMessage()); return; }
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         int network = AppState.preferences(context).getBoolean("wifi", false) ? JobInfo.NETWORK_TYPE_UNMETERED : JobInfo.NETWORK_TYPE_ANY;
@@ -47,12 +47,21 @@ public final class UploadJob extends JobService {
             Outbox outbox = AppState.outbox(context);
             do {
                 requested.set(false);
+                java.io.IOException deferred = null;
                 for (Outbox.Item item : outbox.pending()) {
                     if (cancelled.get() || !allowed(context)) return false;
-                    Backend.upload(outbox, item);
+                    ActionResults.track(context, item);
+                    try { Backend.upload(outbox, item); }
+                    catch (java.io.IOException error) {
+                        // A disabled AI action must not strand later recordings behind it.
+                        if (!item.kind().equals("generation")) throw error;
+                        deferred = error;
+                    }
                 }
+                if (deferred != null) { ActionResults.poll(context); throw deferred; }
             } while (requested.get() && !cancelled.get());
-            retries.reset(); AppState.error(context, ""); return true;
+            ActionResults.poll(context);
+            retries.reset(); AppState.error(context, ""); return !ActionResults.pending(context);
         } catch (Exception e) { retries.fail(SystemClock.elapsedRealtime()); AppState.error(context, e.getMessage()); return false; }
         finally {
             running.set(false);

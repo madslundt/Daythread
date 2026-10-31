@@ -16,9 +16,6 @@ struct LabelsView: View {
         let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: L10n.text("Your library"), title: L10n.text("People & projects.")).editorialRow()
-            }
-            Section {
                 Button { creating = true } label: { Label(L10n.text("New person or project"), systemImage: "plus") }.buttonStyle(PrimaryActionStyle())
             } footer: { Text(L10n.text("Names and aliases can match more than one person. All source associations are chosen by you.")) }
             Section(L10n.text("Your labels")) {
@@ -40,7 +37,7 @@ struct LabelsView: View {
                 else if directory != nil && filteredLabels.isEmpty { ContentUnavailableView.search(text: query) }
             }
             ErrorNote(message: error)
-        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("People & projects")).navigationBarTitleDisplayMode(.inline).searchable(text: $query, prompt: L10n.text("Find a person or project"))
+        }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("People & projects")).navigationBarTitleDisplayMode(.large).searchable(text: $query, prompt: L10n.text("Find a person or project"))
             .task(id: model.archiveIdentity + model.labelRevision) { await load() }.refreshable { await load() }
             .sheet(isPresented: $creating) {
                 NavigationStack { LabelEditView(entity: nil, revision: directory?.revision ?? "", onSaved: { Task { await load() } }) }

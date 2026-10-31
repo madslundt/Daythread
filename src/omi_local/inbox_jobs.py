@@ -11,7 +11,7 @@ from .inbox_retry import retire_replaced_failures
 from .inbox_split import split_job
 from .inbox_store import InboxStore
 from .inference import InferenceTruncated, for_task
-from .inference_errors import InferenceDisabled
+from .inference_errors import InferenceDisabled, InferenceUnavailable
 from .settings import Settings
 
 PROMPT_VERSION = "inbox-4"
@@ -322,6 +322,14 @@ class InboxJobs:
                         "UPDATE inbox_jobs SET state='superseded',claim=NULL WHERE id=?",
                         (job["id"],),
                     )
+        except InferenceUnavailable as exc:
+            with self.archive.connect() as db:
+                db.execute(
+                    "UPDATE inbox_jobs SET state='queued',claim=NULL,attempts=max(0,attempts-1),"
+                    "retry_at=?,error=NULL WHERE id=? AND claim=? AND state='running'",
+                    (stamp(utc_now() + timedelta(seconds=exc.retry_after_seconds)),
+                     job["id"], job["claim"]),
+                )
         except InferenceDisabled:
             with self.archive.connect() as db:
                 db.execute(

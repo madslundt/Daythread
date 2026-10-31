@@ -3,8 +3,8 @@ import UserNotifications
 import CryptoKit
 import OmiCore
 
-/// Owns delivery across APNs and the foreground feed. System presentation is
-/// suppressed by the delegate even if a push raced with opening the app.
+/// Owns immediate local click acknowledgements and saved APNs/feed results.
+/// Completion results use the in-app banner while click acknowledgements use system alerts.
 @MainActor @Observable
 final class CompletionNotifications {
     static let shared = CompletionNotifications()
@@ -24,6 +24,8 @@ final class CompletionNotifications {
     @ObservationIgnored private var rehydrate = true
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private var registeredToken: String?
+    @ObservationIgnored private var schedulingClickJobs = Set<UUID>()
+    @ObservationIgnored private var completedClickJobs = Set<UUID>()
     @ObservationIgnored private var pendingPush: ([AnyHashable: Any], Bool)?
     @ObservationIgnored private var token = UserDefaults.standard.string(forKey: "notifications.apnsToken")
 
@@ -89,6 +91,54 @@ final class CompletionNotifications {
         } catch { status = L10n.error(error) }
     }
 
+    func refreshAuthorization() async {
+        permission = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    @discardableResult
+    func acknowledgeClick(_ click: WearableClick, feedback: ClickActionFeedback, jobID: UUID?,
+                          enabled: Bool, onScheduled: @escaping @MainActor () -> Void) -> Task<Void, Never>? {
+        guard enabled else { onScheduled(); return nil }
+        let content = UNMutableNotificationContent()
+        content.title = L10n.key(ClickNotification.title(for: click))
+        content.body = L10n.key(feedback.message)
+        content.sound = .default
+        content.categoryIdentifier = ClickNotification.marker
+        content.userInfo = [ClickNotification.markerKey: ClickNotification.marker]
+        let request = UNNotificationRequest(identifier: ClickNotification.identifier(jobID: jobID), content: content, trigger: nil)
+        if let jobID { schedulingClickJobs.insert(jobID) }
+        return Task {
+            defer {
+                if let jobID { schedulingClickJobs.remove(jobID); completedClickJobs.remove(jobID) }
+                onScheduled()
+            }
+            guard !Task.isCancelled else { return }
+            if let jobID, completedClickJobs.contains(jobID) { return }
+            do { try await UNUserNotificationCenter.current().add(request) }
+            catch { status = L10n.error(error) }
+            // A completion that raced local scheduling must never leave a stale acknowledgement.
+            if let jobID, Task.isCancelled || completedClickJobs.contains(jobID) { clearClickAcknowledgement(jobID: jobID) }
+        }
+    }
+
+    private func clearClickAcknowledgement(jobID: UUID) {
+        if schedulingClickJobs.contains(jobID) { completedClickJobs.insert(jobID) }
+        let identifier = ClickNotification.identifier(jobID: jobID)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        Task {
+            let delivered = await center.deliveredNotifications()
+            let local = delivered.filter {
+                $0.request.identifier == identifier && ClickNotification.isAcknowledgement(
+                    identifier: $0.request.identifier,
+                    marker: $0.request.content.userInfo[ClickNotification.markerKey] as? String,
+                    isRemote: $0.request.trigger is UNPushNotificationTrigger)
+            }
+            // A result may already have replaced the local request under the same identifier.
+            if !local.isEmpty { center.removeDeliveredNotifications(withIdentifiers: [identifier]) }
+        }
+    }
+
     func receivedToken(_ data: Data) {
         token = data.map { String(format: "%02x", $0) }.joined()
         UserDefaults.standard.set(token, forKey: "notifications.apnsToken")
@@ -105,6 +155,7 @@ final class CompletionNotifications {
               let data = try? JSONSerialization.data(withJSONObject: raw),
               let event = try? JSONDecoder().decode(CompletionNotification.self, from: data) else { return }
         let new = inbox.receive(event)
+        if event.kind == "wearable_action", let jobID = event.target.jobID { clearClickAcknowledgement(jobID: jobID) }
         save()
         if open { opened = event; banner = nil }
         else if active && new { banner = event }
@@ -157,7 +208,10 @@ final class CompletionNotifications {
             let page = try await client.decoded("v1/notifications", query: ["after": String(after)], as: Page.self)
             guard active, current == generation, revision == previewRevision, !Task.isCancelled else { return }
             var latest: CompletionNotification?
-            for event in page.notifications { if inbox.receive(event) { latest = event } }
+            for event in page.notifications {
+                if inbox.receive(event) { latest = event }
+                if event.kind == "wearable_action", let jobID = event.target.jobID { clearClickAcknowledgement(jobID: jobID) }
+            }
             if let latest { banner = latest }
             // A failed acknowledgement leaves the page cursor intact for retry.
             if registeredToken != nil && !page.notifications.isEmpty {
@@ -173,7 +227,7 @@ final class CompletionNotifications {
     }
 
     private func refreshPermission() async {
-        permission = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        await refreshAuthorization()
         if !authorized, let client {
             _ = try? await client.request("v1/notifications/devices/" + installation, method: "DELETE")
             registeredToken = nil
@@ -204,12 +258,22 @@ final class CompletionNotifications {
 
 final class CompletionNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = CompletionNotificationDelegate()
+    private static func isClickAcknowledgement(_ request: UNNotificationRequest) -> Bool {
+        ClickNotification.isAcknowledgement(identifier: request.identifier,
+            marker: request.content.userInfo[ClickNotification.markerKey] as? String,
+            isRemote: request.trigger is UNPushNotificationTrigger)
+    }
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // Never show a system banner, sound, list entry, or badge in the foreground.
+        if Self.isClickAcknowledgement(notification.request) {
+            completionHandler([.banner, .list, .sound])
+            return
+        }
+        // Backend completion results appear through the existing in-app banner.
         completionHandler([])
         Task { @MainActor in CompletionNotifications.shared.receivePush(notification.request.content.userInfo, open: false) }
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        guard !Self.isClickAcknowledgement(response.notification.request) else { completionHandler(); return }
         Task { @MainActor in
             CompletionNotifications.shared.receivePush(response.notification.request.content.userInfo, open: true)
             completionHandler()
@@ -346,5 +410,36 @@ struct CompletionSceneOverlay: UIViewRepresentable {
                 CompletionResultView(event: event).id(model.archiveIdentity + event.id.uuidString)
             }
         }
+    }
+}
+
+/// BLE can wake a suspended app. Finish only the click handoffs, never wait for inference.
+@MainActor
+final class ClickBackgroundExecution {
+    var onExpiration: (() -> Void)?
+    private var state = ClickExecutionState()
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+    private var timeout: Task<Void, Never>?
+    init() {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "com.daythread.pendant-click") { [weak self] in
+            MainActor.assumeIsolated { self?.expire() }
+        }
+        timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            self?.expire()
+        }
+    }
+    func complete(_ part: ClickExecutionState.Part) {
+        if state.complete(part) { end() }
+    }
+    func expire() {
+        guard state.expire() else { return }
+        onExpiration?()
+        end()
+    }
+    private func end() {
+        timeout?.cancel(); timeout = nil; onExpiration = nil
+        let completed = identifier; identifier = .invalid
+        if completed != .invalid { UIApplication.shared.endBackgroundTask(completed) }
     }
 }

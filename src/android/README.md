@@ -81,7 +81,19 @@ The debug APK is for direct installation; production/store distribution needs yo
   Unsupported codecs stop capture. Raw length-prefixed Opus/PCM frames remain alongside the
   queued WAV until confirmation. Notification sequence wrap, duplicates, fragmentation,
   loss, and reconnects are handled; gaps split chunks instead of joining missing speech.
-- Single click records a raw important-moment hint; double click toggles a raw meeting hint.
+- Single click defaults to an important-moment hint; double click defaults to a meeting toggle.
+  Capture → Pendant controls configures either click independently: mark important, start/end
+  meeting, summarize, answer, translate, start/pause recording, or do nothing. Recent-audio
+  actions share a 15/30/60/120/300-second duration (30 seconds by default) and preserve the
+  original click time, capture device, destination, and request ID during offline retries.
+  Translate uses the first translation language configured in the archive settings.
+  Compatible pendants vibrate for 100 ms on single click and 500 ms on double click.
+  These durations are fixed; optional vibration write failures leave capture running.
+  Immediate phone click confirmations default to on and can be switched off in Pendant
+  controls. They work offline with notification permission. Recent-audio results update
+  the same notification as their confirmation; turning confirmations off keeps results on.
+  Start/pause retains the BLE button connection so the same gesture can resume recording.
+  Stop capture still disconnects and ends the service.
   On-screen hint controls work during capture. The backend applies its cooldown and meeting
   minimum to the original event times. Policy values cached at connection setup are captured
   with each event; reconnect/test after changing server hint policies. Stock long-hold remains
@@ -89,6 +101,10 @@ The debug APK is for direct installation; production/store distribution needs yo
 
 The archive uses its existing translations; the native shell follows the phone's English or
 Danish language. Native capture does not yet attach phone GPS observations or create system geofences.
+Recent-audio results appear as native notifications with the answer or generated text; tapping
+opens the full result. The capture service checks originated jobs every ten seconds. Persisted
+jobs also retry through Android's network job scheduler after capture stops, so delivery may
+be delayed by Doze or background restrictions. This does not add FCM push delivery.
 Apple Reminders/EventKit editors remain iPhone-only; Android can save the
 shared interface's portable calendar/Markdown/JSON exports through the system file picker.
 The WebView has no JavaScript/native bridge, file URL access, third-party cookies, or mixed

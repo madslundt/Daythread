@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from .completion_events import publish_weekly
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference import InferenceError, for_task
-from .inference_errors import InferenceDisabled
+from .inference_errors import InferenceDisabled, InferenceUnavailable
 from .service import public_source
 from .weekly_inference import generate_items
 from .weekly_models import PROMPT_VERSION, ReviewVersion, default_week, week_bounds
@@ -238,6 +238,13 @@ class WeeklyReviews:
             publish_weekly(self.memory, version, guard=notification_guard)
         except EvidenceChanged:
             self.store.fail(job["id"], "Recorded evidence changed; generate again")
+        except InferenceUnavailable as exc:
+            with self.memory.store.connect() as db:
+                db.execute(
+                    "UPDATE weekly_jobs SET state='queued',attempts=max(0,attempts-1),"
+                    "retry_at=?,error=NULL WHERE id=? AND state='running'",
+                    (stamp(utc_now() + timedelta(seconds=exc.retry_after_seconds)), job["id"]),
+                )
         except InferenceDisabled:
             with self.memory.store.connect() as db:
                 db.execute(

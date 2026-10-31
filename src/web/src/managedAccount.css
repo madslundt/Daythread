@@ -9,7 +9,7 @@
 .managed-account-stats dt { color: var(--muted); font-size: 13px; }
 .managed-account-stats dd { margin: 3px 0 0; font-size: 19px; }
 .managed-session-screen { max-width: 660px; margin: 10vh auto; padding: 24px; }
-.managed-session-brand { display: block; margin-bottom: 36px; font: 32px var(--serif); text-decoration: none; }
+.managed-session-brand { display: block; margin-bottom: 36px; font: 32px var(--font-display); text-decoration: none; }
 @media (max-width: 760px) { .managed-account-header { display: flex; margin-left: auto; } }
 
 .managed-models { margin: 28px 0; }

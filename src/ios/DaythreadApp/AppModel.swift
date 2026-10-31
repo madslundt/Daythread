@@ -205,7 +205,10 @@ final class AppModel {
     var labelRevision = ""
     var archiveRevision = ""
     var serverTimeZoneIdentifier: String?
-    var gesture: MeetingGesture { didSet { UserDefaults.standard.set(gesture.rawValue, forKey: "meetingGesture") } }
+    var singleClickAction: WearableAction { didSet { UserDefaults.standard.set(singleClickAction.rawValue, forKey: "singleClickAction") } }
+    var doubleClickAction: WearableAction { didSet { UserDefaults.standard.set(doubleClickAction.rawValue, forKey: "doubleClickAction") } }
+    var clickNotificationsEnabled: Bool { didSet { UserDefaults.standard.set(clickNotificationsEnabled, forKey: ClickNotification.preferenceKey) } }
+    var recentAudioSeconds: Int { didSet { UserDefaults.standard.set(recentAudioSeconds, forKey: "recentAudioSeconds") } }
     var paused: Bool {
         didSet {
             UserDefaults.standard.set(paused, forKey: "capturePaused")
@@ -243,6 +246,17 @@ final class AppModel {
     var serverTimeline: JSONValue = .null
     var completenessStatus: JSONValue = .null
     var queuedRecordings = 0
+    var recordingRequested: Bool {
+        microphone.active != nil || (bluetooth.connected && bluetooth.captureEnabled)
+    }
+    var canRewind: Bool {
+        guard hasSelectedProfile else { return false }
+        if omiRecording || store?.canRewind(minutes: 10, end: now) == true { return true }
+        guard !statusRefreshFailed, let at = Self.date(completenessStatus["as_of"].text),
+              now.timeIntervalSince(at) >= 0, now.timeIntervalSince(at) <= 120,
+              let captured = Self.date(completenessStatus["ingestion"]["last_captured_at"].text) else { return false }
+        return now.timeIntervalSince(captured) >= 0 && now.timeIntervalSince(captured) < 600
+    }
     var omiRecording: Bool {
         pendantCaptureAllowed && bluetooth.connected && bluetooth.captureEnabled &&
         lastDecodedAt.map { abs(now.timeIntervalSince($0)) < 2 } == true
@@ -295,7 +309,12 @@ final class AppModel {
         selectedProfileID = selectedID
         backendConfiguration = storedConfiguration
         endpointRouter = BackendEndpointRouter(configuration: storedConfiguration)
-        gesture = MeetingGesture(rawValue: defaults.string(forKey: "meetingGesture") ?? "") ?? .doubleClick
+        let controls = ClickControls(singleClick: defaults.string(forKey: "singleClickAction"),
+                                     doubleClick: defaults.string(forKey: "doubleClickAction"),
+                                     durationSeconds: defaults.integer(forKey: "recentAudioSeconds"))
+        singleClickAction = controls.singleClick; doubleClickAction = controls.doubleClick
+        recentAudioSeconds = controls.durationSeconds
+        clickNotificationsEnabled = ClickNotification.enabled(in: defaults)
         recordingLocationsEnabled = defaults.bool(forKey: "recordingLocationsEnabled")
         paused = defaults.bool(forKey: "capturePaused")
         uploadWiFiOnly = defaults.bool(forKey: "uploadWiFiOnly")
@@ -712,29 +731,87 @@ final class AppModel {
         refreshLocal()
     }
     private func button(_ data: Data) {
-        var policy = GesturePolicy(meetingGesture: gesture, lastAcceptedMark: nextMarkAt?.addingTimeInterval(-Double(markerCooldownSeconds)), cooldown: Double(markerCooldownSeconds))
-        if let action = policy.resolve(data, at: Date()) { event(action) }
+        guard let click = WearableClick(data) else { return }
+        let execution = ClickBackgroundExecution()
+        bluetooth.playHaptic(click.hapticDuration) { execution.complete(.haptic) }
+        let end = clock.date(at: ProcessInfo.processInfo.systemUptime)
+        let action = click.action(single: singleClickAction, double: doubleClickAction)
+        let (feedback, jobID) = performClickAction(action, at: end)
+        // Submit the local acknowledgement before allowing this job onto the network.
+        let uploader = uploader
+        if let jobID { uploader?.holdGeneration(jobID) }
+        let confirmation = CompletionNotifications.shared.acknowledgeClick(click, feedback: feedback, jobID: jobID,
+                                                        enabled: clickNotificationsEnabled) { [weak uploader] in
+            if let jobID { uploader?.releaseGeneration(jobID) }
+            execution.complete(.confirmation)
+        }
+        execution.onExpiration = { [weak uploader] in
+            confirmation?.cancel()
+            if let jobID { uploader?.releaseGeneration(jobID) }
+        }
     }
-    func event(_ action: SemanticAction) {
-        guard hasSelectedProfile else { error = L10n.source("Choose a profile in Settings first."); return }
+    private func performClickAction(_ action: WearableAction, at end: Date) -> (ClickActionFeedback, UUID?) {
+        if action == .none { return (.noAction, nil) }
+        guard hasSelectedProfile else { return (.failed(L10n.text("Choose a profile in Settings first.")), nil) }
+        switch action {
+        case .mark: return (event(.mark), nil)
+        case .meetingToggle: return (event(.meetingToggle), nil)
+        case .captureToggle:
+            error = nil
+            let pause = liveCaptureAllowed && (bluetooth.captureEnabled || microphone.active != nil)
+            if pause { setPaused(true) } else { startManualPendant() }
+            if let error { return (.failed(L10n.key(error)), nil) }
+            guard pause ? paused : bluetooth.captureEnabled else {
+                return (.failed(L10n.text("Capture storage unavailable")), nil)
+            }
+            return (pause ? .capturePaused : .captureResumed, nil)
+        case .summarize, .answer, .translate:
+            error = nil; checkpoint()
+            if let error { return (.failed(L10n.key(error)), nil) }
+            guard let store else {
+                error = L10n.source("Capture storage unavailable")
+                return (.failed(L10n.text("Capture storage unavailable")), nil)
+            }
+            do {
+                let jobID = try store.wearableAction(deviceID: bluetooth.identifier, at: end, action: action,
+                                                    durationSeconds: recentAudioSeconds)
+                notice = L10n.source("Recent audio request queued. The result will appear in Notifications.")
+                refreshLocal()
+                return (.queued(action, seconds: recentAudioSeconds), jobID)
+            } catch { self.error = L10n.error(error); return (.failed(L10n.error(error)), nil) }
+        case .none: return (.noAction, nil)
+        }
+    }
+    @discardableResult
+    func event(_ action: SemanticAction) -> ClickActionFeedback {
+        guard hasSelectedProfile else {
+            error = L10n.source("Choose a profile in Settings first.")
+            return .failed(L10n.text("Choose a profile in Settings first."))
+        }
         let date = clock.date(at: ProcessInfo.processInfo.systemUptime)
         if action == .mark, let nextMarkAt, date < nextMarkAt {
-            notice = L10n.source("Already marked nearby. Another flag is available in \(Int(ceil(nextMarkAt.timeIntervalSince(date)))) seconds.")
-            return
+            let feedback = ClickActionFeedback.alreadyMarked(seconds: Int(ceil(nextMarkAt.timeIntervalSince(date))))
+            notice = feedback.message
+            return feedback
         }
-        guard let store else { error = L10n.source("Capture storage unavailable"); return }
+        guard let store else {
+            error = L10n.source("Capture storage unavailable")
+            return .failed(L10n.text("Capture storage unavailable"))
+        }
         do {
             let oldStart = meetingStart
             let oldQualification = meetingQualifiesAt
             try store.event(deviceID: recordingSchedule.hintDeviceID(phoneID: phoneID, pendantID: bluetooth.identifier), at: date, action: action, meetingIntent: action == .meetingToggle ? (oldStart == nil ? "start" : "end") : nil, meetingID: action == .meetingToggle && oldStart != nil ? meetingID : nil)
-            if action == .mark { notice = L10n.source("Marked nearby speech as important") }
+            let feedback: ClickActionFeedback
+            if action == .mark { feedback = .marked }
             else if let oldStart {
                 let qualifies = oldQualification ?? oldStart.addingTimeInterval(Double(meetingMinSeconds))
-                notice = date < qualifies ? L10n.source("Short meeting ignored. Audio is kept.") : L10n.source("Meeting hint ended")
-            }
-            else { notice = L10n.source("Meeting hint started · provisional for \(meetingMinSeconds) seconds") }
+                feedback = date < qualifies ? .shortMeetingIgnored : .meetingEnded
+            } else { feedback = .meetingStarted(provisionalSeconds: meetingMinSeconds) }
+            notice = feedback.message
             refreshLocal(); uploader?.pump()
-        } catch { self.error = L10n.error(error) }
+            return feedback
+        } catch { self.error = L10n.error(error); return .failed(L10n.error(error)) }
     }
     private func refreshLocal() {
         guard let store else { return }

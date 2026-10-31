@@ -29,15 +29,17 @@ flowchart LR
 | Action | Intended result | Starter / dependency |
 |---|---|---|
 | Wear Omi during the day | Continuous timestamped capture | Native capture implemented; physical endurance acceptance remains |
-| Single click | Hint that nearby speech is important | One accepted flag per 60 seconds; context on both sides |
-| Click and hold, otherwise double click | Toggle a possible meeting | Prefer verified hold support; double-click is the stock firmware fallback to test |
+| Single click (default) | Hint that nearby speech is important | Configurable; one accepted flag per 60 seconds, with context on both sides |
+| Double click (default) | Toggle a possible meeting | Configurable; repeat to end the meeting |
+| Summarize / answer / translate click action | Process recent audio and notify with the result | 30-second default; configurable to 15, 30, 60, 120, or 300 seconds |
+| Start / pause recording click action | Toggle capture while retaining BLE button controls | A second activation resumes recording |
 | Meeting control on phone | Start/end and show the active meeting | Native and web controls implemented |
 | Forget to end meeting | After the first hour, end after recorded quiet | Fixed 10 minutes of continuous verified quiet; no duration cap |
 | Rewind 10 minutes (or chosen X) | Hear original audio and read a short recap | Backend implements both for 1–60 minutes |
 | After transcription | Day-so-far recap with events, decisions, commitments and open questions | Automatic backend recap plus portable diary implemented |
 | Ask later | Answer using past recorded evidence and source links | Persistent chat with scoped keyword/optional hybrid retrieval and source playback |
 
-Choose the meeting gesture by capability: **verified click-and-hold → double click → phone control**. Current production source turns off at ~3 seconds and does not emit its defined long-tap event from the active state machine, but does implement double-click notifications. Do not infer hold duration from a release event. Resolve each gesture once: a recognized meeting double-click must not also create important flags from its component taps. Pairing must discover model/firmware/capabilities, and physical timing remains a device acceptance test. See the [source evidence](device-research.md).
+Single-click and double-click actions are independently configurable on each companion, including **Do nothing**. Hold is never an app mapping: current production source turns off at ~3 seconds. Ignore long-tap, press, and release events rather than inferring hold duration. Resolve each click once: a recognized double must produce only its configured action and must not also create important flags from component taps. Recent-audio jobs retain their original click timestamp and parameters through offline upload. Pairing must discover model/firmware/capabilities, and physical timing remains a device acceptance test. See the [source evidence](device-research.md).
 
 Automatic closure ends the **meeting label**, while ordinary daily recording continues. Quiet starts counting only after the meeting's first hour: the fixed ten-minute wait can therefore close it no earlier than 70 minutes after its start, plus the 30-second evidence settling buffer. Meeting auto-end is not configurable; legacy saved quiet-period values are ignored. Missing uploads, capture gaps, speech, unknown detection, imports and receipt-timed webhooks cannot prove continuous quiet. Manual end works at any time. The phone shows an active indicator and confirmation; pendant vibration depends on supported hardware.
 

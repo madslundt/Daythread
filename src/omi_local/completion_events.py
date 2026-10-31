@@ -66,6 +66,9 @@ def publish_weekly(memory, version: dict, guard=None) -> None:
 
 def job_notice(memory, job: dict, result: dict) -> tuple[str, str]:
     params, kind = job["parameters"], job["kind"]
+    if kind == "wearable_action":
+        from .wearable_actions import wearable_notice
+        return wearable_notice(result)
     zone = memory.settings.timezone
     if kind == "rewind":
         count = len(result.get("sources", []))

@@ -37,7 +37,7 @@ export function Diary({
   }, [diaries.refresh]);
   return (
     <>
-      <div className="button-row" aria-label={t("Diary view")}>
+      <div className="button-row segmented-control" role="group" aria-label={t("Diary view")}>
         <button className={`button ${mode === "day" ? "dark" : ""}`} aria-pressed={mode === "day"} onClick={() => setMode("day")}>{t("Days")}</button>
         <button className={`button ${mode === "week" ? "dark" : ""}`} aria-pressed={mode === "week"} onClick={() => setMode("week")}>{t("Weeks")}</button>
       </div>

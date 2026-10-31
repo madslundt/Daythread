@@ -150,20 +150,16 @@ struct ChatView: View {
             }
         }
         .background(Theme.canvas).navigationTitle(L10n.text("Chat")).navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Theme.canvas, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             Button { focused = false; sheet = .scope } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "line.3.horizontal.decrease")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("Search within")).font(.caption).foregroundStyle(.secondary)
-                        Text(scopeTitle).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                    }
+                    Text(scopeTitle).font(.subheadline).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.down").font(.caption.weight(.semibold))
                 }.padding(.horizontal, 20).padding(.vertical, 10).frame(maxWidth: 760).frame(maxWidth: .infinity)
                     .background(Theme.canvas).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(loading).accessibilityIdentifier("chat.scopeOptions")
+            }.buttonStyle(.plain).disabled(loading).accessibilityLabel(L10n.text("Search within") + ": " + scopeTitle).accessibilityIdentifier("chat.scopeOptions")
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .toolbar {

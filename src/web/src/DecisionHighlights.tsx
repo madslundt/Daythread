@@ -3,7 +3,7 @@ import { errorMessage, newId, request } from "./api";
 import { DecisionDetail } from "./Decisions";
 import type { DecisionExtraction, DecisionList } from "./decisionModels";
 import { decisionMatchesTopic } from "./dayHighlights";
-import { dateTimeLabel } from "./format";
+import { timeLabel } from "./format";
 import { allDayFilters, dayFilterKey, dayFilterParams, hasDayFilters, type DayFilters } from "./dayFilters";
 import { t } from "./i18n";
 import { profileScope } from "./profiles";
@@ -64,7 +64,7 @@ export function DecisionHighlights({ day, timezone, focus, filters = allDayFilte
     {progress && busy ? <p className="caption" role="status">{t("Reviewed {value0} of {value1} recordings.", { value0: progress.processed_sources, value1: progress.total_sources })}</p> : null}
     {progress && !busy && !error && progress.pending_chunks ? <p className="caption">{t("Some recordings are still awaiting transcription.")}</p> : null}
     {decisions.slice(0, visible).map((decision) => <article className="highlight-decision" key={decision.id}>
-      <div><p lang={display.language}>{display.title({ kind: "decision", id: decision.id, version: decision.version, original_title: decision.content!.choice.text })}</p><p className="caption">{dateTimeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)}</p>
+      <div><p lang={display.language}>{display.title({ kind: "decision", id: decision.id, version: decision.version, original_title: decision.content!.choice.text })}</p><p className="caption">{timeLabel(decision.started_at, timezone)} · {statusLabel(decision.display_state)} · {statusLabel(decision.review_status)}</p>
         {decision.evidence_condition !== "current" ? <p className="caption action-point-warning">{statusLabel(decision.evidence_condition)}</p> : null}</div>
       <button className="button small" onClick={() => setSelected(decision.id)}>{t("Review decision")}</button>
     </article>)}

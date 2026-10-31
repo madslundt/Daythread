@@ -2906,5 +2906,12 @@
   "Weekly recap did not contain a supported overview": "Ugens opsummering indeholdt ikke en understøttet oversigt",
   "Weekly recap did not contain a readable overview": "Ugens opsummering indeholdt ikke et læsbart overblik",
   "Weekly recap exceeded the five-minute reading limit": "Ugens opsummering overskred grænsen på fem minutters læsning",
-  "Weekly recap evidence changed; retry the recap": "Kilderne til ugens opsummering er ændret; prøv at generere den igen"
+  "Weekly recap evidence changed; retry the recap": "Kilderne til ugens opsummering er ændret; prøv at generere den igen",
+  "Recent audio summary": "Resumé af nylig lyd",
+  "Answer to recent question": "Svar på seneste spørgsmål",
+  "Recent audio translation": "Oversættelse af nylig lyd",
+  "No transcribed speech is available in this window.": "Der er ingen transskriberet tale i dette tidsrum.",
+  "LLM busy retry enabled": "Genforsøg ved optaget LLM aktiveret",
+  "The local model is temporarily busy; work stays queued": "Den lokale model er midlertidigt optaget; arbejdet forbliver i kø",
+  "Filters": "Filtre"
 }

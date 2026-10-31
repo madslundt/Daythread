@@ -31,6 +31,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
     var onChange: (() -> Void)?
     var onProgress: (() -> Void)?
     var onError: ((String) -> Void)?
+    private var heldGenerationIDs = Set<UUID>()
     private var restoring = true
     private var uploadWiFiOnly: Bool
 
@@ -95,6 +96,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
             return client.url("v1/audio/\(item.id.uuidString)", query: query)
         case .event: return client.url("v1/events", query: ["receipt_only": "true"])
         case .gap: return client.url("v1/gaps")
+        case .generation: return client.url("v1/jobs")
         case .captureState: return client.url("v1/capture-state/\(item.id.uuidString)")
         }
     }
@@ -132,9 +134,12 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         let estimate = waiting || confirming ? nil : rates[task.taskIdentifier]?.remainingSeconds(for: remaining, at: ProcessInfo.processInfo.systemUptime)
         return UploadFeedback(sentBytes: sent, totalBytes: total, remainingBytes: remaining, title: title, estimatedSeconds: estimate)
     }
+    func holdGeneration(_ id: UUID) { heldGenerationIDs.insert(id) }
+    func releaseGeneration(_ id: UUID) { heldGenerationIDs.remove(id); pump() }
     func pump() {
         guard !restoring, active.isEmpty, let client,
-              let item = store.pending(destinationID: client.destinationIdentity).first(where: { $0.retryAt <= Date() }) else { return }
+              let item = store.nextUpload(destinationID: client.destinationIdentity),
+              !heldGenerationIDs.contains(item.id) else { return }
         let file: URL
         do { file = try store.uploadFile(for: item) }
         catch {

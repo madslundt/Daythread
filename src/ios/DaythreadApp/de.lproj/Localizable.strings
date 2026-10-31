@@ -455,7 +455,6 @@
 "Dismissed" = "Verworfen";
 "Distinguishing description" = "Unterscheidende Beschreibung";
 "Done" = "Fertig";
-"Double click · stock firmware" = "Doppelklick · Original-Firmware";
 "Double-click" = "Doppelklick";
 "Draft answer · sources are checked before saving." = "Entwurf Antwort · Quellen werden vor dem Speichern geprüft.";
 "Duplicate STT language route" = "Duplikate STT-Sprachroute";
@@ -613,7 +612,6 @@
 "Firmware" = "Firmware";
 "First topic must cover the start of the transcript" = "Das erste Thema muss den Beginn des Transkripts abdecken";
 "Flag added · wait {value0}s" = "Flag hinzugefügt · wait {value0}s";
-"Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. {value0} toggles a meeting." = "Flags und Meeting Controls weisen auf die umgebende Sprache hin. Ein einziger Klick fügt einmal pro Minute eine Flagge hinzu. {value0} schaltet ein Meeting ein.";
 "Follow through" = "Folgen Sie durch";
 "Follow-through unconfirmed" = "Nachverfolgung nicht bestätigt";
 "Follow-up cited unsupported original evidence" = "Nachverfolgung zitiert nicht gestützte Originalbeweise";
@@ -661,7 +659,6 @@
 "Historical version · may no longer reflect current evidence" = "Historische Fassung · kann nicht mehr aktuelle Beweise widerspiegeln";
 "Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts." = "Historische Version. Ansprüche und Zitate spiegeln ihren Cutoff wider; Quelleninspektion zeigt aktuelle Transkripte.";
 "History" = "Verlauf";
-"Hold · verified firmware only" = "Halten · Verifizierte Firmware nur";
 "Home-core" = "Home-core";
 "Home-core HTTP {value0}: {value1}" = "Home-core HTTP {value0}: {value1}";
 "Home-core acknowledgement did not match the queued recording or event. Original data was retained." = "Die Home-core-Bestätigung passte nicht zu der Schlange stehenden Aufzeichnung oder dem Ereignis. Ursprüngliche Daten wurden gespeichert.";
@@ -1526,7 +1523,6 @@
 "Start meeting hint" = "Tipp zum Treffen starten";
 "Start with a question." = "Fangen Sie mit einer Frage an.";
 "Status" = "Status";
-"Stock Omi firmware uses a three-second hold to power off. Choose hold only after verifying that your firmware emits a resolved long-tap event." = "Stock Omi Firmware verwendet einen Drei-Sekunden-Halt zum Ausschalten. Wählen Sie Halten nur, nachdem Sie überprüft haben, dass Ihre Firmware ein aufgelöstes Long-Tap-Ereignis ausgibt.";
 "Stop" = "Anhalten";
 "Stop audio" = "Audio anhalten";
 "Stop playback" = "Wiedergabe beenden";
@@ -1761,7 +1757,6 @@
 "Use valid ISO calendar dates" = "Verwende gültige ISO Kalenderdaten";
 "Use valid ISO dates in chat questions" = "Verwenden Sie gültige ISO Daten in Chat-Fragen";
 "User stage: {value0} · suggestion: {value1}" = "Benutzerphase: {value0} · Vorschlag: {value1}";
-"Verified hold" = "Verifizierter Halt";
 "Version {value0}" = "Version {value0}";
 "Version {value0} · {value1}" = "Version {value0} · {value1}";
 "Voice evaluation is unavailable or invalid. Suggestions remain off." = "Sprachauswertung ist nicht verfügbar oder ungültig. Vorschläge bleiben aus.";
@@ -2798,3 +2793,46 @@
 "Reading recording dates…" = "Aufnahmedaten werden gelesen…";
 "Review each recording’s date and time before importing." = "Prüfe Datum und Uhrzeit jeder Aufnahme vor dem Import.";
 "Create tag…" = "Tag erstellen…";
+"Single click" = "Einfachklick";
+"Double click" = "Doppelklick";
+"Recent audio duration" = "Dauer der letzten Audioaufnahme";
+"Click controls" = "Klicksteuerung";
+"Mark as important" = "Als wichtig markieren";
+"Start / end meeting" = "Besprechung starten / beenden";
+"Summarize recent audio" = "Letzte Audioaufnahme zusammenfassen";
+"Answer recent question" = "Letzte Frage beantworten";
+"Translate recent audio" = "Letzte Audioaufnahme übersetzen";
+"Start / pause recording" = "Aufnahme starten / pausieren";
+"Do nothing" = "Keine Aktion";
+"Summarize, answer and translate use audio before the click. Translations use your first allowed translation language." = "Zusammenfassung, Antwort und Übersetzung verwenden Audio vor dem Klick. Übersetzungen nutzen deine erste erlaubte Übersetzungssprache.";
+"Flags and meeting controls hint at surrounding speech. Important marks are limited to once per minute. Configure single and double clicks in pendant settings." = "Markierungen und Besprechungssteuerungen geben Hinweise auf die umgebende Sprache. Wichtige Markierungen sind auf eine pro Minute begrenzt. Konfiguriere Einfach- und Doppelklicks in den Anhängereinstellungen.";
+"Recent audio request queued. The result will appear in Notifications." = "Anfrage zur letzten Audioaufnahme eingereiht. Das Ergebnis erscheint unter Mitteilungen.";
+"Last {value0} seconds · ending {value1}" = "Letzte {value0} Sekunden · Ende {value1}";
+"Recent audio summary" = "Zusammenfassung der letzten Audioaufnahme";
+"Answer to recent question" = "Antwort auf die letzte Frage";
+"Recent audio translation" = "Übersetzung der letzten Audioaufnahme";
+"No transcribed speech is available in this window." = "Für diesen Zeitraum ist keine transkribierte Sprache verfügbar.";
+"LLM busy retry enabled" = "Wiederholungen bei ausgelastetem LLM aktiviert";
+"The local model is temporarily busy; work stays queued" = "Das lokale Modell ist vorübergehend ausgelastet; die Arbeit bleibt in der Warteschlange";
+
+"Pause recording" = "Aufnahme pausieren";
+"Single click registered" = "Einfachklick erkannt";
+"Double click registered" = "Doppelklick erkannt";
+"Summary queued for the last {value0} seconds." = "Zusammenfassung der letzten {value0} Sekunden eingereiht.";
+"Answer queued for the last {value0} seconds." = "Antwort zu den letzten {value0} Sekunden eingereiht.";
+"Translation queued for the last {value0} seconds." = "Übersetzung der letzten {value0} Sekunden eingereiht.";
+"Recent audio request queued." = "Anfrage zur letzten Audioaufnahme eingereiht.";
+"Recording paused on this iPhone." = "Aufnahme auf diesem iPhone pausiert.";
+"Recording resumed on this iPhone." = "Aufnahme auf diesem iPhone fortgesetzt.";
+"No action assigned." = "Keine Aktion zugewiesen.";
+"Could not complete the click action: {value0}" = "Klickaktion konnte nicht abgeschlossen werden: {value0}";
+"Click notifications" = "Klickmitteilungen";
+"Allow click notifications" = "Klickmitteilungen erlauben";
+"Click notifications confirm pendant actions immediately, including offline. Final result notifications remain enabled separately." = "Klickmitteilungen bestätigen Anhängeraktionen sofort, auch offline. Benachrichtigungen über fertige Ergebnisse werden separat gesteuert.";
+
+"Day tools" = "Tageswerkzeuge";
+"Needs attention" = "Aufmerksamkeit erforderlich";
+"Queued" = "In Warteschlange";
+"Status unavailable" = "Status nicht verfügbar";
+"Up to date" = "Auf dem neuesten Stand";
+"Your day" = "Dein Tag";

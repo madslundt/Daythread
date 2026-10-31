@@ -86,6 +86,7 @@ public final class MainActivity extends Activity {
         String initial = saved == null ? "" : saved.getString("screen", "");
         if (getIntent().getBooleanExtra("capture", false) || CaptureService.active || initial.equals("capture")) showCapture();
         else if (configured() && !initial.equals("connection")) showArchive(); else showConnection();
+        ActionResults.open(this, getIntent());
     }
     @Override protected void onResume() { super.onResume(); resumed = true; refreshVisibleWork(); }
     @Override protected void onPause() { resumed = false; refreshVisibleWork(); stopScan(); stopPlayback(); super.onPause(); }
@@ -96,7 +97,7 @@ public final class MainActivity extends Activity {
         if (resumed && screen.equals("archive")) { web.onResume(); web.resumeTimers(); }
         else { web.onPause(); web.pauseTimers(); }
     }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); if (intent.getBooleanExtra("capture", false)) showCapture(); else if (receiveSharedAudio(intent)) showArchive(); }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); if (intent.getBooleanExtra("capture", false)) showCapture(); else if (receiveSharedAudio(intent)) showArchive(); ActionResults.open(this, intent); }
     private boolean receiveSharedAudio(Intent intent) {
         if (intent == null || !(Intent.ACTION_SEND.equals(intent.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction()))) return false;
         sharedAudio.clear();
@@ -192,12 +193,14 @@ public final class MainActivity extends Activity {
             page.addView(button(getString(R.string.stop_capture), () -> startService(new Intent(this, CaptureService.class).setAction("stop")), true));
             page.addView(button(getString(R.string.important), () -> hint("mark"), false));
             page.addView(button(getString(R.string.meeting), () -> hint("meeting_toggle"), false));
+            page.addView(button(getString(R.string.start_pause), () -> startService(new Intent(this, CaptureService.class).setAction("capture_toggle")), false));
         }
         page.addView(button(getString(R.string.record_phone), () -> permission(false, () -> {
             CapturePolicy.manual(this, true, "microphone"); startCapture("microphone", null);
         }), true));
         page.addView(button(getString(R.string.connect_omi), () -> permission(true, () -> { CapturePolicy.manual(this, true, "omi"); scan(); }), false));
         scheduleControls(page);
+        WearableControls.add(this, page);
         space(page, 12); paragraph(page, R.string.capture_background); paragraph(page, R.string.capture_uploads); paragraph(page, R.string.gesture_help);
         section(page, R.string.queue_title); queueStatus = text("", 16, INK); page.addView(queueStatus); space(page, 12);
         captureError = text("", 14, ACCENT); captureError.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); page.addView(captureError);

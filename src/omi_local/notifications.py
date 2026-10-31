@@ -6,6 +6,7 @@ import logging
 import sqlite3
 import time
 from collections.abc import Callable
+from uuid import UUID
 
 import httpx
 import jwt
@@ -44,6 +45,14 @@ class APNsSender:
 
     async def send(self, delivery: dict, profile_id: str) -> tuple[int, str]:
         event = public_notification(delivery)
+        collapse_id = event["id"]
+        if event["kind"] == "wearable_action":
+            try:
+                # Matches the phone's immediate local confirmation. APNs uses
+                # its collapse ID as the delivered UNNotificationRequest ID.
+                collapse_id = "wearable-action:" + str(UUID(event["target"]["job_id"]))
+            except (KeyError, TypeError, ValueError, AttributeError):
+                pass
         payload = {
             "aps": {"alert": {"title": event["title"], "body": event["body"]},
                     "sound": "default", "thread-id": f"daythread-{profile_id}"},
@@ -65,7 +74,7 @@ class APNsSender:
             headers={"authorization": f"bearer {self.authorization()}",
                      "apns-topic": self.settings.apns_topic, "apns-push-type": "alert",
                      "apns-priority": "10", "apns-id": event["id"],
-                     "apns-collapse-id": event["id"],
+                     "apns-collapse-id": collapse_id,
                      "apns-expiration": str(int(delivery["expires_at"])),
                      "content-type": "application/json"},
         )

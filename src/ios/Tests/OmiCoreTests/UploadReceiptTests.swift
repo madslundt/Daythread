@@ -3,6 +3,17 @@ import XCTest
 
 final class UploadReceiptTests: XCTestCase {
     private func data(_ value: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: value) }
+    func testWearableJobReceiptMustConfirmOriginalActionAndWindow() throws {
+        var item = OutboxItem(id: UUID(), kind: .generation, deviceID: "pendant", capturedAt: Date(timeIntervalSince1970: 1000.123))
+        item.wearableAction = .answer; item.durationSeconds = 30
+        var parameters: [String: Any] = ["action": "answer", "duration_seconds": 30, "end": DurableStore.stamp(item.capturedAt), "device_id": "pendant"]
+        var receipt: [String: Any] = ["id": item.id.uuidString, "kind": "wearable_action", "state": "queued", "parameters": parameters]
+        XCTAssertNoThrow(try UploadReceipt.validate(data(receipt), for: item))
+        parameters["duration_seconds"] = 60; receipt["parameters"] = parameters
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt), for: item))
+        parameters["duration_seconds"] = 30; parameters["end"] = DurableStore.stamp(item.capturedAt.addingTimeInterval(1)); receipt["parameters"] = parameters
+        XCTAssertThrowsError(try UploadReceipt.validate(data(receipt), for: item))
+    }
     func testAudioReceiptRequiresExactOriginalIdentityAndCaptureBounds() throws {
         let start = Date(timeIntervalSince1970: 1000.125)
         var item = OutboxItem(id: UUID(), kind: .audio, deviceID: "pendant", capturedAt: start)

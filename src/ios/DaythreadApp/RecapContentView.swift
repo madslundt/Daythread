@@ -266,11 +266,6 @@ struct DayRecapOverview: View {
                         overviewText(text)
                     }
                 })
-                if let date = AppModel.date(overview["generated_at"].text) {
-                    Text(DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM HHmm"))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .accessibilityLabel(L10n.text("Saved recap") + " " + date.formatted())
-                }
                 Text(L10n.text("\(overview["reading_minutes"].integer) min read"))
                     .font(.caption).foregroundStyle(.secondary)
                 if overview["can_generate"] == .bool(true) {

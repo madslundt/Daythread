@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import stamp, utc_now
 from .inference import summary_language_instruction
-from .inference_errors import InferenceDisabled
+from .inference_errors import InferenceDisabled, InferenceUnavailable
 from .semantic_metadata import segment_anchors, segment_metadata
 from .summary_filter import clean_summary_text
 from .topic_context import TopicContext, topic_contexts
@@ -79,12 +79,14 @@ def input_windows(text: str):
         offset = end
 
 
-async def analyze(memory: Memory, row: dict) -> dict:
+async def analyze(memory: Memory, row: dict, progress: dict | None = None) -> dict:
     text = row["text"]
     model = memory.inference
     if hasattr(model, "for_task"):
         model = model.for_task("summary")
     titles, sections = [], []
+    if progress is not None:
+        progress.update(completed_chunks=0, total_chunks=sum(1 for _ in input_windows(text)))
     for base, excerpt in input_windows(text):
         task = (
             'Give this recording a concise, descriptive title and divide its transcript into '
@@ -139,6 +141,8 @@ async def analyze(memory: Memory, row: dict) -> dict:
                              or (normalized and normalized == last_normalized)):
                 continue
             sections.append({"title": topic.title, "start_offset": base + start})
+        if progress is not None:
+            progress["completed_chunks"] += 1
     for index, section in enumerate(sections):
         section["end_offset"] = (
             sections[index + 1]["start_offset"] if index + 1 < len(sections) else len(text)
@@ -191,14 +195,17 @@ async def organize_context(memory: Memory, context: TopicContext, now: datetime)
         return False
     rows = [loaded[key] for key in context.ids]
     try:
-        with memory.processing_activity("organizing"):
+        with memory.processing_activity("organizing", progress={}) as progress:
             text = "\n".join(row["text"] for row in rows if (row["text"] or "").strip())
             meaningful, _ = clean_summary_text(text)
             if meaningful:
-                result = await analyze(memory, {"text": text})
+                result = await analyze(memory, {"text": text}, progress)
                 prepared = source_sections(rows, result, context.key)
             else:
                 prepared = {key: {"sections": []} for key in context.ids}
+    except InferenceUnavailable as exc:
+        prepared = {key: {"retry_at": stamp(now + timedelta(seconds=exc.retry_after_seconds))}
+                    for key in context.ids}
     except InferenceDisabled:
         return False
     except Exception as exc:

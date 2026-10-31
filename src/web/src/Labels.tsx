@@ -61,8 +61,6 @@ export function Labels({ timezone }: { timezone: string }) {
   if (id) return <EntityDetail key={id} id={id} timezone={timezone} />;
   return (
     <section className="labels-page">
-      <p>
-        {t("Keep people and projects distinct with names, aliases and descriptions. All associations and annotations are chosen by you.")}{" "}</p>
       <div className="label-fields">
         <label>
           {t("Search names and aliases")}{" "}<input
@@ -96,6 +94,9 @@ export function Labels({ timezone }: { timezone: string }) {
             });
           }}
         >
+          <p className="caption">
+            {t("Keep people and projects distinct with names, aliases and descriptions. All associations and annotations are chosen by you.")}
+          </p>
           <EntityFields value={draft} onChange={setDraft} />
           <button
             className="button dark"

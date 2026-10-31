@@ -46,7 +46,7 @@ describe("appearance", () => {
     media.change(true);
     expect(root.dataset.theme).toBe("dark");
     expect(root.style.colorScheme).toBe("dark");
-    expect(meta.setAttribute).toHaveBeenLastCalledWith("content", "#171c21");
+    expect(meta.setAttribute).toHaveBeenLastCalledWith("content", "#101012");
   });
 
   it("persists an override, ignores system changes, and can return to System", () => {

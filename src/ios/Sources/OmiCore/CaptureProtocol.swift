@@ -71,26 +71,67 @@ public struct OmiReassembler {
 }
 
 public enum SemanticAction: String, Codable { case mark, meetingToggle = "meeting_toggle" }
-public enum MeetingGesture: String, Codable, CaseIterable { case doubleClick, verifiedHold }
+/// These actions apply only to resolved single/double clicks. Holds remain device power controls.
+public enum WearableAction: String, Codable, CaseIterable {
+    case mark, meetingToggle = "meeting_toggle", summarize, answer, translate
+    case captureToggle = "capture_toggle", none
 
-public struct GesturePolicy {
-    public var meetingGesture: MeetingGesture
-    public var lastAcceptedMark: Date?
-    public var cooldown: TimeInterval
-    public init(meetingGesture: MeetingGesture = .doubleClick, lastAcceptedMark: Date? = nil, cooldown: TimeInterval = 60) {
-        self.meetingGesture = meetingGesture; self.lastAcceptedMark = lastAcceptedMark; self.cooldown = cooldown
+    public var usesRecentAudio: Bool { self == .summarize || self == .answer || self == .translate }
+}
+
+public struct ClickControls: Equatable {
+    public static let durations = [15, 30, 60, 120, 300]
+    public var singleClick: WearableAction
+    public var doubleClick: WearableAction
+    public var durationSeconds: Int
+    public init(singleClick: String? = nil, doubleClick: String? = nil, durationSeconds: Int = 30) {
+        self.singleClick = singleClick.flatMap(WearableAction.init(rawValue:)) ?? .mark
+        self.doubleClick = doubleClick.flatMap(WearableAction.init(rawValue:)) ?? .meetingToggle
+        self.durationSeconds = Self.durations.contains(durationSeconds) ? durationSeconds : 30
     }
-    public mutating func resolve(_ data: Data, at date: Date) -> SemanticAction? {
+}
+
+/// Physical click feedback uses two distinct, fixed CV1 vibration commands.
+public enum OmiHapticDuration: Int, Codable, CaseIterable, Sendable {
+    case short = 1, long = 3
+    public var command: Data? { Data([UInt8(rawValue)]) }
+    public var milliseconds: Int {
+        switch self { case .short: 100; case .long: 500 }
+    }
+}
+
+public enum WearableClick: UInt32 {
+    case single = 1, double = 2
+    public var hapticDuration: OmiHapticDuration { self == .single ? .short : .long }
+    public init?(_ data: Data) {
         guard data.count >= 4 else { return nil }
         let b = [UInt8](data.prefix(4))
-        let code = UInt32(b[0]) | UInt32(b[1]) << 8 | UInt32(b[2]) << 16 | UInt32(b[3]) << 24
-        if (code == 2 && meetingGesture == .doubleClick) || (code == 3 && meetingGesture == .verifiedHold) {
-            return .meetingToggle
+        self.init(rawValue: UInt32(b[0]) | UInt32(b[1]) << 8 | UInt32(b[2]) << 16 | UInt32(b[3]) << 24)
+    }
+    public func action(single: WearableAction, double: WearableAction) -> WearableAction {
+        self == .single ? single : double
+    }
+}
+
+public struct GesturePolicy {
+    public var singleClick: WearableAction
+    public var doubleClick: WearableAction
+    public var lastAcceptedMark: Date?
+    public var cooldown: TimeInterval
+    public init(singleClick: WearableAction = .mark, doubleClick: WearableAction = .meetingToggle,
+                lastAcceptedMark: Date? = nil, cooldown: TimeInterval = 60) {
+        self.singleClick = singleClick; self.doubleClick = doubleClick
+        self.lastAcceptedMark = lastAcceptedMark; self.cooldown = cooldown
+    }
+    public mutating func resolve(_ data: Data, at date: Date) -> WearableAction? {
+        guard let click = WearableClick(data) else { return nil }
+        let action = click.action(single: singleClick, double: doubleClick)
+        guard action != .none else { return nil }
+        if action == .mark {
+            guard lastAcceptedMark.map({ date.timeIntervalSince($0) >= cooldown }) ?? true else { return nil }
+            lastAcceptedMark = date
         }
-        guard code == 1 else { return nil }
-        guard lastAcceptedMark.map({ date.timeIntervalSince($0) >= cooldown }) ?? true else { return nil }
-        lastAcceptedMark = date
-        return .mark
+        return action
     }
 }
 
@@ -125,5 +166,28 @@ public struct TransferRate {
         let rate = Double(sentBytes - initialBytes) / (uptime - startedAt)
         let seconds = Double(bytes) / rate
         return seconds.isFinite ? seconds : nil
+    }
+}
+
+/// Initial GATT setup gets bounded retries; a connected link alone is not readiness.
+public struct OmiDiscoveryRecovery {
+    public enum Step: Equatable { case wait, retry, exhausted }
+    public private(set) var attempts = 0
+    public private(set) var retryAt: TimeInterval?
+    private let interval: TimeInterval
+    private let maximumAttempts: Int
+    public init(interval: TimeInterval = 3, maximumAttempts: Int = 3) {
+        self.interval = max(0.01, interval); self.maximumAttempts = max(1, maximumAttempts)
+    }
+    public mutating func start(at uptime: TimeInterval) {
+        attempts = 1; retryAt = uptime + interval
+    }
+    public mutating func cancel() { attempts = 0; retryAt = nil }
+    public mutating func advance(at uptime: TimeInterval, ready: Bool) -> Step {
+        if ready { cancel(); return .wait }
+        guard let retryAt, uptime >= retryAt else { return .wait }
+        guard attempts < maximumAttempts else { self.retryAt = nil; return .exhausted }
+        attempts += 1; self.retryAt = uptime + interval
+        return .retry
     }
 }

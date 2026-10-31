@@ -94,10 +94,11 @@ struct DecisionsSection: View {
 struct DecisionRow: View {
     let record: DecisionRecord
     var displayTitle: String? = nil
+    var showsDate = true
     @Environment(AppModel.self) private var model
     private var dateLabel: String {
         guard let date = AppModel.date(record.started_at) else { return record.started_at }
-        return DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM yyyy HHmm")
+        return DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: showsDate ? "d MMM yyyy HHmm" : "HHmm")
     }
     @Environment(\.locale) private var interfaceLocale
     var body: some View {

@@ -244,7 +244,8 @@ Current upstream sends from **Omi’s backend** and rejects private destinations
 
 1. Open [Daythread.xcodeproj](src/ios/Daythread.xcodeproj), select your signing team and connected iPhone, and run. Enable Developer Mode if prompted.
 2. Allow Bluetooth and local-network access. In app Settings, enter `http://<server-LAN-address>:8787` and use **Save & test connection**.
-3. Connect the pendant in Capture. Choose **Double click · stock firmware** for meetings until another gesture is verified; single click marks important moments. On-screen controls are also available.
+3. Connect the pendant in Capture. Single click defaults to **Mark as important** and double click defaults to **Start / end meeting**. Customize each click in pendant settings: summarize recent audio, answer the latest question, translate, mark important, start/end a meeting, start/pause recording, or do nothing. Recent-audio actions use a configurable window of 15, 30, 60, 120, or 300 seconds, defaulting to **30 seconds**. Hold is reserved for device power-off. On-screen controls are also available.
+4. Allow phone notifications for immediate click confirmations. Confirmations default to on and can be switched off in click settings. A recent-audio result replaces its initial confirmation; disabling confirmations keeps result notifications enabled.
 
 Keep the backend awake and port 8787 reachable. Away from the server, recordings queue locally and upload after reconnection; summaries/chat require reachable models.
 

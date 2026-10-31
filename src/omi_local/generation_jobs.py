@@ -12,12 +12,18 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
-from .inference_errors import InferenceDisabled
+from .inference_errors import InferenceDisabled, InferenceUnavailable
 from .recording_topics import topic_fingerprint
 from .scoped_recap_jobs import fingerprint, invalidate_changed, scoped, validate_result
 from .summary_translation import generate_summary_translation
 from .topic_context import topic_contexts
 from .translation import generate_translation
+from .wearable_actions import (
+    RecentAudioPending,
+    WearableParameters,
+    generate_wearable_action,
+    translation_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +31,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS generation_jobs (
  id TEXT PRIMARY KEY, kind TEXT NOT NULL, parameters TEXT NOT NULL,
  state TEXT NOT NULL DEFAULT 'queued', result TEXT, error TEXT,
- created_at TEXT NOT NULL, notified INTEGER NOT NULL DEFAULT 0
+ created_at TEXT NOT NULL, notified INTEGER NOT NULL DEFAULT 0,
+ retry_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS generation_job_sources (
  job_id TEXT NOT NULL, source_id TEXT NOT NULL,
@@ -93,7 +100,9 @@ class MeetingParameters(Parameters):
 
 class GenerationRequest(Parameters):
     id: UUID
-    kind: Literal["rewind", "recap", "translation", "summary_translation", "meeting_recap"]
+    kind: Literal[
+        "rewind", "recap", "translation", "summary_translation", "meeting_recap", "wearable_action",
+    ]
     parameters: dict
 
 
@@ -101,6 +110,7 @@ PARAMETERS = {
     "rewind": RewindParameters, "recap": RecapParameters,
     "translation": TranslationParameters, "summary_translation": SummaryTranslationParameters,
     "meeting_recap": MeetingParameters,
+    "wearable_action": WearableParameters,
 }
 RAW_REWIND = (
     "(kind='rewind' AND CAST(json_extract(parameters,'$.summarize') AS TEXT) IN ('0','false'))"
@@ -113,6 +123,11 @@ class GenerationJobs:
         self.store = memory.store
         with self.store.connect() as db:
             db.executescript(SCHEMA)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(generation_jobs)")}
+            if "retry_at" not in columns:
+                db.execute(
+                    "ALTER TABLE generation_jobs ADD COLUMN retry_at TEXT NOT NULL DEFAULT ''"
+                )
             if memory.settings.background_processing_enabled:
                 db.execute("UPDATE generation_jobs SET state='queued' WHERE state='running'")
 
@@ -168,6 +183,14 @@ class GenerationJobs:
         else:
             queued += topics
         result = {"queued": queued, "running": running, "stages": stages}
+        if self.memory.settings.llm_enabled and self.memory.background_progress:
+            now = utc_now()
+            result["active"] = [
+                progress | {"elapsed_seconds": max(
+                    0, (now - datetime.fromisoformat(progress["started_at"])).total_seconds(),
+                )}
+                for progress in self.memory.background_progress.copy().values()
+            ]
         return result | {"paused": paused} if not self.memory.settings.llm_enabled else result
 
     def enqueue(self, body: GenerationRequest) -> dict:
@@ -192,6 +215,9 @@ class GenerationJobs:
                 # Freeze relative rewind time at first submission, including retries.
                 if body.kind == "rewind" and params["end"] is None:
                     params["end"] = previous.get("end")
+                if body.kind == "wearable_action" and params["action"] == "translate":
+                    if params["language"] is None:
+                        params["language"] = previous.get("language")
                 if existing["kind"] != body.kind or previous != params:
                     raise HTTPException(409, "Request ID already has different parameters")
             else:
@@ -199,6 +225,8 @@ class GenerationJobs:
                     params["scope_fingerprint"] = fingerprint(self.memory, params, db)
                 if body.kind == "rewind" and params["end"] is None:
                     params["end"] = stamp(utc_now())
+                if body.kind == "wearable_action" and params["action"] == "translate":
+                    params["language"] = translation_target(self.memory, params["language"])
                 db.execute(
                     "INSERT INTO generation_jobs(id,kind,parameters,created_at,notified) "
                     "VALUES(?,?,?,?,?)",
@@ -209,6 +237,8 @@ class GenerationJobs:
 
     async def execute(self, job: dict) -> dict:
         params, kind, memory = job["parameters"], job["kind"], self.memory
+        if kind == "wearable_action":
+            return await generate_wearable_action(memory, params)
         if kind == "rewind":
             end = datetime.fromisoformat(params["end"])
             return await memory.window(
@@ -260,10 +290,16 @@ class GenerationJobs:
                 sources = source["sources"]
             for source in sources:
                 current = db.execute(
-                    "SELECT transcript_version FROM audio WHERE id=?", (source["id"],)
+                    "SELECT transcript_version,source_version,text,state FROM audio WHERE id=?",
+                    (source["id"],),
                 ).fetchone()
                 if current is None or (source.get("transcript_version") is not None
                                        and current[0] != source["transcript_version"]):
+                    raise EvidenceChanged("Recorded evidence changed; generate again")
+                if job["kind"] == "wearable_action" and any(
+                    field in source and current[field] != source[field]
+                    for field in ("source_version", "text", "state")
+                ):
                     raise EvidenceChanged("Recorded evidence changed; generate again")
                 db.execute("INSERT OR IGNORE INTO generation_job_sources VALUES(?,?)",
                            (job["id"], source["id"]))
@@ -316,8 +352,8 @@ class GenerationJobs:
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT id FROM generation_jobs WHERE state='queued'" + policy
-                + " ORDER BY created_at LIMIT 1"
+                "SELECT id FROM generation_jobs WHERE state='queued' AND retry_at<=?" + policy
+                + " ORDER BY created_at LIMIT 1", (stamp(utc_now()),),
             ).fetchone()
             if row is None:
                 return False
@@ -328,6 +364,13 @@ class GenerationJobs:
             async with asyncio.timeout(self.memory.settings.inference_timeout_seconds):
                 result = await self.execute(job)
             self.complete(job, result)
+        except (InferenceUnavailable, RecentAudioPending) as exc:
+            with self.store.connect() as db:
+                db.execute(
+                    "UPDATE generation_jobs SET state='queued',error=NULL,retry_at=? WHERE id=? "
+                    "AND state='running'",
+                    (stamp(utc_now() + timedelta(seconds=exc.retry_after_seconds)), job["id"]),
+                )
         except InferenceDisabled:
             with self.store.connect() as db:
                 db.execute(

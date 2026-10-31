@@ -90,6 +90,7 @@ class Memory:
         self.settings = settings
         self.inference = inference
         self.background_activity: dict[str, int] = {}
+        self.background_progress: dict[str, dict] = {}
         self.usage = UsageLedger(store)
         if isinstance(inference, Inference):
             inference.usage_recorder = self.usage.record
@@ -103,16 +104,22 @@ class Memory:
         self.retriever = HybridRetriever(store, settings)
 
     @contextmanager
-    def processing_activity(self, stage: str):
+    def processing_activity(self, stage: str, progress: dict | None = None):
         # Durable requests already appear in generation_jobs; count each task once.
         if generating_job.get():
             yield
             return
         self.background_activity[stage] = self.background_activity.get(stage, 0) + 1
+        activity_id = str(uuid4())
+        if progress is not None:
+            self.background_progress[activity_id] = progress | {
+                "id": activity_id, "stage": stage, "started_at": stamp(utc_now()),
+            }
         try:
-            yield
+            yield self.background_progress.get(activity_id)
         finally:
             self.background_activity[stage] -= 1
+            self.background_progress.pop(activity_id, None)
 
     def day_window(self, day: date) -> tuple[datetime, datetime]:
         zone = ZoneInfo(self.settings.timezone)

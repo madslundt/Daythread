@@ -28,11 +28,7 @@ struct DayCalendarPicker: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "calendar").foregroundStyle(Theme.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(diary.label(visibleDate, template: "EEEE d MMMM")).font(.headline)
-                        Text(selectedDate == nil ? L10n.text("Today · Tap to choose a date") : L10n.text("Tap to choose a date"))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    Text(diary.label(visibleDate, template: "EEEE d MMMM")).font(.subheadline.weight(.medium))
                     Spacer()
                     Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
@@ -41,6 +37,7 @@ struct DayCalendarPicker: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("day.datePicker")
+            .accessibilityHint(L10n.text("Tap to choose a date"))
 
             if expanded {
                 MonthCalendar(diary: diary, month: $month, day: visibleDate, today: model.now, days: days) { date in

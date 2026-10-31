@@ -74,7 +74,9 @@ export function Inbox({ timezone }: { timezone: string }) {
       <p className="caption">
         {t("Tasks, unanswered questions, plans, and things to remember or consider. Review proposals against the recording.")}{" "}</p>
       <details className="inbox-scan">
-        <summary>{t("Scan earlier recordings / retry failed work")}</summary>
+        <summary>{t("Scan earlier recordings / retry failed work")}
+          {coverage && coverage.jobs.failed > 0 ? <span className="inbox-scan-warning" role="status">{coverage.jobs.failed} {statusLabel("failed")}</span> : null}
+        </summary>
         <form
           className="inbox-controls"
           onSubmit={(e) => {
@@ -104,6 +106,23 @@ export function Inbox({ timezone }: { timezone: string }) {
         </form>
         <p className="caption">
           {t("Up to 31 days per scan. Dates use")}{" "}{timezone}{t(". New transcripts are scanned automatically. No external task synchronization.")}{" "}</p>
+        {coverage ? (
+          <div className="caption" role="status">
+            {coverage.jobs.done || 0} {t("scanned windows ·")}{" "}
+            {coverage.jobs.queued || 0} {t("waiting ·")}{" "}{coverage.jobs.running || 0}{" "}
+            {t("extracting ·")}{" "}{coverage.jobs.failed || 0} {t("failed ·")}{" "}
+            {coverage.unscanned_sources} {t("unscanned sources")}{" "}{resource.data?.recent_jobs
+              .filter((j) => j.error)
+              .map((j) => (
+                <p key={j.id}>
+                  {j.recording_start
+                    ? `${dateTimeLabel(j.recording_start, timezone)} · `
+                    : ""}
+                  {statusLabel(j.state)}: {t(j.error || "")} {t("(attempt")}{" "}{j.attempts})
+                </p>
+              ))}
+          </div>
+        ) : null}
       </details>
       {message ? <Notice>{message}</Notice> : null}
       {error || resource.error ? (
@@ -112,24 +131,7 @@ export function Inbox({ timezone }: { timezone: string }) {
           retry={resource.refresh}
         />
       ) : null}
-      {coverage ? (
-        <div className="caption" role="status">
-          {coverage.jobs.done || 0} {t("scanned windows ·")}{" "}
-          {coverage.jobs.queued || 0} {t("waiting ·")}{" "}{coverage.jobs.running || 0}{" "}
-          {t("extracting ·")}{" "}{coverage.jobs.failed || 0} {t("failed ·")}{" "}
-          {coverage.unscanned_sources} {t("unscanned sources")}{" "}{resource.data?.recent_jobs
-            .filter((j) => j.error)
-            .map((j) => (
-              <p key={j.id}>
-                {j.recording_start
-                  ? `${dateTimeLabel(j.recording_start, timezone)} · `
-                  : ""}
-                {statusLabel(j.state)}: {t(j.error || "")} {t("(attempt")}{" "}{j.attempts})
-              </p>
-            ))}
-        </div>
-      ) : null}
-      <div className="inbox-controls">
+      <div className="inbox-controls inbox-primary-controls">
         <label>
           {t("Status")}{" "}<select
             value={status}
@@ -143,38 +145,43 @@ export function Inbox({ timezone }: { timezone: string }) {
             <option value="dismissed">{t("Dismissed")}</option>
           </select>
         </label>
-        <label>
-          {t("Kind")}{" "}<select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="">{t("All kinds")}</option>
-            <option value="commitment">{t("Commitments")}</option>
-            <option value="deadline">{t("Deadlines")}</option>
-            <option value="question">{t("Questions")}</option>
-            <option value="reminder">{t("Reminders")}</option>
-            <option value="event">{t("Calendar events")}</option>
-            <option value="reflection">{t("Worth considering")}</option>
-            <option value="note">{t("Worth remembering")}</option>
-          </select>
-        </label>
-        <label>
-          {t("Deadline")}{" "}<select
-            value={due}
-            onChange={(e) => {
-              setDue(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="">{t("All deadlines")}</option>
-            <option value="overdue">{t("Overdue")}</option>
-            <option value="upcoming">{t("Upcoming")}</option>
-            <option value="unknown">{t("Unknown / unresolved")}</option>
-          </select>
-        </label>
+        <details className="inbox-filters">
+          <summary>{t("Filters")}{kind || due ? <span className="filter-count">{Number(Boolean(kind)) + Number(Boolean(due))}</span> : null}</summary>
+          <div className="inbox-controls">
+            <label>
+              {t("Kind")}{" "}<select
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value);
+                  setOffset(0);
+                }}
+              >
+                <option value="">{t("All kinds")}</option>
+                <option value="commitment">{t("Commitments")}</option>
+                <option value="deadline">{t("Deadlines")}</option>
+                <option value="question">{t("Questions")}</option>
+                <option value="reminder">{t("Reminders")}</option>
+                <option value="event">{t("Calendar events")}</option>
+                <option value="reflection">{t("Worth considering")}</option>
+                <option value="note">{t("Worth remembering")}</option>
+              </select>
+            </label>
+            <label>
+              {t("Deadline")}{" "}<select
+                value={due}
+                onChange={(e) => {
+                  setDue(e.target.value);
+                  setOffset(0);
+                }}
+              >
+                <option value="">{t("All deadlines")}</option>
+                <option value="overdue">{t("Overdue")}</option>
+                <option value="upcoming">{t("Upcoming")}</option>
+                <option value="unknown">{t("Unknown / unresolved")}</option>
+              </select>
+            </label>
+          </div>
+        </details>
       </div>
       {resource.loading && !resource.data ? <Loading /> : null}
       {resource.data?.items.map((item) => (

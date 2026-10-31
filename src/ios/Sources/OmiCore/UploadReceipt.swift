@@ -17,6 +17,19 @@ public enum UploadReceipt {
                   let ended = date("ended_at"), let expectedEnd = item.endedAt,
                   abs(ended.timeIntervalSince(expectedEnd)) < 0.002,
                   let state = value["state"] as? String, ["queued", "transcribing", "done", "failed", "expired", "blocked"].contains(state) else { throw CaptureError.invalidReceipt }
+        case .generation:
+            guard matches("id", item.id), value["kind"] as? String == "wearable_action",
+                  let parameters = value["parameters"] as? [String: Any],
+                  parameters["action"] as? String == item.wearableAction?.rawValue,
+                  parameters["duration_seconds"] as? Int == item.durationSeconds,
+                  parameters["device_id"] as? String == item.deviceID,
+                  let rawEnd = parameters["end"] as? String,
+                  let end = ISO8601DateFormatter().date(from: rawEnd) ?? {
+                      let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                      return formatter.date(from: rawEnd)
+                  }(), abs(end.timeIntervalSince(item.capturedAt)) < 0.002,
+                  item.language == nil || parameters["language"] as? String == item.language,
+                  let state = value["state"] as? String, ["queued", "running", "completed", "failed"].contains(state) else { throw CaptureError.invalidReceipt }
         case .captureState:
             guard matches("event_id", item.id), (value["phone_id"] as? String).flatMap(UUID.init(uuidString:)) == UUID(uuidString: item.deviceID),
                   let occurred = date("occurred_at"), abs(occurred.timeIntervalSince(item.capturedAt)) < 0.002,

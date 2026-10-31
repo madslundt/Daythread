@@ -71,7 +71,13 @@ export type Timeline = {
   active_meeting: Meeting | null;
 };
 export type Status = {
-  generation?: { queued: number; running: number; stages: Record<string, number> };
+  generation?: {
+    queued: number; running: number; stages: Record<string, number>;
+    active?: {
+      id: string; stage: string; started_at?: string;
+      completed_chunks: number; total_chunks: number; elapsed_seconds: number;
+    }[];
+  };
   as_of?: string;
   ingestion?: {
     last_received_at: string | null;

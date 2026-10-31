@@ -143,6 +143,7 @@ class Settings(BaseSettings):
     background_processing_enabled: bool = True
     stt_enabled: bool = True
     llm_enabled: bool = True
+    llm_busy_retry_enabled: bool = False
     timezone: str = "Europe/Copenhagen"
     stt_base_url: str = "http://127.0.0.1:4000/v1"
     llm_base_url: str = "http://127.0.0.1:4000/v1"
@@ -469,6 +470,7 @@ RUNTIME_FIELDS = (
 DEPLOYMENT_FIELDS = {
     "managed_hosting", "background_processing_enabled", "database_url", "database_schema",
     "storage_bucket", "storage_region", "storage_prefix", "stt_enabled", "llm_enabled",
+    "llm_busy_retry_enabled",
 }
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
 

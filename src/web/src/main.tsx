@@ -5,6 +5,7 @@ import { initializeTheme } from "./theme";
 import { initializeLanguage } from "./i18n";
 import "./styles.css";
 import "./today.css";
+import "./theme.css";
 
 initializeTheme();
 initializeLanguage();

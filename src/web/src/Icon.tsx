@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 export type IconName =
+  | "filter"
   | "more"
   | "inbox"
   | "people"
@@ -29,6 +30,7 @@ export type IconName =
   | "play"
   | "refresh";
 const paths: Record<IconName, string> = {
+  filter: "M4 6h16M7 12h10M10 18h4",
   more: "M5 11h.01M12 11h.01M19 11h.01M5 12h.01M12 12h.01M19 12h.01",
   inbox: "M4 4h16l2 11v5H2v-5L4 4Zm-2 11h6l2 3h4l2-3h6M8 8h8M9 11h6",
   people: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",

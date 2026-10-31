@@ -8,6 +8,61 @@ final class DurableStoreTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
     }
+    func testWearableRequestFreezesAudioWindowAndRebuildsUploadAfterRestart() throws {
+        let directory = try folder(), store = try DurableStore(directory: directory)
+        let at = Date(timeIntervalSince1970: 1000.123)
+        store.destinationID = "home"; store.profileID = "work"
+        let id = try store.wearableAction(deviceID: "pendant", at: at, action: .translate, durationSeconds: 30, language: "da")
+        let original = try Data(contentsOf: store.file(id, extension: "json"))
+        try store.failed(id, message: "offline")
+        try FileManager.default.removeItem(at: store.file(id, extension: "json"))
+        let restored = try DurableStore(directory: directory)
+        let item = try XCTUnwrap(restored.pending.first)
+        XCTAssertEqual(item.id, id); XCTAssertEqual(item.destinationID, "home"); XCTAssertEqual(item.resolvedProfileID, "work")
+        XCTAssertEqual(try Data(contentsOf: restored.uploadFile(for: item)), original)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        XCTAssertEqual(body["id"] as? String, id.uuidString.lowercased()); XCTAssertEqual(body["kind"] as? String, "wearable_action")
+        let params = try XCTUnwrap(body["parameters"] as? [String: Any])
+        XCTAssertEqual(params["duration_seconds"] as? Int, 30); XCTAssertEqual(params["end"] as? String, DurableStore.stamp(at))
+        XCTAssertEqual(params["action"] as? String, "translate"); XCTAssertEqual(params["language"] as? String, "da")
+        XCTAssertEqual(params["device_id"] as? String, "pendant")
+        XCTAssertThrowsError(try store.wearableAction(deviceID: "p", at: at, action: .mark, durationSeconds: 30))
+    }
+    func testRecentAudioRequestCannotOvertakeItsAudioDuringRetry() throws {
+        let store = try DurableStore(directory: folder()), start = Date(timeIntervalSince1970: 1000)
+        store.destinationID = "home"
+        try store.begin(deviceID: "pendant", codec: 0, clock: CaptureClock(wall: start))
+        try store.append(frame: Data(count: 640), decoded: Data(count: 640)); try store.finish()
+        let audio = try XCTUnwrap(store.pending.first)
+        let job = try store.wearableAction(deviceID: "pendant", at: start.addingTimeInterval(1), action: .answer, durationSeconds: 30)
+        XCTAssertEqual(store.nextUpload(destinationID: "home")?.id, audio.id)
+        try store.failed(audio.id, message: "offline")
+        XCTAssertNil(store.nextUpload(destinationID: "home"))
+        try store.acknowledge(audio.id)
+        XCTAssertEqual(store.nextUpload(destinationID: "home")?.id, job)
+        XCTAssertNil(store.nextUpload(destinationID: "another archive"))
+    }
+    func testRewindAvailabilityRequiresRecentPlayableAudioInSelectedArchive() throws {
+        let store = try DurableStore(directory: folder()), start = Date(timeIntervalSince1970: 1000)
+        store.destinationID = "home"; store.profileID = "work"
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start))
+        try store.begin(deviceID: "p", codec: 0, clock: CaptureClock(wall: start))
+        let frame = Data(repeating: 7, count: 640)
+        try store.append(frame: frame, decoded: frame)
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(1)), "Unfinished audio must be checkpointed first")
+        try store.finish()
+        XCTAssertTrue(store.canRewind(minutes: 1, end: start.addingTimeInterval(1)))
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(61)))
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(-1)))
+        store.profileID = "personal"
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(1)))
+        store.profileID = "work"; store.destinationID = "away"
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(1)))
+        store.destinationID = "home"
+        let item = try XCTUnwrap(store.items.first)
+        try FileManager.default.removeItem(at: store.file(item.id, extension: "wav"))
+        XCTAssertFalse(store.canRewind(minutes: 1, end: start.addingTimeInterval(1)))
+    }
     func testAudioSyncIsBatchedToOneSecondAndFinishesPartialTail() throws {
         var synchronizations = 0
         let store = try DurableStore(directory: folder(), synchronizeSource: {

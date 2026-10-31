@@ -23,7 +23,7 @@ struct RecapHistoryView: View {
         List {
             Section {
                 Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM yyyy") } ?? day)
-                    .font(.system(.title2, design: .serif))
+                    .font(.system(.title2, weight: .semibold))
                 Button { exportMarkdown() } label: {
                     Label(exporting ? L10n.text("Preparing export…") : L10n.text("Export latest diary as Markdown"), systemImage: "square.and.arrow.up")
                 }.disabled(exporting)

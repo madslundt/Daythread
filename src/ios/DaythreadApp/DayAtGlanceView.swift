@@ -10,6 +10,7 @@ struct DayAtGlanceSections: View {
     var filters = DayFilterScope()
     var topicTitle: String? = nil
     var contentLanguage: String? = nil
+    var compact = false
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -29,7 +30,7 @@ struct DayAtGlanceSections: View {
     @State private var decisionScanID = UUID()
     @State private var refresh = UUID()
     @State private var loadedScope = ""
-    @State private var visibleDecisions = 5
+    @State private var visibleDecisions = 3
     @State private var category = ""
     @State private var labelState = DisplayLabelTranslationState()
     @State private var labelsRefresh = UUID()
@@ -42,7 +43,7 @@ struct DayAtGlanceSections: View {
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var labels: [DisplayTranslations.Label] {
         let intents: [InboxIntent] = [.todo, .questions, .schedule, .reflection, .information]
-        let rows = intents.filter { category.isEmpty || category == $0.rawValue }.flatMap { Array(orderedItems($0).prefix(5)) }
+        let rows = intents.filter { category.isEmpty || category == $0.rawValue }.flatMap { Array(orderedItems($0).prefix(compact ? 3 : 5)) }
         let choices = category.isEmpty || category == "decisions" ? Array(scopedDecisions.prefix(visibleDecisions)) : []
         return rows.map { .init(reference: .init(kind: "inbox", id: $0.id, version: $0.version), title: $0.title) }
             + choices.map { .init(reference: .init(kind: "decision", id: $0.id, version: $0.version), title: $0.title) }
@@ -53,9 +54,9 @@ struct DayAtGlanceSections: View {
     var body: some View {
         let _ = interfaceLocale
         Section {
-            Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM") } ?? day).font(.subheadline).foregroundStyle(.secondary)
+            if !compact { Text(diary.date(for: day).map { diary.label($0, template: "EEEE d MMMM") } ?? day).font(.subheadline).foregroundStyle(.secondary) }
             if let topicTitle { Text(L10n.text("Topic") + ": " + topicTitle).font(.subheadline.weight(.medium)) }
-            Text(L10n.text("Proposals come from your recorded conversations and need your review.")).font(.caption).foregroundStyle(.secondary)
+            if !compact { Text(L10n.text("Proposals come from your recorded conversations and need your review.")).font(.caption).foregroundStyle(.secondary) }
             if labelState.isLoading(key: labelsKey, language: contentLanguage, labels: labels) { ProgressView(L10n.text("Translating…")) }
             if let error = labelState.error(for: labelsKey) {
                 ErrorNote(message: error)
@@ -75,7 +76,7 @@ struct DayAtGlanceSections: View {
         .task(id: key + String(describing: phase)) {
             guard phase == .active else { return }
             if loadedScope != scope {
-                items = []; decisions = []; coverage = nil; visibleDecisions = 5; loadedScope = scope
+                items = []; decisions = []; coverage = nil; visibleDecisions = compact ? 3 : 5; loadedScope = scope
             }
             await load()
             while !Task.isCancelled {
@@ -92,7 +93,16 @@ struct DayAtGlanceSections: View {
         if category.isEmpty || category == "decisions" { decisionGroup }
         if category.isEmpty || category == InboxIntent.reflection.rawValue { inboxGroup(.reflection) }
         if category.isEmpty || category == InboxIntent.information.rawValue { inboxGroup(.information) }
-        if topicSources == nil { scanSection }
+        if topicSources == nil {
+            if compact {
+                Section {
+                    DisclosureGroup(L10n.text("Scan status & coverage")) {
+                        scanControls
+                        decisionScanControls
+                    }
+                }
+            } else { scanSection }
+        }
     }
 
     private var scopedInbox: some View { InboxView(day: day, topicSources: topicSources, topicPassages: topicPassages, filters: filters) }
@@ -106,52 +116,69 @@ struct DayAtGlanceSections: View {
     }
     private func inboxGroup(_ intent: InboxIntent) -> some View {
         let relevant = orderedItems(intent)
-        return Section {
-            ForEach(relevant.prefix(5)) { item in
-                NavigationLink { InboxDetail(id: item.id) } label: {
-                    InboxOverviewRow(item: item, displayTitle: labelValues[.init(kind: "inbox", id: item.id, version: item.version)])
-                }
+        return Group {
+            if !compact || !relevant.isEmpty {
+                Section {
+                    ForEach(relevant.prefix(compact ? 3 : 5)) { item in
+                        NavigationLink { InboxDetail(id: item.id) } label: {
+                            InboxOverviewRow(item: item, displayTitle: labelValues[.init(kind: "inbox", id: item.id, version: item.version)], compact: compact)
+                        }
+                    }
+                    if !compact && relevant.isEmpty && !loading && inboxError == nil && loadedScope == scope {
+                        Text(L10n.text("No items in this group yet. Scans may still be incomplete.")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if relevant.count > (compact ? 3 : 5) { NavigationLink(L10n.text("Review all items")) { scopedInbox } }
+                } header: { Text(intent.title) }
             }
-            if relevant.isEmpty && !loading && inboxError == nil && loadedScope == scope {
-                Text(L10n.text("No items in this group yet. Scans may still be incomplete.")).font(.caption).foregroundStyle(.secondary)
-            }
-            if relevant.count > 5 { NavigationLink(L10n.text("Review all items")) { scopedInbox } }
-        } header: { Text(intent.title) }
+        }
     }
 
     private var decisionGroup: some View {
-        Section {
-            ErrorNote(message: decisionError)
-            if decisionError != nil { Button(L10n.text("Refresh decisions")) { refresh = UUID() } }
-            ForEach(scopedDecisions.prefix(visibleDecisions)) { record in
-                NavigationLink { DecisionDetail(id: record.id) } label: {
-                    VStack(alignment: .leading, spacing: 7) {
-                        DecisionRow(record: record, displayTitle: labelValues[.init(kind: "decision", id: record.id, version: record.version)])
-                        Text(L10n.text("Review decision")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+        Group {
+            if !compact || !scopedDecisions.isEmpty || decisionError != nil {
+                Section {
+                    ErrorNote(message: decisionError)
+                    if decisionError != nil { Button(L10n.text("Refresh decisions")) { refresh = UUID() } }
+                    ForEach(scopedDecisions.prefix(visibleDecisions)) { record in
+                        NavigationLink { DecisionDetail(id: record.id) } label: {
+                            VStack(alignment: .leading, spacing: 7) {
+                                DecisionRow(record: record, displayTitle: labelValues[.init(kind: "decision", id: record.id, version: record.version)], showsDate: !compact)
+                                if !compact { Text(L10n.text("Review decision")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent) }
+                            }
+                        }
                     }
-                }
+                    if scopedDecisions.count > visibleDecisions {
+                        Button(L10n.text("Load more decisions")) { visibleDecisions += 10 }
+                    }
+                    if !compact && scopedDecisions.isEmpty && !loading && decisionError == nil && loadedScope == scope {
+                        Text(topicSources == nil ? L10n.text("No decision records for this day.") : L10n.text("No current decision choices linked to an identified passage in this topic."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !compact {
+                        Text(L10n.text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        if topicSources == nil { decisionScanControls }
+                    }
+                } header: { Text(L10n.text("Decisions")) }
             }
-            if scopedDecisions.count > visibleDecisions {
-                Button(L10n.text("Load more decisions")) { visibleDecisions += 10 }
-            }
-            if scopedDecisions.isEmpty && !loading && decisionError == nil && loadedScope == scope {
-                Text(topicSources == nil ? L10n.text("No decision records for this day.") : L10n.text("No current decision choices linked to an identified passage in this topic."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Text(L10n.text("Decisions are found automatically from new transcripts. Review original evidence before confirming a record. Confirmation records accuracy; it does not make a tentative choice final."))
-                .font(.caption).foregroundStyle(.secondary)
-            if topicSources == nil {
-                Button { Task { await scanDecisions() } } label: { Label(filters.isFiltered ? L10n.text("Scan whole day") : L10n.text("Find decisions"), systemImage: "arrow.triangle.branch") }.disabled(findingDecisions)
-                if findingDecisions { ProgressView(L10n.text("Finding earlier decisions…")) }
-                if let decisionScanMessage { Text(decisionScanMessage).font(.caption).foregroundStyle(.secondary) }
-                ErrorNote(message: decisionScanError)
-            }
-        } header: { Text(L10n.text("Decisions")) }
+        }
+    }
 
+    private var decisionScanControls: some View {
+        Group {
+            Button { Task { await scanDecisions() } } label: { Label(filters.isFiltered ? L10n.text("Scan whole day") : L10n.text("Find decisions"), systemImage: "arrow.triangle.branch") }.disabled(findingDecisions)
+            if findingDecisions { ProgressView(L10n.text("Finding earlier decisions…")) }
+            if let decisionScanMessage { Text(decisionScanMessage).font(.caption).foregroundStyle(.secondary) }
+            ErrorNote(message: decisionScanError)
+        }
     }
 
     private var scanSection: some View {
-        Section {
+        Section { scanControls } header: { Text(L10n.text("Follow-up extraction")) }
+    }
+
+    private var scanControls: some View {
+        Group {
             Button { Task { await scanDay() } } label: { Label(filters.isFiltered ? L10n.text("Scan whole day") : L10n.text("Find items from this day"), systemImage: "text.magnifyingglass") }.disabled(scanning)
             if scanning { ProgressView(L10n.text("Finding follow-ups")) }
             if let inboxScanMessage { Text(inboxScanMessage).font(.caption).foregroundStyle(.secondary) }
@@ -170,7 +197,7 @@ struct DayAtGlanceSections: View {
                 }
             }
             InboxLink()
-        } header: { Text(L10n.text("Follow-up extraction")) }
+        }
     }
 
     private func load() async {
@@ -305,6 +332,7 @@ private extension InboxIntent {
 struct InboxOverviewRow: View {
     let item: InboxItem
     var displayTitle: String? = nil
+    var compact = false
     @Environment(\.locale) private var interfaceLocale
     private var nextAction: String {
         if item.status == "completed" { return item.kind == "question" ? L10n.text("Answered") : item.isReviewOnly ? L10n.text("Reviewed") : L10n.text("Completed") }
@@ -320,23 +348,23 @@ struct InboxOverviewRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 6) {
-            Text(displayTitle ?? item.title).foregroundStyle(.primary)
+            Text(displayTitle ?? item.title).foregroundStyle(.primary).lineLimit(compact ? 2 : nil)
             Text(L10n.status(item.kind) + " · " + (item.status == "completed" || item.reviewed_at != nil ? L10n.text("Reviewed") : L10n.text("Proposed"))).font(.caption).foregroundStyle(.secondary)
             if item.overdue == true { Label(L10n.text("Overdue"), systemImage: "exclamationmark.circle").font(.caption.weight(.semibold)).foregroundStyle(.orange) }
             if item.health != "current" { Text(L10n.text("Evidence \(L10n.status(item.health))")).font(.caption).foregroundStyle(.orange) }
             if let owner = item.owner, !owner.isEmpty { Text(owner).font(.caption).foregroundStyle(.secondary) }
-            else if !item.isReviewOnly { Text(L10n.text("Owner unknown")).font(.caption).foregroundStyle(.secondary) }
+            else if !compact && !item.isReviewOnly { Text(L10n.text("Owner unknown")).font(.caption).foregroundStyle(.secondary) }
             if let deadline = item.deadline {
                 Text(L10n.text("Deadline") + ": " + deadline.label).font(.caption).foregroundStyle(.secondary)
-            } else if item.intent == .todo {
+            } else if !compact && item.intent == .todo {
                 Text(L10n.text("Deadline unknown")).font(.caption).foregroundStyle(.secondary)
-            } else if item.intent == .schedule {
+            } else if !compact && item.intent == .schedule {
                 Text(L10n.text("Date unknown")).font(.caption).foregroundStyle(.secondary)
             }
             if let note = item.user_note, !note.isEmpty {
                 Text((item.kind == "question" ? L10n.text("Your answer") : L10n.text("Your notes")) + ": " + note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
-            Text(nextAction).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+            if !compact { Text(nextAction).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent) }
         }.padding(.vertical, 5)
     }
 }

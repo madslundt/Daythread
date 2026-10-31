@@ -2,7 +2,7 @@ import { sendHintEvent, meetingCaptureDevice } from "./hintActions";
 import { t } from "./i18n";
 import { resolveProfile, savedProfile, selectProfile, type Profile, type ProfileDirectory } from "./profiles";
 import { ImportanceProvider } from "./Importance";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConversationPrep } from "./ConversationPrep";
 import { Labels } from "./Labels";
 import { Chat } from "./Chat";
@@ -231,8 +231,7 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
             ) : null}
           </div>
           <div className="intro">
-            {page !== "today" || prepOpen ? <span className="eyebrow intro-eyebrow">{prepOpen ? t("Look ahead") : t(current.label)}</span> : null}
-            <h1>{prepOpen ? t("Prepare for what comes next.") : page === "today" ? day === localDay(timezone) ? t("Today") : t("Your day") : t(current.title)}</h1>
+            <h1>{prepOpen ? t("Prepare") : page === "today" ? day === localDay(timezone) ? t("Today") : t("Your day") : page === "labels" ? t("People & projects") : t(current.label)}</h1>
           </div>
           {page === "today" ? (
             <div className="mobile-actions">
@@ -337,11 +336,19 @@ function HintActions({
   onTimeline: (timeline: Timeline) => void;
   onMessage: (message: string) => void;
 }) {
+  const menu = useRef<HTMLDetailsElement>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (menu.current && event.target instanceof Node && !menu.current.contains(event.target)) menu.current.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
   }, []);
   const lastMarker =
     timeline?.markers[timeline.markers.length - 1]?.occurred_at;
@@ -380,7 +387,14 @@ function HintActions({
     }
   }
   return (
-    <div className="hint-actions">
+    <details ref={menu} className="hint-menu" onKeyDown={(event) => {
+      if (event.key === "Escape") {
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector("summary")?.focus();
+      }
+    }}>
+      <summary className="icon-button" aria-label={t("Day tools")}><Icon name="more" /></summary>
+      <div className="hint-actions">
       <button
         className="button"
         onClick={() => void event("mark")}
@@ -403,7 +417,8 @@ function HintActions({
         <Icon name="mic" />
         {active ? t("End meeting") : t("Start meeting")}
       </button>
-    </div>
+      </div>
+    </details>
   );
 }
 

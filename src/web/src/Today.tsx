@@ -40,6 +40,7 @@ export function Today({
   onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const [filters, setFilters] = useState(dayFiltersForProfile);
+  const [filtersOpen, setFiltersOpen] = useState(() => hasDayFilters(dayFiltersForProfile()));
   const [membershipVersion, setMembershipVersion] = useState(0);
   const filtered = hasDayFilters(filters);
   const scopeKey = `${day}:${dayFilterKey(filters)}:${membershipVersion}`;
@@ -55,14 +56,21 @@ export function Today({
       <div className="day-main">
         {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
         <section className="day-filters" aria-label={t("Day filters")}>
-          <div className="section-heading"><h2>{t("Day filters")}</h2>
+          <div className="day-filter-heading">
+            <button type="button" className="text-button" aria-expanded={filtersOpen} aria-controls="day-filter-options" onClick={() => setFiltersOpen(!filtersOpen)}>
+              <Icon name="filter" size={17} />{t("Day filters")}
+              {filtered ? <span className="filter-count">{Number(Boolean(filters.tagID)) + Number(Boolean(filters.zoneID))}</span> : null}
+              <Icon name="chevron-right" size={13} />
+            </button>
             {filtered ? <button type="button" className="text-button" onClick={() => changeFilters(allDayFilters)}>{t("Clear filters")}</button> : null}
           </div>
+          <div id="day-filter-options" hidden={!filtersOpen}>
           <div className="timeline-filters">
             <TagFilter value={filters.tagID} onChange={(tagID) => changeFilters({ ...filters, tagID })} />
             <ZoneFilter value={filters.zoneID} onChange={(zoneID) => changeFilters({ ...filters, zoneID })} />
           </div>
           <p className="caption">{t("Filters apply to the recap, highlights, topics, and timeline.")}</p>
+          </div>
           {filtered ? <p className="caption" role="status">{t("Only recordings matching every selected filter are included.")}</p> : null}
         </section>
         <RecapSection key={`recap-${scopeKey}`} day={day} timezone={timezone} status={status} statusError={statusError} onUpload={onUpload} onChat={onChat} filters={filters} compact />
@@ -78,7 +86,9 @@ export function Today({
       </div>
       <aside className="day-rail" aria-label={t("Day tools and capture")}>
         {filtered ? <p className="caption day-whole-day-tools">{t("Chat and quick rewind use the whole day.")}</p> : null}
-        <QuickRewind onRewind={onRewind} />
+        <details className="day-utility"><summary><Icon name="rewind" size={18} />{t("Quick rewind")}<Icon name="chevron-right" size={14} /></summary>
+          <QuickRewind onRewind={onRewind} />
+        </details>
         <section className="day-tools">
           <h2>{t("Day tools")}</h2>
           <button className="day-tool" onClick={() => onChat({ kind: "day", day })}>
@@ -104,7 +114,6 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
   const [minutes, setMinutes] = useState(10);
   return (
     <section className="quick-rewind">
-      <h2>{t("Quick rewind")}</h2>
       <label className="select-with-icon">
         <Icon name="clock" size={19} />
         <select

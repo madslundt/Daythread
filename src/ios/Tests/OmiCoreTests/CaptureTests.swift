@@ -3,6 +3,21 @@ import Copus
 @testable import OmiCore
 
 final class CaptureTests: XCTestCase {
+    func testPendantVibrationUsesFixedDistinctPulsesForEachClick() {
+        XCTAssertEqual(WearableClick.single.hapticDuration, .short)
+        XCTAssertEqual(WearableClick.double.hapticDuration, .long)
+        XCTAssertEqual(WearableClick.single.hapticDuration.milliseconds, 100)
+        XCTAssertEqual(WearableClick.double.hapticDuration.milliseconds, 500)
+    }
+
+    func testPendantHapticCommandsNeverSendOffOrMediumCommands() {
+        XCTAssertNil(OmiHapticDuration(rawValue: 0))
+        XCTAssertNil(OmiHapticDuration(rawValue: 2))
+        XCTAssertEqual(OmiHapticDuration.short.command, Data([1]))
+        XCTAssertEqual(OmiHapticDuration.long.command, Data([3]))
+        XCTAssertEqual(OmiHapticDuration.allCases.map(\.milliseconds), [100, 500])
+    }
+
     func testTransferEstimateRequiresMeasuredProgressAndExpiresWhenStalled() {
         var rate = TransferRate()
         rate.observe(sentBytes: 0, at: 100)
@@ -99,7 +114,7 @@ final class CaptureTests: XCTestCase {
         }
     }
 
-    func testResolvedGesturesCooldownAndExplicitHold() {
+    func testResolvedClicksPreserveDefaultsAndIgnoreAllHoldEvents() {
         var policy = GesturePolicy()
         let start = Date(timeIntervalSince1970: 1000)
         func data(_ code: UInt8) -> Data { Data([code, 0, 0, 0]) }
@@ -111,9 +126,39 @@ final class CaptureTests: XCTestCase {
         XCTAssertNil(policy.resolve(data(3), at: start))
         XCTAssertNil(policy.resolve(data(4), at: start)); XCTAssertNil(policy.resolve(data(5), at: start))
         XCTAssertNil(policy.resolve(Data([2]), at: start))
-        policy.meetingGesture = .verifiedHold
-        XCTAssertEqual(policy.resolve(data(3), at: start), .meetingToggle)
-        XCTAssertNil(policy.resolve(data(2), at: start))
+        for action in WearableAction.allCases {
+            policy.singleClick = action; policy.doubleClick = action
+            for code: UInt8 in [3, 4, 5] { XCTAssertNil(policy.resolve(data(code), at: start)) }
+        }
+    }
+    func testConfigurableActionsUseOnlyResolvedClicksAndMarkCooldownFollowsAction() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let single = Data([1, 0, 0, 0]), double = Data([2, 0, 0, 0])
+        for action in WearableAction.allCases {
+            var policy = GesturePolicy(singleClick: action, doubleClick: action)
+            if action == .none {
+                XCTAssertNil(policy.resolve(single, at: start)); XCTAssertNil(policy.resolve(double, at: start))
+            } else {
+                XCTAssertEqual(policy.resolve(single, at: start), action)
+                XCTAssertEqual(policy.resolve(double, at: start.addingTimeInterval(60)), action)
+            }
+        }
+        var policy = GesturePolicy(singleClick: .answer, doubleClick: .mark)
+        XCTAssertEqual(policy.resolve(double, at: start), .mark)
+        XCTAssertEqual(policy.resolve(single, at: start.addingTimeInterval(1)), .answer)
+        XCTAssertEqual(policy.resolve(single, at: start.addingTimeInterval(2)), .answer)
+        XCTAssertNil(policy.resolve(double, at: start.addingTimeInterval(59)))
+        XCTAssertEqual(policy.resolve(double, at: start.addingTimeInterval(60)), .mark)
+    }
+    func testClickControlDefaultsIgnoreLegacyHoldAndRejectInvalidPreferences() {
+        let defaults = ClickControls()
+        XCTAssertEqual(defaults.singleClick, .mark); XCTAssertEqual(defaults.doubleClick, .meetingToggle)
+        XCTAssertEqual(defaults.durationSeconds, 30)
+        let invalid = ClickControls(singleClick: "bad", doubleClick: "verifiedHold", durationSeconds: -1)
+        XCTAssertEqual(invalid, defaults)
+        let customized = ClickControls(singleClick: "translate", doubleClick: "none", durationSeconds: 120)
+        XCTAssertEqual(customized.singleClick, .translate); XCTAssertEqual(customized.doubleClick, .none)
+        XCTAssertEqual(customized.durationSeconds, 120)
     }
     func testClockUsesUptimeAnchor() {
         let clock = CaptureClock(wall: Date(timeIntervalSince1970: 1000), uptime: 500)

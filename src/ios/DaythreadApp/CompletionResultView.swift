@@ -81,7 +81,21 @@ struct CompletionResultView: View {
             if job["state"].text == "failed" {
                 Section(L10n.text("Could not finish")) { Text(job["error"].text.isEmpty ? L10n.text("This request failed. Return to the original recording or day to try again.") : L10n.key(job["error"].text)) }
             } else if job["state"].text == "completed" {
-                if ["translation", "summary_translation"].contains(job["kind"].text) {
+                if job["kind"].text == "wearable_action" {
+                    Section {
+                        Text(.init(result["text"].text)).textSelection(.enabled)
+                        Text(L10n.text("Last \(parameters["duration_seconds"].integer) seconds · ending \(parameters["end"].text)"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        CompletenessView(value: result["completeness"])
+                        if result["approximate_window"] == .bool(true) {
+                            Text(L10n.text("Transcripts include whole overlapping recordings. Markers and meeting gestures are approximate context hints."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !result["sources"].array.isEmpty {
+                        Section(L10n.text("Recorded evidence")) { SourceList(sources: result["sources"].array) }
+                    }
+                } else if ["translation", "summary_translation"].contains(job["kind"].text) {
                     Section(L10n.text("Translation")) {
                         let summary = job["kind"].text == "summary_translation"
                         let translation = result["translation"]

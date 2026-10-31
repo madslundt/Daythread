@@ -50,6 +50,8 @@ describe("on-demand saved day recap", () => {
     const html = render();
     expect(html).toContain("A quiet day in the garden.");
     expect(html).toContain("1 min read");
+    expect(html).not.toContain("Generated at");
+    expect(html).not.toContain("Oct 15, 2026");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain(">Expand recap</button>");
     expect(html).not.toContain(">Recap</button>");

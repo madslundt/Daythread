@@ -76,7 +76,7 @@ function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false }: {
       <RecapSummary key={data.output_id || data.generated_at || path} outputId={data.output_id} text={data.summary}
         renderContent={(text) => <DayOverviewText text={text} day={day} topics={data.topics || []}
           onTopic={onTopic ? (topic) => onTopic(topic.title) : undefined} />} />
-      <p className="caption">{data.generated_at ? <>{t("Generated at")} {dateTimeLabel(data.generated_at, timezone)} · </> : null}
+      <p className="caption">{weekly && data.generated_at ? <>{t("Generated at")} {dateTimeLabel(data.generated_at, timezone)} · </> : null}
         {t("{value0} min read", { value0: data.reading_minutes || 1 })}</p>
       {data.can_generate ? <p className="caption" role="status">{weekly
         ? t("New recordings are available. Update the weekly recap to include them.")

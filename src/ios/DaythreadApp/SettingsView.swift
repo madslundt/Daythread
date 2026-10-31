@@ -23,9 +23,6 @@ struct SettingsView: View {
         let _ = interfaceLocale
         List {
             Section {
-                EditorialTitle(eyebrow: L10n.text("Make it yours"), title: L10n.text("Your space.")).editorialRow()
-            }
-            Section {
                 NavigationLink { generalSettings } label: {
                     DestinationLabel(title: L10n.text("General"), subtitle: L10n.text("Appearance, languages & time zone"), symbol: "slider.horizontal.3", color: Theme.accent)
                 }.accessibilityIdentifier("settings.general")
@@ -49,7 +46,7 @@ struct SettingsView: View {
             }
             saveFeedback
         }.listStyle(.insetGrouped).omiScreen()
-            .navigationTitle(L10n.text("Settings")).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(L10n.text("Settings")).navigationBarTitleDisplayMode(.large)
             .task { await loadSettings() }
     }
 
@@ -133,16 +130,7 @@ struct SettingsView: View {
                 LabeledContent(L10n.text("Button notifications"), value: model.bluetooth.buttonAvailable ? L10n.text("Available") : L10n.text("Not discovered"))
                 if model.bluetooth.connected { Button(L10n.text("Disconnect and forget Omi"), role: .destructive) { model.flush(); model.bluetooth.disconnect() } }
             }
-            Section {
-                DisclosureGroup(L10n.text("Advanced")) {
-                    Picker(L10n.text("Wearable gesture"), selection: $model.gesture) {
-                        Text(L10n.text("Double click · stock firmware")).tag(MeetingGesture.doubleClick)
-                        Text(L10n.text("Hold · verified firmware only")).tag(MeetingGesture.verifiedHold)
-                    }
-                    Text(L10n.text("Stock Omi firmware uses a three-second hold to power off. Choose hold only after verifying that your firmware emits a resolved long-tap event."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            PendantClickSettings()
         }.omiScreen().navigationTitle(L10n.text("Pendant details")).navigationBarTitleDisplayMode(.inline)
     }
 
@@ -391,5 +379,53 @@ struct ProfilesSettingsView: View {
         defer { loading = false }
         do { try await model.loadProfiles() }
         catch { self.error = L10n.error(error) }
+    }
+}
+
+/// The same controls are available from device settings and the connected pendant screen.
+struct PendantClickSettings: View {
+    @Environment(AppModel.self) private var model
+    @Environment(CompletionNotifications.self) private var notifications
+    @Environment(\.scenePhase) private var scenePhase
+    var body: some View {
+        @Bindable var model = model
+        Section {
+            Picker(L10n.text("Single click"), selection: $model.singleClickAction) {
+                ForEach(WearableAction.allCases, id: \.self) { action in Text(label(action)).tag(action) }
+            }.accessibilityIdentifier("settings.singleClickAction")
+            Picker(L10n.text("Double click"), selection: $model.doubleClickAction) {
+                ForEach(WearableAction.allCases, id: \.self) { action in Text(label(action)).tag(action) }
+            }.accessibilityIdentifier("settings.doubleClickAction")
+            Picker(L10n.text("Recent audio duration"), selection: $model.recentAudioSeconds) {
+                ForEach(ClickControls.durations, id: \.self) { seconds in Text(L10n.text("\(seconds) sec")).tag(seconds) }
+            }.accessibilityIdentifier("settings.recentAudioSeconds")
+            Toggle(L10n.text("Click notifications"), isOn: $model.clickNotificationsEnabled)
+                .accessibilityIdentifier("settings.clickNotifications")
+            if model.clickNotificationsEnabled && !notifications.authorized {
+                if notifications.permission == .denied {
+                    Text(L10n.text("Notifications are disabled in iPhone Settings."))
+                    Link(L10n.text("Notification settings on this iPhone"), destination: URL(string: UIApplication.openNotificationSettingsURLString)!)
+                } else {
+                    Button(L10n.text("Allow click notifications")) { Task { await notifications.requestPermission() } }
+                        .accessibilityIdentifier("settings.allowClickNotifications")
+                }
+            }
+        } header: { Text(L10n.text("Click controls")) } footer: {
+            Text(L10n.text("Summarize, answer and translate use audio before the click. Translations use your first allowed translation language."))
+            Text(L10n.text("Click notifications confirm pendant actions immediately, including offline. Final result notifications remain enabled separately."))
+        }.task(id: scenePhase) {
+            if scenePhase == .active { await notifications.refreshAuthorization() }
+        }
+    }
+    private func label(_ action: WearableAction) -> String {
+        switch action {
+        case .mark: L10n.text("Mark as important")
+        case .meetingToggle: L10n.text("Start / end meeting")
+        case .summarize: L10n.text("Summarize recent audio")
+        case .answer: L10n.text("Answer recent question")
+        case .translate: L10n.text("Translate recent audio")
+        case .captureToggle: L10n.text("Start / pause recording")
+        case .none: L10n.text("Do nothing")
+        }
     }
 }

@@ -129,6 +129,21 @@ public class CaptureCoreTest {
         Files.write(new File(directory, "broken.json").toPath(), "{broken".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertThrows(IOException.class, outbox::pending); assertTrue(new File(directory, "broken.json").exists());
     }
+    @Test public void wearableRequestSurvivesRestartAfterItsAudioWithFrozenBounds() throws Exception {
+        File directory = temporary.newFolder(); Outbox outbox = new Outbox(directory);
+        try (Outbox.Writer writer = outbox.begin(destination, "omi-test", started)) { writer.append(new byte[32000], 0, 32000, null); }
+        String id = outbox.enqueue("generation", destination, WearableAction.ANSWER.request(30, started.plusSeconds(1), "omi-test"));
+        List<Outbox.Item> pending = new Outbox(directory).pending();
+        assertEquals("audio", pending.get(0).kind());
+        Outbox.Item request = pending.get(1);
+        assertEquals(id, request.data().getString("id")); assertEquals(destination, request.destination());
+        assertEquals(started.plusSeconds(1).toString(), request.data().getJson("parameters").getString("end"));
+        Json receipt = new Json(request.data().toString()).put("state", "queued");
+        Json wrong = new Json(receipt.toString()); wrong.getJson("parameters").put("end", started.plusSeconds(60).toString());
+        assertThrows(IOException.class, () -> outbox.acknowledge(request, wrong, "default"));
+        assertThrows(IOException.class, () -> outbox.acknowledge(request, receipt, "another-profile"));
+        outbox.acknowledge(request, receipt.put("state", "completed"), "default"); assertEquals(1, outbox.pendingCount());
+    }
     @Test public void endpointsRejectCredentialsPathsAndOtherSchemes() {
         assertEquals("https://home.example", destination.endpoints().get(0));
         for (String endpoint : List.of("https://user:secret@home.example", "file:///tmp", "https://home.example/path", "https://home.example?token=secret", "https://home.example#x", "javascript:alert(1)"))

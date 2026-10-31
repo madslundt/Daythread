@@ -86,14 +86,67 @@ def test_today_reports_waiting_and_active_topic_work_without_counting_it_twice(r
     }
 
     def during():
-        assert client.get("/v1/status").json()["generation"] == {
+        observation = client.get("/v1/status").json()["generation"]
+        active = observation.pop("active")
+        assert observation == {
             "queued": 0, "running": 1, "stages": {"organizing": 1},
         }
+        assert active[0]["stage"] == "organizing"
+        assert active[0]["completed_chunks"] == 0
+        assert active[0]["total_chunks"] == 1
+        assert active[0]["elapsed_seconds"] >= 0
 
     memory.inference = Model(during=during)
     assert run(memory)
     assert client.get("/v1/status").json()["generation"] == {
         "queued": 0, "running": 0, "stages": {},
+    }
+
+
+def test_today_topic_progress_advances_across_windows_and_clears_after_failure(recording):
+    from omi_local.recording_topics import input_windows
+
+    client, memory, key = recording
+    text = "\n".join(f"Topic line {i}: a complete sentence." for i in range(1000))
+    memory.store.correct_transcript(key, text)
+    total = len(list(input_windows(text)))
+
+    class FailingAfterFirstWindow:
+        calls = 0
+
+        async def generate_json(self, task, evidence):
+            observation = client.get("/v1/status").json()["generation"]
+            active = observation["active"][0]
+            assert observation["running"] == 1
+            assert active["completed_chunks"] == self.calls
+            assert active["total_chunks"] == total
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("Model unavailable")
+            return json.dumps({"title": "Topic", "sections": [
+                {"title": "Topic", "start_quote": evidence[:100]},
+            ]})
+
+    memory.inference = FailingAfterFirstWindow()
+    assert run(memory)
+    assert memory.inference.calls == 2
+    observation = client.get("/v1/status").json()["generation"]
+    assert observation == {"queued": 1, "running": 0, "stages": {}}
+
+
+def test_cancelled_topic_work_clears_active_progress_and_remains_pending(recording):
+    client, memory, _ = recording
+
+    class CancelledModel:
+        async def generate_json(self, task, evidence):
+            assert client.get("/v1/status").json()["generation"]["active"]
+            raise asyncio.CancelledError
+
+    memory.inference = CancelledModel()
+    with pytest.raises(asyncio.CancelledError):
+        run(memory)
+    assert client.get("/v1/status").json()["generation"] == {
+        "queued": 1, "running": 0, "stages": {},
     }
 
 

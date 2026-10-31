@@ -56,26 +56,10 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 enum Theme {
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
-    static let sage = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.64, green: 0.78, blue: 0.69, alpha: 1)
-            : UIColor(red: 0.24, green: 0.40, blue: 0.33, alpha: 1)
-    })
-    static let accent = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.90, green: 0.62, blue: 0.50, alpha: 1)
-            : UIColor(red: 0.60, green: 0.32, blue: 0.24, alpha: 1)
-    })
-    static let canvas = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.09, green: 0.085, blue: 0.08, alpha: 1)
-            : UIColor(red: 0.97, green: 0.955, blue: 0.93, alpha: 1)
-    })
-    static let onAccent = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.17, green: 0.10, blue: 0.08, alpha: 1)
-            : .white
-    })
+    static let canvas = Color(uiColor: .systemGroupedBackground)
+    static let accent = Color(uiColor: .systemBlue)
+    static let sage = Color(uiColor: .secondaryLabel)
+    static let onAccent = Color.white
 }
 
 enum SettingsDestination: Hashable { case settings, profiles, account }
@@ -238,8 +222,8 @@ struct EditorialTitle: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
-            Text(eyebrow).textCase(.uppercase).font(.caption.weight(.semibold)).tracking(1.6).foregroundStyle(Theme.accent)
-            Text(title).font(.system(.largeTitle, design: .serif)).foregroundStyle(.primary)
+            Text(eyebrow).font(.subheadline).foregroundStyle(.secondary)
+            Text(title).font(.largeTitle.weight(.bold)).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
             .accessibilityElement(children: .combine)
@@ -251,12 +235,11 @@ struct OmiScreenStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
-            .listSectionSpacing(20)
-            .contentMargins(.top, 12, for: .scrollContent)
+            .listSectionSpacing(24)
+            .contentMargins(.top, 8, for: .scrollContent)
             .frame(maxWidth: 860)
             .frame(maxWidth: .infinity)
             .background(Theme.canvas)
-            .toolbarBackground(Theme.canvas, for: .navigationBar)
     }
 }
 
@@ -312,6 +295,7 @@ enum LocalCache {
 
 struct SourceList: View {
     let sources: [JSONValue]
+    var showsDate = true
     var onCorrect: (() -> Void)? = nil
     var onSelect: ((JSONValue) -> Void)? = nil
     @Environment(AppModel.self) private var model
@@ -364,7 +348,7 @@ struct SourceList: View {
         let diary = DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current)
         var parts: [String] = []
         if let start = AppModel.date(source["started_at"].text) {
-            parts.append(diary.label(start, template: "d MMM HHmm"))
+            parts.append(diary.label(start, template: showsDate ? "d MMM HHmm" : "HHmm"))
             if let end = AppModel.date(source["ended_at"].text), end > start {
                 let seconds = Int(end.timeIntervalSince(start).rounded())
                 parts.append(seconds < 60 ? L10n.text("\(seconds) sec") : L10n.text("\(max(1, seconds / 60)) min"))

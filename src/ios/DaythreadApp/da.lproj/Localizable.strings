@@ -455,7 +455,6 @@
 "Dismissed" = "Afvist";
 "Distinguishing description" = "Kendetegnende beskrivelse";
 "Done" = "Færdig";
-"Double click · stock firmware" = "Dobbeltklik · standardfirmware";
 "Double-click" = "dobbeltklik";
 "Draft answer · sources are checked before saving." = "Udkast til svar · kilder kontrolleres, før de gemmes.";
 "Duplicate STT language route" = "Duplikering af STT-sprogrute";
@@ -613,7 +612,6 @@
 "Firmware" = "Firmware";
 "First topic must cover the start of the transcript" = "Det første emne skal omfatte begyndelsen på transkriptionen.";
 "Flag added · wait {value0}s" = "Flag tilføjet · vent {value0} sekunder";
-"Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. {value0} toggles a meeting." = "Flag og mødetilstande giver et indblik i den omkringliggende tale. Et enkelt klik tilføjer et flag én gang i minuttet. {value0} skifter mødetilstand.";
 "Follow through" = "Følg op";
 "Follow-through unconfirmed" = "Opfølgning ubekræftet";
 "Follow-up cited unsupported original evidence" = "Opfølgningen henviste til oprindelige kilder, der ikke understøtter den";
@@ -661,7 +659,6 @@
 "Historical version · may no longer reflect current evidence" = "Historisk version · afspejler muligvis ikke længere aktuelle beviser";
 "Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts." = "Historisk version. Påstande og citater afspejler dets afskæring; kildeinspektion viser aktuelle udskrifter.";
 "History" = "Historik";
-"Hold · verified firmware only" = "Hold inde · kun verificeret firmware";
 "Home-core" = "Home-core";
 "Home-core HTTP {value0}: {value1}" = "Home-core HTTP {value0}: {value1}";
 "Home-core acknowledgement did not match the queued recording or event. Original data was retained." = "Bekræftelsen af hjemme-kernen stemte ikke overens med den køede optagelse eller begivenhed. De originale data blev bevaret.";
@@ -1526,7 +1523,6 @@
 "Start meeting hint" = "Start mødemarkering";
 "Start with a question." = "Start med et spørgsmål.";
 "Status" = "Status";
-"Stock Omi firmware uses a three-second hold to power off. Choose hold only after verifying that your firmware emits a resolved long-tap event." = "Stock Omi-firmware bruger tre sekunders hold til at slukke. Vælg kun hold efter at have bekræftet, at din firmware udsender en løst hændelse med lange tryk.";
 "Stop" = "Stop";
 "Stop audio" = "Stop lyd";
 "Stop playback" = "Stop afspilning";
@@ -1761,7 +1757,6 @@
 "Use valid ISO calendar dates" = "Brug gyldige ISO-kalenderdatoer.";
 "Use valid ISO dates in chat questions" = "Brug gyldige ISO-datoer i chatspørgsmål.";
 "User stage: {value0} · suggestion: {value1}" = "Brugerstadie: {value0} · forslag: {value1}";
-"Verified hold" = "Bekræftet langt tryk";
 "Version {value0}" = "Version {value0}";
 "Version {value0} · {value1}" = "Version {value0} · {value1}";
 "Voice evaluation is unavailable or invalid. Suggestions remain off." = "Stemmevurderingen er utilgængelig eller ugyldig. Forslag forbliver slået fra.";
@@ -2800,3 +2795,46 @@
 "Reading recording dates…" = "Læser optagelsesdatoer…";
 "Review each recording’s date and time before importing." = "Kontrollér dato og tidspunkt for hver optagelse, før du importerer.";
 "Create tag…" = "Opret tag…";
+"Single click" = "Enkeltklik";
+"Double click" = "Dobbeltklik";
+"Recent audio duration" = "Varighed af seneste lyd";
+"Click controls" = "Klikhandlinger";
+"Mark as important" = "Markér som vigtig";
+"Start / end meeting" = "Start / afslut møde";
+"Summarize recent audio" = "Opsummér seneste lyd";
+"Answer recent question" = "Besvar seneste spørgsmål";
+"Translate recent audio" = "Oversæt seneste lyd";
+"Start / pause recording" = "Start / sæt optagelse på pause";
+"Do nothing" = "Gør ingenting";
+"Summarize, answer and translate use audio before the click. Translations use your first allowed translation language." = "Opsummering, svar og oversættelse bruger lyd fra før klikket. Oversættelser bruger dit første tilladte oversættelsessprog.";
+"Flags and meeting controls hint at surrounding speech. Important marks are limited to once per minute. Configure single and double clicks in pendant settings." = "Flag og mødemarkeringer giver kontekst til den omkringliggende tale. Vigtige markeringer er begrænset til én gang i minuttet. Indstil enkelt- og dobbeltklik i indstillingerne for vedhænget.";
+"Recent audio request queued. The result will appear in Notifications." = "Anmodning om seneste lyd er sat i kø. Resultatet vises i Notifikationer.";
+"Last {value0} seconds · ending {value1}" = "Seneste {value0} sekunder · slutter {value1}";
+"Recent audio summary" = "Resumé af nylig lyd";
+"Answer to recent question" = "Svar på seneste spørgsmål";
+"Recent audio translation" = "Oversættelse af nylig lyd";
+"No transcribed speech is available in this window." = "Der er ingen transskriberet tale i dette tidsrum.";
+"LLM busy retry enabled" = "Genforsøg ved optaget LLM aktiveret";
+"The local model is temporarily busy; work stays queued" = "Den lokale model er midlertidigt optaget; arbejdet forbliver i kø";
+
+"Pause recording" = "Sæt optagelse på pause";
+"Single click registered" = "Enkeltklik registreret";
+"Double click registered" = "Dobbeltklik registreret";
+"Summary queued for the last {value0} seconds." = "Opsummering af de seneste {value0} sekunder er sat i kø.";
+"Answer queued for the last {value0} seconds." = "Svar ud fra de seneste {value0} sekunder er sat i kø.";
+"Translation queued for the last {value0} seconds." = "Oversættelse af de seneste {value0} sekunder er sat i kø.";
+"Recent audio request queued." = "Anmodning om seneste lyd er sat i kø.";
+"Recording paused on this iPhone." = "Optagelse er sat på pause på denne iPhone.";
+"Recording resumed on this iPhone." = "Optagelse er genoptaget på denne iPhone.";
+"No action assigned." = "Ingen handling er tildelt.";
+"Could not complete the click action: {value0}" = "Klikhandlingen kunne ikke udføres: {value0}";
+"Click notifications" = "Kliknotifikationer";
+"Allow click notifications" = "Tillad kliknotifikationer";
+"Click notifications confirm pendant actions immediately, including offline. Final result notifications remain enabled separately." = "Kliknotifikationer bekræfter straks handlinger fra vedhænget, også offline. Notifikationer om færdige resultater styres separat.";
+
+"Day tools" = "Dagens værktøjer";
+"Needs attention" = "Kræver opmærksomhed";
+"Queued" = "I kø";
+"Status unavailable" = "Status utilgængelig";
+"Up to date" = "Opdateret";
+"Your day" = "Din dag";

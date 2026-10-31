@@ -20,31 +20,27 @@ struct MoreView: View {
     var body: some View {
         let _ = interfaceLocale
         List {
-            Section {
-                EditorialTitle(eyebrow: "Daythread", title: L10n.text("Room to remember.")).editorialRow()
-            }
             if model.hasSelectedProfile {
                 Section(L10n.text("Your memory")) {
                     NavigationLink { WeeklyReviewView() } label: {
-                        DestinationLabel(title: L10n.text("Weekly review"), subtitle: L10n.text("Patterns, decisions & what changed"), symbol: "calendar.badge.clock", color: Theme.sage)
-                    }
-                    NavigationLink { ChatView(initialScope: .all) } label: {
-                        DestinationLabel(title: L10n.text("Chat across your diary"), subtitle: L10n.text("Ask about your recorded days"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
+                        DestinationLabel(title: L10n.text("Weekly review"), symbol: "calendar.badge.clock")
                     }
                     NavigationLink { CompletionNotificationsView() } label: {
-                        DestinationLabel(title: L10n.text("Notifications"), subtitle: L10n.text("Your completed recaps, rewinds & translations"), symbol: "bell", color: Theme.accent)
+                        DestinationLabel(title: L10n.text("Notifications"), symbol: "bell")
                     }
                     NavigationLink { InboxView() } label: {
-                        DestinationLabel(title: L10n.text("Inbox"), subtitle: L10n.text("Follow-ups, commitments & questions"), symbol: "checklist", color: Theme.sage)
+                        DestinationLabel(title: L10n.text("Inbox"), symbol: "checklist")
                     }
                     NavigationLink { LabelsView() } label: {
-                        DestinationLabel(title: L10n.text("People & projects"), subtitle: L10n.text("Keep related moments together"), symbol: "person.2", color: Theme.accent)
+                        DestinationLabel(title: L10n.text("People & projects"), symbol: "person.2")
                     }
-                    NavigationLink { RewindView() } label: {
-                        DestinationLabel(title: L10n.text("Rewind"), subtitle: L10n.text("Listen back to the last few minutes"), symbol: "gobackward.10", color: Theme.sage)
+                    if model.canRewind {
+                        NavigationLink { RewindView() } label: {
+                            DestinationLabel(title: L10n.text("Rewind"), symbol: "gobackward.10")
+                        }
                     }
                     Button { preparing = true } label: {
-                        DestinationLabel(title: L10n.text("Prepare for a conversation"), subtitle: L10n.text("Bring the right context with you"), symbol: "text.bubble", color: Theme.accent)
+                        DestinationLabel(title: L10n.text("Prepare for a conversation"), symbol: "text.bubble")
                     }.buttonStyle(.plain)
                 }
             }
@@ -57,24 +53,24 @@ struct MoreView: View {
                     DestinationLabel(title: L10n.text("Profiles"), subtitle: model.hasSelectedProfile ? model.selectedProfileName : L10n.text("Choose an archive to get started"), symbol: "person.crop.circle", color: Theme.sage)
                 }
                 NavigationLink(value: SettingsDestination.settings) {
-                    DestinationLabel(title: L10n.text("Settings"), subtitle: L10n.text("Appearance, capture & connections"), symbol: "slider.horizontal.3", color: Theme.accent)
+                    DestinationLabel(title: L10n.text("Settings"), symbol: "gearshape")
                 }
                 if model.hasSelectedProfile {
                     NavigationLink { FeedbackReviewView() } label: {
-                        DestinationLabel(title: L10n.text("Feedback & repairs"), subtitle: L10n.text("Review and improve your archive"), symbol: "wrench.and.screwdriver", color: .secondary)
+                        DestinationLabel(title: L10n.text("Feedback & repairs"), symbol: "wrench.and.screwdriver", color: .secondary)
                     }
                 }
             }
         }
         .listStyle(.insetGrouped).omiScreen()
-        .navigationTitle(L10n.text("More")).navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(L10n.text("More")).navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $preparing) { ConversationPrepView() }
     }
 }
 
 struct DestinationLabel: View {
     let title: String
-    let subtitle: String
+    var subtitle: String? = nil
     let symbol: String
     var color: Color = Theme.accent
 
@@ -82,74 +78,62 @@ struct DestinationLabel: View {
     var body: some View {
         let _ = interfaceLocale
         HStack(spacing: 14) {
-            Image(systemName: symbol).font(.title3)
+            Image(systemName: symbol).font(.body)
                 .foregroundStyle(color)
-                .frame(width: 44, height: 44)
-                .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.body.weight(.medium)).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
             }.fixedSize(horizontal: false, vertical: true)
         }.padding(.vertical, 5)
     }
 }
 
-struct DayQuickActions: View {
-    let importAudio: () -> Void
-    let rewind: () -> Void
-    let ask: () -> Void
-    var showsDayChat = true
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
-        layout {
-            Button(action: importAudio) { tile(L10n.text("Add"), symbol: "plus", color: Theme.accent) }
-                .accessibilityLabel(L10n.text("Add audio")).accessibilityIdentifier("day.import")
-            Button(action: rewind) { tile(L10n.text("Rewind"), symbol: "gobackward.10", color: Theme.sage) }
-            if showsDayChat { Button(action: ask) {
-                tile(L10n.text("Chat"), symbol: "bubble.left.and.bubble.right", color: Theme.accent)
-            }.accessibilityLabel(L10n.text("Ask your day")).accessibilityIdentifier("day.chat") }
-        }.buttonStyle(.plain)
-    }
-
-    private func tile(_ title: String, symbol: String, color: Color) -> some View {
-        Label(title, systemImage: symbol)
-            .font(.caption.weight(.semibold)).foregroundStyle(color)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .padding(.horizontal, 6)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
 struct CaptureGlance: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var title: String {
         if model.microphone.active != nil { return L10n.text("Recording from phone microphone") }
         if model.omiRecording { return L10n.text("Recording from Omi") }
         if model.captureFailure != nil { return L10n.text("Capture needs attention") }
         if model.paused { return L10n.text("Capture paused") }
-        return model.bluetooth.connected ? L10n.text("Omi connected") : L10n.text("Recording stopped on this iPhone")
+        return model.bluetooth.connected ? L10n.text("Omi connected") : L10n.text("Recording stopped")
     }
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        NavigationLink { CaptureView() } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text("Recording activity")).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                Label(title, systemImage: model.microphone.active != nil || model.omiRecording ? "record.circle" : model.paused ? "pause.circle" : "waveform")
-                    .font(.subheadline).foregroundStyle(model.captureFailure == nil ? Theme.sage : .orange)
-                let waiting = model.queuedRecordings + model.microphone.recordings.filter { $0.id != model.microphone.active?.id }.count
-                if waiting > 0 {
-                    Text(L10n.text("\(waiting) recordings waiting to upload")).font(.caption).foregroundStyle(.secondary)
-                }
-                RecordingProcessingActivity()
-            }.padding(.vertical, 4).accessibilityIdentifier("day.recordingActivity")
-        }.accessibilityIdentifier("day.captureStatus")
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        VStack(alignment: .leading, spacing: 8) {
+            layout {
+                NavigationLink { CaptureView() } label: {
+                    Label(title, systemImage: model.microphone.active != nil || model.omiRecording ? "record.circle" : model.paused ? "pause.circle" : "waveform")
+                        .font(.caption).foregroundStyle(model.captureFailure == nil ? Color.secondary : .orange)
+                        .frame(minHeight: 44)
+                }.accessibilityIdentifier("day.captureStatus").accessibilityHint(L10n.text("Recording activity"))
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                Button {
+                    if model.recordingRequested { model.disableMicrophone() }
+                    else if model.bluetooth.connected && model.recordingSchedule.activeSource == "omi" { model.startManualPendant() }
+                    else { model.startManualRecording() }
+                } label: {
+                    Label(model.recordingRequested ? L10n.text("Pause recording") : L10n.text("Start recording"),
+                          systemImage: model.recordingRequested ? "pause.fill" : "record.circle")
+                        .font(.caption.weight(.semibold))
+                }.buttonStyle(.bordered).tint(Theme.accent)
+                    .disabled(!model.hasSelectedProfile || model.microphone.requestingPermission)
+                    .accessibilityIdentifier("day.recordingToggle")
+            }
+            let waiting = model.queuedRecordings + model.microphone.recordings.filter { $0.id != model.microphone.active?.id }.count
+            if waiting > 0 {
+                Text(L10n.text("\(waiting) recordings waiting to upload")).font(.caption).foregroundStyle(.secondary)
+            }
+            ErrorNote(message: model.microphone.error)
+            if model.captureFailure != nil {
+                Text(L10n.key(model.notice)).font(.caption).foregroundStyle(.orange)
+            }
+        }.padding(.vertical, 4)
     }
 }
 
@@ -208,12 +192,22 @@ struct RecordingProcessingActivity: View {
                             }
                         }.monospacedDigit()
                     }.foregroundStyle(.primary)
-                    if !stale && !stages.isEmpty {
-                        Text(stages.joined(separator: " · ")).foregroundStyle(.secondary)
+                    if !stale {
+                        let active = generation["active"].array
+                        if active.isEmpty && !stages.isEmpty {
+                            Text(stages.joined(separator: " · ")).foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(active.enumerated()), id: \.offset) { _, item in
+                            let total = item["total_chunks"].integer
+                            let completed = max(0, min(total, item["completed_chunks"].integer))
+                            if total > 0 {
+                                Text(stageName(item["stage"].text) + " · " + L10n.text("\(completed) of \(total) parts complete"))
+                                    .foregroundStyle(.secondary).monospacedDigit()
+                                ProgressView(value: Double(completed), total: Double(total))
+                                    .accessibilityLabel(stageName(item["stage"].text))
+                            }
+                        }
                     }
-                } else if !stale {
-                    Label(L10n.text("Nothing processing"), systemImage: "checkmark.circle")
-                        .foregroundStyle(.secondary)
                 }
                 if stale {
                     Text(L10n.text("Last known counts; current activity is unknown.")).foregroundStyle(.secondary)

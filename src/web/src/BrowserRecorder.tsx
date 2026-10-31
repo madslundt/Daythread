@@ -145,7 +145,7 @@ export function BrowserRecorder({ owner, timezone, visible, onUpload, onUploaded
   }
   return <section className="browser-recorder" hidden={!visible && !active && !unsaved && !saving} aria-label={t("Record audio")}>
     <div className="section-heading">
-      <h2>{t("Record audio")}</h2>
+      <h2 className="sr-only">{t("Record audio")}</h2>
       <div className="button-row">
         {active ? <>
           <span className="recording-clock" role="timer">{t("Recording · {time}", { time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` })}</span>
@@ -155,10 +155,12 @@ export function BrowserRecorder({ owner, timezone, visible, onUpload, onUploaded
         <button className="button" onClick={onUpload}><Icon name="upload" />{t("Upload recordings")}</button>
       </div>
     </div>
-    <p className="caption" role="status">{active ? t("Recording on this device") : t("Recording stopped on this device")}</p>
-    <p className="caption">{microphoneAvailable()
+    <details className="recorder-guidance">
+      <summary><span role="status">{active ? t("Recording on this device") : t("Recording stopped on this device")}</span></summary>
+      <p className="caption">{microphoneAvailable()
       ? t("Record with this device’s microphone. After stopping, choose Upload now, Remove, or Upload later.")
       : t("Microphone recording requires HTTPS or localhost and a supported browser.")}</p>
+    </details>
     {active ? <p className="caption">{t("Keep this page open while recording. Your browser will ask before you refresh or leave this site. Recording stops automatically before two hours.")}</p> : null}
     {error ? <Notice tone="error" onDismiss={() => setError("")}>{error}</Notice> : null}
     {notice ? <Notice onDismiss={() => setNotice("")}>{notice}</Notice> : null}

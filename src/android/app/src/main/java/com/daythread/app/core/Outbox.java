@@ -41,13 +41,15 @@ public final class Outbox {
                 JsonArray array = json.getJsonArray("endpoints");
                 for (int i = 0; i < array.length(); i++) endpoints.add(array.getString(i));
                 String kind = json.getString("kind");
-                if (!Set.of("audio", "event", "gap", "state").contains(kind)) throw new IOException("Unknown queued item");
+                if (!Set.of("audio", "event", "gap", "state", "generation").contains(kind)) throw new IOException("Unknown queued item");
                 File audio = new File(directory, id + ".wav");
                 if (kind.equals("audio") && !audio.isFile()) throw new IOException("Queued audio is missing");
                 items.add(new Item(id, kind, new Destination(endpoints, json.getString("profile")), json.getJson("data"), audio));
             } catch (RuntimeException e) { throw new IOException("Cannot read saved recording details; files were preserved", e); }
         }
-        items.sort(Comparator.comparing(item -> Instant.parse(item.data.optString("started_at", item.data.optString("occurred_at")))));
+        items.sort(Comparator.comparing(item -> item.kind.equals("generation")
+            ? Instant.parse(item.data.getJson("parameters").getString("end"))
+            : Instant.parse(item.data.optString("started_at", item.data.optString("occurred_at")))));
         return items;
     }
     public synchronized long bytes() throws IOException {
@@ -71,7 +73,7 @@ public final class Outbox {
     public synchronized String enqueue(String kind, Destination destination, Json data) throws IOException {
         checkSpace(8192);
         String id = UUID.randomUUID().toString();
-        String key = switch (kind) { case "event" -> "event_id"; case "gap" -> "gap_id"; default -> null; };
+        String key = switch (kind) { case "event" -> "event_id"; case "gap" -> "gap_id"; case "generation" -> "id"; default -> null; };
         if (key != null) data.put(key, id);
         atomic(new File(directory, id + ".json"), manifest(id, kind, destination, data).toString().getBytes(StandardCharsets.UTF_8));
         return id;

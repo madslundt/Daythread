@@ -2906,5 +2906,12 @@
   "Weekly recap did not contain a supported overview": "Der Wochenrückblick enthielt keine durch Quellen gestützte Übersicht",
   "Weekly recap did not contain a readable overview": "Der Wochenrückblick enthielt keine lesbare Übersicht",
   "Weekly recap exceeded the five-minute reading limit": "Der Wochenrückblick überschritt die Lesezeit von fünf Minuten",
-  "Weekly recap evidence changed; retry the recap": "Die Quellen für den Wochenrückblick wurden geändert; erstelle ihn erneut"
+  "Weekly recap evidence changed; retry the recap": "Die Quellen für den Wochenrückblick wurden geändert; erstelle ihn erneut",
+  "Recent audio summary": "Zusammenfassung der letzten Audioaufnahme",
+  "Answer to recent question": "Antwort auf die letzte Frage",
+  "Recent audio translation": "Übersetzung der letzten Audioaufnahme",
+  "No transcribed speech is available in this window.": "Für diesen Zeitraum ist keine transkribierte Sprache verfügbar.",
+  "LLM busy retry enabled": "Wiederholungen bei ausgelastetem LLM aktiviert",
+  "The local model is temporarily busy; work stays queued": "Das lokale Modell ist vorübergehend ausgelastet; die Arbeit bleibt in der Warteschlange",
+  "Filters": "Filter"
 }

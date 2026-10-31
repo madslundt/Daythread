@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS weekly_jobs (
  id TEXT PRIMARY KEY, week_start TEXT NOT NULL, fingerprint TEXT NOT NULL,
  timezone TEXT NOT NULL, cutoff TEXT NOT NULL, state TEXT NOT NULL,
  attempts INTEGER NOT NULL DEFAULT 0, completed_calls INTEGER NOT NULL DEFAULT 0,
- version_id TEXT, error TEXT, created_at TEXT NOT NULL
+ version_id TEXT, error TEXT, created_at TEXT NOT NULL, retry_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS weekly_requests (
  request_id TEXT PRIMARY KEY, week_start TEXT NOT NULL, force INTEGER NOT NULL,
@@ -37,6 +37,9 @@ class WeeklyStore:
         self.store = store
         with store.connect() as db:
             db.executescript(SCHEMA)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(weekly_jobs)")}
+            if "retry_at" not in columns:
+                db.execute("ALTER TABLE weekly_jobs ADD COLUMN retry_at TEXT NOT NULL DEFAULT ''")
 
     @staticmethod
     def public_job(row) -> dict:
@@ -119,7 +122,8 @@ class WeeklyStore:
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT * FROM weekly_jobs WHERE state='queued' ORDER BY created_at LIMIT 1"
+                "SELECT * FROM weekly_jobs WHERE state='queued' AND retry_at<=? "
+                "ORDER BY created_at LIMIT 1", (stamp(utc_now()),),
             ).fetchone()
             if row:
                 db.execute(

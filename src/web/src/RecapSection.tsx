@@ -222,7 +222,7 @@ function emptyRecapMessage(recap?: Recap, summarizing = false): string {
 
 export function RecapCoverage({ recap, timezone }: { recap: Recap; timezone: string }) {
   return <div className="recap-coverage caption" role="status">
-    {recap.included_through ? <p>{t("Includes transcribed recordings through")}{" "}{dateTimeLabel(recap.included_through, timezone)}.</p>
+    {recap.included_through ? <p>{t("Includes transcribed recordings through")}{" "}{timeLabel(recap.included_through, timezone)}.</p>
       : recap.included_through === null ? <p>{t("No transcribed recordings included yet.")}</p> : null}
     {recap.waiting_for_pause ? <p>{t("Live conversations are waiting for a longer pause before being summarized.")}</p> : null}
     {recap.pending_upload_sources || recap.pending_chunks || (!recap.waiting_for_pause && recap.deferred_sources)

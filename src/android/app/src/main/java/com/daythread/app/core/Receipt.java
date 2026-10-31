@@ -11,8 +11,18 @@ public final class Receipt {
         try {
             if (!item.destination().profile().equals(profile)) throw new IllegalArgumentException();
             Json expected = item.data();
-            String idKey = switch (item.kind()) { case "audio" -> "id"; case "event" -> "event_id"; case "gap" -> "gap_id"; default -> "event_id"; };
+            String idKey = switch (item.kind()) { case "audio", "generation" -> "id"; case "event" -> "event_id"; case "gap" -> "gap_id"; default -> "event_id"; };
             if (!UUID.fromString(item.id()).equals(UUID.fromString(value.getString(idKey)))) throw new IllegalArgumentException();
+            if (item.kind().equals("generation")) {
+                if (!expected.getString("kind").equals(value.getString("kind"))) throw new IllegalArgumentException();
+                Json params = expected.getJson("parameters"), actual = value.getJson("parameters");
+                for (String key : new String[]{"action", "duration_seconds", "device_id"})
+                    if (!params.get(key).toString().equals(actual.get(key).toString())) throw new IllegalArgumentException();
+                if (Math.abs(Instant.parse(params.getString("end")).toEpochMilli() - Instant.parse(actual.getString("end")).toEpochMilli()) >= 2)
+                    throw new IllegalArgumentException();
+                if (!Set.of("queued", "running", "completed", "failed").contains(value.getString("state"))) throw new IllegalArgumentException();
+                return;
+            }
             for (String key : switch (item.kind()) {
                 case "audio" -> new String[]{"device_id", "started_at", "ended_at"};
                 case "event" -> new String[]{"device_id", "occurred_at", "action", "meeting_max_minutes", "meeting_min_seconds", "marker_cooldown_seconds"};

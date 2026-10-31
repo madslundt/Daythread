@@ -455,7 +455,6 @@
 "Dismissed" = "Dismissed";
 "Distinguishing description" = "Distinguishing description";
 "Done" = "Done";
-"Double click · stock firmware" = "Double click · stock firmware";
 "Double-click" = "Double-click";
 "Draft answer · sources are checked before saving." = "Draft answer · sources are checked before saving.";
 "Duplicate STT language route" = "Duplicate STT language route";
@@ -613,7 +612,6 @@
 "Firmware" = "Firmware";
 "First topic must cover the start of the transcript" = "First topic must cover the start of the transcript";
 "Flag added · wait {value0}s" = "Flag added · wait {value0}s";
-"Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. {value0} toggles a meeting." = "Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. {value0} toggles a meeting.";
 "Follow through" = "Follow through";
 "Follow-through unconfirmed" = "Follow-through unconfirmed";
 "Follow-up cited unsupported original evidence" = "Follow-up cited unsupported original evidence";
@@ -661,7 +659,6 @@
 "Historical version · may no longer reflect current evidence" = "Historical version · may no longer reflect current evidence";
 "Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts." = "Historical version. Claims and quotes reflect its cutoff; source inspection shows current transcripts.";
 "History" = "History";
-"Hold · verified firmware only" = "Hold · verified firmware only";
 "Home-core" = "Home-core";
 "Home-core HTTP {value0}: {value1}" = "Home-core HTTP {value0}: {value1}";
 "Home-core acknowledgement did not match the queued recording or event. Original data was retained." = "Home-core acknowledgement did not match the queued recording or event. Original data was retained.";
@@ -1526,7 +1523,6 @@
 "Start meeting hint" = "Start meeting hint";
 "Start with a question." = "Start with a question.";
 "Status" = "Status";
-"Stock Omi firmware uses a three-second hold to power off. Choose hold only after verifying that your firmware emits a resolved long-tap event." = "Stock Omi firmware uses a three-second hold to power off. Choose hold only after verifying that your firmware emits a resolved long-tap event.";
 "Stop" = "Stop";
 "Stop audio" = "Stop audio";
 "Stop playback" = "Stop playback";
@@ -1761,7 +1757,6 @@
 "Use valid ISO calendar dates" = "Use valid ISO calendar dates";
 "Use valid ISO dates in chat questions" = "Use valid ISO dates in chat questions";
 "User stage: {value0} · suggestion: {value1}" = "User stage: {value0} · suggestion: {value1}";
-"Verified hold" = "Verified hold";
 "Version {value0}" = "Version {value0}";
 "Version {value0} · {value1}" = "Version {value0} · {value1}";
 "Voice evaluation is unavailable or invalid. Suggestions remain off." = "Voice evaluation is unavailable or invalid. Suggestions remain off.";
@@ -2800,3 +2795,46 @@
 "Reading recording dates…" = "Reading recording dates…";
 "Review each recording’s date and time before importing." = "Review each recording’s date and time before importing.";
 "Create tag…" = "Create tag…";
+"Single click" = "Single click";
+"Double click" = "Double click";
+"Recent audio duration" = "Recent audio duration";
+"Click controls" = "Click controls";
+"Mark as important" = "Mark as important";
+"Start / end meeting" = "Start / end meeting";
+"Summarize recent audio" = "Summarize recent audio";
+"Answer recent question" = "Answer recent question";
+"Translate recent audio" = "Translate recent audio";
+"Start / pause recording" = "Start / pause recording";
+"Do nothing" = "Do nothing";
+"Summarize, answer and translate use audio before the click. Translations use your first allowed translation language." = "Summarize, answer and translate use audio before the click. Translations use your first allowed translation language.";
+"Flags and meeting controls hint at surrounding speech. Important marks are limited to once per minute. Configure single and double clicks in pendant settings." = "Flags and meeting controls hint at surrounding speech. Important marks are limited to once per minute. Configure single and double clicks in pendant settings.";
+"Recent audio request queued. The result will appear in Notifications." = "Recent audio request queued. The result will appear in Notifications.";
+"Last {value0} seconds · ending {value1}" = "Last {value0} seconds · ending {value1}";
+"Recent audio summary" = "Recent audio summary";
+"Answer to recent question" = "Answer to recent question";
+"Recent audio translation" = "Recent audio translation";
+"No transcribed speech is available in this window." = "No transcribed speech is available in this window.";
+"LLM busy retry enabled" = "LLM busy retry enabled";
+"The local model is temporarily busy; work stays queued" = "The local model is temporarily busy; work stays queued";
+
+"Pause recording" = "Pause recording";
+"Single click registered" = "Single click registered";
+"Double click registered" = "Double click registered";
+"Summary queued for the last {value0} seconds." = "Summary queued for the last {value0} seconds.";
+"Answer queued for the last {value0} seconds." = "Answer queued for the last {value0} seconds.";
+"Translation queued for the last {value0} seconds." = "Translation queued for the last {value0} seconds.";
+"Recent audio request queued." = "Recent audio request queued.";
+"Recording paused on this iPhone." = "Recording paused on this iPhone.";
+"Recording resumed on this iPhone." = "Recording resumed on this iPhone.";
+"No action assigned." = "No action assigned.";
+"Could not complete the click action: {value0}" = "Could not complete the click action: {value0}";
+"Click notifications" = "Click notifications";
+"Allow click notifications" = "Allow click notifications";
+"Click notifications confirm pendant actions immediately, including offline. Final result notifications remain enabled separately." = "Click notifications confirm pendant actions immediately, including offline. Final result notifications remain enabled separately.";
+
+"Day tools" = "Day tools";
+"Needs attention" = "Needs attention";
+"Queued" = "Queued";
+"Status unavailable" = "Status unavailable";
+"Up to date" = "Up to date";
+"Your day" = "Your day";

@@ -15,7 +15,13 @@ struct CaptureView: View {
                         .font(.callout).foregroundStyle(.red)
                 }
             }
-            Section(L10n.text("Processing")) { RecordingProcessingActivity() }
+            Section {
+                DisclosureGroup {
+                    RecordingProcessingActivity()
+                } label: {
+                    LabeledContent(L10n.text("Processing"), value: processingSummary)
+                }.accessibilityIdentifier("capture.processing")
+            }
             syncSection
             Section {
                 NavigationLink {
@@ -38,7 +44,7 @@ struct CaptureView: View {
                 }
             } header: { Text(L10n.text("Recording options")) }
         }.listStyle(.insetGrouped).omiScreen()
-            .navigationTitle(L10n.text("Recording activity")).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(L10n.text("Capture")).navigationBarTitleDisplayMode(.large)
             .refreshable { await model.refreshStatus() }
             .task(id: model.archiveIdentity) { model.microphone.selectArchive(model.archiveIdentity) }
     }
@@ -59,8 +65,10 @@ struct CaptureView: View {
                     Text(L10n.key(message)).font(.caption).foregroundStyle(.red).lineLimit(2)
                 }
             }.padding(.vertical, 4)
-            Button { model.checkpoint(); model.retryUploads(); Task { await model.refreshStatus() } } label: {
-                Label(L10n.text("Sync now"), systemImage: "arrow.triangle.2.circlepath")
+            if model.queueCount > 0 || !model.queueErrors.isEmpty {
+                Button { model.checkpoint(); model.retryUploads(); Task { await model.refreshStatus() } } label: {
+                    Label(L10n.text("Sync now"), systemImage: "arrow.triangle.2.circlepath")
+                }
             }
             NavigationLink(L10n.text("Capture & sync details")) { syncDetails }
                 .accessibilityIdentifier("capture.syncDetails")
@@ -100,6 +108,7 @@ struct CaptureView: View {
             } footer: {
                 Text(L10n.text("These controls affect recordings on this iPhone. Saved uploads and other devices continue."))
             }
+            PendantClickSettings()
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Omi pendant"))
             .navigationBarTitleDisplayMode(.inline)
             .onDisappear { model.bluetooth.stopScan() }
@@ -132,7 +141,7 @@ struct CaptureView: View {
                 .font(.callout).foregroundStyle(Theme.accent)
         }
         if !model.notice.isEmpty { Text(L10n.key(model.notice)).font(.callout).foregroundStyle(.secondary) }
-        Text(L10n.text("Flags and meeting controls hint at surrounding speech. A single click adds a flag once per minute. \(model.gesture == .doubleClick ? L10n.text("Double-click") : L10n.text("Verified hold")) toggles a meeting."))
+        Text(L10n.text("Flags and meeting controls hint at surrounding speech. Important marks are limited to once per minute. Configure single and double clicks in pendant settings."))
             .font(.caption).foregroundStyle(.secondary)
         Text(L10n.text("Automatic meeting ending requires a continuous recording synced from Omi. End phone meetings manually."))
             .font(.caption).foregroundStyle(.secondary)
@@ -210,6 +219,15 @@ struct CaptureView: View {
         if !policy.scheduled { return L10n.text("Off") }
         if !policy.enabled || policy.manualOverride { return L10n.text("Manual override") }
         return L10n.text("On")
+    }
+    private var processingSummary: String {
+        let status = model.completenessStatus
+        guard !statusStale, status["processing"] != .null else { return L10n.text("Status unavailable") }
+        let audioPending = status["processing"]["queued"].integer + status["processing"]["transcribing"].integer
+        if status["processing"]["blocked"].integer > 0 || (audioPending > 0 && status["worker_running"] != .bool(true)) { return L10n.text("Needs attention") }
+        if max(status["processing"]["transcribing"].integer, status["processing"]["active"].array.count) + status["generation"]["running"].integer > 0 { return L10n.text("Processing") }
+        if status["processing"]["queued"].integer + status["generation"]["queued"].integer > 0 { return L10n.text("Queued") }
+        return L10n.text("Up to date")
     }
     private var statusStale: Bool {
         guard let at = AppModel.date(model.completenessStatus["as_of"].text) else { return true }

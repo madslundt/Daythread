@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.SystemClock;
 import com.daythread.app.core.RetryBackoff;
+import com.daythread.app.core.OmiHaptic;
 import java.util.*;
 
 /** All GATT operations and callbacks run on the capture handler; Android permits one operation at a time. */
@@ -19,6 +20,8 @@ final class OmiConnection {
     static final UUID CODEC = UUID.fromString("19b10002-e8f2-537e-4f6c-d104768a1214");
     private static final UUID BUTTON_SERVICE = UUID.fromString("23ba7924-0000-1000-7450-346eac492e92");
     private static final UUID BUTTON = UUID.fromString("23ba7925-0000-1000-7450-346eac492e92");
+    private static final UUID HAPTIC_SERVICE = UUID.fromString("cab1ab95-2ea5-4f4d-bb56-874b72cfc984");
+    private static final UUID HAPTIC = UUID.fromString("cab1ab96-2ea5-4f4d-bb56-874b72cfc984");
     private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     interface Listener {
         void codec(int codec) throws Exception;
@@ -32,8 +35,11 @@ final class OmiConnection {
     private final Handler handler;
     private final Listener listener;
     private final BluetoothDevice device;
-    private final ArrayDeque<Runnable> operations = new ArrayDeque<>();
+    private enum Kind { READ, SUBSCRIBE, HAPTIC }
+    private record Operation(Kind kind, UUID characteristic, Runnable start) {}
+    private final ArrayDeque<Operation> operations = new ArrayDeque<>();
     private BluetoothGatt gatt;
+    private BluetoothGattCharacteristic haptic;
     private boolean closed;
     private Runnable timeout;
     private boolean reconnecting;
@@ -72,18 +78,61 @@ final class OmiConnection {
         } catch (RuntimeException e) { reject(context.getString(R.string.scan_failed)); }
     }
     private void deadline(long millis) {
+        deadline(millis, () -> retry(context.getString(R.string.bluetooth_timeout)));
+    }
+    private void deadline(long millis, Runnable expired) {
         if (timeout != null) handler.removeCallbacks(timeout);
-        timeout = () -> retry(context.getString(R.string.bluetooth_timeout));
+        timeout = expired;
         handler.postDelayed(timeout, millis);
     }
     private void next() {
         if (timeout != null) handler.removeCallbacks(timeout);
         operations.poll();
-        if (!operations.isEmpty()) { deadline(15000); operations.peek().run(); }
+        startOperation();
+    }
+    private boolean awaiting(Kind kind, UUID characteristic) {
+        Operation head = operations.peek();
+        return head != null && head.kind == kind && head.characteristic.equals(characteristic);
+    }
+    private void startOperation() {
+        Operation head = operations.peek();
+        if (head == null) return;
+        if (head.kind == Kind.HAPTIC) deadline(3000, () -> { if (operations.peek() == head) dropHaptics(); });
+        else deadline(15000);
+        head.start.run();
+    }
+    private void dropHaptics() {
+        // A late response must not advance a later write. Disable this optional feature
+        // until discovery runs again and leave audio/subscription operations intact.
+        haptic = null;
+        if (timeout != null) handler.removeCallbacks(timeout);
+        operations.removeIf(operation -> operation.kind == Kind.HAPTIC);
+        startOperation();
+    }
+    void vibrate(OmiHaptic preset) {
+        byte[] value = preset.payload();
+        BluetoothGatt current = gatt;
+        BluetoothGattCharacteristic characteristic = haptic;
+        if (closed || current == null || characteristic == null) return;
+        boolean idle = operations.isEmpty();
+        operations.add(new Operation(Kind.HAPTIC, HAPTIC, () -> {
+            if (closed || current != gatt || characteristic != haptic) { next(); return; }
+            try {
+                boolean accepted;
+                if (Build.VERSION.SDK_INT >= 33) accepted = current.writeCharacteristic(characteristic, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS;
+                else {
+                    characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                    characteristic.setValue(value);
+                    accepted = current.writeCharacteristic(characteristic);
+                }
+                if (!accepted) dropHaptics();
+            } catch (RuntimeException ignored) { dropHaptics(); }
+        }));
+        if (idle) startOperation();
     }
     private void retry(String reason) {
         if (closed) return;
-        listener.status(reason); listener.disconnected(); operations.clear();
+        listener.status(reason); listener.disconnected(); operations.clear(); haptic = null;
         if (closed) return;
         if (timeout != null) handler.removeCallbacks(timeout);
         if (gatt != null) { BluetoothGatt old = gatt; gatt = null; try { old.disconnect(); } catch (RuntimeException ignored) {}
@@ -97,13 +146,13 @@ final class OmiConnection {
     void reconnect() { if (!closed && gatt == null && retries.ready(SystemClock.elapsedRealtime())) connect(); }
     private void read(BluetoothGattCharacteristic characteristic) {
         if (characteristic == null) return;
-        operations.add(() -> { if (!gatt.readCharacteristic(characteristic)) retry(context.getString(R.string.bluetooth_read_failed)); });
+        operations.add(new Operation(Kind.READ, characteristic.getUuid(), () -> { if (!gatt.readCharacteristic(characteristic)) retry(context.getString(R.string.bluetooth_read_failed)); }));
     }
     private void subscribe(BluetoothGattCharacteristic characteristic) {
         if (characteristic == null) return;
         if (!characteristic.getUuid().equals(AUDIO) && (characteristic.getDescriptor(CCCD) == null
             || (characteristic.getProperties() & (BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE)) == 0)) return;
-        operations.add(() -> {
+        operations.add(new Operation(Kind.SUBSCRIBE, characteristic.getUuid(), () -> {
             BluetoothGattDescriptor descriptor = characteristic.getDescriptor(CCCD);
             if (descriptor == null || !gatt.setCharacteristicNotification(characteristic, true)) {
                 retry(context.getString(R.string.bluetooth_subscription_failed)); return;
@@ -111,7 +160,7 @@ final class OmiConnection {
             descriptor.setValue((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
                 ? BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE : BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
             if (!gatt.writeDescriptor(descriptor)) retry(context.getString(R.string.bluetooth_subscription_failed));
-        });
+        }));
     }
     private void reject(String message) { listener.status(message); close(); listener.failure(new java.io.IOException(message)); }
     void close() {
@@ -122,7 +171,7 @@ final class OmiConnection {
         if (timeout != null) handler.removeCallbacks(timeout);
         if (gatt != null) { BluetoothGatt old = gatt; gatt = null; try { old.disconnect(); } catch (RuntimeException ignored) {}
             try { old.close(); } catch (RuntimeException ignored) {} }
-        operations.clear();
+        operations.clear(); haptic = null;
     }
     private final BluetoothGattCallback callback = new BluetoothGattCallback() {
         @Override public void onConnectionStateChange(BluetoothGatt current, int status, int state) {
@@ -133,7 +182,7 @@ final class OmiConnection {
             } else if (state == BluetoothProfile.STATE_DISCONNECTED && status == BluetoothGatt.GATT_SUCCESS && reconnecting) {
                 // Keep the registered autoConnect GATT: Android owns normal link recovery.
                 if (timeout != null) handler.removeCallbacks(timeout);
-                operations.clear(); listener.status(context.getString(R.string.omi_reconnecting)); listener.disconnected();
+                operations.clear(); haptic = null; listener.status(context.getString(R.string.omi_reconnecting)); listener.disconnected();
             } else if (state == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) retry(context.getString(R.string.omi_reconnecting));
         }
         @Override public void onMtuChanged(BluetoothGatt current, int mtu, int status) {
@@ -150,14 +199,18 @@ final class OmiConnection {
                 || (audio.getProperties() & (BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE)) == 0) {
                 reject(context.getString(R.string.omi_incompatible)); return;
             }
-            operations.clear(); read(codec);
+            operations.clear();
+            BluetoothGattService feedback = current.getService(HAPTIC_SERVICE);
+            haptic = feedback == null ? null : feedback.getCharacteristic(HAPTIC);
+            if (haptic != null && (haptic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) == 0) haptic = null;
+            read(codec);
             BluetoothGattService button = current.getService(BUTTON_SERVICE);
             subscribe(button == null ? null : button.getCharacteristic(BUTTON));
             subscribe(audio);
-            deadline(15000); operations.peek().run();
+            startOperation();
         }
         @Override public void onCharacteristicRead(BluetoothGatt current, BluetoothGattCharacteristic characteristic, int status) {
-            if (current != gatt || closed) return;
+            if (current != gatt || closed || !awaiting(Kind.READ, characteristic.getUuid())) return;
             try {
                 byte[] value = characteristic.getValue();
                 if (status != BluetoothGatt.GATT_SUCCESS || value == null || value.length == 0) throw new IllegalStateException();
@@ -166,10 +219,14 @@ final class OmiConnection {
             } catch (Exception e) { reject(context.getString(R.string.omi_codec_failed)); }
         }
         @Override public void onDescriptorWrite(BluetoothGatt current, BluetoothGattDescriptor descriptor, int status) {
-            if (current != gatt || closed) return;
+            if (current != gatt || closed || !awaiting(Kind.SUBSCRIBE, descriptor.getCharacteristic().getUuid())) return;
             if (status != BluetoothGatt.GATT_SUCCESS) { retry(context.getString(R.string.bluetooth_subscription_failed)); return; }
             if (descriptor.getCharacteristic().getUuid().equals(AUDIO)) { retries.reset(); listener.status(context.getString(R.string.receiving_omi)); }
             next();
+        }
+        @Override public void onCharacteristicWrite(BluetoothGatt current, BluetoothGattCharacteristic characteristic, int status) {
+            if (current != gatt || closed || !awaiting(Kind.HAPTIC, characteristic.getUuid())) return;
+            if (status == BluetoothGatt.GATT_SUCCESS) next(); else dropHaptics();
         }
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic) {
             if (current != gatt || closed) return;

@@ -20,7 +20,7 @@ public final class Outbox {
         this.directory = directory;
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot open recording storage");
     }
-    public record Item(String id, String kind, Destination destination, Json data, File file) {}
+    public record Item(String id, String kind, Destination destination, Json data, File file, boolean clickPriority) {}
     public synchronized boolean hasPending() throws IOException {
         for (File file : files()) if (file.getName().endsWith(".json")) return true;
         return false;
@@ -44,13 +44,39 @@ public final class Outbox {
                 if (!Set.of("audio", "event", "gap", "state", "generation").contains(kind)) throw new IOException("Unknown queued item");
                 File audio = new File(directory, id + ".wav");
                 if (kind.equals("audio") && !audio.isFile()) throw new IOException("Queued audio is missing");
-                items.add(new Item(id, kind, new Destination(endpoints, json.getString("profile")), json.getJson("data"), audio));
+                boolean clickPriority = json.has("click_priority") && Boolean.TRUE.equals(json.get("click_priority"));
+                items.add(new Item(id, kind, new Destination(endpoints, json.getString("profile")), json.getJson("data"), audio, clickPriority));
             } catch (RuntimeException e) { throw new IOException("Cannot read saved recording details; files were preserved", e); }
         }
-        items.sort(Comparator.comparing(item -> item.kind.equals("generation")
+        items.sort(Comparator.comparing((Item item) -> item.kind.equals("generation")
             ? Instant.parse(item.data.getJson("parameters").getString("end"))
-            : Instant.parse(item.data.optString("started_at", item.data.optString("occurred_at")))));
+            : Instant.parse(item.data.optString("started_at", item.data.optString("occurred_at"))))
+            .thenComparing(Item::id));
         return items;
+    }
+    /** Click hints need no audio; recent actions promote only their own captured evidence. */
+    public synchronized List<Item> uploadPlan() throws IOException {
+        List<Item> chronological = pending();
+        LinkedHashMap<String, Item> plan = new LinkedHashMap<>();
+        for (Item item : chronological)
+            if (item.kind.equals("event") || item.kind.equals("state") && item.clickPriority) plan.put(item.id, item);
+        for (Item request : chronological) {
+            if (!request.kind.equals("generation") || !request.data.getString("kind").equals("wearable_action")) continue;
+            Json parameters = request.data.getJson("parameters");
+            Instant end = Instant.parse(parameters.getString("end"));
+            Instant start = end.minusSeconds(parameters.getInt("duration_seconds"));
+            String device = parameters.optString("device_id");
+            for (Item audio : chronological) {
+                if (!audio.kind.equals("audio") || !audio.destination.equals(request.destination)
+                    || !audio.data.getString("device_id").equals(device)) continue;
+                if (Instant.parse(audio.data.getString("started_at")).isBefore(end)
+                    && Instant.parse(audio.data.getString("ended_at")).isAfter(start))
+                    plan.putIfAbsent(audio.id, audio);
+            }
+            plan.putIfAbsent(request.id, request);
+        }
+        for (Item item : chronological) plan.putIfAbsent(item.id, item);
+        return new ArrayList<>(plan.values());
     }
     public synchronized long bytes() throws IOException {
         long size = 0;
@@ -71,11 +97,16 @@ public final class Outbox {
             .put("endpoints", new JsonArray(destination.endpoints())).put("data", data);
     }
     public synchronized String enqueue(String kind, Destination destination, Json data) throws IOException {
+        return enqueue(kind, destination, data, false);
+    }
+    public synchronized String enqueue(String kind, Destination destination, Json data, boolean clickPriority) throws IOException {
         checkSpace(8192);
         String id = UUID.randomUUID().toString();
         String key = switch (kind) { case "event" -> "event_id"; case "gap" -> "gap_id"; case "generation" -> "id"; default -> null; };
         if (key != null) data.put(key, id);
-        atomic(new File(directory, id + ".json"), manifest(id, kind, destination, data).toString().getBytes(StandardCharsets.UTF_8));
+        Json saved = manifest(id, kind, destination, data);
+        if (clickPriority) saved.put("click_priority", true);
+        atomic(new File(directory, id + ".json"), saved.toString().getBytes(StandardCharsets.UTF_8));
         return id;
     }
     public synchronized void acknowledge(Item item, Json receipt, String responseProfile) throws IOException {

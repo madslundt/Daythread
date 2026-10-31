@@ -417,15 +417,16 @@ struct CompletionSceneOverlay: UIViewRepresentable {
 @MainActor
 final class ClickBackgroundExecution {
     var onExpiration: (() -> Void)?
-    private var state = ClickExecutionState()
+    private var state: ClickExecutionState
     private var identifier = UIBackgroundTaskIdentifier.invalid
     private var timeout: Task<Void, Never>?
-    init() {
+    init(pending: Set<ClickExecutionState.Part> = [.confirmation, .haptic], maximumSeconds: TimeInterval = 8) {
+        state = ClickExecutionState(pending: pending)
         identifier = UIApplication.shared.beginBackgroundTask(withName: "com.daythread.pendant-click") { [weak self] in
             MainActor.assumeIsolated { self?.expire() }
         }
         timeout = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            do { try await Task.sleep(for: .seconds(maximumSeconds)) } catch { return }
             self?.expire()
         }
     }

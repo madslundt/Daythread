@@ -55,3 +55,32 @@ public enum UploadReceipt {
         }
     }
 }
+
+/// The same receipt-checked handoff runs in foreground wake time and keeps durable fallback IDs.
+public enum UserInitiatedUpload {
+    @MainActor
+    public static func drain(store: DurableStore, submissionID: UUID, destinationID: String,
+                             send: (OutboxItem, URL) async throws -> Data,
+                             acknowledged: (OutboxItem) -> Void = { _ in }) async throws -> Bool {
+        while let item = store.nextSubmissionUpload(submissionID, destinationID: destinationID) {
+            try Task.checkCancellation()
+            let data = try await send(item, store.uploadFile(for: item))
+            try UploadReceipt.validate(data, for: item)
+            try store.acknowledge(item.id)
+            acknowledged(item)
+        }
+        return store.items.contains { $0.id == submissionID && $0.destinationID == destinationID && $0.acknowledged }
+    }
+}
+
+/// Notification scheduling may briefly hold a job, but an abandoned callback cannot block uploads.
+public struct UserInitiatedUploadHolds {
+    private var deadlines: [UUID: TimeInterval] = [:]
+    public init() {}
+    public mutating func hold(_ id: UUID, at uptime: TimeInterval) { deadlines[id] = uptime + 8 }
+    public mutating func release(_ id: UUID) { deadlines.removeValue(forKey: id) }
+    public mutating func active(at uptime: TimeInterval) -> Set<UUID> {
+        deadlines = deadlines.filter { $0.value > uptime }
+        return Set(deadlines.keys)
+    }
+}

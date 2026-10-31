@@ -459,12 +459,16 @@ class Inference(Transcription, InferenceUsage):
         )
 
     async def answer_recent(self, sources: list[dict]) -> str:
-        return await self.for_task("chat")._generate(
+        text = await self.for_task("chat")._generate(
             task="Identify the latest clear question in the supplied recent speech and answer "
             "it directly in the speaker's language. Do not summarize the conversation. "
-            "Keep the answer concise enough for a phone notification. If there is no clear "
+            "Write the short question on the first line, using at most 12 words and "
+            "80 characters while preserving its meaning. Put the concise answer on the "
+            "following line, without labels, headings, or Markdown. Keep both concise enough "
+            "for a phone notification. If there is no clear "
             "question, say 'No clear question was found in the recent audio.' If the answer "
-            "cannot be established, say what is missing instead of guessing.",
+            "cannot be established, still show the short question, then say what is missing "
+            "instead of guessing.",
             evidence=json.dumps([
                 {"id": row["id"], "text": row["text"]} for row in sources
             ], ensure_ascii=False),
@@ -474,10 +478,19 @@ class Inference(Transcription, InferenceUsage):
             "general knowledge, but have no browsing or live information. Do not invent "
             "private facts or claim to have checked current facts. Cite source UUIDs only "
             "for facts supported by that transcript, never for general knowledge. "
-            "Return only the answer or a brief explanation of why no answer is available.",
+            "Return only the short question, a newline, and the answer. If there is no clear "
+            "question, return only the brief no-question explanation.",
             tokens=600,
             usage_task="chat",
         )
+        question, separator, answer = text.partition("\n")
+        if not separator:
+            return text
+        words = question.split()
+        short = " ".join(words[:12])
+        if len(words) > 12 or len(short) > 80:
+            short = short[:79].rstrip() + "…"
+        return short + "\n" + answer.strip()
 
     async def _reduce(
         self,

@@ -45,21 +45,32 @@ public final class UploadJob extends JobService {
     private static boolean drain(Context context, AtomicBoolean cancelled) {
         try {
             Outbox outbox = AppState.outbox(context);
+            java.util.HashSet<String> deferredJobs = new java.util.HashSet<>();
+            java.io.IOException deferred = null;
+            long nextResultPollAt = SystemClock.elapsedRealtime() + 10000;
             do {
                 requested.set(false);
-                java.io.IOException deferred = null;
-                for (Outbox.Item item : outbox.pending()) {
+                for (Outbox.Item item : outbox.uploadPlan()) {
+                    if (deferredJobs.contains(item.id())) continue;
                     if (cancelled.get() || !allowed(context)) return false;
                     ActionResults.track(context, item);
                     try { Backend.upload(outbox, item); }
                     catch (java.io.IOException error) {
                         // A disabled AI action must not strand later recordings behind it.
                         if (!item.kind().equals("generation")) throw error;
+                        deferredJobs.add(item.id());
                         deferred = error;
                     }
+                    // New work may be a pendant click. Refresh between transfers instead
+                    // of draining an outdated backlog snapshot before noticing the click.
+                    if (requested.get()) break;
+                    if (SystemClock.elapsedRealtime() >= nextResultPollAt && ActionResults.pending(context)) {
+                        ActionResults.poll(context);
+                        nextResultPollAt = SystemClock.elapsedRealtime() + 10000;
+                    }
                 }
-                if (deferred != null) { ActionResults.poll(context); throw deferred; }
             } while (requested.get() && !cancelled.get());
+            if (deferred != null) { ActionResults.poll(context); throw deferred; }
             ActionResults.poll(context);
             retries.reset(); AppState.error(context, ""); return !ActionResults.pending(context);
         } catch (Exception e) { retries.fail(SystemClock.elapsedRealtime()); AppState.error(context, e.getMessage()); return false; }

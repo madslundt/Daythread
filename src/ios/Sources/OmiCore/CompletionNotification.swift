@@ -103,10 +103,10 @@ public enum ClickActionFeedback: Equatable {
 
 /// A physical click owns a short execution window until both asynchronous handoffs finish.
 public struct ClickExecutionState {
-    public enum Part: Hashable { case confirmation, haptic }
-    private var pending: Set<Part> = [.confirmation, .haptic]
+    public enum Part: Hashable { case confirmation, haptic, submission }
+    private var pending: Set<Part>
     public private(set) var finished = false
-    public init() {}
+    public init(pending: Set<Part> = [.confirmation, .haptic]) { self.pending = pending }
     public mutating func complete(_ part: Part) -> Bool {
         guard !finished, pending.remove(part) != nil, pending.isEmpty else { return false }
         finished = true

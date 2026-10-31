@@ -14,6 +14,7 @@ final class AppModel {
         var disabled = RecordingSchedule(); disabled.enabled = false; return disabled
     }()
     @ObservationIgnored private var scheduleAttempted = false
+    @ObservationIgnored private var prioritizingClickCaptureState = false
     @ObservationIgnored private var scheduleTimer: Timer?
     @ObservationIgnored private var scheduledTransition: Date?
     @ObservationIgnored private var clockObserver: NSObjectProtocol?
@@ -757,6 +758,8 @@ final class AppModel {
         case .mark: return (event(.mark), nil)
         case .meetingToggle: return (event(.meetingToggle), nil)
         case .captureToggle:
+            prioritizingClickCaptureState = true
+            defer { prioritizingClickCaptureState = false }
             error = nil
             let pause = liveCaptureAllowed && (bluetooth.captureEnabled || microphone.active != nil)
             if pause { setPaused(true) } else { startManualPendant() }
@@ -764,6 +767,7 @@ final class AppModel {
             guard pause ? paused : bluetooth.captureEnabled else {
                 return (.failed(L10n.text("Capture storage unavailable")), nil)
             }
+            uploader?.pump()
             return (pause ? .capturePaused : .captureResumed, nil)
         case .summarize, .answer, .translate:
             error = nil; checkpoint()
@@ -859,7 +863,11 @@ final class AppModel {
     private func recordCaptureState(_ state: String, cause: String) {
         guard hasSelectedProfile else { return }
         observedCaptureState = state
-        do { try store?.captureState(phoneID: phoneID, at: Date(), state: state, cause: cause) }
+        do {
+            if let id = try store?.captureState(phoneID: phoneID, at: Date(), state: state, cause: cause), prioritizingClickCaptureState {
+                try store?.prioritize(id)
+            }
+        }
         catch { self.error = L10n.source("Could not persist capture observation: \(L10n.error(error))") }
     }
     private func publishObservation(using backend: BackendClient) async throws {

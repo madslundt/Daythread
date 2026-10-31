@@ -108,4 +108,9 @@ def wearable_notice(result: dict) -> tuple[str, str]:
 
     title = {"summarize": "Recent audio summary", "answer": "Answer to recent question",
              "translate": "Recent audio translation"}[result["action"]]
+    if result["action"] == "answer":
+        # Keep the question above its answer and preserve literal math operators.
+        body = "\n".join(" ".join(line.split()) for line in result["text"].splitlines()
+                         if line.strip())
+        return title, body if len(body) <= 550 else body[:549].rstrip() + "…"
     return title, preview(result["text"], limit=550)

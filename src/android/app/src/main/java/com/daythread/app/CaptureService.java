@@ -45,6 +45,7 @@ public final class CaptureService extends Service {
     private int inputGeneration;
     private boolean policyWaiting;
     private boolean controlPaused;
+    private boolean prioritizingClickState;
     private final Runnable actionPoll = new Runnable() {
         @Override public void run() {
             if (stopped || stopRequested) return;
@@ -281,7 +282,7 @@ public final class CaptureService extends Service {
         UploadJob.schedule(this); UploadJob.pump(this);
     }
     private void captureState(String state, String cause) throws IOException {
-        outbox.enqueue("state", destination, new Json().put("phone_id", AppState.phone(this)).put("occurred_at", now().toString()).put("state", state).put("cause", cause));
+        outbox.enqueue("state", destination, new Json().put("phone_id", AppState.phone(this)).put("occurred_at", now().toString()).put("state", state).put("cause", cause), prioritizingClickState);
         UploadJob.schedule(this);
     }
     private void gap(Instant start, Instant end, String cause) throws IOException {
@@ -318,7 +319,12 @@ public final class CaptureService extends Service {
                 frames.reset(); frameStarted = null; missingSince = null;
                 if (decoder != null) decoder = new OmiFrames.Decoder(omiCodec);
                 discontinuity = true; lastEnd = null;
-                checkPolicy();
+                prioritizingClickState = clickCode != 0;
+                try {
+                    checkPolicy();
+                    if (resume && prioritizingClickState && captureAllowed()) captureState("capturing", "resumed");
+                } finally { prioritizingClickState = false; }
+                UploadJob.pump(this);
                 ClickNotifications.show(this, clickCode, action, seconds,
                     fatal || stopped || stopRequested ? ClickFeedback.Outcome.FAILED : ClickFeedback.Outcome.ACCEPTED, wasCapturing, null);
             } else if (action.recentAudio()) {

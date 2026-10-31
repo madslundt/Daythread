@@ -31,7 +31,11 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
     var onChange: (() -> Void)?
     var onProgress: (() -> Void)?
     var onError: ((String) -> Void)?
-    private var heldGenerationIDs = Set<UUID>()
+    private var uploadHolds = UserInitiatedUploadHolds()
+    private var immediateTasks: [UUID: Task<Void, Never>] = [:]
+    private var immediateSessions: [UUID: URLSession] = [:]
+    private var immediateItems: [UUID: Set<UUID>] = [:]
+    private var immediateRetryAt: [UUID: TimeInterval] = [:]
     private var restoring = true
     private var uploadWiFiOnly: Bool
 
@@ -62,6 +66,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
     func setUploadWiFiOnly(_ value: Bool) {
         guard uploadWiFiOnly != value else { return }
         uploadWiFiOnly = value
+        for session in immediateSessions.values { session.invalidateAndCancel() }
         enforceNetworkPolicy()
         pump()
     }
@@ -76,10 +81,13 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         }
     }
     private func enforceDestination() {
+        for (id, session) in immediateSessions where store.items.first(where: { $0.id == id })?.destinationID != client?.destinationIdentity {
+            session.invalidateAndCancel()
+        }
         for task in active.values where task.state != .completed {
             guard let client, let id = task.taskDescription.flatMap(UUID.init(uuidString:)),
                   let item = store.items.first(where: { $0.id == id }),
-                  item.destinationID == client.destinationIdentity,
+                  item.destinationID == client.destinationIdentity, !item.acknowledged,
                   task.originalRequest?.value(forHTTPHeaderField: "X-Daythread-Destination") == client.destinationIdentity,
                   task.originalRequest?.value(forHTTPHeaderField: "X-Daythread-Session") == client.authorization?.sessionID.uuidString,
                   task.originalRequest?.url == uploadURL(for: item, client: client),
@@ -134,12 +142,29 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         let estimate = waiting || confirming ? nil : rates[task.taskIdentifier]?.remainingSeconds(for: remaining, at: ProcessInfo.processInfo.systemUptime)
         return UploadFeedback(sentBytes: sent, totalBytes: total, remainingBytes: remaining, title: title, estimatedSeconds: estimate)
     }
-    func holdGeneration(_ id: UUID) { heldGenerationIDs.insert(id) }
-    func releaseGeneration(_ id: UUID) { heldGenerationIDs.remove(id); pump() }
+    func holdGeneration(_ id: UUID) {
+        uploadHolds.hold(id, at: ProcessInfo.processInfo.systemUptime)
+        Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            self?.releaseGeneration(id)
+        }
+    }
+    func releaseGeneration(_ id: UUID) { uploadHolds.release(id); pump() }
     func pump() {
-        guard !restoring, active.isEmpty, let client,
-              let item = store.nextUpload(destinationID: client.destinationIdentity),
-              !heldGenerationIDs.contains(item.id) else { return }
+        guard let client else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let held = uploadHolds.active(at: now)
+        // A regular session uses this BLE wake window; the background session may be discretionary.
+        for item in store.pending(destinationID: client.destinationIdentity) where item.prioritizesUpload &&
+            !held.contains(item.id) && immediateTasks[item.id] == nil &&
+            (immediateRetryAt[item.id] ?? 0) <= now &&
+            store.nextSubmissionUpload(item.id, destinationID: client.destinationIdentity) != nil {
+            if immediateTasks.count >= 2 { break }
+            startImmediateSubmission(item.id, client: client)
+        }
+        let reserved = immediateItems.values.reduce(into: held) { $0.formUnion($1) }
+        guard !restoring, active.isEmpty,
+              let item = store.nextUpload(destinationID: client.destinationIdentity, excluding: reserved) else { return }
         let file: URL
         do { file = try store.uploadFile(for: item) }
         catch {
@@ -164,6 +189,76 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         }
         active[task.taskIdentifier] = task; task.resume()
         onProgress?()
+    }
+    private func startImmediateSubmission(_ id: UUID, client: BackendClient) {
+        guard let snapshot = try? client.snapshot(), let request = store.items.first(where: { $0.id == id }) else { return }
+        immediateRetryAt[id] = ProcessInfo.processInfo.systemUptime + 30
+        immediateItems[id] = Set([id] + store.audioDependencies(for: request).map(\.id))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.allowsCellularAccess = !uploadWiFiOnly
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 20
+        configuration.urlCache = nil; configuration.httpCookieStorage = nil
+        let session = URLSession(configuration: configuration, delegate: ManagedRedirectPolicy.shared, delegateQueue: nil)
+        immediateSessions[id] = session
+        let execution = ClickBackgroundExecution(pending: [.submission], maximumSeconds: 25)
+        execution.onExpiration = { [weak self] in
+            self?.immediateTasks[id]?.cancel()
+            session.invalidateAndCancel()
+        }
+        immediateTasks[id] = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { execution.complete(.submission); return }
+            let deadline = Task {
+                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                session.invalidateAndCancel()
+            }
+            defer {
+                deadline.cancel(); session.invalidateAndCancel()
+                immediateTasks.removeValue(forKey: id); immediateSessions.removeValue(forKey: id)
+                immediateItems.removeValue(forKey: id)
+                execution.complete(.submission)
+                onChange?(); pump(); Self.scheduleRetry()
+            }
+            do {
+                let accepted = try await UserInitiatedUpload.drain(store: store, submissionID: id, destinationID: snapshot.destinationIdentity) { item, file in
+                    guard self.client?.destinationIdentity == snapshot.destinationIdentity,
+                          self.client?.authorization?.sessionID == snapshot.authorization?.sessionID else { throw CancellationError() }
+                    var lastError: Error?
+                    let endpoints = snapshot.router.orderedCandidates()
+                    for (index, endpoint) in endpoints.enumerated() {
+                        do {
+                            try Task.checkCancellation()
+                            snapshot.router.setActive(endpoint.id)
+                            var request = URLRequest(url: self.uploadURL(for: item, client: snapshot))
+                            request.httpMethod = item.kind == .audio || item.kind == .captureState ? "PUT" : "POST"
+                            request.timeoutInterval = 5; request.allowsCellularAccess = !self.uploadWiFiOnly
+                            request.setValue(item.resolvedProfileID, forHTTPHeaderField: "X-Omi-Profile")
+                            request.setValue(item.kind == .audio ? "audio/wav" : "application/json", forHTTPHeaderField: "Content-Type")
+                            try snapshot.authorize(&request)
+                            let (data, response) = try await session.upload(for: request, fromFile: file)
+                            try snapshot.validateResponse(response, data: data)
+                            snapshot.router.markSuccess(endpoint.id)
+                            return data
+                        } catch {
+                            lastError = error
+                            guard index < endpoints.count - 1, BackendClient.shouldTryNextEndpoint(error) else { throw error }
+                        }
+                    }
+                    throw lastError ?? CaptureError.invalidReceipt
+                } acknowledged: { item in
+                    self.fileSizes.removeValue(forKey: item.id)
+                    // The OS may still own an older discretionary transfer for this exact ID.
+                    for task in self.active.values where task.taskDescription.flatMap(UUID.init(uuidString:)) == item.id {
+                        self.policyCancellations.insert(task.taskIdentifier); task.cancel()
+                    }
+                }
+                if accepted { immediateRetryAt.removeValue(forKey: id) }
+            } catch {
+                // Original files and IDs remain queued for the durable background path.
+                // The per-request cooldown prevents a failed quick handoff from spinning.
+            }
+        }
     }
     func retry() {
         do { try store.retryNow(); pump() } catch { onError?(L10n.error(error)) }
@@ -198,6 +293,7 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         // A preference change preserves the original outbox item and does not count as
         // a failed upload. Retry uses the same ID, even if the server already received it.
         if policyCancellations.remove(task.taskIdentifier) != nil { return }
+        if store.items.first(where: { $0.id == id })?.acknowledged == true { return }
         do {
             if let error { throw error }
             guard let response = task.response else { throw BackendFailure(message: L10n.source("Upload ended without an acknowledgement")) }

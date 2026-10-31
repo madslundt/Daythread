@@ -83,7 +83,11 @@ struct CompletionResultView: View {
             } else if job["state"].text == "completed" {
                 if job["kind"].text == "wearable_action" {
                     Section {
-                        Text(.init(result["text"].text)).textSelection(.enabled)
+                        if result["action"].text == "answer" {
+                            Text(result["text"].text).textSelection(.enabled)
+                        } else {
+                            Text(.init(result["text"].text)).textSelection(.enabled)
+                        }
                         Text(L10n.text("Last \(parameters["duration_seconds"].integer) seconds · ending \(parameters["end"].text)"))
                             .font(.caption).foregroundStyle(.secondary)
                         CompletenessView(value: result["completeness"])

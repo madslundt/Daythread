@@ -17,6 +17,9 @@ public struct OutboxItem: Codable, Identifiable {
     public var wearableAction: WearableAction?
     public var durationSeconds: Int?
     public var language: String?
+    public var audioDependencyIDs: [UUID]?
+    public var userInitiated: Bool?
+    public var prioritizesUpload: Bool { kind == .generation || kind == .event || userInitiated == true }
     public var meetingIntent: String?
     public var meetingID: UUID?
     public var meetingMaxMinutes: Int?
@@ -82,18 +85,37 @@ public final class DurableStore {
     deinit { try? source?.close() }
     public var pending: [OutboxItem] { items.filter { !$0.acknowledged && $0.ready }.sorted { $0.capturedAt < $1.capturedAt } }
     public func pending(destinationID: String) -> [OutboxItem] { pending.filter { $0.destinationID == destinationID } }
-    /// A recent-audio job must wait for its original audio, including chunks in retry backoff.
-    public func nextUpload(destinationID: String, at date: Date = Date()) -> OutboxItem? {
-        pending(destinationID: destinationID).first { item in
-            guard item.retryAt <= date else { return false }
-            guard item.kind == .generation, let duration = item.durationSeconds else { return true }
-            let start = item.capturedAt.addingTimeInterval(-Double(duration))
-            return !items.contains { audio in
-                audio.kind == .audio && !audio.acknowledged && audio.destinationID == item.destinationID &&
-                audio.resolvedProfileID == item.resolvedProfileID && audio.capturedAt < item.capturedAt &&
-                (audio.endedAt ?? item.capturedAt) > start
-            }
+    /// Physical actions and only their original audio dependencies precede bulk capture uploads.
+    public func nextUpload(destinationID: String, at date: Date = Date(), excluding excluded: Set<UUID> = []) -> OutboxItem? {
+        let queued = pending(destinationID: destinationID)
+        for request in queued where request.prioritizesUpload && !excluded.contains(request.id) {
+            if let next = nextSubmissionUpload(request.id, destinationID: destinationID, at: date, excluding: excluded) { return next }
         }
+        return queued.first { !$0.prioritizesUpload && $0.retryAt <= date && !excluded.contains($0.id) }
+    }
+    public func nextSubmissionUpload(_ id: UUID, destinationID: String, at date: Date = Date(), excluding excluded: Set<UUID> = []) -> OutboxItem? {
+        guard let request = items.first(where: { $0.id == id }), request.destinationID == destinationID,
+              request.prioritizesUpload, !request.acknowledged, request.ready, request.retryAt <= date,
+              !excluded.contains(id) else { return nil }
+        let audio = audioDependencies(for: request)
+        if !audio.isEmpty {
+            return audio.first { $0.ready && $0.retryAt <= date && !excluded.contains($0.id) }
+        }
+        return request
+    }
+    public func audioDependencies(for request: OutboxItem) -> [OutboxItem] {
+        guard request.kind == .generation, let duration = request.durationSeconds else { return [] }
+        let frozen = request.audioDependencyIDs.map(Set.init)
+        let start = request.capturedAt.addingTimeInterval(-Double(duration))
+        return items.filter { audio in
+            audio.kind == .audio && !audio.acknowledged && audio.destinationID == request.destinationID &&
+            audio.resolvedProfileID == request.resolvedProfileID && audio.deviceID == request.deviceID &&
+            (frozen?.contains(audio.id) ?? (audio.capturedAt < request.capturedAt && (audio.endedAt ?? request.capturedAt) > start))
+        }.sorted { $0.capturedAt < $1.capturedAt }
+    }
+    public func prioritize(_ id: UUID) throws {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        var updated = items; updated[index].userInitiated = true; try commit(updated)
     }
     /// Upgrade only unscoped legacy records, before accepting another account or backend.
     public func bindLegacyDestination(_ identity: String) throws {
@@ -218,6 +240,11 @@ public final class DurableStore {
         guard action.usesRecentAudio, ClickControls.durations.contains(durationSeconds) else { throw CaptureError.corruptedStore }
         var item = OutboxItem(id: UUID(), kind: .generation, deviceID: deviceID, capturedAt: date)
         item.wearableAction = action; item.durationSeconds = durationSeconds; item.language = language; item.ready = true
+        let start = date.addingTimeInterval(-Double(durationSeconds))
+        item.audioDependencyIDs = items.filter {
+            $0.kind == .audio && $0.destinationID == destinationID && $0.resolvedProfileID == profileID &&
+            $0.deviceID == deviceID && $0.capturedAt < date && ($0.endedAt ?? date) > start
+        }.map(\.id)
         return try appendMetadata(item)
     }
     private func metadata(_ item: OutboxItem) throws -> Data {

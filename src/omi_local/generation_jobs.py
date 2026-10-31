@@ -353,7 +353,8 @@ class GenerationJobs:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT id FROM generation_jobs WHERE state='queued' AND retry_at<=?" + policy
-                + " ORDER BY created_at LIMIT 1", (stamp(utc_now()),),
+                + " ORDER BY CASE WHEN kind='wearable_action' THEN 0 ELSE 1 END,"
+                " created_at LIMIT 1", (stamp(utc_now()),),
             ).fetchone()
             if row is None:
                 return False

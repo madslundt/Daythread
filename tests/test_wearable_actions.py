@@ -61,7 +61,7 @@ class Model:
 
     async def answer_recent(self, sources):
         self.calls.append(("answer", sources))
-        return "Madrid."
+        return "What is Spain's capital?\nMadrid."
 
     async def translate(self, text, language):
         self.calls.append(("translate", text, language))
@@ -87,6 +87,31 @@ def run(jobs, body):
     jobs.enqueue(body)
     asyncio.run(jobs.process_one())
     return jobs.get(str(body.id))
+
+
+@pytest.mark.parametrize("waiting_for_retry", [False, True])
+def test_clicks_precede_bulk_generation_without_bypassing_retry(jobs, waiting_for_retry):
+    bulk = [GenerationRequest(id=uuid4(), kind="rewind", parameters={}) for _ in range(2)]
+    clicks = [request(), request("summarize")]
+    for body in bulk + clicks:
+        jobs.enqueue(body)
+    if waiting_for_retry:
+        with jobs.store.connect() as db:
+            db.execute("UPDATE generation_jobs SET retry_at=? WHERE kind='wearable_action'",
+                       ("9999-01-01T00:00:00+00:00",))
+    restored = GenerationJobs(jobs.memory)
+    executed = []
+
+    async def execute(job):
+        executed.append(job["id"])
+        return {"sources": [], "summary": "Ready"}
+
+    restored.execute = execute
+    expected = bulk if waiting_for_retry else clicks + bulk
+    for _ in expected:
+        assert asyncio.run(restored.process_one())
+    assert executed == [str(body.id) for body in expected]
+    assert not asyncio.run(restored.process_one())
 
 
 @pytest.mark.parametrize("action", ["summarize", "answer", "translate"])
@@ -147,7 +172,7 @@ def test_job_waits_durably_for_transcription_without_blocking_other_jobs(jobs):
         db.execute("UPDATE generation_jobs SET retry_at='' WHERE id=?", (str(body.id),))
     restarted = GenerationJobs(jobs.memory)
     asyncio.run(restarted.process_one())
-    assert restarted.get(str(body.id))["result"]["text"] == "Madrid."
+    assert restarted.get(str(body.id))["result"]["text"] == "What is Spain's capital?\nMadrid."
 
 
 def test_only_segments_overlapping_requested_audio_reach_the_model(jobs):
@@ -289,15 +314,58 @@ def test_answer_prompt_requests_an_answer_and_explicitly_handles_missing_questio
 
     def respond(req):
         requests.append(json.loads(req.content))
-        return httpx.Response(200, json={"choices": [{"message": {"content": "Madrid."}}]})
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": "What is Spain's capital?\nMadrid.",
+        }}]})
 
     async def answer():
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             model = Inference(jobs.memory.settings, client)
             return await model.answer_recent([{"id": str(uuid4()), "text": "Spain's capital?"}])
 
-    assert asyncio.run(answer()) == "Madrid."
+    assert asyncio.run(answer()) == "What is Spain's capital?\nMadrid."
     payload = json.loads(requests[0]["messages"][1]["content"])
     assert "Do not summarize" in payload["task"]
     assert "No clear question" in payload["task"]
+    assert "short question on the first line" in payload["task"]
+    assert "12 words" in payload["task"]
+    assert "80 characters" in payload["task"]
     assert "general knowledge" in requests[0]["messages"][0]["content"]
+
+
+@pytest.mark.parametrize("question", ["What is 2+2?", "What is 2*2?"])
+def test_answer_notification_preserves_short_question_above_answer(jobs, question):
+    async def answer(_):
+        return question + "\n4"
+
+    jobs.memory.inference = Model()
+    jobs.memory.inference.answer_recent = answer
+    source(jobs, question)
+    job = run(jobs, request())
+    jobs.notify_completed()
+    notice = jobs.store.notifications_after(0)["notifications"][0]
+    assert job["result"]["text"] == question + "\n4"
+    assert notice["body"] == question + "\n4"
+
+
+@pytest.mark.parametrize("content", [
+    "Why " + "a long question " * 20 + "?\nA concise answer.",
+    "No clear question was found in the recent audio.",
+])
+def test_recent_answer_bounds_question_and_preserves_no_question_result(jobs, content):
+    async def answer():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]},
+        ))) as client:
+            return await Inference(jobs.memory.settings, client).answer_recent([
+                {"id": str(uuid4()), "text": "Recorded question"},
+            ])
+
+    result = asyncio.run(answer())
+    if "\n" in content:
+        question, answer = result.split("\n", 1)
+        assert len(question) <= 80
+        assert len(question.split()) <= 12
+        assert answer == "A concise answer."
+    else:
+        assert result == content

@@ -136,6 +136,8 @@
     <string name="questions_processing">Finding questions from earlier clicks…</string>
     <string name="questions_load_failed">Could not load questions. Check your connection and try again.</string>
     <string name="questions_empty">No saved questions for this day.</string>
+    <string name="question_read_more">Read more</string>
+    <string name="question_show_less">Show less</string>
     <string name="question_from_click">From this click</string>
     <string name="question_just_now">Just now</string>
     <plurals name="questions_from_click">

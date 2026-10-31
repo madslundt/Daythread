@@ -145,25 +145,61 @@ struct DayQuestionsView: View {
 private struct QuestionAnswerPreview: View {
     let answer: String
     @State private var expanded = false
+    @State private var textHeights: [String: CGFloat] = [:]
+
+    private var truncated: Bool {
+        guard let full = textHeights["full"], let preview = textHeights["preview"] else { return false }
+        return full > preview + 0.5
+    }
 
     var body: some View {
         Button {
+            guard truncated || expanded else { return }
             withAnimation { expanded.toggle() }
         } label: {
-            Text(answer)
-                .lineLimit(expanded ? nil : 3)
-                .truncationMode(.tail)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 6) {
+                Text(answer)
+                    .lineLimit(expanded ? nil : 3)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                if truncated || expanded {
+                    Text(expanded ? L10n.text("Show less") : L10n.text("Read more"))
+                        .font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(measurement(lines: nil, key: "full"))
+        .background(measurement(lines: 3, key: "preview"))
+        .onPreferenceChange(AnswerTextHeights.self) { textHeights = $0 }
         .accessibilityValue(expanded ? L10n.text("Expanded") : L10n.text("Collapsed"))
-        .accessibilityHint(expanded ? L10n.text("Show less") : L10n.text("Read more"))
+        .accessibilityHint(expanded ? L10n.text("Show less") : truncated ? L10n.text("Read more") : "")
         .contextMenu {
             Button(L10n.text("Copy"), systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = answer
             }
+        }
+    }
+
+    private func measurement(lines: Int?, key: String) -> some View {
+        Text(answer)
+            .lineLimit(lines)
+            .fixedSize(horizontal: false, vertical: true)
+            .hidden()
+            .background(GeometryReader { geometry in
+                Color.clear.preference(key: AnswerTextHeights.self, value: [key: geometry.size.height])
+            })
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+
+    private struct AnswerTextHeights: PreferenceKey {
+        static var defaultValue: [String: CGFloat] = [:]
+        static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+            value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
         }
     }
 }

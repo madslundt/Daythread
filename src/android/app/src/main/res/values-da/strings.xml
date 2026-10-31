@@ -136,6 +136,8 @@
     <string name="questions_processing">Finder spørgsmål fra tidligere klik…</string>
     <string name="questions_load_failed">Spørgsmål kunne ikke hentes. Kontrollér forbindelsen, og prøv igen.</string>
     <string name="questions_empty">Ingen gemte spørgsmål denne dag.</string>
+    <string name="question_read_more">Læs mere</string>
+    <string name="question_show_less">Vis mindre</string>
     <string name="question_from_click">Fra dette klik</string>
     <string name="question_just_now">Lige nu</string>
     <plurals name="questions_from_click">

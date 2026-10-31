@@ -164,19 +164,24 @@ public final class QuestionsActivity extends Activity {
                 if (!question.answer().isEmpty()) {
                     String answerKey = group.rowKey(question);
                     TextView answer = text(question.answer(), 16, INK);
+                    TextView hint = text("", 14, ACCENT); hint.setPadding(0, dp(6), 0, dp(6)); hint.setVisibility(View.GONE);
                     answerPreview(answer, expandedAnswers.contains(answerKey));
-                    answer.setOnClickListener(view -> {
+                    View.OnClickListener toggle = view -> {
+                        if (hint.getVisibility() != View.VISIBLE) return;
                         boolean expanded = !expandedAnswers.remove(answerKey);
                         if (expanded) expandedAnswers.add(answerKey);
                         answerPreview(answer, expanded);
-                    });
+                        answer.post(() -> updateAnswerHint(answer, hint));
+                    };
+                    answer.setOnClickListener(toggle); hint.setOnClickListener(toggle);
+                    answer.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> updateAnswerHint(answer, hint));
                     answer.setOnCreateContextMenuListener((menu, view, info) ->
                         menu.add(android.R.string.copy).setOnMenuItemClickListener(item -> {
                             ClipboardManager clipboard = getSystemService(ClipboardManager.class);
                             if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(null, question.answer()));
                             return true;
                         }));
-                    row.addView(answer);
+                    row.addView(answer); row.addView(hint);
                 }
             }
         }
@@ -193,6 +198,15 @@ public final class QuestionsActivity extends Activity {
         answer.setEllipsize(expanded ? null : android.text.TextUtils.TruncateAt.END);
         answer.setClickable(true);
         answer.setLongClickable(true);
+    }
+    private void updateAnswerHint(TextView answer, TextView hint) {
+        android.text.Layout layout = answer.getLayout();
+        if (layout == null) return;
+        boolean overflow = layout.getLineCount() > 3;
+        for (int line = 0; line < Math.min(3, layout.getLineCount()); line++) overflow |= layout.getEllipsisCount(line) > 0;
+        hint.setText(answer.getMaxLines() > 3 ? R.string.question_show_less : R.string.question_read_more);
+        hint.setVisibility(overflow ? View.VISIBLE : View.GONE);
+        answer.setClickable(overflow);
     }
     private void updateTimes() {
         if (day == null) return;

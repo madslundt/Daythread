@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 from .domain import stamp
 from .inference import validate_citations
+from .question_records import question_records
 from .semantic_metadata import segment_anchors
 from .service import Memory, public_source
 from .settings import translation_language
@@ -57,7 +58,7 @@ def excerpt(source: dict, start: datetime, end: datetime) -> dict:
     )}
 
 
-async def generate_wearable_action(memory: Memory, parameters: dict) -> dict:
+async def generate_wearable_action(memory: Memory, parameters: dict, job_id: str = "") -> dict:
     end = datetime.fromisoformat(parameters["end"])
     start = end - timedelta(seconds=parameters["duration_seconds"])
     rows = [row for row in memory.store.window(start, end)
@@ -82,7 +83,7 @@ async def generate_wearable_action(memory: Memory, parameters: dict) -> dict:
     }
     if not selected:
         text = "No transcribed speech is available in this window."
-        counted = ({"question_count": 0, "question": None, "answer": text}
+        counted = ({"question_count": 0, "question": None, "answer": text, "questions": []}
                    if action == "answer" else {})
         return result | {"text": text} | counted
     memory.settings.require_inference("llm")
@@ -96,6 +97,7 @@ async def generate_wearable_action(memory: Memory, parameters: dict) -> dict:
         answer = await memory.inference.answer_recent(selected)
         text = validate_citations(answer.text, selected)
         result.update(answer.model_dump())
+        result["questions"] = question_records(answer, rows, job_id, end)
     else:
         text = await memory.inference.summarize(
             selected, "a concise recap of this recent audio window, suitable for a notification",
@@ -114,9 +116,13 @@ def wearable_notice(result: dict) -> tuple[str, str]:
              "translate": "Recent audio translation"}[result["action"]]
     if result["action"] == "answer":
         count = result.get("question_count")
+        question = result.get("question")
         if type(count) is int and 0 <= count <= 1000:
             noun = "question" if count == 1 else "questions"
-            title = f"{count} {noun} · " + ("Latest answer" if count else "No question found")
+            title = question if question else "No question found"
+            answer = result.get("answer") or result["text"]
+            body = f"{count} {noun}\n{answer}"
+            return title, body if len(body) <= 550 else body[:549].rstrip() + "…"
         # Keep the question above its answer and preserve literal math operators.
         body = "\n".join(" ".join(line.split()) for line in result["text"].splitlines()
                          if line.strip())

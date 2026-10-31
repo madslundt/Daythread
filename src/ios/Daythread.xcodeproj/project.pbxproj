@@ -36,6 +36,7 @@
 		4788EF13F224335C438826D3 /* OmiCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5255DECFE52C09A9E54AA089 /* OmiCore */; };
 		47FDD87E606B95AA4DA842B4 /* RecordingAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88344B9913B8B63E905C1D60 /* RecordingAudioPlayer.swift */; };
 		4B89CE68616D39F632A0D7B3 /* OmiCore in Frameworks */ = {isa = PBXBuildFile; productRef = 20BA5F73B1F3FA3A23191356 /* OmiCore */; };
+		4DD202703EEDA4ECD2241FC5 /* DayQuestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02BD786AA72054D2669EAFDC /* DayQuestionsView.swift */; };
 		54C17565437348D74A1466EA /* ShareImportOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FA4E18BEE78514C8C6394DF /* ShareImportOptions.swift */; };
 		55B361E64C52BA840E111EB2 /* SummaryTranslationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9419EBB2EFAE26623E02305 /* SummaryTranslationView.swift */; };
 		561F3EFD5A7C8B39569D5265 /* RewindView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DD60BA052C3082988C62FFB /* RewindView.swift */; };
@@ -124,6 +125,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		02BD786AA72054D2669EAFDC /* DayQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayQuestionsView.swift; sourceTree = "<group>"; };
 		0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDetail.swift; sourceTree = "<group>"; };
 		08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionFollowUpsView.swift; sourceTree = "<group>"; };
 		096573541F1197E4105E64B8 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
@@ -294,6 +296,7 @@
 				7666F0FAF1233BBAA2B88E41 /* ConversationTagsView.swift */,
 				99CE0BB82D9FF1AA5A0AC2B7 /* DayAtGlanceView.swift */,
 				6352C73123BE37FA870C3FBE /* DayFiltersView.swift */,
+				02BD786AA72054D2669EAFDC /* DayQuestionsView.swift */,
 				792E366AA23A45C59C8180A6 /* Daythread.entitlements */,
 				2721B9908BFBD82A5D7663D7 /* DaythreadApp.swift */,
 				71A187A0A53A548A61D917AB /* DaythreadLicense.txt */,
@@ -541,6 +544,7 @@
 				A6AB75ADE8A4F593CC1B638A /* ConversationTagsView.swift in Sources */,
 				179CB0F62604AAE45570665A /* DayAtGlanceView.swift in Sources */,
 				B14C4578854F886E3A64A262 /* DayFiltersView.swift in Sources */,
+				4DD202703EEDA4ECD2241FC5 /* DayQuestionsView.swift in Sources */,
 				9D6CE881718BDFE5654C5ABB /* DayTimelineView.swift in Sources */,
 				5F58C435E7754AE9BAC1A1C7 /* DayView.swift in Sources */,
 				40EC2BCFE8A3EF97AAB11402 /* DaythreadApp.swift in Sources */,

@@ -71,6 +71,37 @@ final class CompletionNotificationTests: XCTestCase {
         XCTAssertEqual(ClickActionFeedback.failed("Storage is full").message, "Could not complete the click action: Storage is full")
     }
 
+    func testLocalTitlesDescribeQueuedActivityAndKeepDurationInBody() {
+        let cases: [(WearableAction, String)] = [(.summarize, "Summarize recent audio"), (.answer, "Answer recent question"), (.translate, "Translate recent audio")]
+        for (action, title) in cases {
+            let feedback = ClickActionFeedback.queued(action, seconds: 30)
+            XCTAssertEqual(ClickNotification.title(for: feedback), title)
+            XCTAssertEqual(ClickNotification.body(for: .single, feedback: feedback), feedback.message)
+            XCTAssertEqual(ClickNotification.body(for: .double, feedback: feedback), feedback.message)
+            XCTAssertTrue(feedback.message.contains("30"))
+        }
+    }
+
+    func testLocalTitlesReflectActualMarkMeetingAndCaptureOutcome() {
+        let outcomes: [(ClickActionFeedback, String)] = [
+            (.marked, "Marked nearby speech as important"),
+            (.alreadyMarked(seconds: 45), "Already marked nearby. Another flag is available in 45 seconds."),
+            (.meetingStarted(provisionalSeconds: 60), "Meeting hint active"),
+            (.meetingEnded, "Meeting hint ended"),
+            (.shortMeetingIgnored, "Short meeting ignored. Audio is kept."),
+            (.capturePaused, "Capture paused"), (.captureResumed, "Capture resumed"),
+            (.noAction, "No action assigned."), (.failed("Storage is full"), "Could not finish")
+        ]
+        for (feedback, title) in outcomes {
+            XCTAssertEqual(ClickNotification.title(for: feedback), title)
+            XCTAssertNotEqual(ClickNotification.body(for: .single, feedback: feedback), title)
+        }
+        XCTAssertEqual(ClickNotification.body(for: .single, feedback: .marked), "Single click registered")
+        XCTAssertEqual(ClickNotification.body(for: .double, feedback: .meetingEnded), "Double click registered")
+        XCTAssertEqual(ClickNotification.body(for: .single, feedback: .meetingStarted(provisionalSeconds: 60)), "Meeting hint started · provisional for 60 seconds")
+        XCTAssertEqual(ClickNotification.body(for: .single, feedback: .failed("Storage is full")), "Could not complete the click action: Storage is full")
+    }
+
     func testRegisteredClickDecodesEvenWhenNoActionOrCooldownSuppressesExecution() throws {
         let single = try XCTUnwrap(WearableClick(Data([1, 0, 0, 0])))
         let double = try XCTUnwrap(WearableClick(Data([2, 0, 0, 0])))

@@ -74,6 +74,23 @@ public enum ClickNotification {
     public static func title(for click: WearableClick) -> String {
         click == .single ? AppLocalization.source("Single click registered") : AppLocalization.source("Double click registered")
     }
+    public static func title(for feedback: ClickActionFeedback) -> String {
+        switch feedback {
+        case .queued(.summarize, _): AppLocalization.source("Summarize recent audio")
+        case .queued(.answer, _): AppLocalization.source("Answer recent question")
+        case .queued(.translate, _): AppLocalization.source("Translate recent audio")
+        case .meetingStarted: AppLocalization.source("Meeting hint active")
+        case .capturePaused: AppLocalization.source("Capture paused")
+        case .captureResumed: AppLocalization.source("Capture resumed")
+        case .failed: AppLocalization.source("Could not finish")
+        default: feedback.message
+        }
+    }
+    public static func body(for click: WearableClick, feedback: ClickActionFeedback) -> String {
+        // Keep duration, provisional status and failures in the preview. When the
+        // activity title already contains the full outcome, add click context.
+        title(for: feedback) == feedback.message ? title(for: click) : feedback.message
+    }
 }
 
 public enum ClickActionFeedback: Equatable {

@@ -36,6 +36,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".QuestionsActivity" android:exported="false" android:parentActivityName=".MainActivity" />
         <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="microphone|connectedDevice" />
         <service android:name=".UploadJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
     </application>

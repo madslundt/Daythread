@@ -31,6 +31,21 @@ final class ClickNotifications {
         try { present(context, clickCode, action, seconds, outcome, wasCapturing, jobID); }
         catch (RuntimeException ignored) { /* Notification policy changes must not stop capture. */ }
     }
+    static int titleResource(ClickFeedback.Message message) {
+        return switch (message) {
+            case SUMMARIZING -> R.string.summarize_recent;
+            case ANSWERING -> R.string.answer_recent;
+            case TRANSLATING -> R.string.translate_recent;
+            case MARKING -> R.string.important;
+            case MEETING -> R.string.meeting_action;
+            case PAUSING -> R.string.click_pausing;
+            case RESUMING -> R.string.click_resuming;
+            case NONE -> R.string.click_no_action;
+            case PAUSED -> R.string.capture_paused_controls;
+            case UNAVAILABLE -> R.string.click_unavailable;
+            case FAILED -> R.string.action_failed;
+        };
+    }
     private static void present(Context context, int clickCode, WearableAction action, int seconds,
                                 ClickFeedback.Outcome outcome, boolean wasCapturing, String jobID) {
         if ((clickCode != 1 && clickCode != 2) || !enabled(context) || !permitted(context)) return;
@@ -55,7 +70,7 @@ final class ClickNotifications {
         Intent intent = new Intent(context, MainActivity.class).setAction("wearable-click:" + id).putExtra("capture", true);
         PendingIntent open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         manager.notify(id, NOTIFICATION_ID, new Notification.Builder(context, "wearable-clicks").setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(clickCode == 1 ? R.string.single_click_registered : R.string.double_click_registered))
+            .setContentTitle(context.getString(titleResource(message)))
             .setContentText(body).setStyle(new Notification.BigTextStyle().bigText(body)).setOnlyAlertOnce(true)
             .setContentIntent(open).setAutoCancel(true).build());
     }

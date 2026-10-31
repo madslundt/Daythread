@@ -100,8 +100,8 @@ final class CompletionNotifications {
                           enabled: Bool, onScheduled: @escaping @MainActor () -> Void) -> Task<Void, Never>? {
         guard enabled else { onScheduled(); return nil }
         let content = UNMutableNotificationContent()
-        content.title = L10n.key(ClickNotification.title(for: click))
-        content.body = L10n.key(feedback.message)
+        content.title = L10n.key(ClickNotification.title(for: feedback))
+        content.body = L10n.key(ClickNotification.body(for: click, feedback: feedback))
         content.sound = .default
         content.categoryIdentifier = ClickNotification.marker
         content.userInfo = [ClickNotification.markerKey: ClickNotification.marker]

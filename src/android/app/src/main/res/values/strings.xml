@@ -121,9 +121,27 @@
     <string name="click_paused">Recording is paused. This action was not performed.</string>
     <string name="click_unavailable">Capture is unavailable. This action was not performed.</string>
     <string name="click_failed">The click was registered, but the action could not be completed.</string>
-    <plurals name="latest_answer_question_count">
-        <item quantity="one">%1$d question · Latest answer</item>
-        <item quantity="other">%1$d questions · Latest answer</item>
+    <plurals name="question_count">
+        <item quantity="one">%1$d question</item>
+        <item quantity="other">%1$d questions</item>
     </plurals>
-    <string name="no_recent_question_count">%1$d questions · No question found</string>
+    <string name="no_question_found">No question found</string>
+    <string name="recent_audio_summary">Recent audio summary</string>
+    <string name="recent_audio_translation">Recent audio translation</string>
+    <string name="day_questions">Questions</string>
+    <string name="back_to_daythread">Back to Daythread</string>
+    <string name="questions_loading">Loading questions…</string>
+    <string name="questions_processing">Finding questions from earlier clicks…</string>
+    <string name="questions_load_failed">Could not load questions. Check your connection and try again.</string>
+    <string name="questions_empty">No saved questions for this day.</string>
+    <string name="question_from_click">From this click</string>
+    <string name="question_just_now">Just now</string>
+    <plurals name="questions_from_click">
+        <item quantity="one">%1$d question from this click</item>
+        <item quantity="other">%1$d questions from this click</item>
+    </plurals>
+    <plurals name="question_minutes_ago">
+        <item quantity="one">%1$d minute ago</item>
+        <item quantity="other">%1$d minutes ago</item>
+    </plurals>
 </resources>

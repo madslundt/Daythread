@@ -52,6 +52,10 @@ struct CompletionResultView: View {
                     WeeklyReviewView(week: week, version: event.target.versionID ?? "")
                 } else if let day = event.target.day, event.target.jobID == nil, let date = diary.date(for: day) {
                     DayView(date: date)
+                } else if job["kind"].text == "wearable_action", job["state"].text == "completed",
+                          result["action"].text == "answer", let id = event.target.jobID {
+                    DayQuestionsView(jobID: id.uuidString.lowercased())
+                        .id(model.archiveIdentity + id.uuidString)
                 } else if job["kind"].text == "recap", job["state"].text == "completed", recapFilters.isFiltered,
                           let date = diary.date(for: parameters["day"].text) {
                     // Scoped jobs are snapshots. Reopen the current scope so edits to
@@ -149,10 +153,11 @@ struct CompletionResultView: View {
     private func load() async {
         guard let id = event.target.jobID else { loading = false; return }
         let scope = model.archiveIdentity
+        job = .null; source = .null
         loading = true; error = nil
         defer { if scope == model.archiveIdentity { loading = false } }
         do {
-            let client = try model.client()
+            let client = try model.client().snapshot()
             repeat {
                 let value = try await client.request("v1/jobs/" + id.uuidString.lowercased())
                 guard scope == model.archiveIdentity, !Task.isCancelled else { return }

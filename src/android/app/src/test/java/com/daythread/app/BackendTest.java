@@ -96,4 +96,51 @@ public class BackendTest {
             assertTrue(outbox.pending().isEmpty());
         }
     }
+    private Json questions(String job) {
+        return new Json().put("day", "2026-10-31").put("timezone", "Europe/Copenhagen")
+            .put("selected_job_id", job).put("selected_question_ids", new Json.JsonArray(List.of()))
+            .put("questions", new Json.JsonArray(List.of())).put("processing", false);
+    }
+    @Test public void questionTapUsesTheOriginalArchiveAndProfileAndRejectsMismatchedResponse() throws Exception {
+        String job = UUID.randomUUID().toString();
+        try (Server original = new Server(r -> new Reply(200, questions(job), "original-profile"));
+             Server current = new Server(r -> new Reply(200, questions(job), "different-profile"))) {
+            QuestionsRoute saved = new QuestionsRoute(job, new Destination(List.of(original.origin()), "original-profile"));
+            QuestionsRoute restored = QuestionsRoute.parse(saved.json().toString());
+            QuestionDay day = Backend.questions(restored);
+            Request request = original.requests.poll(1, TimeUnit.SECONDS);
+            assertTrue(request.line.startsWith("GET /v1/jobs/" + job + "/questions "));
+            assertEquals("original-profile", request.headers.get("x-omi-profile"));
+            assertTrue(current.requests.isEmpty()); assertEquals(job, day.selectedJobID());
+            assertThrows(Backend.QuestionsInvalidated.class, () -> Backend.questions(new QuestionsRoute(job, new Destination(List.of(current.origin()), "original-profile"))));
+        }
+    }
+    @Test public void onlyTheExplicitRetryRequestCanRequeueHistoryWhileLaterPollsRemainReadOnly() throws Exception {
+        String job = UUID.randomUUID().toString();
+        try (Server server = new Server(r -> new Reply(200, questions(job).put("processing", true), "original-profile"))) {
+            QuestionsRoute route = new QuestionsRoute(job, new Destination(List.of(server.origin()), "original-profile"));
+            Backend.questions(route, true);
+            Backend.questions(route);
+            Backend.questions(route, false);
+            Request retry = server.requests.poll(1, TimeUnit.SECONDS), poll = server.requests.poll(1, TimeUnit.SECONDS), next = server.requests.poll(1, TimeUnit.SECONDS);
+            assertTrue(retry.line.startsWith("GET /v1/jobs/" + job + "/questions?retry=true "));
+            assertTrue(poll.line.startsWith("GET /v1/jobs/" + job + "/questions "));
+            assertEquals(poll.line, next.line);
+            assertEquals("original-profile", retry.headers.get("x-omi-profile"));
+            assertEquals(retry.headers.get("x-omi-profile"), poll.headers.get("x-omi-profile"));
+        }
+    }
+    @Test public void deletedChangedOrUnauthorizedQuestionsInvalidateCachedRowsWhileGatewayFailureDoesNot() throws Exception {
+        String job = UUID.randomUUID().toString();
+        for (int status : new int[]{404, 409, 401, 403, 503}) {
+            try (Server server = new Server(r -> new Reply(status, new Json(), "original-profile"))) {
+                QuestionsRoute route = new QuestionsRoute(job, new Destination(List.of(server.origin()), "original-profile"));
+                IOException failure = assertThrows(IOException.class, () -> Backend.questions(route));
+                assertEquals(status != 503, failure instanceof Backend.QuestionsInvalidated);
+            }
+        }
+        try (Server server = new Server(r -> new Reply(200, questions(UUID.randomUUID().toString()), "original-profile"))) {
+            assertThrows(Backend.QuestionsInvalidated.class, () -> Backend.questions(new QuestionsRoute(job, new Destination(List.of(server.origin()), "original-profile"))));
+        }
+    }
 }

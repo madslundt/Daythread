@@ -9,7 +9,11 @@ final class Backend {
     record Response(Json json, String profile) {}
     private static final class Rejected extends IOException {
         final boolean fallback;
-        Rejected(int status) { super("Backend returned HTTP " + status + ". Recordings remain on this phone."); fallback = status == 502 || status == 503 || status == 504; }
+        final int status;
+        Rejected(int status) { super("Backend returned HTTP " + status + ". Recordings remain on this phone."); this.status = status; fallback = status == 502 || status == 503 || status == 504; }
+    }
+    static final class QuestionsInvalidated extends IOException {
+        QuestionsInvalidated() { super("The original question evidence or archive is unavailable"); }
     }
     static Response request(Destination destination, String path, String method, File audio, Json body) throws IOException {
         IOException failure = new IOException("Backend unavailable");
@@ -60,6 +64,20 @@ final class Backend {
         Response response = request(item.destination(), path, item.kind().equals("event") || item.kind().equals("gap") || item.kind().equals("generation") ? "POST" : "PUT",
             item.kind().equals("audio") ? item.file() : null, item.kind().equals("audio") ? null : item.data());
         outbox.acknowledge(item, response.json, response.profile);
+    }
+    static QuestionDay questions(QuestionsRoute route) throws IOException {
+        return questions(route, false);
+    }
+    static QuestionDay questions(QuestionsRoute route, boolean retry) throws IOException {
+        Response response;
+        try { response = request(route.destination(), route.path(retry), "GET", null, null); }
+        catch (Rejected error) {
+            if (error.status == 404 || error.status == 409 || error.status == 401 || error.status == 403) throw new QuestionsInvalidated();
+            throw error;
+        }
+        if (!route.destination().profile().equals(response.profile)) throw new QuestionsInvalidated();
+        try { return QuestionDay.parse(response.json, route.jobID()); }
+        catch (RuntimeException error) { throw new QuestionsInvalidated(); }
     }
     private static String encode(String value) { try { return URLEncoder.encode(value, "UTF-8"); } catch (UnsupportedEncodingException e) { throw new AssertionError(e); } }
 }

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
@@ -13,6 +14,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference_errors import InferenceDisabled, InferenceUnavailable
+from .question_history import QuestionHistory
+from .question_records import historical_questions
 from .recording_topics import topic_fingerprint
 from .scoped_recap_jobs import fingerprint, invalidate_changed, scoped, validate_result
 from .summary_translation import generate_summary_translation
@@ -130,6 +133,9 @@ class GenerationJobs:
                 )
             if memory.settings.background_processing_enabled:
                 db.execute("UPDATE generation_jobs SET state='queued' WHERE state='running'")
+        self.question_history = QuestionHistory(
+            memory, lambda job: historical_questions(memory, job),
+        )
 
     def get(self, job_id: str) -> dict:
         with self.store.connect() as db:
@@ -238,7 +244,7 @@ class GenerationJobs:
     async def execute(self, job: dict) -> dict:
         params, kind, memory = job["parameters"], job["kind"], self.memory
         if kind == "wearable_action":
-            return await generate_wearable_action(memory, params)
+            return await generate_wearable_action(memory, params, job["id"])
         if kind == "rewind":
             end = datetime.fromisoformat(params["end"])
             return await memory.window(
@@ -398,11 +404,38 @@ class GenerationJobs:
             try:
                 self.notify_completed()
                 worked = await self.process_one()
+                if not worked:
+                    worked = await self._idle_history()
             except Exception as exc:
                 logger.warning("Generation worker will retry (%s)", type(exc).__name__)
                 worked = False
             if not worked:
                 await asyncio.sleep(1)
+
+    async def _idle_history(self) -> bool:
+        """A new live request must not wait for an older history model call."""
+        history = asyncio.create_task(self.question_history.process_one())
+        try:
+            while not history.done():
+                done, _ = await asyncio.wait({history}, timeout=0.25)
+                if done:
+                    break
+                policy = "" if self.memory.settings.llm_enabled else f" AND {RAW_REWIND}"
+                with self.store.connect() as db:
+                    ready = db.execute(
+                        "SELECT id FROM generation_jobs WHERE state='queued' AND retry_at<=?"
+                        + policy + " LIMIT 1", (stamp(utc_now()),),
+                    ).fetchone()
+                if ready is not None:
+                    return True
+            return await history
+        finally:
+            if not history.done():
+                history.cancel()
+            # Wait for durable requeue and provider cancellation before starting
+            # live inference, including when the whole worker is shutting down.
+            with suppress(asyncio.CancelledError):
+                await history
 
 
 def generation_routes(get_jobs) -> APIRouter:
@@ -415,5 +448,9 @@ def generation_routes(get_jobs) -> APIRouter:
     @router.get("/{job_id}")
     def read(job_id: Annotated[UUID, Field()]) -> dict:
         return get_jobs().get(str(job_id))
+
+    @router.get("/{job_id}/questions")
+    def questions(job_id: Annotated[UUID, Field()], retry: bool = False) -> dict:
+        return get_jobs().question_history.page(str(job_id), retry=retry)
 
     return router

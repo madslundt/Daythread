@@ -135,7 +135,8 @@ def test_distinct_actions_publish_the_result_and_remain_idempotent(jobs, action)
     jobs.notify_completed()
     notices = jobs.store.notifications_after(0)["notifications"]
     assert len(notices) == 1
-    assert notices[0]["body"] == result["text"]
+    assert notices[0]["body"] == ("1 question\n" + result["answer"]
+                                  if action == "answer" else result["text"])
     assert notices[0]["target"]["job_id"] == str(body.id)
     assert not asyncio.run(jobs.process_one())
     assert jobs.enqueue(body)["result"] == result
@@ -376,7 +377,8 @@ def test_answer_notification_preserves_short_question_above_answer(jobs, questio
     jobs.notify_completed()
     notice = jobs.store.notifications_after(0)["notifications"][0]
     assert job["result"]["text"] == question + "\n4"
-    assert notice["body"] == question + "\n4"
+    assert notice["title"] == question
+    assert notice["body"] == "1 question\n4"
 
 
 @pytest.mark.parametrize("content", [

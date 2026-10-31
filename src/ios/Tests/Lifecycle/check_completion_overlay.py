@@ -48,11 +48,12 @@ enum Theme { static let accent = Color.blue }
 struct CompletionBanner: View { var body: some View { Text("Banner") } }
 @MainActor enum Report {
     static var phases: [String] = []
+    static var locales: Set<String> = []
     static var identities: Set<String> = []
     static var appearances = 0
     static var requests = 0
     static func save() {
-        let value: [String:Any] = ["phases":phases, "identities":Array(identities), "appearances":appearances,
+        let value: [String:Any] = ["phases":phases, "locales":Array(locales), "identities":Array(identities), "appearances":appearances,
                                    "requests":requests, "application_active":UIApplication.shared.applicationState == .active]
         let data = try! JSONSerialization.data(withJSONObject:value, options:[.sortedKeys])
         let file = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("report.json")
@@ -63,11 +64,13 @@ struct CompletionResultView: View {
     let event: TestEvent
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
     @State private var identity = UUID()
     @State private var loading = true
     var body: some View {
         Text(loading ? "Opening saved result…" : "Question list loaded")
-        .onAppear { Report.appearances += 1 }
+        .onAppear { Report.appearances += 1; Report.locales.insert(locale.identifier) }
+        .onChange(of: locale.identifier) { _, value in Report.locales.insert(value) }
 __TASK__
     }
     private func load() async { Report.requests += 1; loading = false }
@@ -78,13 +81,16 @@ struct MainView: View {
     @State private var model = AppModel()
     @State private var notifications = CompletionNotifications()
     @State private var overridePhase: ScenePhase?
+    @State private var interfaceLocale = Locale(identifier:"da")
     var body: some View {
         Text("Main scene")
             .background(CompletionSceneOverlay(model:model, notifications:notifications)
-                .environment(\.scenePhase, overridePhase ?? phase))
+                .environment(\.scenePhase, overridePhase ?? phase)
+                .environment(\.locale, interfaceLocale))
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline:.now()+1) { overridePhase = .inactive }
                 DispatchQueue.main.asyncAfter(deadline:.now()+2) { overridePhase = .active }
+                DispatchQueue.main.asyncAfter(deadline:.now()+2.5) { interfaceLocale = Locale(identifier:"en") }
                 DispatchQueue.main.asyncAfter(deadline:.now()+3) { overridePhase = .background }
                 DispatchQueue.main.asyncAfter(deadline:.now()+4) { overridePhase = .active }
                 DispatchQueue.main.asyncAfter(deadline:.now()+5) { Report.save() }
@@ -149,8 +155,9 @@ targets:
         assert value["application_active"], "Test must run in the foreground"
         assert value["requests"] >= 3, "Opening saved result is stuck: initial/return-to-active job fetch did not run"
         assert {"active", "inactive", "background"}.issubset(value["phases"]), "Hosted sheet did not receive scene phase transitions"
+        assert {"da", "en"}.issubset(value["locales"]), "Hosted sheet lost configured interface locale or language updates"
         assert value["appearances"] == 1 and len(value["identities"]) == 1, "Phase updates reset the presented result sheet"
-        print("PASS: initial fetch, inactive/background pause, active reload, and stable presented sheet")
+        print("PASS: initial fetch, inactive/background pause, active reload, configured locale, and stable presented sheet")
 
 
 if __name__ == "__main__":

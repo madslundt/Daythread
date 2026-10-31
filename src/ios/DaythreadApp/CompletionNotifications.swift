@@ -24,6 +24,8 @@ final class CompletionNotifications {
     @ObservationIgnored private var rehydrate = true
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private var registeredToken: String?
+    @ObservationIgnored private var registeredLanguage: String?
+    @ObservationIgnored private var presentationLanguage = L10n.language
     @ObservationIgnored private var schedulingClickJobs = Set<UUID>()
     @ObservationIgnored private var completedClickJobs = Set<UUID>()
     @ObservationIgnored private var pendingPush: ([AnyHashable: Any], Bool)?
@@ -51,7 +53,7 @@ final class CompletionNotifications {
         installation = UserDefaults.standard.string(forKey: key) ?? UUID().uuidString.lowercased()
         UserDefaults.standard.set(installation, forKey: key)
         inbox = UserDefaults.standard.data(forKey: storageKey("inbox")).flatMap { try? JSONDecoder().decode(CompletionInbox.self, from: $0) } ?? CompletionInbox()
-        banner = nil; opened = nil; registeredToken = nil; status = nil; pushConfigured = false
+        banner = nil; opened = nil; registeredToken = nil; registeredLanguage = nil; status = nil; pushConfigured = false
         rehydrate = true; previewRevision = UUID()
         operation = Task {
             await previous?.value
@@ -65,7 +67,9 @@ final class CompletionNotifications {
     }
 
     func setActive(_ value: Bool) {
-        guard active != value else { return }
+        let language = L10n.language
+        guard active != value || presentationLanguage != language else { return }
+        if presentationLanguage != language { presentationLanguage = language; clearPreviews() }
         active = value
         let previous = operation
         previous?.cancel()
@@ -77,8 +81,15 @@ final class CompletionNotifications {
             await previous?.value
             guard generation == current, !Task.isCancelled else { return }
             if value { await foregroundLoop(generation: current) }
-            else if let client, registeredToken != nil {
-                _ = try? await client.request("v1/notifications/devices/" + installation + "/presence", method: "POST", body: ["active": false])
+            else if let client, let token, authorized {
+                let language = L10n.language
+                if registeredToken != token || registeredLanguage != language {
+                    if (try? await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": false, "interface_language": language])) != nil {
+                        registeredToken = token; registeredLanguage = language
+                    }
+                } else {
+                    _ = try? await client.request("v1/notifications/devices/" + installation + "/presence", method: "POST", body: ["active": false])
+                }
             }
         }
     }
@@ -178,11 +189,12 @@ final class CompletionNotifications {
             do {
                 guard let client else { return }
                 if authorized, let token {
-                    if registeredToken != token {
-                        _ = try await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": true])
+                    let language = L10n.language
+                    if registeredToken != token || registeredLanguage != language {
+                        _ = try await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": true, "interface_language": language])
                         // Keep the successful registration even if backgrounding raced
                         // with the response, so the serialized background task clears it.
-                        registeredToken = token
+                        registeredToken = token; registeredLanguage = language
                     } else {
                         _ = try await client.request("v1/notifications/devices/" + installation + "/presence", method: "POST", body: ["active": true])
                     }
@@ -202,11 +214,12 @@ final class CompletionNotifications {
 
     private struct Page: Decodable { let notifications: [CompletionNotification]; let cursor: Int }
     private func readFeed(client: BackendClient, generation current: UUID) async throws {
+        let language = L10n.language
         var after = rehydrate ? 0 : inbox.cursor
         let revision = previewRevision
         repeat {
-            let page = try await client.decoded("v1/notifications", query: ["after": String(after)], as: Page.self)
-            guard active, current == generation, revision == previewRevision, !Task.isCancelled else { return }
+            let page = try await client.decoded("v1/notifications", query: ["after": String(after), "interface_language": language], as: Page.self)
+            guard active, current == generation, revision == previewRevision, language == L10n.language, !Task.isCancelled else { return }
             var latest: CompletionNotification?
             for event in page.notifications {
                 if inbox.receive(event) { latest = event }
@@ -217,7 +230,7 @@ final class CompletionNotifications {
             if registeredToken != nil && !page.notifications.isEmpty {
                 _ = try await client.request("v1/notifications/ack", method: "POST", body: ["installation_id": installation, "ids": page.notifications.map { $0.id.uuidString.lowercased() }])
             }
-            guard active, current == generation, revision == previewRevision, !Task.isCancelled else { return }
+            guard active, current == generation, revision == previewRevision, language == L10n.language, !Task.isCancelled else { return }
             let advanced = page.cursor > after
             after = page.cursor
             inbox.advanceCursor(to: page.cursor)
@@ -287,11 +300,12 @@ struct CompletionBanner: View {
     var body: some View {
         let _ = interfaceLocale
         if let event = notifications.banner {
+            let copy = event.presentation()
             HStack(alignment: .top, spacing: 12) {
                 Button { notifications.open(event) } label: {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(L10n.key(event.title)).font(.headline)
-                        Text(L10n.key(event.body)).font(.subheadline).lineLimit(3)
+                        Text(copy.title).font(.headline)
+                        Text(copy.body).font(.subheadline).lineLimit(3)
                         Text(L10n.text("Open result")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain).accessibilityIdentifier("notification.open")
@@ -337,10 +351,12 @@ struct CompletionSceneOverlay: UIViewRepresentable {
     let model: AppModel
     let notifications: CompletionNotifications
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> Anchor {
         context.coordinator.activity.phase = scenePhase
+        context.coordinator.activity.locale = locale
         let anchor = Anchor()
         anchor.isUserInteractionEnabled = false
         anchor.onScene = { [weak coordinator = context.coordinator] scene in
@@ -348,7 +364,10 @@ struct CompletionSceneOverlay: UIViewRepresentable {
         }
         return anchor
     }
-    func updateUIView(_ uiView: Anchor, context: Context) { context.coordinator.activity.phase = scenePhase }
+    func updateUIView(_ uiView: Anchor, context: Context) {
+        context.coordinator.activity.phase = scenePhase
+        context.coordinator.activity.locale = locale
+    }
     static func dismantleUIView(_ uiView: Anchor, coordinator: Coordinator) { coordinator.window?.isHidden = true }
 
     final class Anchor: UIView {
@@ -357,6 +376,7 @@ struct CompletionSceneOverlay: UIViewRepresentable {
     }
     @Observable final class SceneActivity {
         var phase: ScenePhase = .background
+        var locale = Locale.current
     }
     final class Coordinator {
         let activity = SceneActivity()
@@ -419,6 +439,7 @@ struct CompletionSceneOverlay: UIViewRepresentable {
             // UIHostingController roots do not inherit the SwiftUI scene's phase.
             // Forward changes without replacing the host or its presented sheet.
             .environment(\.scenePhase, activity.phase)
+            .environment(\.locale, activity.locale)
         }
     }
 }

@@ -88,4 +88,47 @@ public class QuestionDayTest {
         assertNotEquals(today, selected);
         assertThrows(IllegalArgumentException.class, () -> new QuestionsRoute(JOB, original, selected.day()));
     }
+    private Json groupedResponse() {
+        return new Json("""
+            {"day":"2026-10-31","timezone":"Europe/Copenhagen","selected_job_id":"%s",
+             "selected_question_ids":["shared"],"processing":false,"questions":[],"groups":[
+              {"job_id":"%s","end":"2026-10-31T12:05:00Z","question_count":2,"questions":[
+                {"id":"latest","job_id":"%s","question":"Newest question?","answer":"Newest answer.","asked_at":"2026-10-31T12:04:00Z"},
+                {"id":"shared","job_id":"%s","question":"Shared question?","answer":"New click answer.","asked_at":"2026-10-31T12:00:00Z"}]},
+              {"job_id":"%s","end":"2026-10-31T12:01:00Z","question_count":2,"questions":[
+                {"id":"shared","job_id":"%s","question":"Shared question?","answer":"Original click answer.","asked_at":"2026-10-31T12:00:00Z"},
+                {"id":"first","job_id":"%s","question":"First question?","answer":"First answer.","asked_at":"2026-10-31T12:00:00Z"}]},
+              {"job_id":"33333333-3333-4333-8333-333333333333","end":"2026-10-31T11:00:00Z","question_count":0,"questions":[]}]}
+            """.formatted(JOB, PREVIOUS, PREVIOUS, PREVIOUS, JOB, JOB, JOB));
+    }
+    @Test public void clickGroupsPreserveChronologyOwnAnswersAndRepeatedQuestionMembership() {
+        QuestionDay day = QuestionDay.parse(groupedResponse(), JOB);
+        assertEquals(List.of(PREVIOUS, JOB), day.visibleGroups().stream().map(QuestionDay.Group::jobID).toList());
+        assertEquals(List.of(false, true), day.visibleGroups().stream().map(day::selected).toList());
+        QuestionDay.Group newer = day.groups().get(0), selected = day.groups().get(1);
+        assertEquals(Instant.parse("2026-10-31T12:01:00Z"), selected.end()); assertEquals(2, selected.questionCount());
+        assertEquals(List.of("shared", "first"), selected.questions().stream().map(QuestionDay.Question::id).toList());
+        assertEquals("New click answer.", newer.questions().get(1).answer());
+        assertEquals("Original click answer.", selected.questions().get(0).answer());
+        assertNotEquals(newer.rowKey(newer.questions().get(1)), selected.rowKey(selected.questions().get(0)));
+        assertFalse(day.selected(newer.questions().get(1))); assertTrue(day.selected(selected.questions().get(0)));
+        assertEquals(4, day.visibleGroups().stream().mapToInt(group -> group.questions().size()).sum());
+    }
+    @Test public void directDayHasGroupsWithoutHighlightAndEmptyClicksDoNotCreateSections() {
+        Json response = groupedResponse().put("selected_job_id", org.json.JSONObject.NULL);
+        QuestionDay day = QuestionDay.parse(response, null);
+        assertEquals(List.of(false, false), day.visibleGroups().stream().map(day::selected).toList());
+        assertEquals(3, day.groups().size()); assertEquals(2, day.visibleGroups().size());
+        Json empty = new Json("""
+            {"day":"2026-10-31","timezone":"Europe/Copenhagen","selected_job_id":null,"questions":[],"groups":[
+              {"job_id":"%s","end":"2026-10-31T12:00:00Z","question_count":0,"questions":[]}]}
+            """.formatted(JOB));
+        assertTrue(QuestionDay.parse(empty, null).visibleGroups().isEmpty());
+    }
+    @Test public void legacyFlatQuestionsBecomeGroupsWithoutDroppingMembers() {
+        QuestionDay day = QuestionDay.parse(response(false), JOB);
+        assertEquals(List.of(JOB, PREVIOUS), day.groups().stream().map(QuestionDay.Group::jobID).toList());
+        assertEquals(3, day.groups().get(0).questionCount());
+        assertEquals(List.of("selected-1", "selected-2", "selected-3"), day.groups().get(0).questions().stream().map(QuestionDay.Question::id).toList());
+    }
 }

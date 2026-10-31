@@ -51,6 +51,61 @@ final class DayQuestionsTests: XCTestCase {
         XCTAssertEqual(page.questions.map(\.id), ["latest", "earlier"])
     }
 
+    func testClickGroupsPreserveNewestGroupAndQuestionOrderWithoutPromotingSelection() throws {
+        let page = try groupedPage()
+        XCTAssertEqual(page.clickGroups.map(\.id), ["click-new", "click-old"])
+        XCTAssertEqual(page.clickGroups[0].questions.map(\.id), ["latest", "shared", "first"])
+        XCTAssertEqual(page.clickGroups[0].questionCount, 3)
+        XCTAssertFalse(page.isSelected(page.clickGroups[0]))
+        XCTAssertTrue(page.isSelected(page.clickGroups[1]))
+        XCTAssertEqual(page.firstHighlightedRowID, "click-old:shared")
+        XCTAssertEqual(page.firstHighlightedGroupID, "question-group:click-old")
+        XCTAssertNotNil(page.clickGroups[0].capturedDate)
+    }
+
+    func testOverlappingQuestionOccurrencesHaveDistinctRowsAndKeepEachAnswer() throws {
+        let page = try groupedPage()
+        let rows = page.clickGroups.flatMap(\.rows)
+        XCTAssertEqual(rows.count, 4)
+        XCTAssertEqual(Set(rows.map(\.id)).count, 4)
+        let repeated = rows.filter { $0.question.id == "shared" }
+        XCTAssertEqual(repeated.map { $0.question.answer }, ["New click answer", "Old click answer"])
+    }
+
+    func testFlatServerFallbackFormsClickGroupsWithoutChangingQuestionOrder() throws {
+        let page = try decode()
+        XCTAssertNil(page.groups)
+        XCTAssertEqual(page.clickGroups.map(\.id), ["click-a", "click-b"])
+        XCTAssertEqual(page.clickGroups[1].questions.map(\.id), ["first", "second", "latest"])
+        XCTAssertEqual(page.clickGroups[1].questionCount, 3)
+        XCTAssertEqual(page.firstHighlightedRowID, "click-b:first")
+    }
+
+    func testEmptyClickDoesNotRenderBareSectionOrHighlightEarlierQuestions() throws {
+        let page = try JSONDecoder().decode(DayQuestions.self, from: Data(#"""
+        {"day":"2026-10-31","selected_job_id":"empty-click","processing":false,"questions":[],"groups":[
+          {"job_id":"empty-click","end":"2026-10-31T10:20:00Z","question_count":0,"questions":[]},
+          {"job_id":"earlier","end":"2026-10-31T10:00:00Z","question_count":1,"questions":[
+            {"id":"one","job_id":"earlier","question":"Earlier?","asked_at":"2026-10-31T10:00:00Z"}]}]}
+        """#.utf8))
+        XCTAssertEqual(page.clickGroups.map(\.id), ["earlier"])
+        XCTAssertFalse(page.isSelected(page.clickGroups[0]))
+        XCTAssertNil(page.firstHighlightedGroupID)
+    }
+
+    private func groupedPage() throws -> DayQuestions {
+        try JSONDecoder().decode(DayQuestions.self, from: Data(#"""
+        {"day":"2026-10-31","selected_job_id":"CLICK-OLD","selected_question_ids":["shared"],"processing":false,
+         "questions":[],"groups":[
+           {"job_id":"click-new","end":"2026-10-31T10:15:30Z","question_count":3,"questions":[
+             {"id":"latest","job_id":"click-new","question":"Latest?","asked_at":"2026-10-31T10:15:00Z"},
+             {"id":"shared","job_id":"click-new","question":"Repeated?","answer":"New click answer","asked_at":"2026-10-31T10:15:00Z"},
+             {"id":"first","job_id":"click-new","question":"First?","asked_at":"2026-10-31T10:15:00Z"}]},
+           {"job_id":"click-old","end":"2026-10-31T10:00:30.123Z","question_count":1,"questions":[
+             {"id":"shared","job_id":"click-old","question":"Repeated?","answer":"Old click answer","asked_at":"2026-10-31T10:00:00Z"}]}]}
+        """#.utf8))
+    }
+
     private func decode() throws -> DayQuestions {
         try JSONDecoder().decode(DayQuestions.self, from: Data(#"""
         {"day":"2026-10-31","timezone":"Europe/Copenhagen","selected_job_id":"click-b","processing":false,"questions":[

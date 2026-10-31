@@ -2839,3 +2839,6 @@
 
 "No questions yet" = "Aún no hay preguntas";
 "From this click" = "De este clic";
+
+"{value0} question" = "{value0} pregunta";
+"{value0} questions" = "{value0} preguntas";

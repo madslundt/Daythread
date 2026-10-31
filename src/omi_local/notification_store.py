@@ -7,6 +7,7 @@ from collections.abc import Callable
 from uuid import uuid4
 
 from .domain import stamp, utc_now
+from .notification_localization import present_notification
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notifications (
@@ -18,6 +19,13 @@ CREATE TABLE IF NOT EXISTS notification_devices (
  id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, environment TEXT NOT NULL,
  active_until REAL NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS notification_device_languages (
+ device_id TEXT PRIMARY KEY, interface_language TEXT NOT NULL DEFAULT 'en'
+);
+CREATE TRIGGER IF NOT EXISTS notification_device_language_removed
+AFTER DELETE ON notification_devices BEGIN
+ DELETE FROM notification_device_languages WHERE device_id=OLD.id;
+END;
 CREATE TABLE IF NOT EXISTS notification_deliveries (
  notification_id TEXT NOT NULL, device_id TEXT NOT NULL,
  state TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
@@ -136,26 +144,37 @@ class NotificationStore:
                 )
             return public_notification(row)
 
-    def notifications_after(self, after: int, limit: int = 100) -> dict:
+    def notifications_after(
+        self, after: int, limit: int = 100, interface_language: str = "en",
+    ) -> dict:
         with self.connect() as db:
             rows = db.execute(
                 "SELECT * FROM notifications WHERE sequence>? ORDER BY sequence LIMIT ?",
                 (after, limit),
             ).fetchall()
-        return {"notifications": [public_notification(row) for row in rows],
+        return {"notifications": [present_notification(public_notification(row), interface_language)
+                                  for row in rows],
                 "cursor": rows[-1]["sequence"] if rows else after}
 
     def register_notification_device(
         self, installation_id: str, token: str, environment: str, active: bool,
+        interface_language: str = "en",
     ) -> None:
         with self.connect() as db:
             db.execute("DELETE FROM notification_devices WHERE token=? AND id<>?",
                        (token, installation_id))
             db.execute(
-                "INSERT INTO notification_devices VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE "
+                "INSERT INTO notification_devices(id,token,environment,active_until) "
+                "VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE "
                 "SET token=excluded.token,environment=excluded.environment,"
                 "active_until=excluded.active_until",
                 (installation_id, token, environment, time.time() + 60 if active else 0),
+            )
+            db.execute(
+                "INSERT INTO notification_device_languages(device_id,interface_language) "
+                "VALUES(?,?) ON CONFLICT(device_id) DO UPDATE "
+                "SET interface_language=excluded.interface_language",
+                (installation_id, interface_language),
             )
 
     def unregister_notification_device(self, installation_id: str, token: str = "") -> None:
@@ -190,9 +209,11 @@ class NotificationStore:
             db.execute("UPDATE notification_deliveries SET state='expired' "
                        "WHERE state='pending' AND expires_at<=?", (now,))
             return [dict(row) for row in db.execute(
-                "SELECT n.*,d.id AS device_id,d.token,d.environment,q.attempts,q.expires_at "
+                "SELECT n.*,d.id AS device_id,d.token,d.environment,q.attempts,q.expires_at,"
+                "coalesce(l.interface_language,'en') AS interface_language "
                 "FROM notification_deliveries q JOIN notifications n ON n.id=q.notification_id "
                 "JOIN notification_devices d ON d.id=q.device_id "
+                "LEFT JOIN notification_device_languages l ON l.device_id=d.id "
                 "WHERE q.state='pending' AND q.retry_at<=? AND d.active_until<=? "
                 "ORDER BY n.sequence LIMIT 100", (now, now),
             )]

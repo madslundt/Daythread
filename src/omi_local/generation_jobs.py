@@ -345,9 +345,14 @@ class GenerationJobs:
                     != job["result"]):
                 raise EvidenceChanged("Recorded evidence changed")
 
+        target = {"job_id": job["id"], "kind": job["kind"]}
+        if job["kind"] == "wearable_action" and job["state"] == "completed":
+            target["action"] = job["result"]["action"]
+            if target["action"] == "answer":
+                target["question_count"] = job["result"].get("question_count")
         notifications.publish(
             kind=job["kind"], title=title, body=body,
-            target={"job_id": job["id"], "kind": job["kind"]},
+            target=target,
             event_key=f"job:{job['id']}", guard=guard,
         )
         with self.store.connect() as db:

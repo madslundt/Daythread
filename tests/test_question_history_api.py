@@ -54,7 +54,7 @@ def test_empty_day_and_omitted_today_do_not_start_inference(archive, monkeypatch
     page = client.get("/v1/questions").json()
     assert page == {"day": "2026-11-01", "timezone": "Europe/Copenhagen",
                     "selected_job_id": None, "selected_question_ids": [], "questions": [],
-                    "processing": False, "error": None}
+                    "groups": [], "processing": False, "error": None}
     assert client.get("/v1/questions?day=2026-10-30&retry=true").json()["questions"] == []
     with jobs.store.connect() as db:
         assert not db.execute("SELECT * FROM question_history_requests").fetchall()
@@ -85,3 +85,52 @@ def test_day_route_is_profile_scoped_and_preserves_explicit_backfill_retry(archi
     with jobs.store.connect() as db:
         db.execute("DELETE FROM audio WHERE id=?", (source_id,))
     assert client.get("/v1/questions?day=2026-10-31").json()["questions"] == []
+
+
+def test_overlapping_clicks_keep_complete_groups_and_older_selection_keeps_chronology(archive):
+    client, jobs = archive
+    old_end = END - timedelta(minutes=1)
+
+    def records(prefix, end):
+        return [{"id": "shared" if i == 1 else f"{prefix}-{i}",
+                 "question": "Shared question?" if i == 1 else f"{prefix} {i}?",
+                 "answer": f"{prefix} answer" if i == 3 else None,
+                 "asked_at": stamp(end), "time_precision": "request", "position": i}
+                for i in (1, 2, 3)]
+
+    older = saved_job(jobs, end=old_end, questions=records("Older", old_end))
+    newer = saved_job(jobs, end=END, questions=records("Newer", END))
+    response = client.get(f"/v1/jobs/{older['id']}/questions")
+    assert response.status_code == 200
+    page = response.json()
+    assert [group["job_id"] for group in page["groups"]] == [newer["id"], older["id"]]
+    assert [group["end"] for group in page["groups"]] == [stamp(END), stamp(old_end)]
+    assert page["selected_job_id"] == older["id"]
+    assert len(page["questions"]) == 5  # Existing flat compatibility view still deduplicates.
+    for group, prefix in zip(page["groups"], ("Newer", "Older")):
+        assert group["question_count"] == 3 and len(group["questions"]) == 3
+        assert [question["question"] for question in group["questions"]] == [
+            f"{prefix} 3?", f"{prefix} 2?", "Shared question?",
+        ]
+        assert group["questions"][0]["answer"] == f"{prefix} answer"
+        assert all(question["job_id"] == group["job_id"] for question in group["questions"])
+        assert group["questions"][-1]["id"] == "shared"
+    direct = client.get("/v1/questions?day=2026-10-31").json()
+    assert direct["groups"] == page["groups"]
+    assert direct["selected_job_id"] is None and direct["selected_question_ids"] == []
+    source_id = newer["result"]["sources"][0]["id"]
+    with jobs.store.connect() as db:
+        db.execute("DELETE FROM audio WHERE id=?", (source_id,))
+    assert [group["job_id"] for group in client.get(
+        "/v1/questions?day=2026-10-31",
+    ).json()["groups"]] == [older["id"]]
+
+
+def test_legacy_group_keeps_known_count_while_questions_backfill(archive):
+    client, jobs = archive
+    selected = saved_job(jobs, count=3)
+    page = client.get("/v1/questions?day=2026-10-31").json()
+    assert page["processing"]
+    assert page["groups"][0]["job_id"] == selected["id"]
+    assert page["groups"][0]["question_count"] == 3
+    assert len(page["groups"][0]["questions"]) == 1

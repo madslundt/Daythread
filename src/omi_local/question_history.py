@@ -125,6 +125,11 @@ def _saved_questions(job: dict) -> list[dict]:
     return []
 
 
+def _question_order(item: dict) -> tuple[str, int, int, str, str]:
+    return (item["asked_at"], item["position"], item.get("start_offset", -1),
+            item["job_id"], item["id"])
+
+
 class QuestionHistory:
     def __init__(self, memory: Memory, extract: QuestionExtractor) -> None:
         self.memory = memory
@@ -187,8 +192,20 @@ class QuestionHistory:
                         )
             selected_ids = [item["id"] for item in _saved_questions(selected)] if selected else []
             grouped: dict[str, dict] = {}
+            groups = []
             for job in jobs:
-                for item in _saved_questions(job):
+                own_questions = _saved_questions(job)
+                count = job["result"].get("question_count")
+                if (isinstance(job["result"].get("questions"), list)
+                        or type(count) is not int or not 0 <= count <= 1000):
+                    count = len(own_questions)
+                groups.append({
+                    "job_id": job["id"],
+                    "end": stamp(datetime.fromisoformat(job["parameters"]["end"])),
+                    "question_count": count,
+                    "questions": sorted(own_questions, key=_question_order, reverse=True),
+                })
+                for item in own_questions:
                     previous = grouped.get(item["id"])
                     if previous is None:
                         grouped[item["id"]] = item
@@ -205,10 +222,8 @@ class QuestionHistory:
             states = [dict(row) for job in jobs if (row := db.execute(
                 "SELECT state,error FROM question_history_requests WHERE job_id=?", (job["id"],),
             ).fetchone()) is not None]
-        questions.sort(
-            key=lambda item: (item["asked_at"], item["position"], item.get("start_offset", -1),
-                              item["job_id"], item["id"]), reverse=True,
-        )
+        questions.sort(key=_question_order, reverse=True)
+        groups.sort(key=lambda group: (group["end"], group["job_id"]), reverse=True)
         pending = any(row["state"] in {"queued", "running"} for row in states)
         error = next((row["error"] for row in states if row["error"]), None)
         if pending and not self.memory.settings.llm_enabled:
@@ -216,7 +231,7 @@ class QuestionHistory:
         return {
             "day": day.isoformat(), "timezone": str(zone), "selected_job_id": job_id,
             "selected_question_ids": list(dict.fromkeys(selected_ids)),
-            "questions": questions, "processing": pending, "error": error,
+            "questions": questions, "groups": groups, "processing": pending, "error": error,
         }
 
     async def process_one(self) -> bool:

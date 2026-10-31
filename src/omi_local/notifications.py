@@ -13,6 +13,7 @@ import certifi
 import httpx
 import jwt
 
+from .notification_localization import present_notification
 from .notification_store import public_notification
 from .settings import Settings
 from .store import Store
@@ -52,7 +53,9 @@ class APNsSender:
         return self._jwt
 
     async def send(self, delivery: dict, profile_id: str) -> tuple[int, str]:
-        event = public_notification(delivery)
+        event = present_notification(
+            public_notification(delivery), delivery.get("interface_language", "en"),
+        )
         collapse_id = event["id"]
         if event["kind"] == "wearable_action":
             try:

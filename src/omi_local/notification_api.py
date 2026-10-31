@@ -6,6 +6,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from .notification_localization import InterfaceLanguage
+
 InstallationID = Annotated[str, Path(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9_-]+$")]
 
 
@@ -14,6 +16,7 @@ class DeviceRegistration(BaseModel):
     token: str = Field(min_length=32, max_length=512, pattern=r"^[a-fA-F0-9]+$")
     environment: Literal["sandbox", "production"]
     active: bool
+    interface_language: InterfaceLanguage = "en"
 
 
 class Presence(BaseModel):
@@ -31,8 +34,11 @@ def notification_routes(get_memory) -> APIRouter:
     router = APIRouter(prefix="/v1/notifications")
 
     @router.get("")
-    def feed(after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)):
-        return get_memory().store.notifications_after(after, limit)
+    def feed(
+        after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
+        interface_language: InterfaceLanguage = "en",
+    ) -> dict:
+        return get_memory().store.notifications_after(after, limit, interface_language)
 
     @router.get("/status")
     def status():
@@ -52,6 +58,7 @@ def notification_routes(get_memory) -> APIRouter:
                 )
         memory.store.register_notification_device(
             installation_id, body.token.lower(), body.environment, body.active,
+            interface_language=body.interface_language,
         )
         return {"registered": True}
 

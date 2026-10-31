@@ -2841,3 +2841,6 @@
 
 "No questions yet" = "Ingen spørgsmål endnu";
 "From this click" = "Fra dette klik";
+
+"{value0} question" = "{value0} spørgsmål";
+"{value0} questions" = "{value0} spørgsmål";

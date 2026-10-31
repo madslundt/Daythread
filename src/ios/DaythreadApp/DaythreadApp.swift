@@ -123,6 +123,7 @@ struct RootView: View {
         .onChange(of: model.archiveIdentity) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.backendConfiguration) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.archiveRevision) { old, _ in if !old.isEmpty { notifications.clearPreviews() } }
+        .onChange(of: interfaceLocale.identifier) { _, _ in notifications.setActive(scenePhase == .active) }
         .onChange(of: scenePhase) { _, phase in
             notifications.setActive(phase == .active)
             if phase != .active { model.bluetooth.stopScan() }

@@ -36,20 +36,27 @@ struct DayQuestionsView: View {
                         if error != nil { Button(L10n.text("Try again")) { Task { await load(retry: true) } } }
                     }
                     if let page = visiblePage {
-                        if page.questions.isEmpty && !loading && error == nil {
+                        if page.clickGroups.isEmpty && !loading && error == nil {
                             ContentUnavailableView(L10n.text("No questions yet"), systemImage: "questionmark.bubble")
                         }
-                        ForEach(page.questions) { question in
-                            questionRow(question, now: context.date)
-                                .id(question.id)
-                                .listRowBackground(page.highlightedIDs.contains(question.id)
-                                    ? Color.accentColor.opacity(0.13) : Color(uiColor: .secondarySystemGroupedBackground))
+                        ForEach(page.clickGroups) { group in
+                            Section {
+                                ForEach(group.rows) { row in
+                                    questionRow(row, now: context.date)
+                                        .id(row.id)
+                                        .listRowBackground(page.isSelected(group)
+                                            ? Color.accentColor.opacity(0.13) : Color(uiColor: .secondarySystemGroupedBackground))
+                                }
+                            } header: {
+                                groupHeader(group, selected: page.isSelected(group), now: context.date)
+                                    .id(group.headerID).accessibilityIdentifier(group.headerID)
+                            }
                         }
                     }
                 }
                 .listStyle(.insetGrouped).omiScreen()
-                .task(id: visiblePage?.firstHighlightedID) {
-                    guard !didScroll, let id = visiblePage?.firstHighlightedID else { return }
+                .task(id: visiblePage?.firstHighlightedGroupID) {
+                    guard !didScroll, let id = visiblePage?.firstHighlightedGroupID else { return }
                     await Task.yield()
                     guard !Task.isCancelled else { return }
                     proxy.scrollTo(id, anchor: .top)
@@ -65,13 +72,26 @@ struct DayQuestionsView: View {
         .refreshable { await load(retry: true) }
     }
 
-    private func questionRow(_ question: DayQuestion, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func groupHeader(_ group: DayQuestionGroup, selected: Bool, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if visiblePage?.highlightedIDs.contains(question.id) == true {
-                    Label(L10n.text("From this click"), systemImage: "circle.fill")
-                        .font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+                Text(group.questionCount == 1 ? L10n.text("\(group.questionCount) question") : L10n.text("\(group.questionCount) questions"))
+                Spacer()
+                if let date = group.capturedDate {
+                    Text(QuestionTimestamp.label(for: date, now: now, locale: interfaceLocale, timeZone: timeZone))
                 }
+            }
+            if selected {
+                Label(L10n.text("From this click"), systemImage: "circle.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+            }
+        }.textCase(nil)
+    }
+
+    private func questionRow(_ row: DayQuestionGroup.Row, now: Date) -> some View {
+        let question = row.question
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
                 Spacer()
                 if let date = question.askedDate {
                     Text(QuestionTimestamp.label(for: date, now: now, locale: interfaceLocale, timeZone: timeZone))
@@ -85,7 +105,7 @@ struct DayQuestionsView: View {
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("day-question-" + question.id)
+        .accessibilityIdentifier("day-question-" + row.id)
     }
 
     private func load(retry: Bool = false) async {

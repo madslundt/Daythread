@@ -14,8 +14,10 @@ public struct CompletionNotification: Codable, Equatable, Identifiable, Sendable
         public let day: String?
         public let weekStart: String?
         public let versionID: String?
+        public let action: String?
+        public let questionCount: Int?
         enum CodingKeys: String, CodingKey {
-            case jobID = "job_id", day, weekStart = "week_start", versionID = "version_id"
+            case jobID = "job_id", day, weekStart = "week_start", versionID = "version_id", action, questionCount = "question_count"
         }
     }
     enum CodingKeys: String, CodingKey {

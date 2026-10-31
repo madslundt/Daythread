@@ -11,10 +11,11 @@ struct CompletionNotificationsView: View {
                 ContentUnavailableView(L10n.text("No notifications yet"), systemImage: "bell", description: Text(L10n.text("Completed rewinds, recaps, translations and weekly reviews will appear here.")))
             }
             ForEach(notifications.items) { event in
+                let copy = event.presentation()
                 Button { notifications.open(event) } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.key(event.title)).font(.headline).foregroundStyle(.primary)
-                        Text(L10n.key(event.body)).font(.subheadline).foregroundStyle(.secondary)
+                        Text(copy.title).font(.headline).foregroundStyle(.primary)
+                        Text(copy.body).font(.subheadline).foregroundStyle(.secondary)
                         if let date = AppModel.date(event.createdAt) { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) }
                     }.padding(.vertical, 6)
                 }.buttonStyle(.plain)
@@ -76,8 +77,9 @@ struct CompletionResultView: View {
     private var savedResult: some View {
         List {
             Section {
-                Text(L10n.key(event.title)).font(.title2.weight(.semibold))
-                Text(L10n.key(event.body)).foregroundStyle(.secondary)
+                let copy = event.presentation()
+                Text(copy.title).font(.title2.weight(.semibold))
+                Text(copy.body).foregroundStyle(.secondary)
                 if loading { ProgressView(L10n.text("Opening saved result…")) }
                 ErrorNote(message: error)
                 if error != nil { Button(L10n.text("Try again")) { Task { await load() } } }

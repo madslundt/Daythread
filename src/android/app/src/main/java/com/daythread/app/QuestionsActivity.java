@@ -122,29 +122,39 @@ public final class QuestionsActivity extends Activity {
             String date = day.day().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Locale.getDefault()));
             page.addView(text(date, 16, MUTED));
             page.addView(text(day.timezone().getId(), 12, MUTED));
-            int selected = (int) day.questions().stream().filter(day::selected).count();
-            if (selected > 0) {
-                TextView group = text(getResources().getQuantityString(R.plurals.questions_from_click, selected, selected), 14, ACCENT);
-                group.setPadding(0, dp(10), 0, dp(6)); page.addView(group);
-            }
         }
         status = text(day == null ? getString(R.string.questions_loading) : day.processing() ? getString(R.string.questions_processing) : "", 14, MUTED);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); page.addView(status);
         retry = new Button(this); retry.setAllCaps(false); retry.setText(R.string.retry); retry.setOnClickListener(view -> load(true));
         retry.setVisibility(day != null && !day.error().isEmpty() ? View.VISIBLE : View.GONE); page.addView(retry);
         if (day != null && !day.error().isEmpty()) status.setText(R.string.questions_load_failed);
-        if (day != null && day.questions().isEmpty() && !day.processing() && day.error().isEmpty()) page.addView(text(getString(R.string.questions_empty), 16, MUTED));
+        if (day != null && day.visibleGroups().isEmpty() && !day.processing() && day.error().isEmpty()) page.addView(text(getString(R.string.questions_empty), 16, MUTED));
         View selectedRow = null;
-        if (day != null) for (QuestionDay.Question question : day.questions()) {
-            boolean selected = day.selected(question); LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL);
+        if (day != null) for (QuestionDay.Group group : day.visibleGroups()) {
+            boolean selected = day.selected(group); LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL);
+            card.setTag("question-group:" + group.jobID());
             card.setPadding(dp(16), dp(14), dp(16), dp(16));
             GradientDrawable background = new GradientDrawable(); background.setColor(selected ? 0xffffeee3 : Color.WHITE);
             background.setCornerRadius(dp(14)); if (selected) background.setStroke(dp(1), ACCENT); card.setBackground(background);
             LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2); layout.setMargins(0, dp(12), 0, 0); page.addView(card, layout);
             if (selected) { card.addView(text(getString(R.string.question_from_click), 12, ACCENT)); if (selectedRow == null) selectedRow = card; }
-            TextView label = text(question.question(), 18, INK); label.setTypeface(null, Typeface.BOLD); label.setTextIsSelectable(true); card.addView(label);
-            TextView time = text("", 13, MUTED); time.setPadding(0, dp(4), 0, dp(8)); card.addView(time); dates.add(new TimeLabel(time, question.askedAt()));
-            if (!question.answer().isEmpty()) { TextView answer = text(question.answer(), 16, INK); answer.setTextIsSelectable(true); card.addView(answer); }
+            TextView count = text(getResources().getQuantityString(R.plurals.question_count, group.questionCount(), group.questionCount()), 16, selected ? ACCENT : INK);
+            count.setTypeface(null, Typeface.BOLD); card.addView(count);
+            TextView clickedAt = text("", 13, MUTED); clickedAt.setPadding(0, dp(4), 0, dp(4)); card.addView(clickedAt);
+            dates.add(new TimeLabel(clickedAt, group.end()));
+            boolean first = true;
+            for (QuestionDay.Question question : group.questions()) {
+                LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setTag(group.rowKey(question));
+                row.setPadding(0, dp(12), 0, dp(8)); card.addView(row);
+                if (!first) {
+                    View divider = new View(this); divider.setBackgroundColor(selected ? 0xffe9cbbc : 0xffeae5df);
+                    row.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+                }
+                first = false;
+                TextView label = text(question.question(), 18, INK); label.setTypeface(null, Typeface.BOLD); label.setTextIsSelectable(true); row.addView(label);
+                TextView time = text("", 13, MUTED); time.setPadding(0, dp(4), 0, dp(8)); row.addView(time); dates.add(new TimeLabel(time, question.askedAt()));
+                if (!question.answer().isEmpty()) { TextView answer = text(question.answer(), 16, INK); answer.setTextIsSelectable(true); row.addView(answer); }
+            }
         }
         updateTimes();
         View focus = selectedRow;

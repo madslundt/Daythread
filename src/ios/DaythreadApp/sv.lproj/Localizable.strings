@@ -2839,3 +2839,6 @@
 
 "No questions yet" = "Inga frågor än";
 "From this click" = "Från det här klicket";
+
+"{value0} question" = "{value0} fråga";
+"{value0} questions" = "{value0} frågor";

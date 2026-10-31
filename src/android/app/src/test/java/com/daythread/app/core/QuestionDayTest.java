@@ -65,4 +65,27 @@ public class QuestionDayTest {
         assertEquals(QuestionTime.Kind.CLOCK, QuestionTime.at(now.minusSeconds(7200), now).kind());
         assertEquals(QuestionTime.Kind.JUST_NOW, QuestionTime.at(now.plusSeconds(1), now).kind());
     }
+    @Test public void standaloneDayHasNoSelectedClickAndPreservesNewestFirstQuestions() {
+        Json response = response(false).put("selected_job_id", org.json.JSONObject.NULL);
+        QuestionDay day = QuestionDay.parse(response, null);
+        assertNull(day.selectedJobID()); assertTrue(day.selectedQuestionIDs().isEmpty());
+        assertEquals(List.of(false, false, false, false), day.questions().stream().map(day::selected).toList());
+        assertEquals(List.of("Latest question?", "Second question?", "First question?", "Earlier today?"),
+            day.questions().stream().map(QuestionDay.Question::question).toList());
+        assertThrows(IllegalArgumentException.class, () -> QuestionDay.parse(response, JOB));
+        assertThrows(IllegalArgumentException.class, () -> QuestionDay.parse(response(false), null));
+    }
+    @Test public void standaloneTodayAndSelectedDateRoutesRetainArchiveAndUseCorrectRetrySeparator() {
+        Destination original = new Destination(List.of("https://original.example"), "original-profile");
+        QuestionsRoute today = QuestionsRoute.today(original);
+        assertNull(today.jobID()); assertNull(today.day()); assertEquals("/v1/questions", today.path());
+        assertEquals("/v1/questions?retry=true", today.path(true));
+        QuestionsRoute selected = QuestionsRoute.forDay(original, java.time.LocalDate.of(2026, 10, 30));
+        assertEquals("/v1/questions?day=2026-10-30", selected.path());
+        assertEquals("/v1/questions?day=2026-10-30&retry=true", selected.path(true));
+        assertEquals(selected, QuestionsRoute.parse(selected.json().toString()));
+        assertEquals(today, QuestionsRoute.parse(today.json().toString()));
+        assertNotEquals(today, selected);
+        assertThrows(IllegalArgumentException.class, () -> new QuestionsRoute(JOB, original, selected.day()));
+    }
 }

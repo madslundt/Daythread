@@ -76,7 +76,11 @@ final class Backend {
             throw error;
         }
         if (!route.destination().profile().equals(response.profile)) throw new QuestionsInvalidated();
-        try { return QuestionDay.parse(response.json, route.jobID()); }
+        try {
+            QuestionDay day = QuestionDay.parse(response.json, route.jobID());
+            if (route.day() != null && !route.day().equals(day.day())) throw new QuestionsInvalidated();
+            return day;
+        }
         catch (RuntimeException error) { throw new QuestionsInvalidated(); }
     }
     private static String encode(String value) { try { return URLEncoder.encode(value, "UTF-8"); } catch (UnsupportedEncodingException e) { throw new AssertionError(e); } }

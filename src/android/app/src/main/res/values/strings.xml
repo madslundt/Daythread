@@ -129,6 +129,8 @@
     <string name="recent_audio_summary">Recent audio summary</string>
     <string name="recent_audio_translation">Recent audio translation</string>
     <string name="day_questions">Questions</string>
+    <string name="questions_today">Today</string>
+    <string name="questions_choose_day">Choose day</string>
     <string name="back_to_daythread">Back to Daythread</string>
     <string name="questions_loading">Loading questions…</string>
     <string name="questions_processing">Finding questions from earlier clicks…</string>

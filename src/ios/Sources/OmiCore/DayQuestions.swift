@@ -27,7 +27,7 @@ public struct DayQuestion: Codable, Equatable, Identifiable, Sendable {
 public struct DayQuestions: Codable, Equatable, Sendable {
     public let day: String
     public let timezone: String?
-    public let selectedJobID: String
+    public let selectedJobID: String?
     public let selectedQuestionIDs: [String]?
     public let questions: [DayQuestion]
     public let processing: Bool
@@ -40,7 +40,7 @@ public struct DayQuestions: Codable, Equatable, Sendable {
 
     public var highlightedIDs: Set<String> {
         if let ids = selectedQuestionIDs, !ids.isEmpty { return Set(ids) }
-        return Set(questions.filter { $0.belongsToClick(jobID: selectedJobID) }.map(\.id))
+        return Set(questions.filter { $0.belongsToClick(jobID: selectedJobID ?? "") }.map(\.id))
     }
 
     public var firstHighlightedID: String? {

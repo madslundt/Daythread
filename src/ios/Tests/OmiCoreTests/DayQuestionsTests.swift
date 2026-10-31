@@ -39,6 +39,18 @@ final class DayQuestionsTests: XCTestCase {
         XCTAssertEqual(page.timezone, "Europe/Copenhagen")
     }
 
+    func testIndependentDayHasNoSelectedGroupAndKeepsNewestFirstOrder() throws {
+        let page = try JSONDecoder().decode(DayQuestions.self, from: Data(#"""
+        {"day":"2026-10-31","timezone":"Europe/Copenhagen","selected_job_id":null,"selected_question_ids":[],"processing":false,"error":null,
+         "questions":[{"id":"latest","job_id":"click-b","question":"Latest?","answer":"Latest answer","asked_at":"2026-10-31T10:15:00Z"},
+                      {"id":"earlier","job_id":"click-a","question":"Earlier?","answer":null,"asked_at":"2026-10-31T10:00:00Z"}]}
+        """#.utf8))
+        XCTAssertNil(page.selectedJobID)
+        XCTAssertTrue(page.highlightedIDs.isEmpty)
+        XCTAssertNil(page.firstHighlightedID)
+        XCTAssertEqual(page.questions.map(\.id), ["latest", "earlier"])
+    }
+
     private func decode() throws -> DayQuestions {
         try JSONDecoder().decode(DayQuestions.self, from: Data(#"""
         {"day":"2026-10-31","timezone":"Europe/Copenhagen","selected_job_id":"click-b","processing":false,"questions":[

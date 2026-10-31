@@ -1,6 +1,7 @@
 package com.daythread.app;
 
 import android.app.Activity;
+import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -10,6 +11,7 @@ import android.view.View;
 import android.widget.*;
 import com.daythread.app.core.*;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.*;
@@ -30,6 +32,7 @@ public final class QuestionsActivity extends Activity {
     private TextView status;
     private Button retry;
     private boolean active, loading, focused;
+    private volatile int requestGeneration;
     private int restoredPosition = -1;
     private final Runnable poll = this::load;
     private final Runnable clock = new Runnable() {
@@ -38,7 +41,7 @@ public final class QuestionsActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
-        try { route = QuestionsRoute.parse(getIntent().getStringExtra(ROUTE)); }
+        try { route = QuestionsRoute.parse(saved == null ? getIntent().getStringExtra(ROUTE) : saved.getString(ROUTE, getIntent().getStringExtra(ROUTE))); }
         catch (RuntimeException error) { finish(); return; }
         if (saved != null) { focused = saved.getBoolean("focused", false); restoredPosition = saved.getInt("scroll_y", 0); }
         scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(0xfffaf8f4);
@@ -59,7 +62,7 @@ public final class QuestionsActivity extends Activity {
         ui.removeCallbacks(clock); ui.post(clock);
     }
     @Override protected void onPause() { active = false; ui.removeCallbacks(poll); ui.removeCallbacks(clock); super.onPause(); }
-    @Override protected void onSaveInstanceState(Bundle out) { out.putBoolean("focused", focused); if (scroll != null) out.putInt("scroll_y", scroll.getScrollY()); super.onSaveInstanceState(out); }
+    @Override protected void onSaveInstanceState(Bundle out) { out.putBoolean("focused", focused); if (route != null) out.putString(ROUTE, route.json().toString()); if (scroll != null) out.putInt("scroll_y", scroll.getScrollY()); super.onSaveInstanceState(out); }
     @Override protected void onDestroy() { ui.removeCallbacksAndMessages(null); io.shutdownNow(); super.onDestroy(); }
 
     private void load() {
@@ -68,19 +71,21 @@ public final class QuestionsActivity extends Activity {
     private void load(boolean retryHistory) {
         if (loading || route == null || isFinishing() || isDestroyed()) return;
         loading = true;
+        QuestionsRoute requested = route; int generation = requestGeneration;
         if (status != null) status.setText(R.string.questions_loading);
         if (retry != null) retry.setVisibility(View.GONE);
         io.execute(() -> {
+            if (generation != requestGeneration) return;
             try {
-                QuestionDay loaded = Backend.questions(route, retryHistory);
+                QuestionDay loaded = Backend.questions(requested, retryHistory);
                 ui.post(() -> {
-                    if (isFinishing() || isDestroyed()) return;
+                    if (isFinishing() || isDestroyed() || generation != requestGeneration || !requested.equals(route)) return;
                     loading = false; day = loaded; render();
                     if (day.processing() && active) { ui.removeCallbacks(poll); ui.postDelayed(poll, 2500); }
                 });
             } catch (Exception error) {
                 ui.post(() -> {
-                    if (isFinishing() || isDestroyed()) return;
+                    if (isFinishing() || isDestroyed() || generation != requestGeneration || !requested.equals(route)) return;
                     loading = false; ui.removeCallbacks(poll);
                     if (error instanceof Backend.QuestionsInvalidated) {
                         day = null; focused = false; restoredPosition = -1; render();
@@ -90,6 +95,17 @@ public final class QuestionsActivity extends Activity {
             }
         });
     }
+    private void openDay(LocalDate chosen) {
+        route = chosen == null ? QuestionsRoute.today(route.destination()) : QuestionsRoute.forDay(route.destination(), chosen);
+        requestGeneration++; ui.removeCallbacks(poll); loading = false; day = null; focused = false; restoredPosition = -1;
+        getIntent().putExtra(ROUTE, route.json().toString()); render(); load();
+    }
+    private void chooseDay() {
+        LocalDate selected = day != null ? day.day() : route.day() != null ? route.day() : LocalDate.now();
+        DatePickerDialog picker = new DatePickerDialog(this, (view, year, month, date) -> openDay(LocalDate.of(year, month + 1, date)),
+            selected.getYear(), selected.getMonthValue() - 1, selected.getDayOfMonth());
+        picker.setTitle(R.string.questions_choose_day); picker.show();
+    }
     private void render() {
         int position = restoredPosition >= 0 ? restoredPosition : scroll.getScrollY(); page.removeAllViews(); dates.clear();
         Button back = new Button(this); back.setAllCaps(false); back.setText(R.string.back_to_daythread);
@@ -98,6 +114,10 @@ public final class QuestionsActivity extends Activity {
         }); page.addView(back);
         TextView title = text(getString(R.string.day_questions), 30, INK); title.setTypeface(Typeface.create("serif", Typeface.NORMAL));
         title.setPadding(0, dp(20), 0, dp(8)); page.addView(title);
+        LinearLayout dayControls = new LinearLayout(this);
+        Button today = new Button(this); today.setAllCaps(false); today.setText(R.string.questions_today); today.setOnClickListener(view -> openDay(null));
+        Button chooseDate = new Button(this); chooseDate.setAllCaps(false); chooseDate.setText(R.string.questions_choose_day); chooseDate.setOnClickListener(view -> chooseDay());
+        dayControls.addView(today, new LinearLayout.LayoutParams(0, -2, 1)); dayControls.addView(chooseDate, new LinearLayout.LayoutParams(0, -2, 1)); page.addView(dayControls);
         if (day != null) {
             String date = day.day().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Locale.getDefault()));
             page.addView(text(date, 16, MUTED));

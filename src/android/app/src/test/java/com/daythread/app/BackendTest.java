@@ -143,4 +143,18 @@ public class BackendTest {
             assertThrows(Backend.QuestionsInvalidated.class, () -> Backend.questions(new QuestionsRoute(job, new Destination(List.of(server.origin()), "original-profile"))));
         }
     }
+    @Test public void standaloneDayQuestionsUseOriginalProfileAndValidateTheRequestedCalendarDay() throws Exception {
+        try (Server server = new Server(r -> new Reply(200, questions(null), "original-profile"))) {
+            Destination destination = new Destination(List.of(server.origin()), "original-profile");
+            QuestionDay today = Backend.questions(QuestionsRoute.today(destination));
+            assertNull(today.selectedJobID());
+            assertTrue(server.requests.poll(1, TimeUnit.SECONDS).line.startsWith("GET /v1/questions "));
+            QuestionsRoute selected = QuestionsRoute.forDay(destination, java.time.LocalDate.of(2026, 10, 31));
+            Backend.questions(selected, true);
+            Request retry = server.requests.poll(1, TimeUnit.SECONDS);
+            assertTrue(retry.line.startsWith("GET /v1/questions?day=2026-10-31&retry=true "));
+            assertEquals("original-profile", retry.headers.get("x-omi-profile"));
+            assertThrows(Backend.QuestionsInvalidated.class, () -> Backend.questions(QuestionsRoute.forDay(destination, java.time.LocalDate.of(2026, 10, 30))));
+        }
+    }
 }

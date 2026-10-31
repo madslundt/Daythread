@@ -336,9 +336,11 @@ struct CompletionNotificationSettings: View {
 struct CompletionSceneOverlay: UIViewRepresentable {
     let model: AppModel
     let notifications: CompletionNotifications
+    @Environment(\.scenePhase) private var scenePhase
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> Anchor {
+        context.coordinator.activity.phase = scenePhase
         let anchor = Anchor()
         anchor.isUserInteractionEnabled = false
         anchor.onScene = { [weak coordinator = context.coordinator] scene in
@@ -346,20 +348,24 @@ struct CompletionSceneOverlay: UIViewRepresentable {
         }
         return anchor
     }
-    func updateUIView(_ uiView: Anchor, context: Context) {}
+    func updateUIView(_ uiView: Anchor, context: Context) { context.coordinator.activity.phase = scenePhase }
     static func dismantleUIView(_ uiView: Anchor, coordinator: Coordinator) { coordinator.window?.isHidden = true }
 
     final class Anchor: UIView {
         var onScene: ((UIWindowScene) -> Void)?
         override func didMoveToWindow() { super.didMoveToWindow(); if let scene = window?.windowScene { onScene?(scene) } }
     }
+    @Observable final class SceneActivity {
+        var phase: ScenePhase = .background
+    }
     final class Coordinator {
+        let activity = SceneActivity()
         var window: BannerWindow?
         func install(scene: UIWindowScene, model: AppModel, notifications: CompletionNotifications) {
             guard window == nil else { return }
             let overlay = BannerWindow(windowScene: scene)
             overlay.windowLevel = .normal + 1
-            let root = OverlayContent(frameChanged: { [weak overlay] frame in overlay?.bannerFrame = frame })
+            let root = OverlayContent(activity: activity, frameChanged: { [weak overlay] frame in overlay?.bannerFrame = frame })
                 .environment(model).environment(notifications)
             let controller = UIHostingController(rootView: root)
             controller.view.backgroundColor = .clear
@@ -388,6 +394,7 @@ struct CompletionSceneOverlay: UIViewRepresentable {
         }
     }
     private struct OverlayContent: View {
+        let activity: SceneActivity
         let frameChanged: (CGRect) -> Void
         @Environment(AppModel.self) private var model
         @Environment(CompletionNotifications.self) private var notifications
@@ -409,6 +416,9 @@ struct CompletionSceneOverlay: UIViewRepresentable {
             .sheet(item: Binding(get: { notifications.opened }, set: { notifications.opened = $0 })) { event in
                 CompletionResultView(event: event).id(model.archiveIdentity + event.id.uuidString)
             }
+            // UIHostingController roots do not inherit the SwiftUI scene's phase.
+            // Forward changes without replacing the host or its presented sheet.
+            .environment(\.scenePhase, activity.phase)
         }
     }
 }

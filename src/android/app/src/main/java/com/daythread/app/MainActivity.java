@@ -73,7 +73,12 @@ public final class MainActivity extends Activity {
         LinearLayout brand = new LinearLayout(this); brand.setGravity(Gravity.CENTER_VERTICAL); brand.setPadding(dp(18), dp(10), dp(18), dp(6));
         ImageView mark = new ImageView(this); mark.setImageResource(R.mipmap.ic_launcher); mark.setContentDescription(null);
         brand.addView(mark, new LinearLayout.LayoutParams(dp(34), dp(34)));
-        TextView title = text(getString(R.string.app_name), 22, INK); title.setTypeface(null, Typeface.BOLD); title.setPadding(dp(10), 0, 0, 0); brand.addView(title);
+        TextView title = text(getString(R.string.app_name), 22, INK); title.setTypeface(null, Typeface.BOLD); title.setPadding(dp(10), 0, 0, 0); brand.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button questions = button(getString(R.string.day_questions), () -> {
+            if (!configured()) { toast(R.string.connect_first); showConnection(); return; }
+            startActivity(new Intent(this, QuestionsActivity.class).putExtra(QuestionsActivity.ROUTE, QuestionsRoute.today(AppState.destination(this)).json().toString()));
+        }, false);
+        questions.setTextSize(12); brand.addView(questions, new LinearLayout.LayoutParams(-2, -2));
         root.addView(brand);
         navigation = new LinearLayout(this); navigation.setPadding(dp(12), 0, dp(12), dp(8)); root.addView(navigation);
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));

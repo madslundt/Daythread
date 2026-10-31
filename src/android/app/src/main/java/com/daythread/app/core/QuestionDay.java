@@ -10,13 +10,15 @@ public record QuestionDay(LocalDate day, ZoneId timezone, String selectedJobID,
     public record Question(String id, String jobID, String question, String answer,
                            Instant askedAt, String timePrecision) {}
     public boolean selected(Question question) {
-        return selectedQuestionIDs.contains(question.id) || selectedJobID.equals(question.jobID);
+        return selectedJobID != null && (selectedQuestionIDs.contains(question.id) || selectedJobID.equals(question.jobID));
     }
     public static QuestionDay parse(Json value, String expectedJobID) {
-        String selected = UUID.fromString(value.getString("selected_job_id")).toString();
-        if (!selected.equals(UUID.fromString(expectedJobID).toString())) throw new IllegalArgumentException("The question list belongs to a different click");
+        String selected = value.optString("selected_job_id");
+        selected = selected.isEmpty() ? null : UUID.fromString(selected).toString();
+        String expected = expectedJobID == null ? null : UUID.fromString(expectedJobID).toString();
+        if (!Objects.equals(selected, expected)) throw new IllegalArgumentException("The question list belongs to a different click");
         Set<String> highlighted = new HashSet<>();
-        if (value.has("selected_question_ids")) {
+        if (selected != null && value.has("selected_question_ids")) {
             Json.JsonArray ids = value.getJsonArray("selected_question_ids");
             for (int i = 0; i < ids.length(); i++) highlighted.add(ids.getString(i));
         }

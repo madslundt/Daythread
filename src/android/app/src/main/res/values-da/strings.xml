@@ -129,6 +129,8 @@
     <string name="recent_audio_summary">Opsummering af seneste lyd</string>
     <string name="recent_audio_translation">Oversættelse af seneste lyd</string>
     <string name="day_questions">Spørgsmål</string>
+    <string name="questions_today">I dag</string>
+    <string name="questions_choose_day">Vælg dag</string>
     <string name="back_to_daythread">Tilbage til Daythread</string>
     <string name="questions_loading">Henter spørgsmål…</string>
     <string name="questions_processing">Finder spørgsmål fra tidligere klik…</string>

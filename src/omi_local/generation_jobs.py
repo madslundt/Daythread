@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .completion_events import generating_job, job_notice
@@ -439,18 +439,29 @@ class GenerationJobs:
 
 
 def generation_routes(get_jobs) -> APIRouter:
-    router = APIRouter(prefix="/v1/jobs")
+    router = APIRouter(prefix="/v1")
 
-    @router.post("", status_code=202)
+    @router.post("/jobs", status_code=202)
     def enqueue(body: GenerationRequest) -> dict:
         return get_jobs().enqueue(body)
 
-    @router.get("/{job_id}")
+    @router.get("/jobs/{job_id}")
     def read(job_id: Annotated[UUID, Field()]) -> dict:
         return get_jobs().get(str(job_id))
 
-    @router.get("/{job_id}/questions")
+    @router.get("/jobs/{job_id}/questions")
     def questions(job_id: Annotated[UUID, Field()], retry: bool = False) -> dict:
         return get_jobs().question_history.page(str(job_id), retry=retry)
+
+    @router.get("/questions")
+    def day_questions(
+        day: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None,
+        retry: bool = False,
+    ) -> dict:
+        try:
+            requested = date.fromisoformat(day) if day is not None else None
+        except ValueError as exc:
+            raise HTTPException(422, "Use valid ISO calendar dates") from exc
+        return get_jobs().question_history.day_page(requested, retry=retry)
 
     return router

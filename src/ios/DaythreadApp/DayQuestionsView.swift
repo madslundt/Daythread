@@ -3,7 +3,10 @@ import OmiCore
 
 /// The notification selects a click group; the request still loads the whole day.
 struct DayQuestionsView: View {
-    let jobID: String
+    let jobID: String?
+    let day: String?
+    init(jobID: String) { self.jobID = jobID; self.day = nil }
+    init(day: String) { self.jobID = nil; self.day = day }
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var interfaceLocale
@@ -56,7 +59,7 @@ struct DayQuestionsView: View {
         }
         .navigationTitle(L10n.text("Questions"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: model.archiveIdentity + jobID + String(describing: scenePhase)) {
+        .task(id: model.archiveIdentity + (jobID ?? day ?? "") + String(describing: scenePhase)) {
             if scenePhase == .active { await load() }
         }
         .refreshable { await load(retry: true) }
@@ -94,10 +97,13 @@ struct DayQuestionsView: View {
         defer { if scope == model.archiveIdentity, loadID == currentLoad { loading = false } }
         do {
             let client = try model.client().snapshot()
-            var query = retry ? ["retry": "true"] : [:]
+            let path = jobID.map { "v1/jobs/" + $0 + "/questions" } ?? "v1/questions"
+            let scopeQuery = day.map { ["day": $0] } ?? [:]
+            var query = scopeQuery
+            if retry { query["retry"] = "true" }
             repeat {
-                let value = try await client.decoded("v1/jobs/" + jobID + "/questions", query: query, as: DayQuestions.self)
-                query = [:]
+                let value = try await client.decoded(path, query: query, as: DayQuestions.self)
+                query = scopeQuery
                 guard scope == model.archiveIdentity, loadID == currentLoad, !Task.isCancelled else { return }
                 page = value; loadedScope = scope
                 error = value.error.map(L10n.key)

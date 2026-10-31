@@ -6,7 +6,7 @@ struct DayView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Nil follows the current server day, including midnight while the app is open.
     @State private var selectedDate: Date?
-    private enum Destination: Hashable { case rewind, chat(String) }
+    private enum Destination: Hashable { case rewind, chat(String), questions(String) }
     @State private var destination: Destination?
     private enum Sheet: Identifiable {
         case importAudio, filters, source(SourceSelection)
@@ -83,6 +83,9 @@ struct DayView: View {
             Section {
                 DayCalendarPicker(selectedDate: $selectedDate)
                 if diary.dayKey(day) == diary.dayKey(model.now) { CaptureGlance() }
+                Button { destination = .questions(dayKey) } label: {
+                    Label(L10n.text("Questions"), systemImage: "questionmark.bubble")
+                }.accessibilityIdentifier("day.questions")
             }
             if filters.isFiltered {
                 DayFilterSection(scope: filters, tags: tags, zones: zones, open: { sheet = .filters }, clear: { tagID = ""; zoneID = "" })
@@ -181,6 +184,7 @@ struct DayView: View {
             switch value {
             case .rewind: RewindView()
             case .chat(let selectedDay): ChatView(initialScope: .day(selectedDay)).id(selectedDay)
+            case .questions(let selectedDay): DayQuestionsView(day: selectedDay).id(model.archiveIdentity + selectedDay)
             }
         }
         .sheet(item: $sheet, onDismiss: { Task { await reloadMembership() } }) { destination in

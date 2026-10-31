@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
@@ -135,21 +135,31 @@ class QuestionHistory:
             db.execute("UPDATE question_history_requests SET state='queued' WHERE state='running'")
 
     def page(self, job_id: str, retry: bool = False) -> dict:
+        return self._page(job_id, None, retry)
+
+    def day_page(self, day: date | None = None, retry: bool = False) -> dict:
+        return self._page(None, day, retry)
+
+    def _page(self, job_id: str | None, day: date | None, retry: bool) -> dict:
         zone = ZoneInfo(self.memory.settings.timezone)
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            selected = _answer_job(db.execute(
-                "SELECT * FROM generation_jobs WHERE id=?", (job_id,),
-            ).fetchone())
-            if selected is None:
-                raise HTTPException(404, "Generation job not found")
-            if selected["state"] != "completed" or not selected["result"]:
-                raise HTTPException(409, "Recorded evidence changed; generate again")
-            try:
-                _current_sources(db, selected)
-            except EvidenceChanged as exc:
-                raise HTTPException(409, "Recorded evidence changed; generate again") from exc
-            day = datetime.fromisoformat(selected["parameters"]["end"]).astimezone(zone).date()
+            selected = None
+            if job_id is not None:
+                selected = _answer_job(db.execute(
+                    "SELECT * FROM generation_jobs WHERE id=?", (job_id,),
+                ).fetchone())
+                if selected is None:
+                    raise HTTPException(404, "Generation job not found")
+                if selected["state"] != "completed" or not selected["result"]:
+                    raise HTTPException(409, "Recorded evidence changed; generate again")
+                try:
+                    _current_sources(db, selected)
+                except EvidenceChanged as exc:
+                    raise HTTPException(409, "Recorded evidence changed; generate again") from exc
+                day = datetime.fromisoformat(selected["parameters"]["end"]).astimezone(zone).date()
+            if day is None:
+                day = utc_now().astimezone(zone).date()
             jobs = []
             for row in db.execute(
                 "SELECT * FROM generation_jobs WHERE kind='wearable_action' "
@@ -175,7 +185,7 @@ class QuestionHistory:
                             "UPDATE question_history_requests SET state='queued',error=NULL,"
                             "retry_at='' WHERE job_id=? AND state='failed'", (job["id"],),
                         )
-            selected_ids = [item["id"] for item in _saved_questions(selected)]
+            selected_ids = [item["id"] for item in _saved_questions(selected)] if selected else []
             grouped: dict[str, dict] = {}
             for job in jobs:
                 for item in _saved_questions(job):

@@ -165,17 +165,24 @@ async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) 
                 if batcher:
                     batcher.pending.pop(key, None)
                 continue
-            if saved and saved["fingerprint"] == memory.recaps.day_key(current):
+            if saved and saved["fingerprint"] == memory.recaps.day_key(current, day=day):
                 if batcher:
                     batcher.pending.pop(key, None)
                 continue
             if batcher:
+                # Capture stops already waited their two-minute grace period.
+                # Start new preparation immediately when that boundary becomes ready.
+                capture_stop_due = any(
+                    group.ready and group.basis == "capture_stopped"
+                    and memory.recaps.group_summary(memory.recaps.group_key(group)) is None
+                    for group in current
+                )
                 # Ongoing live speech cannot enter a timed batch or delay an upload.
                 candidates = [group for group in current if group.ready or all(
                     finished_file(row) for row in group.sources
                 )]
                 fingerprint = digest([memory.recaps.group_key(group) for group in candidates])
-                if not batcher.ready(key, fingerprint, now, busy=any(
+                if not capture_stop_due and not batcher.ready(key, fingerprint, now, busy=any(
                     not group.ready for group in candidates
                 )):
                     continue

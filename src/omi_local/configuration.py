@@ -47,7 +47,8 @@ def group(key: str) -> str:
     if key.startswith("stt_"):
         return "Transcription"
     if key.startswith(("llm_", "chat_")) or key in {
-        "summary_language", "recap_language", "translation_languages"
+        "summary_language", "recap_language", "translation_languages",
+        "summary_template", "summary_template_instructions",
     }:
         return "Language models & chat"
     if key.startswith(("embedding_", "retrieval_", "reranker_")):
@@ -64,6 +65,24 @@ def group(key: str) -> str:
 
 
 DESCRIPTIONS = {
+    "stt_preview_enabled": "Allow explicitly requested previews of up to 15 seconds of current "
+    "phone audio. Preview text is temporary and never enters the archive.",
+    "summary_template": "Default presentation for new daily recaps. "
+    "Saved days keep their selected template.",
+    "summary_template_instructions": "Optional presentation preferences, up to 2000 characters. "
+    "Evidence and citation rules always apply.",
+    "capture_health_enabled": "Get a reminder when expected capture stops reporting progress. "
+    "Pauses stay quiet; stale reports mean unknown capture, not confirmed audio loss.",
+    "capture_health_stall_minutes": "Minutes without expected capture progress before an alert.",
+    "capture_health_cooldown_minutes": "Minimum minutes between repeated capture health alerts.",
+    "capture_health_quiet_start_hour": "Quiet hours start (0–23) in the archive time zone. "
+    "Matching start and end hours disables quiet hours.",
+    "capture_health_quiet_end_hour": "Quiet hours end (0–23) in the archive time zone.",
+    "stt_vocabulary": "Names and terms to help transcription, one per line. Up to 100 terms, "
+    "80 characters each and 2000 characters total. Applies to future processing in this archive.",
+    "stt_vocabulary_mode": "Disabled sends no hints. Whisper prompt sends comma-separated terms "
+    "as prompt; JSON keyterms sends a JSON array as keyterms. Choose only a format your "
+    "transcription endpoint supports. Language routes can override this choice.",
     "voice_recognition_enabled": "Remember explicitly confirmed voices across conversations in "
     "this archive. Suggestions require a passing evaluation on separate recordings; names are "
     "never applied automatically. Original audio retention also removes learned examples.",
@@ -205,6 +224,8 @@ def descriptors() -> list[dict]:
             kind = "secret"
         elif key in ROUTE_FIELDS:
             kind = "routes"
+        elif key == "stt_vocabulary":
+            kind = "terms"
         title = key.replace("_", " ").capitalize()
         for word in ("Stt", "Llm", "Api", "Omi"):
             title = title.replace(word, "Omi" if word == "Omi" else word.upper())
@@ -214,6 +235,16 @@ def descriptors() -> list[dict]:
             "stt_base_url": "Transcription endpoint",
             "stt_api_key": "Transcription API key",
             "stt_model": "Transcription model",
+            "stt_vocabulary": "Transcription vocabulary",
+            "stt_vocabulary_mode": "Vocabulary format",
+            "stt_preview_enabled": "Provisional transcription preview",
+            "summary_template": "Summary template",
+            "summary_template_instructions": "Presentation preferences",
+            "capture_health_enabled": "Capture health alerts",
+            "capture_health_stall_minutes": "Capture stall threshold (minutes)",
+            "capture_health_cooldown_minutes": "Capture alert cooldown (minutes)",
+            "capture_health_quiet_start_hour": "Capture alert quiet hours start",
+            "capture_health_quiet_end_hour": "Capture alert quiet hours end",
             "llm_base_url": "Summaries & chat endpoint",
             "llm_api_key": "Summaries & chat API key",
             "llm_model": "Summaries & chat model",

@@ -86,6 +86,8 @@
 	<string>Daythread records audio when you start manually or enable a recording schedule. You choose when to upload or remove recordings.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Daythread reads upcoming calendar events only when you choose calendar-assisted preparation. You select the topic or attendee to use.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

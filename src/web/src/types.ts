@@ -19,6 +19,9 @@ export type Source = {
   vendor_label?: string;
   timestamp_basis?: string;
   source_metadata?: {
+    provenance_kind?: string;
+    timestamp_precision_seconds?: number;
+    device_copy_retained?: boolean;
     vendor_id?: string;
     location?: { latitude: number; longitude: number; horizontal_accuracy: number; captured_at: string };
     input_sample_rate?: number; archive_sample_rate?: number;

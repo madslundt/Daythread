@@ -8,9 +8,11 @@ from .domain import stamp, utc_now, wav_duration
 from .inference_errors import InferenceError
 from .inference_usage import recording_usage
 from .processing_progress import ProgressCallback
-from .settings import ModelRoute, Settings
+from .settings import Settings, STTRoute
 from .speech_processing import enhance_audio
+from .stt_languages import language_code
 from .transcription_filter import FILTER_VERSION, filter_transcription_audio
+from .transcription_vocabulary import vocabulary_fields
 
 
 class Transcription:
@@ -83,6 +85,9 @@ class Transcription:
                         "start": offset, "end": offset + wav_duration(chunk),
                         "gain_db": gain, "selected": "original",
                         "enhancement_status": status,
+                        **({"timestamp_status": result["timestamp_status"]}
+                           if "timestamp_status" in result else {}),
+                        **result.get("recognition", {}),
                     })
                     originals.append((prepared, result))
                     if on_progress:
@@ -169,12 +174,19 @@ class Transcription:
                     # Routing chooses a model, never a forced output language: mixed
                     # conversations must retain the languages actually spoken.
                     payload = await self._transcription(data, specialist, settings)
-        return self._transcription_result(payload, data)
+                    route = specialist
+        result = self._transcription_result(payload, data)
+        result["recognition"] = {"recognition_model": route.model}
+        if isinstance(detected, str):
+            code = language_code(detected)
+            if code and len(code) <= 32:
+                result["recognition"]["detected_language"] = code
+        return result
 
     async def _transcription(
         self,
         data: bytes,
-        route: ModelRoute,
+        route: STTRoute,
         settings: Settings,
         detect: bool = False,
     ) -> dict:
@@ -184,6 +196,7 @@ class Transcription:
                 "verbose_json" if settings.stt_segment_timestamps or detect else "json"
             ),
         }
+        fields.update(vocabulary_fields(route.vocabulary_mode, settings.stt_vocabulary))
         token = route.token.get_secret_value()
         response = await self.post(
             "stt",
@@ -210,17 +223,22 @@ class Transcription:
         duration = wav_duration(data)
         raw_segments = payload.get("segments", [])
         if not isinstance(raw_segments, list):
-            raise InferenceError("Invalid STT segment timestamps")
+            return {"text": text.strip(), "segments": [],
+                    "timestamp_status": "discarded_invalid"}
         for segment in raw_segments:
             try:
                 start, end = float(segment["start"]), float(segment["end"])
                 segment_text = segment["text"]
-                if not 0 <= start < end <= duration + 0.5 or not isinstance(segment_text, str):
+                if (not 0 <= start < min(end, duration) or not end <= duration + 0.5
+                        or not isinstance(segment_text, str)):
                     raise ValueError
                 segments.append(
                     {"start": start, "end": min(end, duration), "text": segment_text[:20000]}
                 )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise InferenceError("Invalid STT segment timestamps") from exc
+            except (KeyError, TypeError, ValueError, OverflowError):
+                # Timing is optional. Do not invent alignment or repeat a successful
+                # recognition request because the provider's timing is unusable.
+                return {"text": text.strip(), "segments": [],
+                        "timestamp_status": "discarded_invalid"}
         return {"text": text.strip(), "segments": segments}
 

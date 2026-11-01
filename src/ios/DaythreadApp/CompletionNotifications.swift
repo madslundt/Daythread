@@ -84,7 +84,7 @@ final class CompletionNotifications {
             else if let client, let token, authorized {
                 let language = L10n.language
                 if registeredToken != token || registeredLanguage != language {
-                    if (try? await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": false, "interface_language": language])) != nil {
+                    if (try? await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": false, "interface_language": language, "phone_id": model?.capturePhoneID.uuidString.lowercased() ?? ""])) != nil {
                         registeredToken = token; registeredLanguage = language
                     }
                 } else {
@@ -191,7 +191,7 @@ final class CompletionNotifications {
                 if authorized, let token {
                     let language = L10n.language
                     if registeredToken != token || registeredLanguage != language {
-                        _ = try await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": true, "interface_language": language])
+                        _ = try await client.request("v1/notifications/devices/" + installation, method: "PUT", body: ["token": token, "environment": Self.pushEnvironment, "active": true, "interface_language": language, "phone_id": model?.capturePhoneID.uuidString.lowercased() ?? ""])
                         // Keep the successful registration even if backgrounding raced
                         // with the response, so the serialized background task clears it.
                         registeredToken = token; registeredLanguage = language
@@ -218,7 +218,7 @@ final class CompletionNotifications {
         var after = rehydrate ? 0 : inbox.cursor
         let revision = previewRevision
         repeat {
-            let page = try await client.decoded("v1/notifications", query: ["after": String(after), "interface_language": language], as: Page.self)
+            let page = try await client.decoded("v1/notifications", query: ["after": String(after), "interface_language": language, "phone_id": model?.capturePhoneID.uuidString.lowercased() ?? ""], as: Page.self)
             guard active, current == generation, revision == previewRevision, language == L10n.language, !Task.isCancelled else { return }
             var latest: CompletionNotification?
             for event in page.notifications {

@@ -19,12 +19,17 @@ CREATE TABLE IF NOT EXISTS notification_devices (
  id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, environment TEXT NOT NULL,
  active_until REAL NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS notification_device_phones (
+ device_id TEXT PRIMARY KEY, phone_id TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS notification_device_languages (
  device_id TEXT PRIMARY KEY, interface_language TEXT NOT NULL DEFAULT 'en'
 );
+DROP TRIGGER IF EXISTS notification_device_language_removed;
 CREATE TRIGGER IF NOT EXISTS notification_device_language_removed
 AFTER DELETE ON notification_devices BEGIN
  DELETE FROM notification_device_languages WHERE device_id=OLD.id;
+ DELETE FROM notification_device_phones WHERE device_id=OLD.id;
 END;
 CREATE TABLE IF NOT EXISTS notification_deliveries (
  notification_id TEXT NOT NULL, device_id TEXT NOT NULL,
@@ -140,12 +145,15 @@ class NotificationStore:
                 ])
                 db.execute(
                     "INSERT INTO notification_deliveries(notification_id,device_id,expires_at) "
-                    "SELECT ?,id,? FROM notification_devices", (row["id"], time.time() + 86400),
+                    "SELECT ?,id,? FROM notification_devices WHERE ?!='capture_health' OR id IN "
+                    "(SELECT device_id FROM notification_device_phones WHERE phone_id=?)",
+                    (row["id"], time.time() + 86400, kind, target.get("phone_id", "")),
                 )
             return public_notification(row)
 
     def notifications_after(
         self, after: int, limit: int = 100, interface_language: str = "en",
+        phone_id: str | None = None,
     ) -> dict:
         with self.connect() as db:
             rows = db.execute(
@@ -153,12 +161,22 @@ class NotificationStore:
                 (after, limit),
             ).fetchall()
         return {"notifications": [present_notification(public_notification(row), interface_language)
-                                  for row in rows],
+                                  for row in rows
+                                  if phone_id is None or row["kind"] != "capture_health"
+                                  or json.loads(row["target"]).get("phone_id") == phone_id],
                 "cursor": rows[-1]["sequence"] if rows else after}
+
+    def clear_capture_health_notifications(self, phone_id: str | None = None) -> None:
+        with self.connect() as db:
+            if phone_id is None:
+                db.execute("DELETE FROM notifications WHERE kind='capture_health'")
+            else:
+                db.execute("DELETE FROM notifications WHERE kind='capture_health' "
+                           "AND json_extract(target,'$.phone_id')=?", (phone_id,))
 
     def register_notification_device(
         self, installation_id: str, token: str, environment: str, active: bool,
-        interface_language: str = "en",
+        interface_language: str = "en", phone_id: str | None = None,
     ) -> None:
         with self.connect() as db:
             db.execute("DELETE FROM notification_devices WHERE token=? AND id<>?",
@@ -170,6 +188,11 @@ class NotificationStore:
                 "active_until=excluded.active_until",
                 (installation_id, token, environment, time.time() + 60 if active else 0),
             )
+            db.execute("DELETE FROM notification_device_phones WHERE device_id=?",
+                       (installation_id,))
+            if phone_id:
+                db.execute("INSERT INTO notification_device_phones(device_id,phone_id) VALUES(?,?)",
+                           (installation_id, phone_id))
             db.execute(
                 "INSERT INTO notification_device_languages(device_id,interface_language) "
                 "VALUES(?,?) ON CONFLICT(device_id) DO UPDATE "
@@ -215,6 +238,9 @@ class NotificationStore:
                 "JOIN notification_devices d ON d.id=q.device_id "
                 "LEFT JOIN notification_device_languages l ON l.device_id=d.id "
                 "WHERE q.state='pending' AND q.retry_at<=? AND d.active_until<=? "
+                "AND (n.kind!='capture_health' OR EXISTS "
+                "(SELECT 1 FROM notification_device_phones p "
+                "WHERE p.device_id=d.id AND p.phone_id=json_extract(n.target,'$.phone_id'))) "
                 "ORDER BY n.sequence LIMIT 100", (now, now),
             )]
 
@@ -223,8 +249,12 @@ class NotificationStore:
             return db.execute(
                 "SELECT 1 FROM notification_deliveries q "
                 "JOIN notification_devices d ON d.id=q.device_id "
+                "JOIN notifications n ON n.id=q.notification_id "
                 "WHERE q.notification_id=? AND q.device_id=? AND q.state='pending' "
-                "AND d.active_until<=?", (notification_id, device_id, time.time()),
+                "AND d.active_until<=? AND (n.kind!='capture_health' OR EXISTS "
+                "(SELECT 1 FROM notification_device_phones p WHERE p.device_id=d.id "
+                "AND p.phone_id=json_extract(n.target,'$.phone_id')))",
+                (notification_id, device_id, time.time()),
             ).fetchone() is not None
 
     def finish_notification_delivery(

@@ -8,7 +8,7 @@ import { ErrorState, Loading } from "./UI";
 import { timeLabel } from "./format";
 import type { Source, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { MergedRecording } from "./MergedRecording";
+import { MergedRecording, MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
 
 export type RecordingGroup = {
   id: string;
@@ -52,7 +52,7 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
       <span className="source-overview"><span className="source-preview">{group.title}</span>
         <span className="source-glance">{group.topic_count
           ? `${group.topic_count} ${group.topic_count === 1 ? t("topic") : t("topics")}`
-          : group.recording_id ? t("Recording") : `${group.recording_count} ${t("recordings")}`}{group.estimated_times ? t("· estimated times") : ""}</span></span>
+          : t("Recording")}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
@@ -84,10 +84,16 @@ export function SessionSources({ group, day, query, zoneID, tagID, timezone, onC
   const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
   if (zoneID) params.set("zone_id", zoneID);
   if (tagID) params.set("tag_id", tagID);
-  const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[] }>(`/v1/recording-groups/${group.id}/sources?${params}`, 15_000);
+  const scope = new URLSearchParams(params);
+  scope.delete("limit"); scope.delete("offset");
+  const base = `/v1/recording-groups/${encodeURIComponent(group.id)}`;
+  const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[]; recording?: CombinedRecording }>(`${base}/sources?${params}`, 15_000);
+  if (resource.data?.recording) scope.set("version", resource.data.recording.audio_version || resource.data.recording.transcript_version);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
-    <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />
+    {resource.data?.recording ? <MergedRecordingContent recording={resource.data.recording}
+      resourceBase={base} resourceQuery={`?${scope}`} timezone={timezone} />
+      : <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}
     {resource.data ? <details className="recording-disclosure recording-originals" open={toolsOpen} onToggle={(event) => {

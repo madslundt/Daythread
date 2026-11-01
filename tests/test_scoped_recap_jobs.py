@@ -161,8 +161,12 @@ def test_full_day_retry_identity_stays_compatible_and_scope_retry_freezes_snapsh
     tag = tagged(client, key)
     full = {"id": str(uuid4()), "kind": "recap", "parameters": {"day": DAY}}
     first = client.post("/v1/jobs", json=full).json()
-    assert first["parameters"] == {"day": DAY}
-    assert client.post("/v1/jobs", json=full).json()["id"] == first["id"]
+    assert first["parameters"] == {"day": DAY, "template": "general", "instructions": ""}
+    assert client.patch("/v1/settings", json={"summary_template": "interview"}).status_code == 200
+    retried = client.post("/v1/jobs", json=full)
+    assert retried.status_code == 202
+    assert retried.json()["id"] == first["id"]
+    assert retried.json()["parameters"] == first["parameters"]
     scope = retry(client, tag)
     insert(client, AT + timedelta(minutes=10), "Unrelated recording", "manual_upload")
     edit(client, source_path({"id": key}), action="remove", tag_id=tag)

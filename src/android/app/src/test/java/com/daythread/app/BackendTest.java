@@ -96,6 +96,29 @@ public class BackendTest {
             assertTrue(outbox.pending().isEmpty());
         }
     }
+    @Test public void pendantCopiesUploadFrozenProvenanceAndRetryIdentically() throws Exception {
+        try (Server server = new Server(r -> new Reply(200, new Json().put("ok", true), "default"))) {
+            io.github.jaredmdobson.concentus.OpusEncoder encoder = new io.github.jaredmdobson.concentus.OpusEncoder(16000, 1,
+                io.github.jaredmdobson.concentus.OpusApplication.OPUS_APPLICATION_AUDIO);
+            byte[] opus = new byte[255];
+            int size = encoder.encode(new short[320], 0, 320, opus, 0, opus.length);
+            Instant at = Instant.parse("2026-10-17T10:00:00Z");
+            byte[] raw = java.nio.ByteBuffer.allocate(444).putInt((int) at.getEpochSecond()).put((byte) size).put(opus, 0, size).array();
+            Outbox outbox = new Outbox(temporary.newFolder());
+            outbox.copyRingRecords(new Destination(List.of(server.origin()), "default"), "pendant", 99,
+                List.of(OmiRingProtocol.Record.parse(10, raw, Instant.now())), 21);
+            Outbox.Item item = outbox.pending().get(0);
+            assertThrows(IOException.class, () -> Backend.upload(outbox, item));
+            assertThrows(IOException.class, () -> Backend.upload(outbox, outbox.pending().get(0)));
+            Request first = server.requests.poll(1, TimeUnit.SECONDS), retry = server.requests.poll(1, TimeUnit.SECONDS);
+            assertEquals(first.line, retry.line);
+            assertTrue(first.line.contains("source_kind=manual_upload"));
+            assertTrue(first.line.contains("source_id=omi-ring%3Apendant%3A99%3A10"));
+            assertEquals("default", first.headers.get("x-omi-profile"));
+            assertArrayEquals(first.body, retry.body); assertEquals(684, first.body.length);
+            assertEquals(11, outbox.ringCursor(item.destination(), "pendant", 99));
+        }
+    }
     private Json questions(String job) {
         return new Json().put("day", "2026-10-31").put("timezone", "Europe/Copenhagen")
             .put("selected_job_id", job).put("selected_question_ids", new Json.JsonArray(List.of()))

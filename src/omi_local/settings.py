@@ -11,8 +11,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .domain import HintPolicy
 from .inference_errors import InferenceDisabled
+from .stt_languages import language_code
+from .transcription_vocabulary import normalize_vocabulary
 
 LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
+VocabularyMode = Literal["off", "prompt", "keyterms"]
 
 
 def translation_language(value: str) -> str:
@@ -81,6 +84,10 @@ class LLMRouteOverride(ModelRouteOverride):
     revision: str | None = Field(default=None, max_length=200)
 
 
+class STTRouteOverride(ModelRouteOverride):
+    vocabulary_mode: VocabularyMode | None = None
+
+
 class EmbeddingRouteOverride(ModelRouteOverride):
     revision: str | None = Field(default=None, min_length=1, max_length=200)
     dimension: int | None = Field(default=None, ge=1, le=8192)
@@ -92,6 +99,10 @@ class ModelRoute(BaseModel):
     model: str
     base_url: str
     token: SecretStr
+
+
+class STTRoute(ModelRoute):
+    vocabulary_mode: VocabularyMode = "off"
 
 
 class LLMRoute(ModelRoute):
@@ -159,6 +170,9 @@ class Settings(BaseSettings):
     apns_private_key: SecretStr = SecretStr("")
     apns_topic: str = Field(default="", max_length=200, pattern=r"^[A-Za-z0-9.-]*$")
     stt_model: str = "stt-danish"
+    stt_vocabulary: list[str] = Field(default_factory=list)
+    stt_vocabulary_mode: VocabularyMode = "off"
+    stt_preview_enabled: bool = False
     stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
     stt_filter_speech: bool = True
     stt_preserve_quiet: bool = True
@@ -166,7 +180,7 @@ class Settings(BaseSettings):
     stt_boundary_search_seconds: float = Field(default=5, ge=0, le=10)
     stt_enhancement_mode: Literal["off", "on_empty", "compare"] = "on_empty"
     stt_enhancement_timeout_seconds: float = Field(default=15, gt=0, le=60)
-    stt_routes: dict[str, ModelRouteOverride] = Field(default_factory=dict)
+    stt_routes: dict[str, STTRouteOverride] = Field(default_factory=dict)
     llm_model: str = "home"
     llm_enable_thinking: bool | None = None
     llm_revision: str = Field(default="", max_length=200)
@@ -225,6 +239,13 @@ class Settings(BaseSettings):
         default="auto", min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$"
     )
     translation_languages: list[str] = Field(default_factory=lambda: ["en"])
+    summary_template: Literal["general", "meeting", "interview", "reflection"] = "general"
+    summary_template_instructions: str = Field(default="", max_length=2000)
+    capture_health_enabled: bool = False
+    capture_health_stall_minutes: int = Field(default=30, ge=5, le=1440)
+    capture_health_cooldown_minutes: int = Field(default=360, ge=5, le=10080)
+    capture_health_quiet_start_hour: int = Field(default=22, ge=0, le=23)
+    capture_health_quiet_end_hour: int = Field(default=8, ge=0, le=23)
     meeting_max_minutes: int = Field(default=120, ge=1, le=480)
     meeting_quiet_minutes: int = Field(default=10, ge=1, le=30)
     marker_context_seconds: int = Field(default=60, ge=0, le=300)
@@ -276,6 +297,11 @@ class Settings(BaseSettings):
     def optional_voice_report(cls, value):
         return None if value == "" else value
 
+    @field_validator("stt_vocabulary", mode="before")
+    @classmethod
+    def valid_stt_vocabulary(cls, value):
+        return normalize_vocabulary(value)
+
     @field_validator("stt_routes", mode="before")
     @classmethod
     def valid_stt_languages(cls, value):
@@ -291,9 +317,11 @@ class Settings(BaseSettings):
             routes[normalized] = override
         return routes
 
-    def stt_override(self, language: str) -> ModelRouteOverride | None:
-        language = language.lower()
-        return self.stt_routes.get(language) or self.stt_routes.get(language.split("-")[0])
+    def stt_override(self, language: str) -> STTRouteOverride | None:
+        language = language.strip().lower()
+        code = language_code(language)
+        return (self.stt_routes.get(language) or self.stt_routes.get(language.split("-")[0])
+                or self.stt_routes.get(code) or self.stt_routes.get(code.split("-")[0]))
 
     @field_validator("embedding_routes", mode="before")
     @classmethod
@@ -310,12 +338,14 @@ class Settings(BaseSettings):
             routes[normalized] = override
         return routes
 
-    def stt_route(self, language: str) -> ModelRoute:
-        override = self.stt_override(language) or ModelRouteOverride()
-        return ModelRoute(
+    def stt_route(self, language: str) -> STTRoute:
+        override = self.stt_override(language) or STTRouteOverride()
+        return STTRoute(
             model=override.model if override.model is not None else self.stt_model,
             base_url=override.base_url if override.base_url is not None else self.stt_base_url,
             token=override.token if override.token is not None else self.model_api_key("stt"),
+            vocabulary_mode=(override.vocabulary_mode if override.vocabulary_mode is not None
+                             else self.stt_vocabulary_mode),
         )
 
     def llm_route(self, task: LLMTask) -> LLMRoute:
@@ -448,6 +478,7 @@ class Settings(BaseSettings):
 
 RUNTIME_FIELDS = (
     "audio_forwarding_enabled",
+    "stt_preview_enabled",
     "timezone",
     "meeting_max_minutes",
     "meeting_quiet_minutes",
@@ -460,6 +491,13 @@ RUNTIME_FIELDS = (
     "recap_interval_minutes",
     "recap_quiet_minutes",
     "summary_language",
+    "summary_template",
+    "summary_template_instructions",
+    "capture_health_enabled",
+    "capture_health_stall_minutes",
+    "capture_health_cooldown_minutes",
+    "capture_health_quiet_start_hour",
+    "capture_health_quiet_end_hour",
     "recap_language",
     "translation_languages",
     "capture_paused",

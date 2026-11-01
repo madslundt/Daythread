@@ -90,6 +90,7 @@ export function NoteEditor({
   timezone,
   onSaved,
   onCancel,
+  fact = false,
 }: {
   entityId: string;
   revision: string;
@@ -97,10 +98,12 @@ export function NoteEditor({
   timezone: string;
   onSaved: () => void;
   onCancel: () => void;
+  fact?: boolean;
 }) {
   const [editRevision, setEditRevision] = useState(revision);
   const [refreshError, setRefreshError] = useState("");
-  const [id] = useState(() => entry?.id || newId());
+  const isFact = fact || entry?.kind === "fact";
+  const [id] = useState(() => isFact ? newId() : entry?.id || newId());
   const [title, setTitle] = useState(entry?.title || "");
   const [body, setBody] = useState(entry?.body || "");
   const [kind, setKind] = useState(entry?.kind || "conversation");
@@ -149,11 +152,12 @@ export function NoteEditor({
       onSubmit={(e) => {
         e.preventDefault();
         void mutation.mutate({
-          action: "note.save",
-          create: !entry,
+          action: isFact ? "fact.save" : "note.save",
+          create: isFact || !entry,
+          ...(isFact ? { supersedes: entry?.id || null } : {}),
           id,
           expected_revision: editRevision,
-          kind,
+          kind: isFact ? "fact" : kind,
           title,
           body,
           entity_ids: entry?.entity_ids || [entityId],
@@ -161,8 +165,8 @@ export function NoteEditor({
         });
       }}
     >
-      <h3>{entry ? t("Edit and review annotation") : t("Add a cited annotation")}</h3>
-      <label>
+      <h3>{isFact ? entry ? t("Review and replace fact") : t("Add a reviewed fact") : entry ? t("Edit and review annotation") : t("Add a cited annotation")}</h3>
+      {isFact ? <p className="caption">{t("Facts are your confirmed interpretation of selected recordings. Editing creates a replacement and keeps the previous version in history. Facts are not original transcript evidence.")}</p> : <label>
         {t("Type")}{" "}<select value={kind} onChange={(e) => setKind(e.target.value)}>
           {Object.entries(kinds).map(([k, label]) => (
             <option key={k} value={k}>
@@ -170,7 +174,7 @@ export function NoteEditor({
             </option>
           ))}
         </select>
-      </label>
+      </label>}
       <label>
         {t("Title")}{" "}<input
           required
@@ -272,7 +276,7 @@ export function NoteEditor({
           className="button dark"
           disabled={mutation.busy || !sources.length}
         >
-          {mutation.busy ? t("Saving…") : t("Save reviewed annotation")}
+          {mutation.busy ? t("Saving…") : isFact ? t("Confirm reviewed fact") : t("Save reviewed annotation")}
         </button>
         <button
           type="button"

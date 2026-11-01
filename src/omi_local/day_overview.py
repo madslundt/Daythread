@@ -136,7 +136,7 @@ class DayOverview:
     def snapshot(self, day: date, now, db=None):
         recaps = self.memory.recaps
         groups = recaps.for_day(recaps.groups(now, db), day)
-        key = digest({"day": day.isoformat(), "evidence": recaps.day_key(groups),
+        key = digest({"day": day.isoformat(), "evidence": recaps.day_key(groups, day=day, db=db),
                       "overview": VERSION, "recap_language": self.memory.settings.recap_language})
         return groups, key
 

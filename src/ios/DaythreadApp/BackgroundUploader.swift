@@ -100,6 +100,8 @@ final class BackgroundUploader: NSObject, @preconcurrency URLSessionDataDelegate
         switch item.kind {
         case .audio:
             var query = ["device_id": item.deviceID, "started_at": DurableStore.stamp(item.capturedAt)]
+            if let sourceKind = item.sourceKind { query["source_kind"] = sourceKind }
+            if let sourceID = item.sourceID { query["source_id"] = sourceID }
             if let location = item.location { query.merge(location.uploadQuery) { _, new in new } }
             return client.url("v1/audio/\(item.id.uuidString)", query: query)
         case .event: return client.url("v1/events", query: ["receipt_only": "true"])

@@ -73,7 +73,14 @@ def import_sqlite(archive, source):
     else:
         if archive.execute("SELECT 1 FROM audio LIMIT 1").fetchone():
             raise ValueError("PostgreSQL archive already contains audio")
-        seeds = {"label_state", "tag_state", "voice_meta", "profiles", "profile_events"}
+        seeds = {
+            "label_state", "tag_state", "voice_meta", "profiles", "profile_events",
+            "transcription_schedule",
+        }
+        if archive.execute(
+            "SELECT 1 FROM transcription_schedule WHERE id!=1 OR recent_streak!=0 LIMIT 1"
+        ).fetchone():
+            raise ValueError("PostgreSQL archive already contains transcription scheduling history")
         names = [name for name in names if name not in {"profiles", "profile_events"}]
         for table in names:
             if (

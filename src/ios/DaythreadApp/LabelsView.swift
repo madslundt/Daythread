@@ -81,6 +81,7 @@ struct LabelTimelineView: View {
                     NavigationLink(L10n.text("Merge / split / delete")) { LabelManagementView(entityID: data.entity.id) }
                     Button(L10n.text("Group conversation / add decision or question")) { annotation = AnnotationSelection(entry: nil, entityID: data.entity.id, revision: data.revision) }
                 }
+                LabelFactsSection(entityID: data.entity.id, revision: data.revision)
             }
             Section(L10n.text("Dates in ") + (model.serverTimeZoneIdentifier ?? L10n.text("server calendar"))) {
                 TextField(L10n.text("From · YYYY-MM-DD"), text: $start).keyboardType(.numbersAndPunctuation)
@@ -88,7 +89,7 @@ struct LabelTimelineView: View {
                 Button(L10n.text("Apply dates")) { Task { await load() } }.disabled(loading)
                 Button(L10n.text("All dates")) { start = ""; end = ""; Task { await load() } }
             }
-            ForEach(entries) { entry in
+            ForEach(entries.filter { $0.kind != "fact" }) { entry in
                 Section(entry.entry_type == "decision" ? L10n.text("Decision register") : entry.entry_type == "note" ? annotationMeaning(entry.kind ?? "") : associationMeaning(entry.relation ?? "")) {
                     if let title = entry.title { Text(title).font(.headline) }
                     if let decision = entry.decision {

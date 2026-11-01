@@ -35,6 +35,7 @@ def group_sources(client, locations):
         at = AT + timedelta(seconds=index * 30)
         data = gps(latitude=location[0], longitude=location[1], location_captured_at=stamp(at))
         result.append(capture(client, started_at=stamp(at), **data).json())
+        client.app.state.memory.store.complete(result[-1]["id"], "A recorded conversation.")
     return result
 
 

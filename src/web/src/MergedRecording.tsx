@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { t } from "./i18n";
+import { displayLocale, t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { ErrorState, Loading } from "./UI";
@@ -13,6 +13,8 @@ export type CombinedRecording = {
   id: string; title: string; started_at: string; ended_at: string;
   state: string; duration_seconds: number; audio_available: boolean;
   audio_availability?: string;
+  audio_version?: string;
+  interruptions?: { position_seconds: number; gap_seconds: number; previous_end: string; next_start: string }[];
   text: string | null; transcript_version: string;
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
     start_seconds?: number; end_seconds?: number; start_estimated?: boolean }[];
@@ -27,7 +29,9 @@ export function MergedRecording({ recordingID }: { recordingID: string }) {
   </>;
 }
 
-export function MergedRecordingContent({ recording }: { recording: CombinedRecording }) {
+export function MergedRecordingContent({ recording, resourceBase, resourceQuery = "", timezone = "UTC" }: {
+  recording: CombinedRecording; resourceBase?: string; resourceQuery?: string; timezone?: string;
+}) {
   const playback = useRecordingSeek();
   const topics = useMemo(() => groupTopicRuns(recording.sections, (section) => section.title,
     (left, right) => left.end_offset === right.start_offset), [recording.sections]);
@@ -52,11 +56,13 @@ export function MergedRecordingContent({ recording }: { recording: CombinedRecor
     setSelectedTopic(section.id);
     playback.seekTo(section.start_seconds);
   }
-  const base = `/v1/recordings/${encodeURIComponent(recording.id)}`;
+  const base = resourceBase || `/v1/recordings/${encodeURIComponent(recording.id)}`;
+  const url = (suffix: string) => profileResourceUrl(`${base}/${suffix}${resourceQuery}`);
+  const boundaryTime = (value: string) => new Date(value).toLocaleTimeString(displayLocale(), { timeZone: timezone, hour12: false });
   const text = Array.from(recording.text || "");
   return <div className="merged-recording">
     {recording.audio_available ? <RecordingAudioPlayer
-      src={profileResourceUrl(`${base}/audio`)} waveformSrc={profileResourceUrl(`${base}/waveform`)}
+      src={url("audio")} waveformSrc={url("waveform")}
       label={recording.title || t("Recording")} durationHint={recording.duration_seconds}
       bookmarks={occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
         label: section.title + (section.occurrenceCount > 1 ? ` · ${t("Recording")} ${section.occurrenceNumber}` : "")
@@ -64,8 +70,18 @@ export function MergedRecordingContent({ recording }: { recording: CombinedRecor
         seconds: section.start_seconds, onSelect: () => selectTopic(section.id),
       }])}
       audioRef={playback.audioRef} onPositionChange={followPosition} onReady={playback.onReady} /> : null}
+    {recording.interruptions?.length ? <details className="recording-disclosure">
+      <summary>{t("Playback joins available audio; gaps and overlaps are marked here.")}</summary>
+      <ul>{recording.interruptions.map((boundary, index) => <li key={index}>
+        <button className="text-link" onClick={() => playback.seekTo(boundary.position_seconds)}>
+          {playbackTime(boundary.position_seconds)}
+        </button>{" · "}{boundaryTime(boundary.previous_end)} → {boundaryTime(boundary.next_start)}
+      </li>)}</ul>
+    </details> : null}
     {!recording.audio_available && recording.state === "done" ? <p className="caption">
-      {recording.audio_availability === "missing"
+      {recording.audio_availability === "transcript_only"
+        ? t("Imported transcript only; original audio is unavailable.")
+        : recording.audio_availability === "missing"
         ? t("The archive expects audio, but the file is missing.")
         : t("Audio was removed by your retention policy. The transcript remains available.")}
     </p> : null}
@@ -83,7 +99,9 @@ export function MergedRecordingContent({ recording }: { recording: CombinedRecor
     </details> : <p className="transcript-text">{recording.text}</p>
       : <p className="caption" role="status">{recording.state === "expired"
         ? t("Transcript unavailable after retention.") : t("This recording is waiting for transcription.")}</p>}
+    {recording.text !== null && recording.state === "processing"
+      ? <p className="caption" role="status">{t("Processing audio")}</p> : null}
     {recording.audio_available ? <a className="text-link caption" download
-      href={profileResourceUrl(`${base}/audio`)}>{t("Download archived audio")}</a> : null}
+      href={url("audio")}>{t("Download archived audio")}</a> : null}
   </div>;
 }

@@ -17,6 +17,7 @@
 		0F671AFCAEC7194A609ACACB /* LocationZonesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41433A38E817CA86BBB2EBBB /* LocationZonesView.swift */; };
 		1193826A7496FFF93F272CC1 /* DecisionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9B231914E1791C040EBABEC /* DecisionsView.swift */; };
 		1345FE32B947E92896337795 /* RecapContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EF87E070429C693E0345F2 /* RecapContentView.swift */; };
+		173801032F1A4977A9F84E68 /* OmiStorageRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D615ED89A94CBF9F5D048401 /* OmiStorageRecovery.swift */; };
 		179CB0F62604AAE45570665A /* DayAtGlanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99CE0BB82D9FF1AA5A0AC2B7 /* DayAtGlanceView.swift */; };
 		226B330B4479EB698A561D8A /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = F128E5CBB594324FD8DDEFDB /* Localization.swift */; };
 		2B3AC4B187300F27A7226FBE /* InboxDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */; };
@@ -41,14 +42,17 @@
 		55B361E64C52BA840E111EB2 /* SummaryTranslationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9419EBB2EFAE26623E02305 /* SummaryTranslationView.swift */; };
 		561F3EFD5A7C8B39569D5265 /* RewindView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DD60BA052C3082988C62FFB /* RewindView.swift */; };
 		5A5E954DDA1E71D734A50CD3 /* ShareRecordingTimeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA15EC8C9236439CBF628384 /* ShareRecordingTimeView.swift */; };
+		5AD5A69396991DAE83F3E330 /* CalendarPrepSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A82960A00C9E3C26E1C6F5B /* CalendarPrepSection.swift */; };
 		5B63A5AB8A4BA07A4286A407 /* AudioImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8E0C65FBB633872C819851 /* AudioImportView.swift */; };
 		5F58C435E7754AE9BAC1A1C7 /* DayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18BD1FFD6D04485108E8C274 /* DayView.swift */; };
 		62893363BD52F423696D7E98 /* ConversationPrepModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C169EEA87E2A6B54D5E9838 /* ConversationPrepModels.swift */; };
+		691A57E905FB7394E7AA6EC3 /* LabelFactsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA6795286B26D0B64B50420 /* LabelFactsSection.swift */; };
 		6BE9F4AF28BA91CCE379FEE1 /* ShareImportTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D621C4FA2ABC2AFC5FC0AA /* ShareImportTransport.swift */; };
 		6DEFFAE442C26C83A4F39B4B /* CompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9CB500EA9D9702FA80CCEEE /* CompletionNotifications.swift */; };
 		6E0F9D2A04A698C8F15BF59E /* OmiConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC0E70E7564544B0455D93B /* OmiConnectionsView.swift */; };
 		6FD61A9674BAD7B7DDB1ABAE /* LabelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC8091B727EF202C3B98C43 /* LabelsView.swift */; };
 		73B100461CEE047C27F1C78B /* InboxFollowUpsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1503A02D3078ED6DA9C663CC /* InboxFollowUpsView.swift */; };
+		76E716B6657BA53E4A135C50 /* RecapTemplateControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3246812D36947A7C1B7274 /* RecapTemplateControl.swift */; };
 		76E71D234DF046C275633196 /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB9431A4038E138C213F99FF /* BackendClient.swift */; };
 		771A9CEE94B0C396BBC7564B /* RecapTopicRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B4F66583DFEBB50719910D6 /* RecapTopicRow.swift */; };
 		7755AE4258FFBAB63F9358A7 /* DecisionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2971E2A1230492061E3C7FBA /* DecisionEditor.swift */; };
@@ -74,6 +78,7 @@
 		B0F5D7D3133AA9081B02F188 /* OmiCore in Frameworks */ = {isa = PBXBuildFile; productRef = F4F704041066C06A4127AA2C /* OmiCore */; };
 		B14C4578854F886E3A64A262 /* DayFiltersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6352C73123BE37FA870C3FBE /* DayFiltersView.swift */; };
 		B8DDB7E4A76FD098B8B68093 /* DaythreadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 766B19313D8093CC86BA7D68 /* DaythreadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BAB1BE3D3C5C53E9A728F1A6 /* TranscriptionPreviewControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB27B7A4CD9D5F0C9DECB12B /* TranscriptionPreviewControl.swift */; };
 		BB65DDDD5D6C9B15B47336AB /* LabelManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 584DCF801AE907B140993BB7 /* LabelManagementView.swift */; };
 		BB8076F4C2F72E5BF2807565 /* LabelDecisionLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A400E041D6B8F8DB948FA3 /* LabelDecisionLinkView.swift */; };
 		BC50E17EE6E3070C99C38EEF /* SourceLabelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A9EE30418C234659398492 /* SourceLabelsView.swift */; };
@@ -159,11 +164,13 @@
 		5775747F9C8097EC6511E016 /* AppNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigationView.swift; sourceTree = "<group>"; };
 		584DCF801AE907B140993BB7 /* LabelManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelManagementView.swift; sourceTree = "<group>"; };
 		597AAA8B98EAC89C79A8F6F0 /* LabelModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelModels.swift; sourceTree = "<group>"; };
+		5A82960A00C9E3C26E1C6F5B /* CalendarPrepSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarPrepSection.swift; sourceTree = "<group>"; };
 		5EA6D3F0F717FCAA5F914634 /* ArchiveMarkdownExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveMarkdownExport.swift; sourceTree = "<group>"; };
 		6352C73123BE37FA870C3FBE /* DayFiltersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayFiltersView.swift; sourceTree = "<group>"; };
 		647F530100A432242975E56F /* DisplayLabelTranslations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayLabelTranslations.swift; sourceTree = "<group>"; };
 		6610AAB61E4837A3A1C8D5A2 /* PhoneLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLocation.swift; sourceTree = "<group>"; };
 		6CAC3DECF9B7DC3C25065E78 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		6FA6795286B26D0B64B50420 /* LabelFactsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelFactsSection.swift; sourceTree = "<group>"; };
 		7082ED9BB118C28A5F53E03F /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		71A187A0A53A548A61D917AB /* DaythreadLicense.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = DaythreadLicense.txt; sourceTree = "<group>"; };
 		74C047726CF4989C87301F32 /* da */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = da; path = da.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -176,6 +183,7 @@
 		7EDC4CA80CADA9FEEF2F87E5 /* WeeklyReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyReviewView.swift; sourceTree = "<group>"; };
 		88344B9913B8B63E905C1D60 /* RecordingAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioPlayer.swift; sourceTree = "<group>"; };
 		8BBC405B79DAB5B0FE042AB3 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		8C3246812D36947A7C1B7274 /* RecapTemplateControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapTemplateControl.swift; sourceTree = "<group>"; };
 		8C8E0C65FBB633872C819851 /* AudioImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioImportView.swift; sourceTree = "<group>"; };
 		90A400E041D6B8F8DB948FA3 /* LabelDecisionLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelDecisionLinkView.swift; sourceTree = "<group>"; };
 		951F560D82A29B4BB38EDFC8 /* ShareImportOptionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImportOptionsTests.swift; sourceTree = "<group>"; };
@@ -199,10 +207,12 @@
 		C21BD15F9A95910F6F3C98C4 /* SpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakersView.swift; sourceTree = "<group>"; };
 		C8871F77984DD4022C0E05E3 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		C9EDADCE216CAE37DB158361 /* WeeklyReviewContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyReviewContent.swift; sourceTree = "<group>"; };
+		CB27B7A4CD9D5F0C9DECB12B /* TranscriptionPreviewControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPreviewControl.swift; sourceTree = "<group>"; };
 		CDC999B4C66132F7247DC1A2 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/Localizable.strings; sourceTree = "<group>"; };
 		D00164C2FE999659BEC55CCF /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		D272A816F08BB57EB989BF7C /* LabelNoteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelNoteEditor.swift; sourceTree = "<group>"; };
 		D3B4927CDA1C6E5BD24180FE /* DecisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionModels.swift; sourceTree = "<group>"; };
+		D615ED89A94CBF9F5D048401 /* OmiStorageRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmiStorageRecovery.swift; sourceTree = "<group>"; };
 		D7DFB7D77BACCD5128377FF6 /* ConversationPrepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrepView.swift; sourceTree = "<group>"; };
 		D8E4BCEE323B6A99D72551B3 /* MergedRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergedRecordingView.swift; sourceTree = "<group>"; };
 		D966400DBBB58B9611CAD378 /* BackgroundUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundUploader.swift; sourceTree = "<group>"; };
@@ -284,6 +294,7 @@
 				AB9431A4038E138C213F99FF /* BackendClient.swift */,
 				F7AC7EA03D7D0CEE3B70A0BB /* BackendEndpointsView.swift */,
 				D966400DBBB58B9611CAD378 /* BackgroundUploader.swift */,
+				5A82960A00C9E3C26E1C6F5B /* CalendarPrepSection.swift */,
 				096573541F1197E4105E64B8 /* CaptureView.swift */,
 				21FA3B2FB92CAABE195C52F6 /* ChatConversationContent.swift */,
 				8BBC405B79DAB5B0FE042AB3 /* ChatView.swift */,
@@ -313,6 +324,7 @@
 				B6BE7FB9BFAA9D45BEFA7EFA /* InboxView.swift */,
 				1E2ADF1FD7DEBAEDE16729A5 /* Info.plist */,
 				90A400E041D6B8F8DB948FA3 /* LabelDecisionLinkView.swift */,
+				6FA6795286B26D0B64B50420 /* LabelFactsSection.swift */,
 				584DCF801AE907B140993BB7 /* LabelManagementView.swift */,
 				597AAA8B98EAC89C79A8F6F0 /* LabelModels.swift */,
 				D272A816F08BB57EB989BF7C /* LabelNoteEditor.swift */,
@@ -325,12 +337,14 @@
 				D8E4BCEE323B6A99D72551B3 /* MergedRecordingView.swift */,
 				75EEBB6559DA06DCF7FF29D3 /* OmiBluetooth.swift */,
 				1AC0E70E7564544B0455D93B /* OmiConnectionsView.swift */,
+				D615ED89A94CBF9F5D048401 /* OmiStorageRecovery.swift */,
 				6610AAB61E4837A3A1C8D5A2 /* PhoneLocation.swift */,
 				098D6B2A5946A45042E68B98 /* PhoneRecorder.swift */,
 				F26052510BCFA46A84F81952 /* PhoneRecordingSection.swift */,
 				29EF87E070429C693E0345F2 /* RecapContentView.swift */,
 				99E42A2B1223F6C7FFBBF343 /* RecapHistoryView.swift */,
 				18FE45FC5226550AAB5A5EE0 /* RecapOriginalTopicsView.swift */,
+				8C3246812D36947A7C1B7274 /* RecapTemplateControl.swift */,
 				0B4F66583DFEBB50719910D6 /* RecapTopicRow.swift */,
 				88344B9913B8B63E905C1D60 /* RecordingAudioPlayer.swift */,
 				E96729107C2B61E0DF8DF796 /* RecordingImporter.swift */,
@@ -345,6 +359,7 @@
 				1B4951A8AFA1DBB6BF840D57 /* SourceTranscriptView.swift */,
 				C21BD15F9A95910F6F3C98C4 /* SpeakersView.swift */,
 				F9419EBB2EFAE26623E02305 /* SummaryTranslationView.swift */,
+				CB27B7A4CD9D5F0C9DECB12B /* TranscriptionPreviewControl.swift */,
 				C9EDADCE216CAE37DB158361 /* WeeklyReviewContent.swift */,
 				7EDC4CA80CADA9FEEF2F87E5 /* WeeklyReviewView.swift */,
 				227E6B9321A2A035A96343E8 /* InfoPlist.strings */,
@@ -532,6 +547,7 @@
 				76E71D234DF046C275633196 /* BackendClient.swift in Sources */,
 				364BBC33337956712091C2A8 /* BackendEndpointsView.swift in Sources */,
 				C7D462AD3E1F1F43F8D4F36A /* BackgroundUploader.swift in Sources */,
+				5AD5A69396991DAE83F3E330 /* CalendarPrepSection.swift in Sources */,
 				3E52E409C4C00667C688F3AC /* CaptureView.swift in Sources */,
 				A21C650FAB5B936E33F0A6B7 /* ChatConversationContent.swift in Sources */,
 				42EC0B6977B04BB5AA69E158 /* ChatView.swift in Sources */,
@@ -558,6 +574,7 @@
 				73B100461CEE047C27F1C78B /* InboxFollowUpsView.swift in Sources */,
 				DD5A23DA9B7A294179F53661 /* InboxView.swift in Sources */,
 				BB8076F4C2F72E5BF2807565 /* LabelDecisionLinkView.swift in Sources */,
+				691A57E905FB7394E7AA6EC3 /* LabelFactsSection.swift in Sources */,
 				BB65DDDD5D6C9B15B47336AB /* LabelManagementView.swift in Sources */,
 				0761E9B771D3BC7EA81FAD34 /* LabelModels.swift in Sources */,
 				82A22A10A01AC16DF5CE8C09 /* LabelNoteEditor.swift in Sources */,
@@ -570,12 +587,14 @@
 				FDEE1572CE7D716310452B04 /* MergedRecordingView.swift in Sources */,
 				0531F8509E0E4DF0AB46A0FC /* OmiBluetooth.swift in Sources */,
 				6E0F9D2A04A698C8F15BF59E /* OmiConnectionsView.swift in Sources */,
+				173801032F1A4977A9F84E68 /* OmiStorageRecovery.swift in Sources */,
 				36083DDD4173D2CF6467D617 /* PhoneLocation.swift in Sources */,
 				42EB4AE14EF594826F1137AF /* PhoneRecorder.swift in Sources */,
 				A7FDEC49086B665391472D49 /* PhoneRecordingSection.swift in Sources */,
 				1345FE32B947E92896337795 /* RecapContentView.swift in Sources */,
 				328C18D503CA89BAC38FFA3A /* RecapHistoryView.swift in Sources */,
 				3132D69B347A503CCB08AD8C /* RecapOriginalTopicsView.swift in Sources */,
+				76E716B6657BA53E4A135C50 /* RecapTemplateControl.swift in Sources */,
 				771A9CEE94B0C396BBC7564B /* RecapTopicRow.swift in Sources */,
 				47FDD87E606B95AA4DA842B4 /* RecordingAudioPlayer.swift in Sources */,
 				881D221CC42F8DFA1DF56361 /* RecordingImportTransport.swift in Sources */,
@@ -590,6 +609,7 @@
 				DBEF4B6326C34AA6D2566D55 /* SourceTranscriptView.swift in Sources */,
 				F6C471835C210106ABB27408 /* SpeakersView.swift in Sources */,
 				55B361E64C52BA840E111EB2 /* SummaryTranslationView.swift in Sources */,
+				BAB1BE3D3C5C53E9A728F1A6 /* TranscriptionPreviewControl.swift in Sources */,
 				F6986CBB6DD97DB6564F2DF4 /* WeeklyReviewContent.swift in Sources */,
 				C0553DD95914C91B4369AD3F /* WeeklyReviewView.swift in Sources */,
 			);

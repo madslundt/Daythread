@@ -193,7 +193,7 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
         assert "Cite only original source UUIDs copied exactly" in task
         assert key in task
         if language == "auto":
-            assert "language with code" not in task
+            assert "language with code da" in task
             assert "Use the transcript language." in task
             assert "titles, headings and summary prose" in task
             assert "predominant language of the original transcripts" in task
@@ -250,6 +250,7 @@ async def test_recording_titles_receive_summary_language_instruction(tmp_path, l
         if language == "auto":
             assert "Use the transcript language." in task
             assert "predominant language of the original transcripts" in task
+            assert "language with code da" in task
         else:
             assert f"language with code {language}" in task
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
@@ -262,6 +263,67 @@ async def test_recording_titles_receive_summary_language_instruction(tmp_path, l
         result = await analyze(memory, {"text": transcript})
     assert result["title"] == "Dagens planer"
     assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_auto_topic_language_is_detected_once_for_the_whole_original_recording(tmp_path):
+    from types import SimpleNamespace
+
+    from omi_local.recording_topics import analyze
+
+    danish = "Vi talte om dagens planer og aftalte at mødes i morgen. " * 300
+    text = danish + "We will discuss the budget and plan the next steps tomorrow. " * 40
+    calls = []
+
+    class Model:
+        async def generate_json(self, task, evidence):
+            calls.append(task)
+            assert "language with code da" in task
+            return json.dumps({"title": "Dagens planer", "sections": [
+                {"title": "Dagens planer", "start_quote": evidence[:80]},
+            ]})
+
+    memory = SimpleNamespace(inference=Model(), settings=config(tmp_path))
+    result = await analyze(memory, {"text": text})
+    assert len(calls) > 1
+    assert result["title"] == "Dagens planer"
+
+
+@pytest.mark.anyio
+async def test_daily_topics_and_writers_use_original_language_instead_of_english_notes(tmp_path):
+    keys = [str(uuid4()), str(uuid4())]
+    english_notes = ["Tomorrow's plans were discussed.", "Budget was discussed."]
+    notes = [{"id": key, "started_at": stamp(AT), "text": text + f" [{key}]"}
+             for key, text in zip(keys, english_notes, strict=True)]
+    originals = [
+        {"id": keys[0], "started_at": stamp(AT),
+         "text": "Vi talte om dagens planer og aftalte at mødes i morgen. " * 10},
+        {"id": keys[1], "started_at": stamp(AT), "text": "We discussed next year's budget."},
+    ]
+    topics = [{"title": title, "scope": title, "items": [f"n{index + 1}"]}
+              for index, title in enumerate(["Dagens planer", "Budget"])]
+    calls = []
+
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        calls.append(payload)
+        assert "language with code da" in payload["task"]
+        if payload["task"].startswith(("Organize useful recorded information",
+                                       "Review the complete daily topic plan")):
+            answer = json.dumps({"topics": topics})
+        else:
+            key = next(key for key in keys if key in payload["evidence"])
+            answer = f"Planerne blev drøftet. [{key}]"
+        return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
+
+    settings = config(tmp_path)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result, _ = await Inference(settings, http).summarize_daily_traced(
+            notes, "a daily recap", original_sources=originals,
+        )
+    assert "## Dagens planer" in result
+    assert len(calls) == 5  # Initial plan, reconciliation, global review and both writers.
+    assert settings.summary_language == "auto"
 
 
 @pytest.mark.anyio

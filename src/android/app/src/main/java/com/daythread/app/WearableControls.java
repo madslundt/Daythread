@@ -28,11 +28,11 @@ final class WearableControls {
         mapping(context, page, "single_click_action", R.string.single_click, WearableAction.MARK);
         mapping(context, page, "double_click_action", R.string.double_click, WearableAction.MEETING);
         Button duration = new Button(context); duration.setAllCaps(false); page.addView(duration);
-        Runnable refresh = () -> duration.setText(context.getString(R.string.recent_audio_duration, duration(context)));
+        Runnable refresh = () -> duration.setText(context.getString(R.string.recent_audio_duration, durationLabel(context, duration(context))));
         refresh.run();
         duration.setOnClickListener(view -> {
-            int[] values = {15, 30, 60, 120, 300};
-            String[] labels = Arrays.stream(values).mapToObj(value -> context.getString(R.string.duration_seconds, value)).toArray(String[]::new);
+            int[] values = {15, 30, 60, 120, 180};
+            String[] labels = Arrays.stream(values).mapToObj(value -> durationLabel(context, value)).toArray(String[]::new);
             int selected = 1; for (int i = 0; i < values.length; i++) if (values[i] == duration(context)) selected = i;
             new AlertDialog.Builder(context).setTitle(R.string.recent_audio).setSingleChoiceItems(labels, selected, (dialog, which) -> {
                 AppState.preferences(context).edit().putInt("recent_audio_seconds", values[which]).apply(); refresh.run(); dialog.dismiss();
@@ -48,6 +48,11 @@ final class WearableControls {
             settings.setOnClickListener(view -> context.startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.getPackageName())));
         }
         TextView help = new TextView(context); help.setText(R.string.wearable_controls_help); help.setPadding(0, 8, 0, 16); page.addView(help);
+    }
+    private static String durationLabel(Context context, int seconds) {
+        if (seconds < 60) return context.getString(R.string.duration_seconds, seconds);
+        int minutes = seconds / 60;
+        return context.getResources().getQuantityString(R.plurals.duration_minutes, minutes, minutes);
     }
     private static void mapping(Context context, LinearLayout page, String key, int title, WearableAction fallback) {
         SharedPreferences prefs = AppState.preferences(context);

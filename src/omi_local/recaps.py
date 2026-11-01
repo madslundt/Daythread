@@ -18,6 +18,8 @@ from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
 from .summary_filter import NO_CONTENT
 from .summary_filter import VERSION as SUMMARY_FILTER_VERSION
+from .summary_templates import VERSION as TEMPLATE_VERSION
+from .summary_templates import SummaryTemplate, purpose_with_template, selected
 from .vendor_imports import transcript_import
 from .voice_activity import analyze_voice
 
@@ -65,6 +67,9 @@ class Recaps:
     def __init__(self, memory: Memory):
         self.memory = memory
 
+    def presentation(self, day: date):
+        return selected(self.memory, day)
+
     def groups(self, now: datetime, db: sqlite3.Connection | None = None) -> list[Conversation]:
         return recordings(self.memory.store.recap_snapshot(db), now,
                           5 * 60)
@@ -86,11 +91,16 @@ class Recaps:
             "prompt": PROMPT_VERSION,
         })
 
-    def day_key(self, groups: list[Conversation]) -> str:
-        return digest({
+    def day_key(self, groups: list[Conversation], day: date | None = None, db=None) -> str:
+        identity = {
             "conversations": [self.group_key(group) for group in groups if group.ready],
             "prompt": DAY_PROMPT_VERSION,
-        })
+        }
+        presentation = selected(self.memory, day, db)
+        if presentation != SummaryTemplate():
+            identity.update(presentation=presentation.model_dump(),
+                            presentation_version=TEMPLATE_VERSION)
+        return digest(identity)
 
     def guard(
         self, day: date, now: datetime, groups: list[Conversation],
@@ -133,7 +143,7 @@ class Recaps:
         row = memory.store.diary(day.isoformat())
         if row:
             result = json.loads(row["content"])
-            stale = row["fingerprint"] != self.day_key(groups)
+            stale = row["fingerprint"] != self.day_key(groups, day=day)
             pending_ids = {r["id"] for g in groups if not g.ready for r in g.sources}
             if any(source["id"] in pending_ids for source in result["sources"]):
                 # Late speech or a related upload can reopen selected evidence.
@@ -198,10 +208,15 @@ class Recaps:
         if not sources:
             summary = NO_CONTENT
         else:
+            context = (
+                "notes from received audio before interrupted capture. A capture stop is not "
+                "evidence of silence or that the conversation ended. "
+                if group.basis == "capture_stopped" else
+                "notes from a finished upload or a live conversation followed by a long pause. "
+            )
             summary = await memory.inference.summarize(
                 self.note_sources(sources),
-                "notes from a finished upload or a live conversation followed by a long pause. "
-                "An uploaded file may contain only part of a conversation. " + RELEVANCE +
+                context + "An uploaded file may contain only part of a conversation. " + RELEVANCE +
                 "Preserve short meaningful answers in context, dates, "
                 "agreements and decisions without claiming the conversation has ended. "
                 "Omit fillers, unintelligible fragments and isolated "
@@ -259,7 +274,7 @@ class Recaps:
         memory = self.memory
         start, end = memory.day_window(day)
         groups = self.for_day(self.groups(now), day)
-        key = self.day_key(groups)
+        key = self.day_key(groups, day=day)
         guard = self.guard(day, now, groups)
         existing = memory.store.diary(day.isoformat())
         if existing and existing["fingerprint"] == key:
@@ -276,6 +291,7 @@ class Recaps:
     async def synthesize(self, day, now, groups, guard, result):
         """Share the grounded preparation/synthesis pipeline across independent recap scopes."""
         memory = self.memory
+        template = self.presentation(day)
         start, end = memory.day_window(day)
         ready = [g for g in groups if g.ready]
         blocked = sum(r["state"] == "blocked" for r in result["sources"])
@@ -307,7 +323,7 @@ class Recaps:
         result.update(sources=sources, day=day.isoformat(), timezone=memory.settings.timezone,
                       model=memory.settings.llm_route("summary").model,
                       generated_at=stamp(now), no_recap_content=bool(ready) and not inputs,
-                      stale=False)
+                      stale=False, summary_template=template.model_dump())
         trace = {"conversation_preparation": "cached_transcribed_recordings",
                  "conversation_count": len(ready), "exact_repeated_excerpt_ids": repeated}
         if inputs:
@@ -355,6 +371,7 @@ class Recaps:
                 "each has useful substance. Do not describe pending conversations or claim "
                 "the day is complete"
             )
+            purpose = purpose_with_template(purpose, template)
             synthesis_key = digest({
                 "kind": "unique_daily_synthesis", "inputs": inputs,
                 "prompt": DAY_PROMPT_VERSION, "purpose": purpose,

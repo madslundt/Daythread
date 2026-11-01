@@ -28,6 +28,23 @@ const configuration: ConfigurationData = {
 };
 
 describe("configuration drafts", () => {
+  it("edits vocabulary as lines and preserves explicit provider format overrides", () => {
+    const data: ConfigurationData = { ...configuration,
+      values: { ...configuration.values, stt_vocabulary: ["Søren", "Daythread"] },
+      fields: [...configuration.fields, { key: "stt_vocabulary", label: "Transcription vocabulary",
+        group: "Transcription", kind: "terms", nullable: false,
+        restart_required: false, description: "Names and terms" }],
+    };
+    const draft = configurationDraft(data);
+    expect(configurationChanges(data, draft)).toEqual({});
+    draft.values.stt_vocabulary = " Søren \n\n København ";
+    draft.routes.stt_routes[0].vocabulary_mode = "off";
+    const changes = configurationChanges(data, draft);
+    expect(changes.stt_vocabulary).toEqual(["Søren", "København"]);
+    expect((changes.stt_routes as Record<string, { vocabulary_mode: string }>).da.vocabulary_mode).toBe("off");
+    draft.routes.stt_routes[0].vocabulary_mode = null;
+    expect((configurationChanges(data, draft).stt_routes as Record<string, { vocabulary_mode: null }>).da.vocabulary_mode).toBeNull();
+  });
   it("preserves provider keys until explicitly replaced, disabled, or inherited", () => {
     const data: ConfigurationData = { ...configuration,
       values: { ...configuration.values, llm_api_key: null },

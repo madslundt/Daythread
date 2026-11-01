@@ -196,7 +196,10 @@ The JSON chat route remains available. Web/native clients use a separate NDJSON 
 ## Summaries and knowledge
 
 Completed nonempty transcripts receive a recording title and consecutive subject chapters from the
-local summary model. Multipart uploads are analyzed together after all parts finish; nearby live
+local summary model. Automatic output language is detected from the complete original text before
+windowing; daily planning and its writers share the language resolved from original speech rather
+than generated notes. Explicit language preferences override detection. Multipart uploads are
+analyzed together after all parts finish; nearby live
 chunks from the same stream share context. A live stream gets a 60-second settling period before
 analysis, which schedules navigation without establishing conversation closure. Long transcripts
 use bounded windows with the preceding subject and transcript tail as context; an explicit
@@ -207,7 +210,17 @@ source text to retain complete, local character spans. Shared chapter IDs let we
 Today views open one subject across several audio parts, independently of member pagination.
 Exact audio seeking is available only when validated STT segment boundaries align with the
 passage; otherwise navigation uses its original transcript and recording interval.
-Combined uploaded recordings keep a bookmark for every topic. When a topic has no aligned
+Timeline sessions also open as one player and combined transcript on web and iPhone, including
+short Omi chunks before topic analysis finishes. Only completed nonempty transcripts enter timeline
+grouping, deduplication, counts and member pagination. Session playback uses these same selected
+parts and marks omitted intervals as interruptions, including inside multipart files. Completed
+passages remain readable while later chunks are transcribing. Original sources, corrections and their pagination remain under the
+tools disclosure. Session playback concatenates received audio in capture order and marks every
+gap or overlap; it does not invent missing samples or establish conversation continuity. Audio,
+waveforms and transcript offsets use this same playback order, with day, search, tag and location
+scope preserved. Versioned audio URLs reject changed membership rather than silently seeking into
+a different session. No merged archive file or rewritten source timestamps are created.
+Combined recordings keep a bookmark for every topic. When a topic has no aligned
 timestamp, its bookmark seeks to the beginning of the containing upload part and is marked
 as approximate; this does not add timing to the canonical transcript. Topic selection pauses
 the single player and seeks without starting playback. Original-only recap topics show labeled
@@ -224,6 +237,21 @@ topic without a numeric target, cap or overflow cutoff. A new recap version clea
 so a reorganized row cannot inherit another subject's evidence or action selection.
 A separate background consumer backfills existing recordings without repeating transcription.
 Analysis is cached by prompt/model/language and the versions of every source in its context.
+Live topic analysis waits for a contiguous completed audio chunk without recognized speech;
+background noise or unintelligible voice can qualify without a fixed acoustic-silence timer.
+Continuous speech uses stable windows of at most 15 minutes, split at upload boundaries,
+so later chunks do not invalidate completed windows. Missing uploads and pending transcripts
+do not establish a speech break; the maximum window still bounds the wait. These are topic
+processing checkpoints, independent of conversation closure and the recap's five-minute rule.
+Each validated text window is checkpointed immediately, so analysis resumes at the next
+unfinished window after a model failure or a restart during processing. Partial results stay internal until the complete
+context passes its evidence guard. Retries wait from the failure time rather than the job's
+start; changed sources, grouping, model or language invalidate partial results.
+Topic requests use provider-enforced JSON schemas when supported. Unsupported providers
+retain prompt-only JSON with the same validation. Invalid JSON, schema fields or quote
+anchors get one corrective retry for that excerpt; cached parts are never sent again.
+The first section starts at offset zero, so a repeated opening quote is unambiguous there.
+Later section quotes still require unique ordered matches in the original transcript.
 Dependencies in `recording_topic_sources` invalidate sibling chapters on correction, deletion or
 transcript expiry; atomic publication rejects evidence or grouping changes during generation.
 Recap preparation shares this cached subject map, sends exact per-subject transcript copies with

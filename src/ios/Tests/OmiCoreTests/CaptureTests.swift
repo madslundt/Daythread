@@ -3,6 +3,39 @@ import Copus
 @testable import OmiCore
 
 final class CaptureTests: XCTestCase {
+    func testPendantLightOnlyChangesAfterDeviceReadbackAndRestoresBrightness() {
+        var light = OmiLightSetting()
+        XCTAssertNil(light.command(enabled: false), "Read the actual device setting first")
+        XCTAssertTrue(light.receive(Data([23])))
+        XCTAssertEqual(light.enabled, true)
+        XCTAssertEqual(light.command(enabled: false), Data([0]))
+        XCTAssertEqual(light.enabled, true, "A pending write is not a confirmed change")
+        XCTAssertNil(light.command(enabled: true), "Allow one change at a time")
+        XCTAssertFalse(light.receive(Data([23])), "Readback must match the requested value")
+        XCTAssertTrue(light.receive(Data([0])))
+        XCTAssertEqual(light.enabled, false)
+        XCTAssertEqual(light.command(enabled: true), Data([23]))
+        XCTAssertTrue(light.receive(Data([23])))
+        XCTAssertEqual(light.enabled, true)
+    }
+
+    func testPendantLightRejectsInvalidReadingsAndResetsBetweenConnections() {
+        var light = OmiLightSetting()
+        for bytes in [Data(), Data([101]), Data([255]), Data([20, 30])] {
+            XCTAssertFalse(light.receive(bytes))
+            XCTAssertNil(light.enabled)
+        }
+        XCTAssertTrue(light.receive(Data([100])))
+        XCTAssertEqual(light.command(enabled: false), Data([0]))
+        light.cancelChange()
+        XCTAssertEqual(light.enabled, true)
+        XCTAssertTrue(light.receive(Data([0])))
+        light = OmiLightSetting()
+        XCTAssertNil(light.enabled)
+        XCTAssertTrue(light.receive(Data([0])))
+        XCTAssertEqual(light.command(enabled: true), Data([50]), "Use firmware default when no lit brightness was observed")
+    }
+
     func testPendantVibrationUsesFixedDistinctPulsesForEachClick() {
         XCTAssertEqual(WearableClick.single.hapticDuration, .short)
         XCTAssertEqual(WearableClick.double.hapticDuration, .long)
@@ -159,6 +192,10 @@ final class CaptureTests: XCTestCase {
         let customized = ClickControls(singleClick: "translate", doubleClick: "none", durationSeconds: 120)
         XCTAssertEqual(customized.singleClick, .translate); XCTAssertEqual(customized.doubleClick, .none)
         XCTAssertEqual(customized.durationSeconds, 120)
+        for seconds in [15, 30, 60, 120, 180] {
+            XCTAssertEqual(ClickControls(durationSeconds: seconds).durationSeconds, seconds)
+        }
+        XCTAssertEqual(ClickControls(durationSeconds: 300).durationSeconds, 180)
     }
     func testClockUsesUptimeAnchor() {
         let clock = CaptureClock(wall: Date(timeIntervalSince1970: 1000), uptime: 500)

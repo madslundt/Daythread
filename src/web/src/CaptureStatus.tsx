@@ -196,7 +196,7 @@ export function RecordingActivity({ status, error }: { status?: Status; error?: 
   const aiActive = generation?.running || 0;
   const activelyProcessing = !stale && (aiActive > 0 || (audioActive > 0 && status?.worker_running));
   const labels: Record<string, string> = {
-    summarizing: t("Summarizing"), organizing: t("Organizing recording topics"), translating: t("Translating"),
+    summarizing: t("Summarizing"), organizing: t("Updating recording topics"), translating: t("Translating"),
   };
   return <section className="recording-activity" aria-label={t("Recording activity")}>
     <div role="status" aria-live="polite">
@@ -209,34 +209,21 @@ export function RecordingActivity({ status, error }: { status?: Status; error?: 
           {t("Recording activity")}<Icon name="chevron-right" size={14} />
         </summary>
       {processing ? <div className="activity-processing">
-        {activelyProcessing ? <span className="processing-spinner" aria-hidden="true" /> : null}
         <div>
           <p className="activity-counts">{t("Recordings: {queued} queued · {processing} processing", { queued: processing.queued, processing: processing.transcribing })}</p>
-          {generation && (generation.queued > 0 || generation.running > 0) ? <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p> : null}
+          {generation && (generation.queued > 0 || generation.running > 0) ? <p className="activity-counts">{t("Background updates: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p> : null}
         </div>
       </div> : generation && (generation.queued > 0 || generation.running > 0) ? <div className="activity-processing">
-        {activelyProcessing ? <span className="processing-spinner" aria-hidden="true" /> : null}
-        <p className="activity-counts">{t("AI tasks: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p>
+        <p className="activity-counts">{t("Background updates: {queued} queued · {processing} processing", { queued: generation.queued, processing: generation.running })}</p>
       </div> : null}
       {waiting > 0 ? <p className="caption">{t("{count} recordings waiting to upload", { count: waiting })}</p> : null}
       {!stale && processing && status?.worker_running ? <ProcessingProgress processing={processing} /> : null}
       {generation && (generation.queued > 0 || generation.running > 0) ? <>
-        {!stale ? Object.entries(generation.stages).filter(([stage, count]) => count > 0 &&
-          !generation.active?.some((item) => item.stage === stage)).map(([stage, count]) =>
+        {!stale ? Object.entries(generation.stages).filter(([, count]) => count > 0).map(([stage, count]) =>
           <p className="caption" key={stage}>{labels[stage] || t("Processing")} · {count}</p>) : null}
-        {!stale ? generation.active?.map((item) => <div key={item.id}>
-          <p className="caption">
-            {labels[item.stage] || t("Processing")}
-            {item.total_chunks > 0 ? t(" · {value0} of {value1} chunks complete", {
-              value0: item.completed_chunks, value1: item.total_chunks,
-            }) : ""}
-            {t(" · {value0} sec elapsed", { value0: Math.floor(item.elapsed_seconds) })}
-          </p>
-          {item.total_chunks > 0 ? <progress
-            aria-label={t("{value0} chunks complete", { value0: labels[item.stage] || t("Processing") })}
-            value={item.completed_chunks} max={item.total_chunks}
-          /> : null}
-        </div>) : null}
+        {!stale && generation.stages.organizing > 0 ? <p className="caption">
+          {t("Titles and topics are updated in the background as recordings arrive.")}
+        </p> : null}
       </> : null}
       </details>
       {status && !status.worker_running && ((processing?.queued || 0) + (processing?.transcribing || 0) > 0) ? <p className="caption status-warning">{t("Processing is waiting for the worker to start.")}</p> : null}

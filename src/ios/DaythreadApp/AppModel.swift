@@ -7,6 +7,22 @@ import UIKit
 @MainActor @Observable
 final class AppModel {
     let microphone = PhoneRecorder()
+    var omiPauseWhileCharging = (UserDefaults.standard.object(forKey: "omiPauseWhileCharging") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(omiPauseWhileCharging, forKey: "omiPauseWhileCharging"); updateOmiCharging() }
+    }
+    var omiResumeAfterCharging = (UserDefaults.standard.object(forKey: "omiResumeAfterCharging") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(omiResumeAfterCharging, forKey: "omiResumeAfterCharging"); updateOmiCharging() }
+    }
+    private(set) var omiChargingPolicy = OmiChargingPolicy(paused: UserDefaults.standard.bool(forKey: "omiChargingPaused"))
+    private func updateOmiCharging() {
+        omiChargingPolicy.update(charging: bluetooth.charging, autoPause: omiPauseWhileCharging, autoResume: omiResumeAfterCharging)
+        UserDefaults.standard.set(omiChargingPolicy.paused, forKey: "omiChargingPaused")
+        applyRecordingSchedule()
+    }
+    private func resumeOmiManually() {
+        omiChargingPolicy.resumeManually(charging: bluetooth.charging, autoPause: omiPauseWhileCharging)
+        UserDefaults.standard.set(omiChargingPolicy.paused, forKey: "omiChargingPaused")
+    }
     private(set) var recordingSchedule: RecordingSchedule = {
         guard let data = UserDefaults.standard.data(forKey: "recordingSchedule.v1") else { return RecordingSchedule() }
         // A corrupt policy must not start capture.
@@ -23,7 +39,7 @@ final class AppModel {
             && (!usesManagedHosting || managedAccount.account?.hosting_active == true)
     }
     private var pendantCaptureAllowed: Bool {
-        liveCaptureAllowed && recordingSchedule.activeSource == "omi"
+        liveCaptureAllowed && recordingSchedule.activeSource == "omi" && !omiChargingPolicy.paused
     }
     func setRecordingSchedule(_ policy: RecordingSchedule) {
         let changed = recordingSchedule != policy
@@ -51,6 +67,7 @@ final class AppModel {
         Task { await microphone.start(archiveIdentity: archiveIdentity) }
     }
     func startManualPendant() {
+        resumeOmiManually()
         var policy = recordingSchedule; policy.enabled = true; policy.manualOverride = true; policy.manualSource = "omi"
         if paused || captureFailure != nil { setPaused(false) }
         setRecordingSchedule(policy)
@@ -64,6 +81,10 @@ final class AppModel {
             reassembler.reset(); pendingClock = nil
             flush(); nextAudioDate = nil; disconnectedAt = nil
             recordCaptureState("paused", cause: "user_pause")
+        }
+        if !bluetooth.captureEnabled && pendant, let codec = bluetooth.codec {
+            // Restart codec history with the new segment after an unsubscribed interval.
+            do { decoder = try FrameDecoder(codec: codec) } catch { failCapture(error); return }
         }
         if bluetooth.captureEnabled != pendant { bluetooth.captureEnabled = pendant }
         updateLocationCapture()
@@ -271,6 +292,7 @@ final class AppModel {
         if let value = UserDefaults.standard.string(forKey: "phoneInstallationID"), let id = UUID(uuidString: value) { return id }
         let id = UUID(); UserDefaults.standard.set(id.uuidString, forKey: "phoneInstallationID"); return id
     }()
+    var capturePhoneID: UUID { phoneID }
     var now = Date()
     var player: AVAudioPlayer?
     @ObservationIgnored private let playbackDelegate = AudioPlaybackDelegate()
@@ -356,6 +378,8 @@ final class AppModel {
         }
         bluetooth.onAudio = { [weak self] data, date, uptime in self?.audio(data, date: date, uptime: uptime) }
         bluetooth.onButton = { [weak self] data in self?.button(data) }
+        bluetooth.onCharging = { [weak self] in self?.updateOmiCharging() }
+        updateOmiCharging()
         bluetooth.onDisconnect = { [weak self] in self?.disconnectCapture() }
         bluetooth.onError = { [weak self] message in self?.error = message }
         recordCaptureState(paused && captureFailure == nil ? "paused" : captureFailure != nil ? "blocked" : "unknown", cause: paused && captureFailure == nil ? "user_pause" : captureFailure ?? "unknown")
@@ -634,6 +658,7 @@ final class AppModel {
         }
         captureFailure = nil; UserDefaults.standard.removeObject(forKey: "captureFailure")
         recordCaptureState(value ? "paused" : "unknown", cause: value ? "user_pause" : "resumed")
+        if !value { resumeOmiManually() }
         paused = value; bluetooth.captureEnabled = hasSelectedProfile && pendantCaptureAllowed && store != nil
         applyRecordingSchedule()
         notice = value ? L10n.source("Recording stopped on this iPhone") : L10n.source("Recording ready on this iPhone")
@@ -917,10 +942,10 @@ final class AppModel {
         let observedAt = Date()
         let microphoneActive = microphone.active != nil
         let pendantActive = pendantCaptureAllowed && bluetooth.captureEnabled && bluetooth.connected && lastDecodedAt.map { abs(observedAt.timeIntervalSince($0)) < 2 } == true
-        let state = microphoneActive || pendantActive ? "capturing" : captureFailure != nil ? "blocked" : !liveCaptureAllowed ? "paused" : !bluetooth.connected ? "disconnected" : "unknown"
+        let state = microphoneActive || pendantActive ? "capturing" : captureFailure != nil ? "blocked" : (!liveCaptureAllowed || (recordingSchedule.activeSource == "omi" && omiChargingPolicy.paused)) ? "paused" : !bluetooth.connected ? "disconnected" : "unknown"
         var body: [String: Any] = [
             "sequence": sequence, "observed_at": DurableStore.stamp(observedAt),
-            "device_id": bluetooth.identifier, "capture_state": state,
+            "device_id": microphoneActive ? "" : bluetooth.identifier, "capture_state": state,
             "capture_source": microphoneActive ? "phone" : "omi",
             "cause": captureFailure ?? (paused ? "user_pause" : !bluetooth.connected ? "connection" : "unknown"),
             "requested_pause": paused && captureFailure == nil,
@@ -933,7 +958,7 @@ final class AppModel {
         ]
         if microphoneActive { body["last_decoded_at"] = DurableStore.stamp(observedAt) }
         else if let lastDecodedAt { body["last_decoded_at"] = DurableStore.stamp(lastDecodedAt) }
-        if let lastPersistedAt { body["last_persisted_at"] = DurableStore.stamp(lastPersistedAt) }
+        if !microphoneActive, let lastPersistedAt { body["last_persisted_at"] = DurableStore.stamp(lastPersistedAt) }
         if let oldest = (pending.map(\.capturedAt) + drafts.map(\.startedAt)).min() { body["oldest_capture_at"] = DurableStore.stamp(oldest) }
         _ = try await backend.request("v1/phones/\(phoneID.uuidString)/status", method: "PUT", body: body)
     }

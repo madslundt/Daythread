@@ -29,6 +29,12 @@ struct ConversationPrepView: View {
         let _ = interfaceLocale
         NavigationStack {
             List {
+                CalendarPrepSection { name, kind, meeting in
+                    invalidate()
+                    search.subject = name; search.kind = kind
+                    aliases = ""; search.qualifier = ""; from = ""; through = ""
+                    context = String([context, meeting].filter { !$0.isEmpty }.joined(separator: "\n\n").prefix(4000))
+                }
                 Section {
                     Text(L10n.text("Find recordings, confirm relevance, then prepare a cited brief. A mention does not verify participation or identity."))
                     Picker(L10n.text("Subject type"), selection: $search.kind) {

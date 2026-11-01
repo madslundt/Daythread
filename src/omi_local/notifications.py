@@ -7,12 +7,14 @@ import sqlite3
 import ssl
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from uuid import UUID
 
 import certifi
 import httpx
 import jwt
 
+from .capture_health import capture_health_status, check_capture_health
 from .notification_localization import present_notification
 from .notification_store import public_notification
 from .settings import Settings
@@ -118,6 +120,19 @@ class NotificationService:
         if not self.sender.configured:
             return
         for delivery in self.store.pending_notifications():
+            if delivery["kind"] == "capture_health":
+                target = json.loads(delivery["target"])
+                if not self.settings.capture_health_enabled:
+                    self.store.clear_capture_health_notifications()
+                    continue
+                status = capture_health_status(self.store, self.settings)
+                phone = next((phone for phone in status["phones"]
+                              if phone["phone_id"] == target.get("phone_id")), None)
+                if not phone or phone["status"] not in {"capture_stalled", "report_stale"}:
+                    self.store.clear_capture_health_notifications(target.get("phone_id"))
+                    continue
+                if status["quiet_hours"]:
+                    continue
             if not self.store.notification_still_pending(delivery["id"], delivery["device_id"]):
                 continue
             attempts = delivery["attempts"] + 1
@@ -138,7 +153,21 @@ class NotificationService:
             )
 
     async def run(self) -> None:
+        next_health_check = 0.0
         while True:
+            if time.monotonic() >= next_health_check:
+                try:
+                    check = asyncio.create_task(asyncio.to_thread(check_capture_health, self))
+                    try:
+                        await asyncio.shield(check)
+                    except asyncio.CancelledError:
+                        # Join storage work before profile shutdown closes its database pools.
+                        with suppress(Exception):
+                            await check
+                        raise
+                except Exception:
+                    logger.warning("Capture health check will retry")
+                next_health_check = time.monotonic() + 60
             try:
                 await self.deliver_pending()
             except Exception:

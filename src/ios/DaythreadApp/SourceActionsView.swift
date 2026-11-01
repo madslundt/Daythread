@@ -98,6 +98,12 @@ struct SourceActionsView: View {
 
 struct SourceProvenanceView: View {
     let source: JSONValue
+    static func isRingCopy(_ source: JSONValue) -> Bool {
+        source["source_kind"].text == "manual_upload" &&
+        source["source_metadata"]["provenance_kind"].text == "omi_ring" &&
+        source["source_metadata"]["timestamp_precision_seconds"] == .number(1) &&
+        source["source_metadata"]["device_copy_retained"] == .bool(true)
+    }
     static func vendorLabel(for source: JSONValue) -> String {
         if !source["vendor_label"].text.isEmpty { return L10n.key(source["vendor_label"].text) }
         let vendor = source["source_metadata"]["vendor_id"].text
@@ -117,7 +123,9 @@ struct SourceProvenanceView: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 8) {
-            if source["source_kind"].text == "manual_upload" {
+            if Self.isRingCopy(source) {
+                Text(L10n.text("Pendant storage uses the device clock with one-second precision. Device copies were retained."))
+            } else if source["source_kind"].text == "manual_upload" {
                 if source["source_metadata"]["vendor_id"].text.isEmpty || source["source_metadata"]["vendor_id"].text == "manual" {
                     Text(L10n.text("Manually uploaded recording\(source["source_id"].text.isEmpty ? "" : " · " + source["source_id"].text)"))
                 } else {

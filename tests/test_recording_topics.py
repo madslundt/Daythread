@@ -196,7 +196,7 @@ def test_invalid_analysis_retries_without_affecting_transcription(recording, out
     from omi_local.recording_topics import process_topics
 
     assert asyncio.run(process_topics(memory, now=utc_now() + timedelta(minutes=2)))
-    assert memory.inference.calls == 2
+    assert memory.inference.calls == 4  # One bounded validation repair per failed attempt.
 
 
 def test_audio_expiry_preserves_topics_but_transcript_expiry_purges_them(recording):

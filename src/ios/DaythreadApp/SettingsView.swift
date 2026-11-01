@@ -397,7 +397,9 @@ struct PendantClickSettings: View {
                 ForEach(WearableAction.allCases, id: \.self) { action in Text(label(action)).tag(action) }
             }.accessibilityIdentifier("settings.doubleClickAction")
             Picker(L10n.text("Recent audio duration"), selection: $model.recentAudioSeconds) {
-                ForEach(ClickControls.durations, id: \.self) { seconds in Text(L10n.text("\(seconds) sec")).tag(seconds) }
+                ForEach(ClickControls.durations, id: \.self) { seconds in
+                    Text(durationLabel(seconds)).tag(seconds)
+                }
             }.accessibilityIdentifier("settings.recentAudioSeconds")
             Toggle(L10n.text("Click notifications"), isOn: $model.clickNotificationsEnabled)
                 .accessibilityIdentifier("settings.clickNotifications")
@@ -416,6 +418,11 @@ struct PendantClickSettings: View {
         }.task(id: scenePhase) {
             if scenePhase == .active { await notifications.refreshAuthorization() }
         }
+    }
+    private func durationLabel(_ seconds: Int) -> String {
+        if seconds < 60 { return L10n.text("\(seconds) seconds") }
+        if seconds == 60 { return L10n.text("1 minute") }
+        return L10n.text("\(seconds / 60) minutes")
     }
     private func label(_ action: WearableAction) -> String {
         switch action {

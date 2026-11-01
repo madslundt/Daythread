@@ -6,6 +6,7 @@ import re
 
 from .inference import InferenceError, summary_language_instruction, validate_citations
 from .summary_filter import NO_CONTENT, filter_summary_sources
+from .summary_templates import writer_preferences
 
 BUDGET = 20000
 PLAN = (
@@ -359,6 +360,7 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
             'implementation. Keep open solutions open. Before returning, check each action '
             'against the original wording for its specific object, modality and temporal frame. '
             'Cite original sources for the facts you retain'
+            + writer_preferences(purpose)
         )
         async with semaphore:
             answer, part_trace = await inference.summarize_traced(inputs, task)

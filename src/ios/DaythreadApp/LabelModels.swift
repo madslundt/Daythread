@@ -50,12 +50,20 @@ struct LabelTimelineEntry: Decodable, Identifiable {
     let kind: String?
     let title: String?
     let body: String?
+    let fact: LabelFactState?
     let decision_id: String?
     let decision: DecisionRecord?
     let entity_ids: [String]?
     let sources: [LabelSource]
     let needs_review: Bool
     let started_at: String
+}
+struct LabelFactState: Decodable {
+    let family_id: String
+    let status: String
+    let superseded_by: String?
+    let created_at: String
+    let updated_at: String
 }
 struct LabelTimelineResponse: Decodable {
     let revision: String
@@ -85,6 +93,7 @@ struct LabelCommand: Encodable {
     var decision_link_ids: [String]?
     var decision_id: String?
     var decision_version: Int?
+    var supersedes: String?
 }
 
 extension BackendClient {

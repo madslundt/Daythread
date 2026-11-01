@@ -5,6 +5,7 @@ struct LabelNoteEditor: View {
     let entityID: String
     let revision: String
     let entry: LabelTimelineEntry?
+    var fact = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var id = UUID().uuidString.lowercased()
@@ -22,11 +23,16 @@ struct LabelNoteEditor: View {
     @State private var writer = LabelWriter()
     @State private var error: String?
     @Environment(\.locale) private var interfaceLocale
+    private var isFact: Bool { fact || entry?.kind == "fact" }
     var body: some View {
         let _ = interfaceLocale
         Form {
             Section(L10n.text("Written by you")) {
-                Picker(L10n.text("Type"), selection: $kind) { ForEach(["conversation", "decision", "open_question"], id: \.self) { Text(annotationMeaning($0)).tag($0) } }
+                if isFact {
+                    Text(L10n.text("Facts are your confirmed interpretation of selected recordings. Editing creates a replacement and keeps the previous version in history. Facts are not original transcript evidence.")).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker(L10n.text("Type"), selection: $kind) { ForEach(["conversation", "decision", "open_question"], id: \.self) { Text(annotationMeaning($0)).tag($0) } }
+                }
                 TextField(L10n.text("Title"), text: $title)
                 TextField(L10n.text("Your note"), text: $bodyText, axis: .vertical)
                 Text(L10n.text("Select source recordings explicitly. No automatic conversation boundaries or resolution status are inferred.")).font(.caption).foregroundStyle(.secondary)
@@ -57,13 +63,14 @@ struct LabelNoteEditor: View {
             if entry?.needs_review == true { Text(L10n.text("Evidence changed. Read each current source before saving to confirm this annotation again.")).foregroundStyle(.orange) }
             ErrorNote(message: error ?? writer.error)
             Button(L10n.text("Refresh selected evidence and version for review")) { Task { await refresh() } }.disabled(writer.busy)
-        }.navigationTitle(entry == nil ? L10n.text("New annotation") : L10n.text("Edit annotation"))
+        }.navigationTitle(isFact ? entry == nil ? L10n.text("Add a reviewed fact") : L10n.text("Review and replace fact") : entry == nil ? L10n.text("New annotation") : L10n.text("Edit annotation"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() }.disabled(writer.busy) }
                 ToolbarItem(placement: .confirmationAction) { Button(L10n.text("Save")) { Task { await save() } }.disabled(writer.busy || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty) }
             }
             .task {
-                id = entry?.id ?? id; kind = entry?.kind ?? kind; title = entry?.title ?? ""; bodyText = entry?.body ?? ""
+                if !isFact { id = entry?.id ?? id }
+                kind = entry?.kind ?? kind; title = entry?.title ?? ""; bodyText = entry?.body ?? ""
                 selected = entry?.sources ?? []; currentRevision = revision
                 await search()
             }
@@ -92,9 +99,10 @@ struct LabelNoteEditor: View {
         } catch { self.error = L10n.error(error) }
     }
     private func save() async {
-        var command = LabelCommand(action: "note.save", id: id, expected_revision: currentRevision)
-        command.create = entry == nil
-        command.kind = kind; command.title = title; command.body = bodyText
+        var command = LabelCommand(action: isFact ? "fact.save" : "note.save", id: id, expected_revision: currentRevision)
+        command.create = isFact || entry == nil
+        command.kind = isFact ? "fact" : kind; command.title = title; command.body = bodyText
+        if isFact { command.supersedes = entry?.id }
         command.sources = selected.map(\.ref); command.entity_ids = entry?.entity_ids ?? [entityID]
         do { if await writer.save(command, client: try model.client()) { dismiss(); await model.refreshStatus() } }
         catch { self.error = L10n.error(error) }

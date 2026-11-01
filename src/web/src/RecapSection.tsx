@@ -17,6 +17,7 @@ import { ErrorState, Loading, Notice, RichText } from "./UI";
 import { Icon } from "./Icon";
 import { DisplayTranslationLanguage } from "./displayTranslations";
 import { requestedRecapTopic, subscribeNavigation } from "./routing";
+import { RecapTemplateControl } from "./RecapTemplateControl";
 
 const emptySources: Source[] = [];
 
@@ -93,6 +94,7 @@ export function RecapSection({
   </DisplayTranslationLanguage>;
   return (
     <section className="recap-section">
+      {!filtered ? <RecapTemplateControl key={`template-${day}`} day={day} onGenerated={recap.refresh} /> : null}
       <div className="section-heading">
         <div>
           <h2>{filtered ? t("Filtered recap") : t("Day recap")}</h2>

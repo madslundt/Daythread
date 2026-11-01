@@ -28,6 +28,8 @@ Screenshots reflect the current redesign, captured in the Codex browser. Mobile 
 - **Conversation tags:** add reusable manual tags, and combine tag and location-zone filters without changing recorded locations. See [tag behavior and API](docs/conversation-tags.md).
 - **Locations:** opt-in iPhone GPS tags for conversations, named zones with multiple locations and individual radii for recording filters, and confirmed arrival/departure reminders for places discussed in decision follow-ups. See [location setup and device checks](docs/location-support.md).
 - **Languages:** English, Danish, German, Spanish, French, Norwegian Bokmål, and Swedish interfaces on web and iPhone, with a device-level language choice separate from transcription and recap languages.
+- **Personalization:** editable transcription vocabulary for compatible providers, reusable daily-summary templates, and reviewed people/project facts with replacement history and source-change warnings.
+- **Preparation and integrations:** optional calendar-assisted preparation and a read-only local MCP bridge. See [setup and behavior](docs/README.md#personalization-and-reliability).
 
 ## Contribute a localization
 
@@ -246,6 +248,8 @@ Current upstream sends from **Omi’s backend** and rejects private destinations
 2. Allow Bluetooth and local-network access. In app Settings, enter `http://<server-LAN-address>:8787` and use **Save & test connection**.
 3. Connect the pendant in Capture. Single click defaults to **Mark as important** and double click defaults to **Start / end meeting**. Customize each click in pendant settings: summarize recent audio, answer the latest question, translate, mark important, start/end a meeting, start/pause recording, or do nothing. Recent-audio actions use a configurable window of 15, 30, 60, 120, or 300 seconds, defaulting to **30 seconds**. Hold is reserved for device power-off. On-screen controls are also available.
 4. Allow phone notifications for immediate click confirmations. Confirmations default to on and can be switched off in click settings. A recent-audio result replaces its initial confirmation; disabling confirmations keeps result notifications enabled.
+
+Pendant settings on iPhone and Capture on Android include **Stop Omi recording while charging** and **Resume Omi recording after charging**, both on by default. While charging, the current segment is saved and the audio stream is unsubscribed. With both enabled, removing Omi from the charger restarts capture; manual stops and recording schedules still apply. With resume disabled, start recording manually after removal. Charging automation requires firmware exposing Omi’s charging-status characteristic (`19b10013-e8f2-537e-4f6c-d104768a1214`); unavailable or invalid status never triggers resume.
 
 Keep the backend awake and port 8787 reachable. Away from the server, recordings queue locally and upload after reconnection; summaries/chat require reachable models.
 

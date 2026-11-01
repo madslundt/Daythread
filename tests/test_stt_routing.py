@@ -168,6 +168,35 @@ async def test_unknown_or_missing_detection_keeps_multilingual_result(tmp_path, 
 
 
 @pytest.mark.anyio
+async def test_provider_language_name_uses_configured_iso_route(tmp_path):
+    settings = config(tmp_path, stt_model="multilingual", stt_routes={"da": {"model": "danish"}})
+    calls = []
+
+    def handler(request):
+        form = fields(request)
+        calls.append(form["model"])
+        assert "language" not in form
+        if form["model"] == b"multilingual":
+            return httpx.Response(200, json={"text": "Preliminary", "language": "Danish"})
+        return httpx.Response(200, json={"text": "Vi taler dansk.", "language": "danish"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await Inference(settings, client).transcribe_result(audio())
+    assert result["text"] == "Vi taler dansk."
+    assert calls == [b"multilingual", b"danish"]
+    assert result["processing"]["chunks"][0]["detected_language"] == "da"
+    assert result["processing"]["chunks"][0]["recognition_model"] == "danish"
+
+
+def test_explicit_provider_name_route_takes_precedence_over_iso_alias(tmp_path):
+    settings = config(tmp_path, stt_routes={
+        "da": {"model": "danish-default"}, "danish": {"model": "provider-specific"},
+    })
+    assert settings.stt_route("Danish").model == "provider-specific"
+    assert settings.stt_route("da-DK").model == "danish-default"
+
+
+@pytest.mark.anyio
 async def test_same_route_is_not_transcribed_twice_and_auto_route_can_override_default(tmp_path):
     settings = config(
         tmp_path,

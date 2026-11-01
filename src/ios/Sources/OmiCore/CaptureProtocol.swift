@@ -81,15 +81,42 @@ public enum WearableAction: String, Codable, CaseIterable {
 }
 
 public struct ClickControls: Equatable {
-    public static let durations = [15, 30, 60, 120, 300]
+    public static let durations = [15, 30, 60, 120, 180]
     public var singleClick: WearableAction
     public var doubleClick: WearableAction
     public var durationSeconds: Int
     public init(singleClick: String? = nil, doubleClick: String? = nil, durationSeconds: Int = 30) {
         self.singleClick = singleClick.flatMap(WearableAction.init(rawValue:)) ?? .mark
         self.doubleClick = doubleClick.flatMap(WearableAction.init(rawValue:)) ?? .meetingToggle
-        self.durationSeconds = Self.durations.contains(durationSeconds) ? durationSeconds : 30
+        // Move the former five-minute preference to the new maximum.
+        self.durationSeconds = durationSeconds == 300 ? 180 : Self.durations.contains(durationSeconds) ? durationSeconds : 30
     }
+}
+
+/// Optional firmware LED ratio: zero is dark, 1...100 is lit. Confirm changes by reading back.
+public struct OmiLightSetting {
+    public private(set) var ratio: UInt8?
+    private var pendingRatio: UInt8?
+    private var litRatio: UInt8 = 50
+    public init() {}
+    public var enabled: Bool? { ratio.map { $0 > 0 } }
+
+    public mutating func command(enabled: Bool) -> Data? {
+        guard let current = self.enabled, current != enabled, pendingRatio == nil else { return nil }
+        let target: UInt8 = enabled ? litRatio : 0
+        pendingRatio = target
+        return Data([target])
+    }
+
+    @discardableResult public mutating func receive(_ data: Data) -> Bool {
+        guard data.count == 1, let value = data.first, value <= 100,
+              pendingRatio == nil || pendingRatio == value else { return false }
+        ratio = value; pendingRatio = nil
+        if value > 0 { litRatio = value }
+        return true
+    }
+
+    public mutating func cancelChange() { pendingRatio = nil }
 }
 
 /// Physical click feedback uses two distinct, fixed CV1 vibration commands.

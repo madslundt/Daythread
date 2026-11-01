@@ -10,6 +10,7 @@ import {
   type PrepSource,
 } from "./prep";
 import { PrepBrief } from "./PrepBrief";
+import { CalendarPrep } from "./CalendarPrep";
 import { SourceList } from "./SourceList";
 import { ErrorState } from "./UI";
 
@@ -218,6 +219,12 @@ export function ConversationPrep({
       <p>
         {t("Find dated recordings, confirm their relevance, then prepare a cited brief. Names are literal phrases; a mention does not verify who participated.")}{" "}</p>
       <div className="prep-form">
+        <CalendarPrep timezone={timezone} onChoose={(name, subjectKind, meeting) => {
+          invalidate();
+          setSubject(name); setKind(subjectKind); setAliases(""); setQualifier("");
+          setStart(""); setEnd("");
+          setContext((old) => [old, meeting].filter(Boolean).join("\n\n").slice(0, 4000));
+        }} />
         <label>
           {t("Subject type")}{" "}<select
             value={kind}

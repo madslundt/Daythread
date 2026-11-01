@@ -5,7 +5,7 @@ import json
 import unicodedata
 from uuid import uuid4
 
-from . import label_decisions
+from . import label_decisions, label_facts
 from .domain import stamp, utc_now
 from .label_models import LabelError, LabelMutation
 
@@ -97,9 +97,15 @@ class LabelStore:
             elif action == "decision_link.save":
                 self._entity(db, value["entity_id"])
                 label_decisions.save_decision_link(db, value)
+            elif action == "fact.save":
+                label_facts.save(self, db, value)
+            elif action == "fact.reject":
+                label_facts.reject(db, key)
             elif action == "note.save":
                 previous = db.execute("SELECT id FROM label_notes WHERE id=?", (key,)).fetchone()
                 self._check_existence(previous, value["create"])
+                if db.execute("SELECT 1 FROM label_facts WHERE note_id=?", (key,)).fetchone():
+                    raise LabelError("Use fact review to replace a persistent fact")
                 for ref in value["sources"]:
                     self._source(db, ref)
                 for entity_id in value["entity_ids"]:
@@ -177,6 +183,8 @@ class LabelStore:
             db.execute("DELETE FROM entity_decisions WHERE entity_id=?", (key,))
             db.execute("DELETE FROM entities WHERE merged_into=? OR id=?", (key, key))
         else:
+            if action == "note.delete" and label_facts.delete_family(db, key):
+                return
             table = {
                 "link.delete": "entity_links",
                 "note.delete": "label_notes",
@@ -258,7 +266,9 @@ class LabelStore:
                 (value["new_id"], link_id, key),
             ).rowcount:
                 raise LabelError("Selected decision association changed")
-        for note_id in value["note_ids"]:
+        selected_notes = {note_id for key in value["note_ids"]
+                          for note_id in label_facts.split_family_ids(db, key)}
+        for note_id in selected_notes:
             if not db.execute(
                 "DELETE FROM note_entities WHERE note_id=? AND entity_id=?", (note_id, key)
             ).rowcount:
@@ -323,6 +333,7 @@ class LabelStore:
                 )
             ]
             for note in notes:
+                note.update(label_facts.view(db, note["id"]))
                 note["source_refs"] = [
                     dict(r)
                     for r in db.execute(

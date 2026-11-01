@@ -322,6 +322,10 @@ struct SourceList: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(title(source)).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(3)
                         Text(metadata(source)).font(.caption).foregroundStyle(.secondary)
+                        if SourceProvenanceView.isRingCopy(source) {
+                            Text(L10n.text("Pendant storage uses the device clock with one-second precision. Device copies were retained."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         if !source["tags"].array.isEmpty {
                             Text(source["tags"].array.map { $0["name"].text }.joined(separator: ", ")).font(.caption).foregroundStyle(Theme.accent)
                         }

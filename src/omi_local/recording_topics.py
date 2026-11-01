@@ -5,23 +5,23 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import stamp, utc_now
 from .inference import summary_language_instruction
 from .inference_errors import InferenceDisabled, InferenceUnavailable
 from .semantic_metadata import segment_anchors, segment_metadata
 from .summary_filter import clean_summary_text
+from .topic_analysis import Analysis, generate_analysis, topic_offsets
 from .topic_context import TopicContext, topic_contexts
 
 if TYPE_CHECKING:
     from .service import Memory
 
 logger = logging.getLogger(__name__)
-VERSION = "recording-topics-4-context-chapters"
+VERSION = "recording-topics-5-source-language"
 MAX_INPUT = 12000
 
 SCHEMA = """
@@ -53,17 +53,8 @@ END;
 """
 
 
-class Topic(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    title: str = Field(min_length=1, max_length=160)
-    start_quote: str = Field(min_length=1, max_length=300)
-
-
-class Analysis(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    title: str = Field(min_length=1, max_length=160)
-    sections: list[Topic] = Field(min_length=1, max_length=24)
-    continues_previous: bool = False
+class _TopicContextChanged(Exception):
+    """Selected evidence changed while a topic analysis was running."""
 
 
 def input_windows(text: str):
@@ -79,15 +70,20 @@ def input_windows(text: str):
         offset = end
 
 
-async def analyze(memory: Memory, row: dict, progress: dict | None = None) -> dict:
+async def analyze(
+    memory: Memory, row: dict, progress: dict | None = None, *,
+    cached_windows: list[dict] | None = None, completed_windows: list[dict] | None = None,
+    on_window: Callable[[list[dict]], None] | None = None,
+) -> dict:
     text = row["text"]
     model = memory.inference
     if hasattr(model, "for_task"):
         model = model.for_task("summary")
     titles, sections = [], []
+    language_instruction = summary_language_instruction(memory.settings.summary_language, text)
     if progress is not None:
         progress.update(completed_chunks=0, total_chunks=sum(1 for _ in input_windows(text)))
-    for base, excerpt in input_windows(text):
+    for window_index, (base, excerpt) in enumerate(input_windows(text)):
         task = (
             'Give this recording a concise, descriptive title and divide its transcript into '
             'consecutive topic sections. Return JSON: {"title":"...","continues_previous":false,'
@@ -109,7 +105,7 @@ async def analyze(memory: Memory, row: dict, progress: dict | None = None) -> di
             'The first section must begin at the start of the transcript. Include every topic '
             'through the end. Titles should describe what was discussed without endorsing '
             'unverified claims. Do not add summaries or rewrite transcript words.'
-            + summary_language_instruction(memory.settings.summary_language)
+            + language_instruction
         )
         if sections:
             task += (
@@ -122,18 +118,14 @@ async def analyze(memory: Memory, row: dict, progress: dict | None = None) -> di
                               "previous_transcript_tail": text[max(0, base - 1200):base]},
                              ensure_ascii=False)
             )
-        result = Analysis.model_validate_json(await model.generate_json(task, excerpt))
+        cached = bool(cached_windows and window_index < len(cached_windows))
+        if cached:
+            result = Analysis.model_validate(cached_windows[window_index])
+            offsets = topic_offsets(result, excerpt)
+        else:
+            result, offsets = await generate_analysis(model, task, excerpt)
         titles.append(result.title)
-        previous = -1
-        for index, topic in enumerate(result.sections):
-            start = excerpt.find(topic.start_quote)
-            if start < 0 or excerpt.count(topic.start_quote) != 1 or start <= previous:
-                raise ValueError("Topic boundary must identify a unique ordered transcript span")
-            if index == 0:
-                if excerpt[:start].strip():
-                    raise ValueError("First topic must cover the start of the transcript")
-                start = 0
-            previous = start
+        for index, (topic, start) in enumerate(zip(result.sections, offsets, strict=True)):
             normalized = " ".join(re.findall(r"\w+", topic.title.casefold()))
             last_title = sections[-1]["title"] if sections else ""
             last_normalized = " ".join(re.findall(r"\w+", last_title.casefold()))
@@ -141,6 +133,10 @@ async def analyze(memory: Memory, row: dict, progress: dict | None = None) -> di
                              or (normalized and normalized == last_normalized)):
                 continue
             sections.append({"title": topic.title, "start_offset": base + start})
+        if completed_windows is not None:
+            completed_windows.append(result.model_dump())
+            if on_window is not None and not cached:
+                on_window(completed_windows)
         if progress is not None:
             progress["completed_chunks"] += 1
     for index, section in enumerate(sections):
@@ -194,36 +190,76 @@ async def organize_context(memory: Memory, context: TopicContext, now: datetime)
     if len(loaded) != len(context.ids):
         return False
     rows = [loaded[key] for key in context.ids]
+    previous = json.loads(rows[0]["topic_details"] or "{}").get("analysis_checkpoint", {})
+    cached_windows = previous.get("windows") if (
+        previous.get("fingerprint") == fingerprint and previous.get("context") == context.key
+        and previous.get("window_size") == MAX_INPUT
+    ) else None
+    completed_windows = []
+
+    def unchanged(db) -> bool:
+        if (topic_fingerprint(memory) != fingerprint or not any(
+            current.key == context.key and current.ready for current in topic_contexts(db, now)
+        )):
+            return False
+        current = db.execute(
+            "SELECT id,text,segments FROM audio WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(context.ids),),
+        )
+        return all(row[field] == loaded[row["id"]][field]
+                   for row in current for field in ("text", "segments"))
+
+    def checkpoint(windows: list[dict]) -> None:
+        with memory.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not unchanged(db):
+                raise _TopicContextChanged
+            details = json.loads(db.execute(
+                "SELECT topic_details FROM audio WHERE id=?", (context.ids[0],),
+            ).fetchone()[0] or "{}")
+            details["analysis_checkpoint"] = {
+                "fingerprint": fingerprint, "context": context.key,
+                "window_size": MAX_INPUT, "windows": windows,
+            }
+            db.execute("UPDATE audio SET topic_details=? WHERE id=?",
+                       (json.dumps(details, ensure_ascii=False), context.ids[0]))
+            db.executemany("INSERT OR IGNORE INTO recording_topic_sources VALUES (?,?)",
+                           [(context.key, key) for key in context.ids])
+
     try:
         with memory.processing_activity("organizing", progress={}) as progress:
             text = "\n".join(row["text"] for row in rows if (row["text"] or "").strip())
             meaningful, _ = clean_summary_text(text)
             if meaningful:
-                result = await analyze(memory, {"text": text}, progress)
+                result = await analyze(
+                    memory, {"text": text}, progress, cached_windows=cached_windows,
+                    completed_windows=completed_windows, on_window=checkpoint,
+                )
                 prepared = source_sections(rows, result, context.key)
             else:
                 prepared = {key: {"sections": []} for key in context.ids}
+    except _TopicContextChanged:
+        return True
     except InferenceUnavailable as exc:
-        prepared = {key: {"retry_at": stamp(now + timedelta(seconds=exc.retry_after_seconds))}
-                    for key in context.ids}
+        retry_at = stamp(
+            max(now, utc_now()) + timedelta(seconds=exc.retry_after_seconds),
+        )
+        prepared = {key: {"retry_at": retry_at} for key in context.ids}
     except InferenceDisabled:
         return False
     except Exception as exc:
         logger.warning("Recording topic analysis will retry (%s)", type(exc).__name__)
-        prepared = {key: {"retry_at": stamp(now + timedelta(minutes=1))} for key in context.ids}
+        prepared = {key: {"retry_at": stamp(max(now, utc_now()) + timedelta(minutes=1))}
+                    for key in context.ids}
+    if completed_windows and "retry_at" in prepared[context.ids[0]]:
+        prepared[context.ids[0]]["analysis_checkpoint"] = {
+            "fingerprint": fingerprint, "context": context.key,
+            "window_size": MAX_INPUT, "windows": completed_windows,
+        }
     # Publish all parts together, rejecting corrections, late parts and changed grouping.
     with memory.store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
-        if (topic_fingerprint(memory) != fingerprint or not any(
-            current.key == context.key for current in topic_contexts(db)
-        )):
-            return True
-        current = db.execute(
-            "SELECT id,text,segments FROM audio WHERE id IN (SELECT value FROM json_each(?))",
-            (json.dumps(context.ids),),
-        )
-        if any(row[field] != loaded[row["id"]][field]
-               for row in current for field in ("text", "segments")):
+        if not unchanged(db):
             return True
         for key, result in prepared.items():
             details = result | {"fingerprint": fingerprint, "context": context.key}
@@ -233,7 +269,9 @@ async def organize_context(memory: Memory, context: TopicContext, now: datetime)
                        (context.key, key))
         db.execute(
             "DELETE FROM recording_topic_sources WHERE context_key NOT IN "
-            "(SELECT coalesce(json_extract(topic_details,'$.context'),'') FROM audio)"
+            "(SELECT coalesce(json_extract(topic_details,'$.context'),'') FROM audio "
+            "UNION SELECT coalesce(json_extract(topic_details,'$.analysis_checkpoint.context'),'') "
+            "FROM audio)"
         )
     return True
 
@@ -245,7 +283,7 @@ async def ensure_topics(memory: Memory, source_ids: set[str]) -> None:
     async with memory.topic_lock:
         now = utc_now()
         with memory.store.connect() as db:
-            contexts = topic_contexts(db)
+            contexts = topic_contexts(db, now)
         for context in contexts:
             if (source_ids.intersection(context.ids)
                     and context.due(topic_fingerprint(memory), stamp(now))):
@@ -260,7 +298,7 @@ async def process_topics(memory: Memory, now: datetime | None = None) -> bool:
         now = now or utc_now()
         fingerprint = topic_fingerprint(memory)
         with memory.store.connect() as db:
-            context = next((item for item in topic_contexts(db)
+            context = next((item for item in topic_contexts(db, now)
                             if item.due(fingerprint, stamp(now))), None)
         return await organize_context(memory, context, now) if context else False
 

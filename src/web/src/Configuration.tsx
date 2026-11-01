@@ -61,6 +61,16 @@ export function ModelRoutes({ field, rows, secrets, onChange, connectionDraft, r
           <input type="url" value={row.base_url || ""} placeholder={t("Use default endpoint")}
             onChange={(event) => update(row.id, { base_url: event.target.value })} />
         </label>
+        {!llm && !embedding ? <label className="setting-field"><span>{t("Vocabulary format")}</span>
+          <select value={row.vocabulary_mode || ""} onChange={(event) => update(row.id, {
+            vocabulary_mode: event.target.value as ModelOverride["vocabulary_mode"] || null,
+          })}>
+            <option value="">{t("Use default vocabulary format")}</option>
+            <option value="off">{t("Disabled")}</option>
+            <option value="prompt">{t("Whisper prompt")}</option>
+            <option value="keyterms">{t("JSON keyterms")}</option>
+          </select>
+        </label> : null}
         {llm || embedding ? <label className="setting-field"><span>{t("Revision override")}</span>
           <input value={row.revision || ""} placeholder={t("Use default revision")}
             onChange={(event) => update(row.id, { revision: event.target.value })} />
@@ -259,7 +269,17 @@ export function Configuration({ onSaved, hiddenFields = [], search: controlledSe
       }} />;
     return <label className="setting-field" htmlFor={id}>
       <span id={`${id}-label`}>{t(field.label)}{field.restart_required ? t("· restart required") : ""}</span>
-      {field.kind === "boolean" ? field.nullable ? <select id={id}
+      {field.kind === "terms" ? <textarea id={id} rows={5}
+        aria-labelledby={`${id}-label`} aria-describedby={`${id}-hint`}
+        value={Array.isArray(draft!.values[field.key]) ? (draft!.values[field.key] as string[]).join("\n") : String(draft!.values[field.key] ?? "")}
+        spellCheck={false} autoCapitalize="none" onChange={(event) => update(field.key, event.target.value)}
+      /> : field.key === "stt_vocabulary_mode" ? <select id={id}
+        aria-labelledby={`${id}-label`} aria-describedby={`${id}-hint`}
+        value={String(draft!.values[field.key] ?? "off")}
+        onChange={(event) => update(field.key, event.target.value)}>
+        <option value="off">{t("Disabled")}</option><option value="prompt">{t("Whisper prompt")}</option>
+        <option value="keyterms">{t("JSON keyterms")}</option>
+      </select> : field.kind === "boolean" ? field.nullable ? <select id={id}
         aria-labelledby={`${id}-label`} aria-describedby={field.description ? `${id}-hint` : undefined}
         value={draft!.values[field.key] == null ? "default" : String(draft!.values[field.key])}
         onChange={(event) => update(field.key, event.target.value === "default" ? null : event.target.value === "true")}>

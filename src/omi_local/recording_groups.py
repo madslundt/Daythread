@@ -9,10 +9,16 @@ from .domain import stamp
 from .location_zones import zone_filter
 from .recording_locations import decorate_locations
 from .service import public_source
+from .session_recordings import SessionRecording
 from .source_matching import MANUAL_UPLOAD_SQL
 from .topic_context import chapter_navigation
 
 GAP_SECONDS = 5 * 60
+TRANSCRIPT_TEXT_SQL = "length(trim(coalesce(text,''),?))>0"
+TRANSCRIPT_WHITESPACE = (
+    " \t\n\r\v\f\x1c\x1d\x1e\x1f\x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+    "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+)
 
 
 def group_recordings(rows: list[dict]) -> list[dict]:
@@ -47,8 +53,11 @@ def group_recordings(rows: list[dict]) -> list[dict]:
 
 def recording_groups(
     store, start, end, query, limit, offset, group_id=None, zone_id=None, tag_id=None,
-) -> dict:
-    filters, args = ["started_at<?", "ended_at> ?"], [stamp(end), stamp(start)]
+    playback=False,
+):
+    filters, args = ["started_at<?", "ended_at> ?", "state='done'", TRANSCRIPT_TEXT_SQL], [
+        stamp(end), stamp(start), TRANSCRIPT_WHITESPACE,
+    ]
     if query:
         filters.append("text LIKE ? ESCAPE '\\'")
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -107,8 +116,15 @@ def recording_groups(
             if group is None:
                 raise KeyError("Recording group unavailable")
             members = group["members"]
+            rows = [dict(row) for row in db.execute(
+                "SELECT * FROM audio WHERE id IN (SELECT value FROM json_each(?)) "
+                "ORDER BY started_at,id", (json.dumps([row["id"] for row in members]),),
+            )]
+            recording = SessionRecording(group_id, rows)
+            if playback:
+                return recording
             return {"items": sources(members[offset:offset + limit]), "total": len(members),
-                    "chapters": chapter_navigation(members)}
+                    "chapters": chapter_navigation(members), "recording": recording.snapshot()}
         items = []
         for group in groups[offset:offset + limit]:
             members = group["members"]

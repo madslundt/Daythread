@@ -18,6 +18,7 @@ from .question_history import QuestionHistory
 from .question_records import historical_questions
 from .recording_topics import topic_fingerprint
 from .scoped_recap_jobs import fingerprint, invalidate_changed, scoped, validate_result
+from .summary_templates import SummaryTemplate, selected, use_template
 from .summary_translation import generate_summary_translation
 from .topic_context import topic_contexts
 from .translation import generate_translation
@@ -73,6 +74,15 @@ class RecapParameters(Parameters):
     day: date
     tag_id: UUID | None = None
     zone_id: UUID | None = None
+    template: Literal["general", "meeting", "interview", "reflection"] | None = None
+    instructions: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def template_scope(self):
+        if (self.tag_id or self.zone_id) and (self.template is not None
+                                            or self.instructions is not None):
+            raise ValueError("Presentation templates apply to full-day recaps")
+        return self
 
 
 class TranslationParameters(Parameters):
@@ -216,6 +226,10 @@ class GenerationJobs:
             ).fetchone()
             if existing:
                 previous = json.loads(existing["parameters"])
+                if body.kind == "recap" and not scoped(params):
+                    for field in ("template", "instructions"):
+                        if field not in params and field in previous:
+                            params[field] = previous[field]
                 if body.kind == "recap" and scoped(params):
                     params["scope_fingerprint"] = previous.get("scope_fingerprint")
                 # Freeze relative rewind time at first submission, including retries.
@@ -227,6 +241,10 @@ class GenerationJobs:
                 if existing["kind"] != body.kind or previous != params:
                     raise HTTPException(409, "Request ID already has different parameters")
             else:
+                if body.kind == "recap" and not scoped(params):
+                    choice = selected(self.memory, date.fromisoformat(params["day"]), db)
+                    params = {"template": choice.template, "instructions": choice.instructions,
+                              **params}
                 if body.kind == "recap" and scoped(params):
                     params["scope_fingerprint"] = fingerprint(self.memory, params, db)
                 if body.kind == "rewind" and params["end"] is None:
@@ -258,7 +276,10 @@ class GenerationJobs:
                     date.fromisoformat(params["day"]), params.get("tag_id"), params.get("zone_id"),
                     expected_fingerprint=params["scope_fingerprint"],
                 )
-            return await memory.recap(date.fromisoformat(params["day"]))
+            choice = SummaryTemplate(template=params.get("template", "general"),
+                                     instructions=params.get("instructions", ""))
+            with use_template(choice):
+                return await memory.recap(date.fromisoformat(params["day"]))
         if kind == "summary_translation":
             return await generate_summary_translation(
                 memory, UUID(params["output_id"]), params["language"],

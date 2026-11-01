@@ -166,6 +166,70 @@ async def test_bounded_day_writer_keeps_all_original_qualifications_without_redu
 
 
 @pytest.mark.anyio
+async def test_short_recordings_fit_the_day_writer_after_source_ids_are_compacted(tmp_path):
+    sources = [{"id": f"00000000-0000-4000-8000-{index:012}",
+                "started_at": "2026-10-31T18:00:00Z",
+                "text": "We discussed the family plans and agreed to bring dinner tomorrow. "
+                        + "details " * 5}
+               for index in range(1, 322)]
+    assert len(json.dumps(sources)) > EVIDENCE_BUDGET
+    calls = []
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        calls.append(payload)
+        assert "intermediate evidence notes" not in payload["task"]
+        originals = json.loads(payload["evidence"])
+        assert [source["text"] for source in originals] == [source["text"] for source in sources]
+        assert [source["started_at"] for source in originals] == [
+            source["started_at"] for source in sources]
+        assert originals[0]["id"] == "src_1" and originals[-1]["id"] == "src_321"
+        assert len(payload["evidence"]) <= EVIDENCE_BUDGET
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": "Dinner is planned for tomorrow. [src_1] [src_321]",
+        }}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result = await Inference(Settings(data_dir=tmp_path, _env_file=None), client
+                                 ).summarize_day_overview(sources, "a compact day recap")
+    assert len(calls) == 1
+    assert sources[0]["id"] in result and sources[-1]["id"] in result
+    assert "src_" not in result
+
+
+@pytest.mark.anyio
+async def test_day_writer_still_reduces_originals_exceeding_the_compact_budget(tmp_path):
+    sources = [{"id": f"00000000-0000-4000-8000-{index:012}",
+                "started_at": "2026-10-31T18:00:00Z",
+                "text": "We agreed to bring dinner tomorrow. " + "details " * 2300}
+               for index in range(1, 5)]
+    original = json.dumps(sources)
+    calls = []
+
+    def provider(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        calls.append(payload)
+        assert len(payload["evidence"]) < EVIDENCE_BUDGET
+        assert "language with code da" in payload["task"]
+        key = "src_1" if "src_1" in payload["evidence"] else next(
+            source["id"] for source in sources if source["id"] in payload["evidence"])
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": f"Dinner is planned for tomorrow. [{key}]",
+        }}]})
+
+    config = Settings(data_dir=tmp_path, _env_file=None, recap_language="da", summary_language="fr")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result = await Inference(config, client).summarize_day_overview(
+            sources, "a compact day recap")
+    assert len(calls) > 1
+    assert "intermediate evidence notes" in calls[0]["task"]
+    assert "intermediate evidence notes" not in calls[-1]["task"]
+    assert sources[0]["id"] in result and "src_" not in result
+    assert json.dumps(sources) == original
+    assert config.summary_language == "fr"
+
+
+@pytest.mark.anyio
 async def test_topic_review_cannot_transfer_another_projects_completion(tmp_path):
     planned, completed = str(uuid4()), str(uuid4())
     sources = [{"id": planned, "text": "Metrics are agreed. Atlas could be an option."},

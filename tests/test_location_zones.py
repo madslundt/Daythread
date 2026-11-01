@@ -117,6 +117,7 @@ def test_groups_and_expanded_sources_keep_the_same_zone_filter(client):
         if data:
             data["location_captured_at"] = stamp(at)
         source = capture(client, started_at=stamp(at), **data).json()
+        client.app.state.memory.store.complete(source["id"], "A recorded discussion at this place.")
         if index < 2:
             expected.add(source["id"])
     params = {"day": str(AT.date()), "zone_id": zone["id"]}

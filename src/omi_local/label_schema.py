@@ -1,5 +1,7 @@
 """Label projections and source lifecycle guards, executed in the source transaction."""
 
+from .label_facts import SCHEMA as FACT_SCHEMA
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS label_state (
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), revision TEXT NOT NULL,
@@ -78,7 +80,7 @@ CREATE TRIGGER IF NOT EXISTS labels_source_deleted BEFORE DELETE ON audio BEGIN
  UPDATE label_state SET revision=lower(hex(randomblob(16))),
  archive_revision=lower(hex(randomblob(16)));
 END;
-"""
+""" + FACT_SCHEMA
 
 
 def validate_labels(db) -> None:
@@ -173,11 +175,14 @@ def validate_labels(db) -> None:
             UUID(key)
             TypeAdapter(Name).validate_python(note["title"])
             TypeAdapter(Description).validate_python(note["body"])
-            if note["kind"] not in ("conversation", "decision", "open_question"):
+            if note["kind"] not in ("conversation", "decision", "open_question", "fact"):
                 raise ValueError("Invalid note kind")
             if not db.execute("SELECT 1 FROM note_sources WHERE note_id=?", (key,)).fetchone():
                 raise ValueError("Note without evidence")
             if not db.execute("SELECT 1 FROM note_entities WHERE note_id=?", (key,)).fetchone():
                 raise ValueError("Note without a label")
+        from .label_facts import validate
+
+        validate(db, notes)
     except (ValueError, TypeError, KeyError, LabelError) as exc:
         raise ValueError("Archive has invalid label data") from exc

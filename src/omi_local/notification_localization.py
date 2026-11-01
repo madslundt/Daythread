@@ -51,8 +51,54 @@ ACTIVITY_TITLES = {
 }
 
 
+CAPTURE_HEALTH_TITLES = {
+    "en": "Capture needs a check", "da": "Tjek optagelsen",
+    "de": "Aufnahme überprüfen", "es": "Revisa la grabación",
+    "fr": "Vérifiez la capture", "nb": "Sjekk opptaket", "sv": "Kontrollera inspelningen",
+}
+CAPTURE_HEALTH_STALE = {
+    "en": "The phone has stopped reporting capture progress. Open Capture to check the phone, "
+          "pendant connection and upload queue. Current capture is unknown.",
+    "da": "Telefonen rapporterer ikke længere om optagelsen. Åbn Optag for at tjekke telefonen, "
+          "forbindelsen til vedhænget og uploadkøen. Den aktuelle optagelse er ukendt.",
+    "de": "Das Telefon meldet keinen Aufnahmefortschritt mehr. Öffnen Sie Aufnahme und prüfen Sie "
+          "Telefon, Verbindung zum Anhänger und Upload-Warteschlange. "
+          "Die aktuelle Aufnahme ist unbekannt.",
+    "es": "El teléfono ha dejado de informar del progreso. Abre Grabación para revisar "
+          "el teléfono, la conexión del colgante y la cola de subidas. "
+          "Se desconoce el estado actual de la grabación.",
+    "fr": "Le téléphone ne signale plus la progression. Ouvrez Capture pour vérifier le téléphone, "
+          "la connexion du pendentif et la file d’envoi. L’état actuel de la capture est inconnu.",
+    "nb": "Telefonen rapporterer ikke lenger fremdrift. Åpne Opptak for å sjekke telefonen, "
+          "tilkoblingen til anhenget og opplastingskøen. Gjeldende opptaksstatus er ukjent.",
+    "sv": "Telefonen rapporterar inte längre förloppet. Öppna Inspelning för att kontrollera "
+          "telefonen, "
+          "anslutningen till hänget och uppladdningskön. Aktuell inspelningsstatus är okänd.",
+}
+CAPTURE_HEALTH_STALLED = {
+    "en": "The phone reports no recent capture progress. Open Capture to check the microphone, "
+          "pendant connection and available phone storage.",
+    "da": "Telefonen rapporterer ingen nylig fremdrift. Åbn Optag for at tjekke mikrofonen, "
+          "forbindelsen til vedhænget og ledig plads på telefonen.",
+    "de": "Das Telefon meldet keinen aktuellen Aufnahmefortschritt. Öffnen Sie Aufnahme und prüfen "
+          "Sie Mikrofon, Verbindung zum Anhänger und freien Telefonspeicher.",
+    "es": "El teléfono no informa de progreso reciente. Abre Grabación para revisar el micrófono, "
+          "la conexión del colgante y el espacio disponible en el teléfono.",
+    "fr": "Le téléphone ne signale aucune progression récente. Ouvrez Capture pour vérifier le "
+          "microphone, la connexion du pendentif et l’espace disponible sur le téléphone.",
+    "nb": "Telefonen rapporterer ingen nylig fremdrift. Åpne Opptak for å sjekke mikrofonen, "
+          "tilkoblingen til anhenget og ledig lagringsplass på telefonen.",
+    "sv": "Telefonen rapporterar inget aktuellt förlopp. Öppna Inspelning för att kontrollera "
+          "mikrofonen, anslutningen till hänget och ledigt lagringsutrymme på telefonen.",
+}
+
+
 def present_notification(event: dict, interface_language: str = "en") -> dict:
     language = interface_language if interface_language in QUESTION_NOUNS else "en"
+    if event["kind"] == "capture_health":
+        bodies = (CAPTURE_HEALTH_STALE if event["target"].get("issue") == "report_stale"
+                  else CAPTURE_HEALTH_STALLED)
+        return event | {"title": CAPTURE_HEALTH_TITLES[language], "body": bodies[language]}
     if event["kind"] != "wearable_action" or language == "en":
         return event
     target = event["target"]

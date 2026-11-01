@@ -55,6 +55,7 @@ targets:
         NSLocalNetworkUsageDescription: Daythread sends recordings to your own home-core on your local network.
         NSMicrophoneUsageDescription: Daythread records audio when you start manually or enable a recording schedule. You choose when to upload or remove recordings.
         NSRemindersFullAccessUsageDescription: Daythread adds a decision follow-up to your default Reminders list only when you tap Save to Reminders.
+        NSCalendarsFullAccessUsageDescription: Daythread reads upcoming calendar events only when you choose calendar-assisted preparation. You select the topic or attendee to use.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSExceptionDomains:

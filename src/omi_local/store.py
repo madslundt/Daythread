@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
+from .capture_health import SCHEMA as CAPTURE_HEALTH_SCHEMA
 from .completeness import SCHEMA as COMPLETENESS_SCHEMA
 from .completeness import CompletenessStore
 from .conversation_tags import SCHEMA as CONVERSATION_TAGS_SCHEMA
@@ -46,6 +47,8 @@ from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
 from .summary_translation import SCHEMA as SUMMARY_TRANSLATION_SCHEMA
 from .summary_translation import SummaryTranslationStore
+from .transcription_queue import SCHEMA as TRANSCRIPTION_QUEUE_SCHEMA
+from .transcription_queue import claim_audio
 from .translation import SCHEMA as TRANSLATION_SCHEMA
 from .translation import TranslationStore
 from .usage import SCHEMA as USAGE_SCHEMA
@@ -200,6 +203,8 @@ class Store(
             db.executescript(IMPORTANCE_SCHEMA)
             db.executescript(RECAP_SCHEMA)
             db.executescript(NOTIFICATION_SCHEMA)
+            db.executescript(CAPTURE_HEALTH_SCHEMA)
+            db.executescript(TRANSCRIPTION_QUEUE_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)
             db.executescript(DISPLAY_TRANSLATION_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
@@ -384,22 +389,10 @@ class Store(
         with self.connect() as db:
             db.execute("UPDATE audio SET state='queued' WHERE state='transcribing'")
 
-    def claim(self) -> dict | None:
+    def claim(self, *, now: datetime | None = None) -> dict | None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT * FROM audio WHERE state='queued' AND retry_at<=? "
-                "ORDER BY started_at LIMIT 1",
-                (stamp(utc_now()),),
-            ).fetchone()
-            if row:
-                db.execute(
-                    "UPDATE audio SET state='transcribing',attempts=attempts+1,"
-                    "processing_started_at=? WHERE id=?",
-                    (stamp(utc_now()), row["id"]),
-                )
-                return dict(row)
-        return None
+            return claim_audio(db, now or utc_now())
 
     def complete(
         self,

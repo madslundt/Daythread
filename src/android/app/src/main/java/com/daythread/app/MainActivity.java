@@ -37,6 +37,8 @@ public final class MainActivity extends Activity {
     private boolean resumed;
     private boolean refreshingQueue;
     private Switch microphoneEnabled;
+    private Runnable refreshOmiLight;
+    private Runnable refreshOmiStorage;
     private boolean updatingPolicyUI;
     private Runnable permissionAction;
     private ValueCallback<Uri[]> chooser;
@@ -205,6 +207,9 @@ public final class MainActivity extends Activity {
         }), true));
         page.addView(button(getString(R.string.connect_omi), () -> permission(true, () -> { CapturePolicy.manual(this, true, "omi"); scan(); }), false));
         scheduleControls(page);
+        refreshOmiLight = OmiLightControls.add(this, page);
+        refreshOmiStorage = OmiStorageControls.add(this, page);
+        chargingControls(page);
         WearableControls.add(this, page);
         space(page, 12); paragraph(page, R.string.capture_background); paragraph(page, R.string.capture_uploads); paragraph(page, R.string.gesture_help);
         section(page, R.string.queue_title); queueStatus = text("", 16, INK); page.addView(queueStatus); space(page, 12);
@@ -212,6 +217,21 @@ public final class MainActivity extends Activity {
         page.addView(button(getString(R.string.sync_now), () -> { UploadJob.schedule(this); UploadJob.pump(this, true); toast(R.string.sync_scheduled); }, true));
         page.addView(button(getString(R.string.listen_saved), this::listenSaved, false));
         space(page, 12); paragraph(page, R.string.queue_help); updateCapture();
+    }
+    private void chargingControls(LinearLayout page) {
+        var prefs = AppState.preferences(this);
+        String[] keys = {"omiPauseWhileCharging", "omiResumeAfterCharging"};
+        int[] labels = {R.string.omi_pause_while_charging, R.string.omi_resume_after_charging};
+        for (int index = 0; index < keys.length; index++) {
+            String key = keys[index];
+            Switch toggle = new Switch(this); toggle.setText(labels[index]); toggle.setMinHeight(dp(48));
+            toggle.setChecked(prefs.getBoolean(key, true)); page.addView(toggle);
+            toggle.setOnCheckedChangeListener((view, enabled) -> {
+                prefs.edit().putBoolean(key, enabled).apply();
+                if (CaptureService.active) startService(new Intent(this, CaptureService.class).setAction("omi_charging_preferences"));
+            });
+        }
+        paragraph(page, R.string.omi_charging_help);
     }
     private void scheduleControls(LinearLayout page) {
         android.content.SharedPreferences prefs = AppState.preferences(this);
@@ -325,6 +345,8 @@ public final class MainActivity extends Activity {
             updatingPolicyUI = false;
         }
         captureStatus.setText(CaptureService.active ? CaptureService.status : getString(R.string.capture_ready));
+        if (refreshOmiLight != null) refreshOmiLight.run();
+        if (refreshOmiStorage != null) refreshOmiStorage.run();
         if (refreshingQueue) return;
         refreshingQueue = true;
         io.execute(() -> {

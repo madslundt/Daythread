@@ -40,6 +40,9 @@ struct RecapContentView: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 18) {
+            if !effectiveFilters.isFiltered {
+                RecapTemplateControl(day: day, onGenerated: onCorrect)
+            }
             if !effectiveFilters.isFiltered && !recap["summary"].text.isEmpty {
                 SummaryTranslationView(output: recap, translationIsCompatible: { translatedMapping($0) != nil }, onContentLanguageChange: onContentLanguageChange, renderedContent: { translation, showing in
                     topicList(translation: translation, showingTranslation: showing)

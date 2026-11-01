@@ -29,9 +29,9 @@ describe("Today recording activity", () => {
     expect(html).toContain("Recording from Omi");
     expect(html).toContain("Recordings: 4 queued · 1 processing");
     expect(html).toContain("3 recordings waiting to upload");
-    expect(html).toContain("AI tasks: 2 queued · 2 processing");
+    expect(html).toContain("Background updates: 2 queued · 2 processing");
     expect(html).toContain("Summarizing · 1");
-    expect(html).toContain("Organizing recording topics · 1");
+    expect(html).toContain("Updating recording topics · 1");
     expect(html).toContain("Transcribing · 2 of 5 chunks complete");
   });
 
@@ -55,14 +55,24 @@ describe("Today recording activity", () => {
     expect(render({ ...status, phones: [{ ...phone, capture_source: undefined }] })).toContain("Recording in progress");
   });
 
-  it("explains long AI tasks with current part progress and hides it after a failed refresh", () => {
-    const value: Status = { ...status, generation: { queued: 0, running: 1,
-      stages: { organizing: 1 }, active: [{ id: "topics", stage: "organizing",
-        completed_chunks: 2, total_chunks: 8, elapsed_seconds: 340 }] } };
+  it("explains ongoing topic updates as background work without exposing internal chunks or timers", () => {
+    const value: Status = { ...status, processing: undefined, generation: { queued: 0, running: 2,
+      stages: { organizing: 2 }, active: [{ id: "topics", stage: "organizing",
+        completed_chunks: 3, total_chunks: 8, elapsed_seconds: 340 },
+        { id: "more-topics", stage: "organizing", completed_chunks: 1,
+          total_chunks: 4, elapsed_seconds: 20 }] } };
     const html = render(value);
-    expect(html).toContain("Organizing recording topics · 2 of 8 chunks complete · 340 sec elapsed");
-    expect(html).toContain('value="2" max="8"');
-    expect(render(value, "Offline")).not.toContain("2 of 8 chunks complete");
+    expect(html).toContain("Recording from Omi");
+    expect(html).toContain("Background updates: 0 queued · 2 processing");
+    expect(html.match(/Updating recording topics/g)).toHaveLength(1);
+    expect(html).toContain("Updating recording topics · 2");
+    expect(html).toContain("Titles and topics are updated in the background as recordings arrive.");
+    expect(html).not.toContain("chunks complete");
+    expect(html).not.toContain("sec elapsed");
+    expect(html).not.toContain("<progress");
+    expect(html.match(/class="processing-spinner"/g)).toHaveLength(1);
+    expect(render(value, "Offline")).not.toContain("Updating recording topics");
+    expect(render(value, "Offline")).not.toContain("Titles and topics are updated");
   });
 
   it("keeps queued work visible when the worker is stopped without presenting old transcription as active", () => {

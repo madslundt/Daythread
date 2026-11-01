@@ -5,3 +5,4 @@
 "NSLocalNetworkUsageDescription" = "Daythread sendet Aufnahmen an deinen eigenen home-core in deinem lokalen Netzwerk.";
 "NSRemindersFullAccessUsageDescription" = "Daythread fügt eine Nachverfolgung einer Entscheidung nur dann zu deiner Standardliste in Erinnerungen hinzu, wenn du auf „In Erinnerungen speichern“ tippst.";
 "NSLocationWhenInUseUsageDescription" = "Daythread verwendet deinen Standort, um Gespräche mit Ortsangaben zu versehen, wenn diese Funktion aktiviert ist, und um einen Ort für Erinnerungen in der Nähe auszuwählen.";
+"NSCalendarsFullAccessUsageDescription" = "Daythread liest kommende Kalendertermine nur, wenn du die kalendergestützte Vorbereitung auswählst. Du wählst das zu verwendende Thema oder den Teilnehmer.";

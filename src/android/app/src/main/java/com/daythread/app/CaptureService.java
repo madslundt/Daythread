@@ -19,6 +19,8 @@ public final class CaptureService extends Service {
     static volatile String source = "";
     static volatile String status = "";
     static volatile String captureProfile = "";
+    static volatile OmiConnection.LightState omiLight = OmiConnection.LightState.disconnected();
+    static volatile String omiStorage = "";
     private final AtomicBoolean recording = new AtomicBoolean();
     private HandlerThread thread;
     private Handler handler;
@@ -48,6 +50,23 @@ public final class CaptureService extends Service {
     private int inputGeneration;
     private boolean policyWaiting;
     private boolean controlPaused;
+    private Boolean omiCharging;
+    private OmiChargingPolicy chargingPolicy;
+    private void updateChargingPolicy() {
+        if (chargingPolicy == null || destination == null || stopped || stopRequested) return;
+        var prefs = AppState.preferences(this);
+        boolean previous = chargingPolicy.paused();
+        chargingPolicy.update(omiCharging, prefs.getBoolean("omiPauseWhileCharging", true), prefs.getBoolean("omiResumeAfterCharging", true));
+        prefs.edit().putBoolean("omiChargingPaused", chargingPolicy.paused()).apply();
+        try {
+            if (bluetoothSource && previous != chargingPolicy.paused()) {
+                finishRecentAudio(null, true); closeChunk(); frames.reset(); frameStarted = null;
+                if (decoder != null) decoder = new OmiFrames.Decoder(omiCodec);
+                discontinuity = true; lastEnd = null; missingSince = null;
+            }
+            checkPolicy();
+        } catch (Exception e) { fail(e); }
+    }
     private boolean prioritizingClickState;
     private final Runnable actionPoll = new Runnable() {
         @Override public void run() {
@@ -61,7 +80,7 @@ public final class CaptureService extends Service {
     private final BroadcastReceiver clockChanged = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) { handler.post(scheduleTick); }
     };
-    private boolean captureAllowed() { return !stopRequested && !stopped && CapturePolicy.liveEnabled() && policy != null && policy.allows(ZonedDateTime.now()); }
+    private boolean captureAllowed() { return !stopRequested && !stopped && CapturePolicy.liveEnabled() && policy != null && policy.allows(ZonedDateTime.now()) && !(bluetoothSource && chargingPolicy != null && chargingPolicy.paused()); }
     private void checkPolicy() {
         if (stopped || stopRequested || destination == null) return;
         try {
@@ -92,22 +111,25 @@ public final class CaptureService extends Service {
         if (policy.enabled() && captureAllowed()) controlPaused = false;
         if (!policy.enabled() && !controlPaused) { finish(); return; }
         if (!captureAllowed()) {
+            if (omi != null) omi.setAudioEnabled(false);
             if (!policyWaiting) { captureState("paused", "user_pause"); policyWaiting = true; }
             recording.set(false);
             if (microphone != null && readerStarted) {
                 try { microphone.stop(); } catch (IllegalStateException ignored) { }
             }
-            if (omi != null && !controlPaused) {
+            if (omi != null && !controlPaused && !(chargingPolicy != null && chargingPolicy.paused())) {
                 inputGeneration++;
                 OmiConnection previous = omi; omi = null; previous.close();
+                omiLight = OmiConnection.LightState.disconnected();
                 frames.reset(); decoder = null; frameStarted = null; missingSince = null;
                 closeChunk(); discontinuity = true; lastEnd = null;
             }
             if (!readerStarted) releaseWakeLock();
-            if (writer == null) update(getString(controlPaused ? R.string.capture_paused_controls : R.string.schedule_waiting));
+            if (writer == null) update(getString(controlPaused ? R.string.capture_paused_controls : bluetoothSource && chargingPolicy != null && chargingPolicy.paused() ? R.string.omi_charging_paused : R.string.schedule_waiting));
             return;
         }
         policyWaiting = false;
+        if (omi != null) omi.setAudioEnabled(true);
         if (bluetoothSource) { if (omi == null) startOmi(address); }
         else if (!readerStarted) startMicrophone();
     }
@@ -131,11 +153,33 @@ public final class CaptureService extends Service {
         if ("replace".equals(action)) { handler.post(this::finish); return START_NOT_STICKY; }
         if ("policy".equals(action)) { if (active) handler.post(scheduleTick); else stopSelf(); return START_NOT_STICKY; }
         if ("reconnect".equals(action)) { if (active) handler.post(() -> { if (omi != null) omi.reconnect(); }); else stopSelf(); return START_NOT_STICKY; }
+        if ("omi_charging_preferences".equals(action)) { if (active) handler.post(this::updateChargingPolicy); else stopSelf(); return START_NOT_STICKY; }
+        if ("omi_light".equals(action)) {
+            if (active) handler.post(() -> {
+                if (omi != null && Objects.equals(address, intent.getStringExtra("address")))
+                    omi.setLight(intent.getBooleanExtra("enabled", true));
+            }); else stopSelf();
+            return START_NOT_STICKY;
+        }
+        if ("omi_storage".equals(action) || "omi_storage_pause_check".equals(action)) {
+            if (active) handler.post(() -> {
+                boolean pauseAndCheck = "omi_storage_pause_check".equals(action);
+                if (pauseAndCheck && omi != null && captureAllowed()) perform(WearableAction.CAPTURE);
+                if (omi == null || destination == null || outbox == null || captureAllowed() || writer != null) {
+                    omiStorage = getString(R.string.ring_pause); return;
+                }
+                omi.copyStorage(!pauseAndCheck && intent.getBooleanExtra("copy", false), outbox, destination, device, omiCodec, () -> {
+                    try { return !stopped && !stopRequested && !captureAllowed() && writer == null && destination.equals(AppState.destination(this)); }
+                    catch (RuntimeException e) { return false; }
+                }, pauseAndCheck);
+            }); else { omiStorage = getString(R.string.ring_pause); stopSelf(); }
+            return START_NOT_STICKY;
+        }
         if ("stop".equals(action)) { CapturePolicy.manual(this, false, CapturePolicy.source(this)); handler.post(this::finish); return START_NOT_STICKY; }
         if ("mark".equals(action) || "meeting_toggle".equals(action)) { handler.post(() -> event(action)); return START_NOT_STICKY; }
         if ("capture_toggle".equals(action)) { handler.post(() -> perform(WearableAction.CAPTURE)); return START_NOT_STICKY; }
         if (active) return START_NOT_STICKY;
-        active = true; status = getString(R.string.starting_capture);
+        active = true; status = getString(R.string.starting_capture); omiLight = OmiConnection.LightState.disconnected(); omiStorage = "";
         boolean bluetooth = "omi".equals(action);
         source = action;
         bluetoothSource = bluetooth; address = intent.getStringExtra("address");
@@ -151,7 +195,10 @@ public final class CaptureService extends Service {
                 wall = Instant.now(); uptime = SystemClock.elapsedRealtimeNanos();
                 wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Daythread:Capture");
                 wakeLock.setReferenceCounted(false);
-                checkPolicy();
+                chargingPolicy = new OmiChargingPolicy(AppState.preferences(this).getBoolean("omiChargingPaused", false));
+                // A new explicit capture request releases an old hold unless Omi still reports charging.
+                chargingPolicy.resumeManually(omiCharging, AppState.preferences(this).getBoolean("omiPauseWhileCharging", true));
+                updateChargingPolicy();
                 handler.post(actionPoll);
             } catch (Exception e) { fail(e); }
         });
@@ -221,8 +268,15 @@ public final class CaptureService extends Service {
         missingSince = now();
         omi = new OmiConnection(this, address, handler, new OmiConnection.Listener() {
             public void codec(int codec) throws Exception { if (generation != inputGeneration) return; omiCodec = codec; decoder = new OmiFrames.Decoder(codec); frames.reset(); }
-            public void status(String text) { if (generation == inputGeneration) update(controlPaused ? getString(R.string.capture_paused_controls) : text); }
+            public void status(String text) { if (generation == inputGeneration) update(controlPaused ? getString(R.string.capture_paused_controls) : chargingPolicy != null && chargingPolicy.paused() ? getString(R.string.omi_charging_paused) : text); }
+            public void charging(Boolean value) { if (generation == inputGeneration) { omiCharging = value; updateChargingPolicy(); } }
             public void failure(Exception error) { if (generation == inputGeneration) fail(error); }
+            public void light(OmiConnection.LightState state) { if (generation == inputGeneration) omiLight = state; }
+            public void storage(String text) {
+                if (generation != inputGeneration) return;
+                omiStorage = text;
+                if (text.equals(getString(R.string.ring_saved))) { UploadJob.schedule(CaptureService.this); UploadJob.pump(CaptureService.this); }
+            }
             public void disconnected() {
                 if (generation != inputGeneration) return;
                 try {
@@ -333,10 +387,14 @@ public final class CaptureService extends Service {
         try {
             if (action == WearableAction.CAPTURE) {
                 boolean resume = !captureAllowed();
-                // Keep the BLE subscription alive while paused so the same click can resume.
+                // Keep the button connection alive while audio is stopped so the same click can resume.
                 if (!resume) closeChunk();
                 finishRecentAudio(null, true);
                 controlPaused = !resume;
+                if (resume && bluetoothSource && chargingPolicy != null) {
+                    chargingPolicy.resumeManually(omiCharging, AppState.preferences(this).getBoolean("omiPauseWhileCharging", true));
+                    AppState.preferences(this).edit().putBoolean("omiChargingPaused", chargingPolicy.paused()).apply();
+                }
                 if (!CapturePolicy.manual(this, resume, bluetoothSource ? "omi" : "microphone")) throw new IOException(getString(R.string.click_failed));
                 frames.reset(); frameStarted = null; missingSince = null;
                 if (decoder != null) decoder = new OmiFrames.Decoder(omiCodec);
@@ -412,7 +470,7 @@ public final class CaptureService extends Service {
             if (destination != null && outbox != null) captureState(fatal ? "blocked" : "paused", fatal ? "unknown" : "user_pause");
         } catch (Exception e) { AppState.error(this, e.getMessage()); }
         releaseWakeLock();
-        active = false; captureProfile = ""; status = "";
+        active = false; captureProfile = ""; status = ""; omiLight = OmiConnection.LightState.disconnected();
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); UploadJob.schedule(this); UploadJob.pump(this);
         if (destroying) release();
     }

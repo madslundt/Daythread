@@ -89,8 +89,12 @@
     <string name="single_click">Enkeltklik</string>
     <string name="double_click">Dobbeltklik</string>
     <string name="recent_audio">Varighed af seneste lyd</string>
-    <string name="recent_audio_duration">Seneste lyd: %1$d sekunder</string>
+    <string name="recent_audio_duration">Seneste lyd: %1$s</string>
     <string name="duration_seconds">%1$d sekunder</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minut</item>
+        <item quantity="other">%1$d minutter</item>
+    </plurals>
     <string name="wearable_controls_help">Vælg en handling til hvert klik. Opsummering, svar og oversættelse bruger den valgte varighed. Oversættelse bruger det første oversættelsessprog i arkivets indstillinger. Et langt tryk er forbeholdt vedhængets tænd/sluk-funktion.</string>
     <string name="meeting_action">Start / afslut møde</string>
     <string name="summarize_recent">Opsummér seneste lyd</string>
@@ -148,4 +152,30 @@
         <item quantity="one">For %1$d minut siden</item>
         <item quantity="other">For %1$d minutter siden</item>
     </plurals>
+    <string name="omi_light">Omi-lys</string>
+    <string name="omi_light_help">Tænder eller slukker lyset på vedhænget. Optagelsen fortsætter med lyset slukket.</string>
+    <string name="omi_light_connect">Opret forbindelse til Omi for at styre lyset.</string>
+    <string name="omi_light_updating">Læser Omis lysindstilling…</string>
+    <string name="omi_light_unsupported">Denne Omi-firmware understøtter ikke styring af lyset.</string>
+    <string name="omi_light_failed">Omis lysindstilling kunne ikke bekræftes. Opret forbindelse igen for at prøve igen.</string>
+    <string name="omi_pause_while_charging">Stop Omi-optagelse under opladning</string>
+    <string name="omi_resume_after_charging">Genoptag Omi-optagelse efter opladning</string>
+    <string name="omi_charging_paused">Omi-optagelse stoppet til opladning</string>
+    <string name="omi_charging_help">Stop automatisk optagelsen på opladeren. Genoptag optagelsen, når Omi fjernes, hvis denne indstilling er slået til; manuelle stop og optagelsesplaner gælder stadig. Kræver firmware, der rapporterer opladningsstatus.</string>
+    <string name="ring_title">Lager på vedhæng</string>
+    <string name="ring_help">Tilslut Omi, og brug Sæt på pause og kontrollér lager på vedhæng til at stoppe liveoptagelse og beholde forbindelsen. Kontrol kopierer aldrig lyd. Kopiér udtrykkeligt, og genoptag optagelse, når du er klar. Originale kopier bliver på enheden. Enhedens tidsstempler har ét sekunds præcision. Kun bekræftet custody-firmware og et gyldigt enhedsur understøttes. Eksisterende livelyd flettes ikke automatisk.</string>
+    <string name="ring_check">Sæt på pause og kontrollér lager på vedhæng</string>
+    <string name="ring_copy">Kopiér optagelser fra vedhæng</string>
+    <string name="ring_pause">Stop liveoptagelse, før du kopierer lager på vedhænget.</string>
+    <string name="ring_unsupported">Sikker lagergendannelse er ikke tilgængelig med denne firmware.</string>
+    <string name="ring_checking">Kontrollerer lager på vedhæng…</string>
+    <string name="ring_copying">Kopierer optagelser fra vedhæng…</string>
+    <string name="ring_clock">Vedhængets ur er ikke tilgængeligt. Originale optagelser bliver på vedhænget.</string>
+    <string name="ring_changed">Lager på vedhænget er ændret. Tilslut igen, før du prøver på ny.</string>
+    <string name="ring_failed">Kunne ikke kopiere optagelser fra vedhænget. Originale optagelser bliver på vedhænget.</string>
+    <string name="ring_overlap">Lyd fra vedhænget overlapper en lokal optagelse. Originale optagelser bliver på vedhænget.</string>
+    <string name="ring_pending">Ventende optagelser: %1$d</string>
+    <string name="ring_overwritten">Nogle optagelser på vedhænget blev overskrevet før gendannelsen.</string>
+    <string name="ring_saved">Kopier fra vedhæng gemt i uploadkøen</string>
+    <string name="ring_empty">Ingen nye optagelser fra vedhæng</string>
 </resources>

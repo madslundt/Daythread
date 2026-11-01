@@ -174,6 +174,15 @@ public final class Outbox {
         Files.delete(new File(directory, item.id + ".json").toPath());
         Files.deleteIfExists(item.file.toPath());
         Files.deleteIfExists(new File(directory, item.id + ".frames").toPath());
+        Files.deleteIfExists(new File(directory, item.id + ".ring").toPath());
+    }
+    public synchronized long ringCursor(Destination destination, String device, long ring) throws IOException {
+        return new RingRecoveryStore(directory).cursor(destination, device, ring);
+    }
+    public synchronized int copyRingRecords(Destination destination, String device, long ring,
+            List<OmiRingProtocol.Record> records, int codec) throws Exception {
+        if (!openWriters.isEmpty()) throw new OmiRingProtocol.Invalid(OmiRingProtocol.Failure.OVERLAP);
+        return new RingRecoveryStore(directory).copy(this, destination, device, ring, records, codec);
     }
     public synchronized Writer begin(Destination destination, String device, Instant started) throws IOException {
         checkSpace(CHUNK_BYTES * 3L);

@@ -7,11 +7,15 @@ from datetime import datetime, timedelta
 from functools import cached_property
 
 from .conversation_state import finished_file
+from .domain import utc_now
+
+MAX_LIVE_WINDOW = timedelta(minutes=15)
 
 
 @dataclass
 class TopicContext:
     members: list[dict]
+    eligible: bool = True
 
     @cached_property
     def key(self) -> str:
@@ -26,7 +30,7 @@ class TopicContext:
 
     @property
     def ready(self) -> bool:
-        if any(row["state"] != "done" for row in self.members):
+        if not self.eligible or any(row["state"] != "done" for row in self.members):
             return False
         metadata = [json.loads(row["source_metadata"] or "{}") for row in self.members]
         if metadata[0].get("recording_id"):
@@ -43,12 +47,6 @@ class TopicContext:
         ) for row in self.members)
 
     def due(self, fingerprint: str, now: str) -> bool:
-        # Let a live upload stream settle before repeating an expensive context analysis.
-        # This schedules derived navigation only; it does not declare a conversation closed.
-        if not finished_file(self.members[0]) and max(
-            datetime.fromisoformat(row["ended_at"]) for row in self.members
-        ) > datetime.fromisoformat(now) - timedelta(seconds=60):
-            return False
         return self.ready and any(row["has_text"] and (
             row["topics"].get("fingerprint") != fingerprint
             or row["topics"].get("context") != self.key
@@ -56,7 +54,50 @@ class TopicContext:
         ) for row in self.members)
 
 
-def topic_contexts(db) -> list[TopicContext]:
+def live_contexts(rows: list[dict], now: datetime) -> list[TopicContext]:
+    """Stable work windows, closed by a speech-free upload or a 15-minute checkpoint.
+
+    An empty, completed transcript means no intelligible speech was registered;
+    it need not be acoustically silent. Missing/pending uploads are not a pause.
+    These processing boundaries do not close a conversation or meeting.
+    """
+    streams = {}
+    for row in rows:
+        streams.setdefault((row["device_id"], row["source_kind"]), []).append(row)
+    result = []
+    for stream in streams.values():
+        next_speech, following = [None] * len(stream), None
+        for index in range(len(stream) - 1, -1, -1):
+            next_speech[index] = following
+            if stream[index]["state"] != "done" or stream[index]["has_text"]:
+                following = datetime.fromisoformat(stream[index]["started_at"])
+        current, end, deadline = [], None, None
+        for index, row in enumerate(stream):
+            start, finish = (datetime.fromisoformat(row[key])
+                             for key in ("started_at", "ended_at"))
+            if current and (start - end > timedelta(minutes=5) or finish > deadline):
+                result.append(TopicContext(current, eligible=now >= deadline))
+                current = []
+            if row["state"] == "done" and not row["has_text"]:
+                # A gap or a receipt-timed webhook cannot prove a speech break.
+                if (current and start == end and finish <= now
+                        and (next_speech[index] is None or next_speech[index] >= finish)
+                        and row["source_kind"] != "omi_audio_webhook"):
+                    result.append(TopicContext([*current, row]))
+                    current = []
+                continue
+            if not current:
+                deadline = start + MAX_LIVE_WINDOW
+                end = finish
+            else:
+                end = max(end, finish)
+            current.append(row)
+        if current:
+            result.append(TopicContext(current, eligible=now >= max(deadline, end)))
+    return result
+
+
+def topic_contexts(db, now: datetime | None = None) -> list[TopicContext]:
     # Import at call time: timeline presentation itself imports public_source.
     from .recording_groups import group_recordings
 
@@ -69,16 +110,19 @@ def topic_contexts(db) -> list[TopicContext]:
         "length(trim(coalesce(text,'')))>0 AS has_text FROM audio "
         "WHERE state!='expired' ORDER BY started_at,id"
     )]
-    streams, standalone = [], []
+    streams, files, standalone = [], [], []
     for row in rows:
         row["topics"] = {"fingerprint": row.pop("topic_fingerprint"),
                          "context": row.pop("topic_context"), "retry_at": row.pop("topic_retry")}
         metadata = json.loads(row["source_metadata"] or "{}")
-        if finished_file(row) and not metadata.get("recording_id"):
+        if metadata.get("recording_id"):
+            files.append(row)
+        elif finished_file(row):
             standalone.append(TopicContext([row]))
         else:
             streams.append(row)
-    contexts = standalone + [TopicContext(group["members"]) for group in group_recordings(streams)]
+    contexts = (standalone + [TopicContext(group["members"]) for group in group_recordings(files)]
+                + live_contexts(streams, now or utc_now()))
     for context in contexts:
         if json.loads(context.members[0]["source_metadata"] or "{}").get("recording_id"):
             context.members.sort(key=lambda row: json.loads(row["source_metadata"])["part_index"])

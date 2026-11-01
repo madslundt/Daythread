@@ -69,6 +69,18 @@ class NoteSave(Mutation):
         return self
 
 
+class FactSave(NoteSave):
+    action: Literal["fact.save"]
+    create: Literal[True] = True
+    kind: Literal["fact"] = "fact"
+    entity_ids: list[UUID] = Field(min_length=1, max_length=1)
+    supersedes: UUID | None = None
+
+
+class FactReject(Mutation):
+    action: Literal["fact.reject"]
+
+
 class DecisionLink(Mutation):
     action: Literal["decision_link.save"]
     entity_id: UUID
@@ -103,7 +115,8 @@ class Split(Mutation):
 
 
 LabelMutation = Annotated[
-    EntitySave | Delete | LinkSave | NoteSave | DecisionLink | Merge | Split,
+    EntitySave | Delete | LinkSave | NoteSave | FactSave | FactReject
+    | DecisionLink | Merge | Split,
     Field(discriminator="action"),
 ]
 

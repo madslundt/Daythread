@@ -40,6 +40,7 @@ private struct ServerModelRoute: Identifiable, Equatable {
     var model = ""
     var endpoint = ""
     var revision = ""
+    var vocabularyMode = ""
     var secret = ServerSecretEdit()
 }
 
@@ -85,6 +86,12 @@ private struct ServerRouteControl: View {
             } else {
                 TextField(L10n.text("Language code or name (da, en, danish, auto)"), text: $route.name)
                     .accessibilityLabel(L10n.text("Language code or detector name"))
+                Picker(L10n.text("Vocabulary format"), selection: $route.vocabularyMode) {
+                    Text(L10n.text("Use default vocabulary format")).tag("")
+                    Text(L10n.text("Disabled")).tag("off")
+                    Text(L10n.text("Whisper prompt")).tag("prompt")
+                    Text(L10n.text("JSON keyterms")).tag("keyterms")
+                }
             }
             TextField(L10n.text("Model override (blank inherits default)"), text: $route.model)
                 .accessibilityLabel(L10n.text("Model override"))
@@ -197,6 +204,9 @@ struct ServerConfigurationView: View {
     private let advancedKeys: Set<String> = [
         "stt_base_url", "stt_api_key", "stt_model", "stt_routes", "stt_chunk_seconds", "stt_filter_speech",
         "stt_enhancement_mode", "stt_enhancement_timeout_seconds", "stt_segment_timestamps",
+        "stt_vocabulary", "stt_vocabulary_mode", "stt_preview_enabled",
+        "capture_health_enabled", "capture_health_stall_minutes", "capture_health_cooldown_minutes",
+        "capture_health_quiet_start_hour", "capture_health_quiet_end_hour",
         "llm_base_url", "llm_api_key", "llm_model", "llm_revision", "llm_routes", "llm_enable_thinking",
         "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
         "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
@@ -207,6 +217,9 @@ struct ServerConfigurationView: View {
     private func isVisible(_ field: ServerSettingField) -> Bool {
         let key = field.key
         guard advancedKeys.contains(key) else { return false }
+        if key.hasPrefix("capture_health_"), key != "capture_health_enabled" {
+            return values["capture_health_enabled"] == .bool(true)
+        }
         if key.hasPrefix("embedding_"), key != "embedding_enabled" {
             return values["embedding_enabled"] == .bool(true)
         }
@@ -229,6 +242,7 @@ struct ServerConfigurationView: View {
             switch values[key] {
             case .string(let text): return text
             case .number(let number): return String(format: "%g", number)
+            case .array(let terms): return terms.map(\.text).joined(separator: "\n")
             default: return ""
             }
         }, set: { values[key] = .string($0); status = nil })
@@ -268,6 +282,19 @@ struct ServerConfigurationView: View {
             ServerSecretControl(label: L10n.key(field.label), configured: snapshot.secrets[field.key] ?? false,
                 nullable: field.nullable,
                 edit: Binding(get: { secrets[field.key] ?? ServerSecretEdit() }, set: { secrets[field.key] = $0; status = nil }))
+        } else if field.kind == "terms" {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.subheadline)
+                TextEditor(text: valueBinding(field.key)).frame(minHeight: 120)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityLabel(title)
+            }
+        } else if field.key == "stt_vocabulary_mode" {
+            Picker(title, selection: valueBinding(field.key)) {
+                Text(L10n.text("Disabled")).tag("off")
+                Text(L10n.text("Whisper prompt")).tag("prompt")
+                Text(L10n.text("JSON keyterms")).tag("keyterms")
+            }
         } else if field.kind == "boolean" {
             if field.nullable {
                 Picker(title, selection: Binding(get: {
@@ -327,7 +354,7 @@ struct ServerConfigurationView: View {
             if case .object(let map) = result.values[field.key] {
                 routes[field.key] = map.keys.sorted().map { name in
                     let route = map[name] ?? .null
-                    return ServerModelRoute(name: name, model: route["model"].text, endpoint: route["base_url"].text, revision: route["revision"].text)
+                    return ServerModelRoute(name: name, model: route["model"].text, endpoint: route["base_url"].text, revision: route["revision"].text, vocabularyMode: route["vocabulary_mode"].text)
                 }
             }
         }
@@ -356,10 +383,17 @@ struct ServerConfigurationView: View {
                               map[name] == nil else { throw BackendFailure(message: L10n.text("Enter a unique language code or task for every route.")) }
                         var route: [String: JSONValue] = ["model": row.model.isEmpty ? .null : .string(row.model), "base_url": row.endpoint.isEmpty ? .null : .string(row.endpoint)]
                         if field.key == "llm_routes" { route["revision"] = row.revision.isEmpty ? .null : .string(row.revision) }
+                        if field.key == "stt_routes" { route["vocabulary_mode"] = row.vocabularyMode.isEmpty ? .null : .string(row.vocabularyMode) }
                         if let token = try row.secret.change() { route["token"] = token }
                         map[name] = .object(route)
                     }
                     value = .object(map)
+                } else if field.kind == "terms" {
+                    if case .string(let text) = value {
+                        value = .array(text.components(separatedBy: .newlines).map {
+                            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }.filter { !$0.isEmpty }.map { .string($0) })
+                    }
                 } else if field.kind == "integer" || field.kind == "number" {
                     if case .string(let text) = value {
                         guard let number = Double(text), number.isFinite else { throw BackendFailure(message: L10n.text("Enter a number for \(L10n.key(field.label)).")) }

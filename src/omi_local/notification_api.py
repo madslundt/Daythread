@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from .capture_health import capture_health_status
 from .notification_localization import InterfaceLanguage
 
 InstallationID = Annotated[str, Path(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9_-]+$")]
@@ -17,6 +18,7 @@ class DeviceRegistration(BaseModel):
     environment: Literal["sandbox", "production"]
     active: bool
     interface_language: InterfaceLanguage = "en"
+    phone_id: UUID | None = None
 
 
 class Presence(BaseModel):
@@ -36,9 +38,16 @@ def notification_routes(get_memory) -> APIRouter:
     @router.get("")
     def feed(
         after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
-        interface_language: InterfaceLanguage = "en",
+        interface_language: InterfaceLanguage = "en", phone_id: UUID | None = None,
     ) -> dict:
-        return get_memory().store.notifications_after(after, limit, interface_language)
+        return get_memory().store.notifications_after(
+            after, limit, interface_language, str(phone_id) if phone_id else None,
+        )
+
+    @router.get("/capture-health")
+    def capture_health():
+        memory = get_memory()
+        return capture_health_status(memory.store, memory.settings)
 
     @router.get("/status")
     def status():
@@ -59,6 +68,7 @@ def notification_routes(get_memory) -> APIRouter:
         memory.store.register_notification_device(
             installation_id, body.token.lower(), body.environment, body.active,
             interface_language=body.interface_language,
+            phone_id=str(body.phone_id) if body.phone_id else None,
         )
         return {"registered": True}
 

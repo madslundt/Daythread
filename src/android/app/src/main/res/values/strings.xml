@@ -89,8 +89,12 @@
     <string name="single_click">Single click</string>
     <string name="double_click">Double click</string>
     <string name="recent_audio">Recent audio duration</string>
-    <string name="recent_audio_duration">Recent audio: %1$d seconds</string>
+    <string name="recent_audio_duration">Recent audio: %1$s</string>
     <string name="duration_seconds">%1$d seconds</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
     <string name="wearable_controls_help">Choose an action for each click. Summarize, Answer and Translate use the recent audio duration. Translate uses the first translation language in your archive settings. Hold is reserved for the pendant’s power control.</string>
     <string name="meeting_action">Start / end meeting</string>
     <string name="summarize_recent">Summarize recent audio</string>
@@ -148,4 +152,30 @@
         <item quantity="one">%1$d minute ago</item>
         <item quantity="other">%1$d minutes ago</item>
     </plurals>
+    <string name="omi_light">Omi light</string>
+    <string name="omi_light_help">Turns the pendant light on or off. Recording continues with the light off.</string>
+    <string name="omi_light_connect">Connect to Omi to control its light.</string>
+    <string name="omi_light_updating">Reading Omi light setting…</string>
+    <string name="omi_light_unsupported">This Omi firmware does not support light control.</string>
+    <string name="omi_light_failed">Could not confirm the Omi light setting. Reconnect to try again.</string>
+    <string name="omi_pause_while_charging">Stop Omi recording while charging</string>
+    <string name="omi_resume_after_charging">Resume Omi recording after charging</string>
+    <string name="omi_charging_paused">Omi recording stopped for charging</string>
+    <string name="omi_charging_help">Stop recording automatically on the charger. Resume recording when Omi is removed if this option is enabled; manual stops and recording schedules still apply. Requires firmware that reports charging status.</string>
+    <string name="ring_title">Pendant storage</string>
+    <string name="ring_help">Connect Omi, then use Pause and check pendant storage to stop live recording while keeping the connection. Checking never copies audio. Copy explicitly, then resume recording when ready. Original device copies are retained. Device timestamps have one-second precision. Only verified custody firmware and a valid device clock are supported. Existing live audio is not automatically merged.</string>
+    <string name="ring_check">Pause and check pendant storage</string>
+    <string name="ring_copy">Copy pendant recordings</string>
+    <string name="ring_pause">Stop live recording before copying pendant storage.</string>
+    <string name="ring_unsupported">Safe storage recovery is unavailable on this firmware.</string>
+    <string name="ring_checking">Checking pendant storage…</string>
+    <string name="ring_copying">Copying pendant recordings…</string>
+    <string name="ring_clock">The pendant clock is unavailable. Original recordings remain on the pendant.</string>
+    <string name="ring_changed">Pendant storage changed. Reconnect before trying again.</string>
+    <string name="ring_failed">Could not copy pendant recordings. Original recordings remain on the pendant.</string>
+    <string name="ring_overlap">Pendant audio overlaps a local recording. Original recordings remain on the pendant.</string>
+    <string name="ring_pending">Pending records: %1$d</string>
+    <string name="ring_overwritten">Some pendant records were overwritten before recovery.</string>
+    <string name="ring_saved">Pendant copies saved to the upload queue</string>
+    <string name="ring_empty">No new pendant recordings</string>
 </resources>

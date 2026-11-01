@@ -10,6 +10,8 @@ from .source_matching import manual_upload, merge_groups
 from .vendor_imports import transcript_import
 from .voice_activity import VERSION
 
+CAPTURE_STOP_GRACE_SECONDS = 2 * 60
+
 
 @dataclass
 class Conversation:
@@ -119,6 +121,58 @@ def meeting_timeline(snapshot: dict, now: datetime) -> dict:
     return project_events(snapshot["events"], now, observed)
 
 
+@dataclass(frozen=True)
+class CaptureStop:
+    first_reported_at: str
+    last_reported_at: str
+    eligible_through: str
+    proof: tuple[str, str, str]
+
+
+def capture_stops(snapshot: dict, now: datetime) -> dict[str, list[CaptureStop]]:
+    """Reported capture interruptions bound received audio, without establishing silence."""
+    cutoff = stamp(now)
+    result: dict[str, list[CaptureStop]] = {}
+    stopped_states = {"paused", "disconnected", "blocked"}
+    for phone in snapshot.get("phones", []):
+        observation = json.loads(phone["payload"])
+        device = observation.get("device_id")
+        if (phone.get("historical") or not device
+                or observation.get("capture_source") != "omi"
+                or observation["observed_at"] > stamp(now)):
+            continue
+        events = [event for event in snapshot.get("capture_states", [])
+                  if event["phone_id"] == phone["phone_id"]
+                  and event["occurred_at"] <= observation["observed_at"]]
+        stopped = last_stop = None
+
+        def include(until: str) -> None:
+            finish = stamp(datetime.fromisoformat(stopped["occurred_at"])
+                           + timedelta(seconds=CAPTURE_STOP_GRACE_SECONDS))
+            if finish <= min(until, cutoff):
+                result.setdefault(device, []).append(CaptureStop(
+                    stopped["occurred_at"], last_stop["occurred_at"], min(until, cutoff),
+                    (stopped["event_id"], phone["phone_id"], stopped["occurred_at"]),
+                ))
+
+        for event in events:
+            if event["state"] in stopped_states:
+                if stopped is None:
+                    stopped = event
+                last_stop = event
+            elif stopped is not None:
+                # Completed interruptions remain boundaries after capture resumes.
+                include(event["occurred_at"])
+                stopped = last_stop = None
+        if (stopped is not None and observation.get("capture_state") in stopped_states
+                and observation.get("upload_state") == "idle"
+                and not any(observation.get(key) for key in (
+                    "pending_recordings", "pending_seconds", "recovery_items", "oldest_capture_at",
+                ))):
+            include(stamp(now))
+    return result
+
+
 def conversations(
     snapshot: dict, now: datetime, quiet_seconds: int, *, respect_open_meeting: bool = True,
 ) -> list[Conversation]:
@@ -128,6 +182,7 @@ def conversations(
     timeline = meeting_timeline(snapshot, now)
     active = timeline["active_meeting"]
     active_device = active["meeting_capture_device_id"] if active else None
+    stops = capture_stops(snapshot, now) if not respect_open_meeting else {}
     for row in snapshot["rows"]:
         if row["started_at"] > stamp(now) or row["state"] == "expired":
             continue
@@ -188,6 +243,17 @@ def conversations(
                     group.closed_at, group.basis = finish, "observed_non_speech"
                     group.proof = tuple(sorted({token for a, b, token in proof
                                                 if a < finish and b > start}))
+                    return
+            if not any(row.get("source_kind") == "omi_audio_webhook" for row in group.sources):
+                for stop in stops.get(device, []):
+                    boundary = max(stop.first_reported_at, group.end)
+                    finish = stamp(datetime.fromisoformat(boundary)
+                                   + timedelta(seconds=CAPTURE_STOP_GRACE_SECONDS))
+                    if (group.end <= stop.last_reported_at
+                            and finish <= min(before, stop.eligible_through)):
+                        group.closed_at, group.basis = boundary, "capture_stopped"
+                        group.proof = stop.proof
+                        return
 
         for row in candidates:
             if current:
@@ -199,7 +265,7 @@ def conversations(
                 current = Conversation([])
             current.append(row)
         if current:
-            close(current, settled)
+            close(current, stamp(now))
             result.append(current)
     result = merge_groups(
         result, snapshot.get("source_matches", []), snapshot.get("upload_parts", [])

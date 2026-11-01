@@ -27,6 +27,9 @@ public class WearableActionTest {
         assertEquals(120, request.getJson("parameters").getInt("duration_seconds"));
         assertEquals("omi-test", request.getJson("parameters").getString("device_id"));
         assertEquals(30, WearableAction.TRANSLATE.request(-1, end, "omi-test").getJson("parameters").getInt("duration_seconds"));
+        for (int seconds : new int[]{15, 30, 60, 120, 180})
+            assertEquals(seconds, WearableAction.ANSWER.request(seconds, end, "omi-test").getJson("parameters").getInt("duration_seconds"));
+        assertEquals(180, WearableAction.duration(300));
         assertThrows(IllegalArgumentException.class, () -> WearableAction.MARK.request(30, end, "omi-test"));
     }
 }

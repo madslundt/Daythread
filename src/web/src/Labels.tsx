@@ -3,6 +3,7 @@ import { t } from "./i18n";
 import { navigatePath, subscribeNavigation } from "./routing";
 import { ImportanceButton, ImportantBadge } from "./Importance";
 import { LabelDecisionLink } from "./LabelDecisionLink";
+import { LabelFacts } from "./LabelFacts";
 import { DecisionDetail } from "./Decisions";
 import { LabelRequestEpoch } from "./labelRequests";
 import { EntityManagement } from "./LabelManagement";
@@ -279,6 +280,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
             >
               {t("All dates")}{" "}</button>
           </div>
+          <LabelFacts entityId={data.entity.id} revision={data.revision} timezone={timezone} onSaved={refresh} />
           <p className="caption">
             {t("Dates in")}{" "}{timezone}{t(". Recordings keep source-level precision. Groups and notes are written by you; speaker attributions from imports remain unverified.")}{" "}</p>
           <button className="button" onClick={() => setEditor("new")}>
@@ -315,7 +317,7 @@ function EntityDetail({ id, timezone }: { id: string; timezone: string }) {
             <p>
               {t("No linked evidence in these dates. Add labels from source details or select recordings in a new annotation.")}{" "}</p>
           ) : null}
-          {entries.map((entry) => (
+          {entries.filter((entry) => entry.kind !== "fact").map((entry) => (
             <article className="label-panel" key={entry.id}>
               {entry.entry_type === "decision" ? (
                 <>

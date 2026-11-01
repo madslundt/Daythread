@@ -49,6 +49,10 @@ class RecapStore:
             )],
             "events": [dict(row) for row in db.execute("SELECT * FROM events")],
             "gaps": [dict(row) for row in db.execute("SELECT * FROM capture_gaps")],
+            "capture_states": [dict(row) for row in db.execute(
+                "SELECT * FROM capture_states ORDER BY occurred_at,event_id"
+            )],
+            "phones": [dict(row) for row in db.execute("SELECT * FROM phone_observations")],
             "source_matches": [dict(row) for row in db.execute("SELECT * FROM source_matches")],
             "upload_parts": [dict(row) for row in db.execute("SELECT * FROM upload_parts")],
         }

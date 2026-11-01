@@ -4,3 +4,4 @@
 "NSLocalNetworkUsageDescription" = "Daythread sender optagelser til din egen home-core på dit lokale netværk.";
 "NSRemindersFullAccessUsageDescription" = "Daythread føjer kun en opfølgning på en beslutning til din standardliste i Påmindelser, når du trykker på Gem i Påmindelser.";
 "NSLocationWhenInUseUsageDescription" = "Daythread bruger din placering til at stedmærke samtaler, når funktionen er slået til, og til at vælge steder til påmindelser i nærheden.";
+"NSCalendarsFullAccessUsageDescription" = "Daythread læser kun kommende kalenderaftaler, når du vælger kalenderassisteret forberedelse. Du vælger det emne eller den deltager, der skal bruges.";

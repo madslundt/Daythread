@@ -5,6 +5,7 @@ from .domain import EvidenceChanged, stamp
 from .recaps import DAY_PROMPT_VERSION, Recaps, digest, topic_sources
 from .scoped_recap_cache import ScopedRecapCache
 from .source_scope import matching_source_ids
+from .summary_templates import SummaryTemplate
 
 
 class ScopedRecaps(Recaps):
@@ -13,6 +14,10 @@ class ScopedRecaps(Recaps):
         self.scope = {"tag_id": str(tag_id) if tag_id else None,
                       "zone_id": str(zone_id) if zone_id else None}
         self.cache = ScopedRecapCache(memory.store)
+
+    def presentation(self, day):
+        # Per-day presentation choices do not enter independent filtered caches.
+        return SummaryTemplate()
 
     def group_key(self, group):
         return digest({"scope": self.scope, "conversation": super().group_key(group)})

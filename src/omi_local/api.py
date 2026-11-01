@@ -20,6 +20,7 @@ from .archive_export import install_archive_export
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .blob_storage import storage_from_settings
+from .calendar_prep import calendar_prep_routes
 from .configuration import RESTART_FIELDS, Configuration
 from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
@@ -64,11 +65,14 @@ from .recording_locations import recording_location_routes
 from .recording_uploads import recording_upload_routes
 from .retrieval import DateScopeError
 from .service import Memory, public_source
+from .session_recordings import session_recording_routes
 from .settings import RUNTIME_FIELDS, Settings, public_settings, validate_setting_changes
 from .source_matching import UploadGrouping
 from .speaker_api import speaker_routes
 from .store import Store
+from .summary_templates import summary_template_routes
 from .summary_translation import summary_translation_routes
+from .transcription_preview import transcription_preview_routes
 from .translation import translation_routes
 from .vendor_catalog import file_vendor
 from .vendor_routes import vendor_routes
@@ -198,10 +202,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notification_routes(memory))
     app.include_router(generation_routes(lambda: runtime().jobs))
     app.include_router(recap_routes(memory, lambda: runtime().jobs))
+    app.include_router(summary_template_routes(memory))
+    app.include_router(calendar_prep_routes(memory))
+    app.include_router(transcription_preview_routes(memory))
     app.include_router(speaker_routes(memory))
     app.include_router(voice_routes(memory))
     app.include_router(recording_upload_routes(memory))
     app.include_router(merged_recording_routes(memory))
+    app.include_router(session_recording_routes(memory))
     app.include_router(location_zone_routes(memory))
     app.include_router(recording_location_routes(memory))
     app.include_router(conversation_tag_routes(memory))

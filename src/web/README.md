@@ -42,6 +42,12 @@ shows matching readings. All original uploads remain in the archive. Exact audio
 share conversation matching and compatible transcription results, including legacy web uploads;
 changing transcription settings or correcting a transcript prevents recognition reuse.
 
+The timeline includes only completed recordings with nonempty transcript text. Recordings awaiting
+transcription, failed jobs and quiet recordings stay in the archive and processing status, but do
+not contribute timeline rows, counts or pagination. Expanded sessions and playback use the same
+transcribed selection, including uploaded files with empty parts; omitted audio intervals appear as
+playback interruptions.
+
 After transcription, the backend generates a descriptive recording title and topic sections using
 the local summary model. Open a recording in Today to read its full transcript directly below
 the audio player. Optional titled topics below the transcript expand to their original passages.

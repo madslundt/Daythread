@@ -62,6 +62,8 @@ def test_missing_location_can_be_assigned_and_filters_and_groups_follow_edits(cl
     reference, snapshot = place
     key = uuid4()
     receipt = upload(client, key).json()
+    client.app.state.memory.store.complete(str(key), "Discuss the weekly plan.")
+    transcribed_version = client.app.state.memory.store.get_audio(str(key))["source_version"]
     query = {"zone_id": reference["zone_id"]}
     assert client.get("/v1/transcripts", params=query).json()["total"] == 0
     assert write(client, key, reference).status_code == 200
@@ -70,7 +72,12 @@ def test_missing_location_can_be_assigned_and_filters_and_groups_follow_edits(cl
     groups = client.get("/v1/recording-groups", params={**query, "day": str(AT.date())}).json()
     assert groups["total_recordings"] == 1
     assert groups["items"][0]["sources"][0]["manual_location"] == snapshot
-    assert upload(client, key).json() == receipt
+    retry = upload(client, key).json()
+    for field in ("id", "device_id", "started_at", "ended_at", "source_kind", "source_id",
+                  "source_metadata"):
+        assert retry[field] == receipt[field]
+    assert retry["source_version"] == transcribed_version
+    assert retry["state"] == "done" and retry["text"] == "Discuss the weekly plan."
     assert write(client, key, None, 1).json()["location"] is None
     assert client.get("/v1/transcripts", params=query).json()["total"] == 0
 

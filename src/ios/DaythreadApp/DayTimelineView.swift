@@ -42,6 +42,7 @@ private struct TimelineRecordingSession: View {
     @State private var requestID = UUID()
     @State private var sources: [JSONValue] = []
     @State private var chapters: [JSONValue] = []
+    @State private var recording: JSONValue = .null
     @State private var total = 0
     @State private var busy = false
     @State private var error: String?
@@ -53,7 +54,14 @@ private struct TimelineRecordingSession: View {
             NavigationLink(L10n.text("Conversation tags")) {
                 ConversationTagsView(groupID: group["id"].text, day: day, onChanged: onCorrect)
             }
-            if !chapters.isEmpty {
+            if expanded && recording != .null {
+                MergedRecordingContentView(recording: recording,
+                    audioPath: "v1/recording-groups/\(group["id"].text)/audio",
+                    audioQuery: ["day": day, "q": query, "version": recording["audio_version"].text]
+                        .merging(zoneID.isEmpty ? [:] : ["zone_id": zoneID]) { _, new in new }
+                        .merging(tagID.isEmpty ? [:] : ["tag_id": tagID]) { _, new in new },
+                    onRetry: { Task { await load(reset: true) } })
+            } else if !chapters.isEmpty {
                 ForEach(Array(chapters.enumerated()), id: \.element["id"].text) { _, chapter in
                     NavigationLink {
                         RecordingTopicView(chapter: chapter, onCorrect: onCorrect)
@@ -82,7 +90,7 @@ private struct TimelineRecordingSession: View {
                 let topicCount = group["topic_count"].integer
                 Text(topicCount > 0
                      ? "\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · " + L10n.text("\(topicCount) topics")
-                     : L10n.text("\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · \(group["recording_count"].integer) recordings"))
+                     : "\(time(group["started_at"].text))–\(time(group["ended_at"].text)) · " + L10n.text("Recording"))
                     .font(.caption).foregroundStyle(.secondary)
                 if group["estimated_times"] == .bool(true) {
                     Text(L10n.text("Estimated times")).font(.caption).foregroundStyle(.secondary)
@@ -128,6 +136,7 @@ private struct TimelineRecordingSession: View {
             sources = (reset ? [] : sources) + incoming.filter { known.insert($0["id"].text).inserted }
             total = result["total"].integer
             chapters = result["chapters"].array
+            recording = result["recording"]
         } catch { if !Task.isCancelled, requestID == token { self.error = L10n.error(error) } }
     }
 }

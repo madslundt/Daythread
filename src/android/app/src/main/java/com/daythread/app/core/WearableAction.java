@@ -28,7 +28,11 @@ public enum WearableAction {
         int code = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).getInt();
         return code == 1 || code == 2 ? code : 0;
     }
-    public static int duration(int seconds) { return Set.of(15, 30, 60, 120, 300).contains(seconds) ? seconds : 30; }
+    public static int duration(int seconds) {
+        // Move the former five-minute preference to the new maximum.
+        if (seconds == 300) return 180;
+        return Set.of(15, 30, 60, 120, 180).contains(seconds) ? seconds : 30;
+    }
     public boolean recentAudio() { return this == SUMMARIZE || this == ANSWER || this == TRANSLATE; }
     public Json request(int seconds, Instant end, String device) {
         if (!recentAudio()) throw new IllegalArgumentException("This action does not use recent audio");

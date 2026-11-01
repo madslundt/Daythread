@@ -22,6 +22,7 @@ from .inference import Inference, InferenceError, validate_citations
 from .recaps import Recaps
 from .retrieval import archive_recall, contextual_query, date_scope, topic_query
 from .settings import Settings
+from .source_provenance import public_metadata
 from .speakers import Speakers
 from .store import Store
 from .summary_filter import NO_CONTENT
@@ -45,7 +46,7 @@ def public_source(row: dict) -> dict:
     )
     if row.get("tags"):
         result["tags"] = row["tags"]
-    result["source_metadata"] = json.loads(row.get("source_metadata", "{}"))
+    result["source_metadata"] = public_metadata(row, json.loads(row.get("source_metadata", "{}")))
     if row.get("manual_location"):
         result["manual_location"] = row["manual_location"]
     vendor_id = result["source_metadata"].get("vendor_id")

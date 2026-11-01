@@ -42,6 +42,73 @@ def billing(credits):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("seconds,end", [(0.02, 1.0), (1.68, 29.98)])
+async def test_invalid_provider_timestamps_do_not_keep_recordings_retrying(
+    tmp_path, seconds, end,
+):
+    store = Store(tmp_path)
+    key = str(uuid4())
+    original = wav(seconds)
+    store.ingest(key, "omi", datetime.now(UTC), original, seconds)
+    settings = Settings(
+        data_dir=tmp_path, _env_file=None, stt_filter_speech=False,
+        stt_enhancement_mode="off",
+    )
+    requests = []
+
+    def provider(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            "text": "Vi mødes i morgen.",
+            "segments": [{"start": 0, "end": end, "text": "Vi mødes i morgen."}],
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        inference = Inference(settings, client)
+        memory = SimpleNamespace(store=store, settings=settings, inference=inference)
+        assert await process_one(memory)
+        assert not await process_one(memory)
+
+    row = store.get_audio(key)
+    assert row["state"] == "done"
+    assert row["text"] == "Vi mødes i morgen."
+    assert json.loads(row["segments"]) == []
+    details = json.loads(row["transcription_details"])
+    assert details["chunks"][0]["timestamp_status"] == "discarded_invalid"
+    assert store.read_audio(key) == original
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("segments", [
+    None, {}, [None], [{}],
+    [{"start": -1, "end": 1, "text": "Hej"}],
+    [{"start": 1, "end": 1, "text": "Hej"}],
+    [{"start": 10.1, "end": 10.2, "text": "Hej"}],
+    [{"start": 0, "end": float("nan"), "text": "Hej"}],
+    [{"start": 0, "end": float("inf"), "text": "Hej"}],
+    [{"start": 0, "end": 1, "text": "Hej"},
+     {"start": 1, "end": 30, "text": "igen"}],
+])
+def test_unusable_timing_keeps_text_without_publishing_partial_alignment(segments):
+    result = Inference._transcription_result({"text": "Hej igen", "segments": segments}, wav())
+    assert result == {"text": "Hej igen", "segments": [],
+                      "timestamp_status": "discarded_invalid"}
+
+
+def test_small_timestamp_rounding_overrun_still_produces_valid_alignment():
+    result = Inference._transcription_result({
+        "text": "Hej", "segments": [{"start": 9, "end": 10.2, "text": "Hej"}],
+    }, wav())
+    assert result["segments"] == [{"start": 9, "end": 10, "text": "Hej"}]
+
+
+@pytest.mark.parametrize("text", [None, 123, "x" * 20001])
+def test_invalid_transcript_text_is_still_rejected(text):
+    with pytest.raises(InferenceError, match="Invalid STT response"):
+        Inference._transcription_result({"text": text, "segments": []}, wav())
+
+
+@pytest.mark.anyio
 async def test_worker_filters_requests_preserves_original_timing_and_measures_charges(
     tmp_path, monkeypatch,
 ):

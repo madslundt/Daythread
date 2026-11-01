@@ -147,6 +147,10 @@ function SourceRow({
     }
   }
   const hasTopics = Boolean(currentSource.sections?.length && text);
+  const ringCopy = source.source_kind === "manual_upload" &&
+    source.source_metadata?.provenance_kind === "omi_ring" &&
+    source.source_metadata.timestamp_precision_seconds === 1 &&
+    source.source_metadata.device_copy_retained === true;
   const metadata = <>
     <div className="source-meta">
       <span>
@@ -155,7 +159,9 @@ function SourceRow({
       </span>
       <span>{source.state === "done" ? t("Transcribed") : statusLabel(source.state)}</span>
     </div>
-    {source.source_kind === "manual_upload" ? <p className="caption">
+    {ringCopy ? <p className="caption">
+      {t("Pendant storage uses the device clock with one-second precision. Device copies were retained.")}
+    </p> : source.source_kind === "manual_upload" ? <p className="caption">
       {sourceVendor(source) && sourceVendor(source) !== "manual"
         ? t("Uploaded recording from {vendor}", { vendor: sourceVendorLabel(source) })
         : t("Manually uploaded recording")}{source.source_id ? ` · ${source.source_id}` : ""}{t(". Capture time was supplied when importing. Archived audio is converted to mono PCM16 at 16000 Hz.")}{" "}</p> : null}

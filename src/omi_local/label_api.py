@@ -60,3 +60,23 @@ def timeline(
     result["total"] = len(result["items"])
     result["items"] = result["items"][offset : offset + limit]
     return TimelineResponse.model_validate(result)
+
+
+@router.get("/{entity_id}/facts", response_model=TimelineResponse)
+def facts(
+    request: Request,
+    entity_id: UUID,
+    scope: Literal["current", "history"] = "current",
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    revision: str | None = Query(default=None, max_length=32),
+) -> TimelineResponse:
+    result = request.state.memory.store.label_timeline(str(entity_id))
+    if revision and revision != result["revision"]:
+        raise LabelError("Timeline changed; refresh before loading another page")
+    rows = [row for row in result["items"] if row.get("kind") == "fact"
+            and ((row["fact"]["status"] == "confirmed") == (scope == "current"))]
+    rows.sort(key=lambda row: (row["fact"]["created_at"], row["id"]), reverse=True)
+    result["total"] = len(rows)
+    result["items"] = rows[offset:offset + limit]
+    return TimelineResponse.model_validate(result)

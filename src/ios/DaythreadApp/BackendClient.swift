@@ -238,7 +238,7 @@ struct BackendClient {
 
     /// Sends a JSON request through the ordered endpoint list. Specialized clients
     /// use this too, so every foreground API path shares the same failover policy.
-    func data(path: String, method: String = "GET", query: [String: String] = [:], body: Data? = nil, profileHeader: String? = nil, timeout: TimeInterval = 180, ephemeral: Bool = false) async throws -> Data {
+    func data(path: String, method: String = "GET", query: [String: String] = [:], body: Data? = nil, profileHeader: String? = nil, timeout: TimeInterval = 180, ephemeral: Bool = false, contentType: String = "application/json") async throws -> Data {
         let candidates = router.orderedCandidates()
         var lastError: Error?
         for (index, endpoint) in candidates.enumerated() {
@@ -252,7 +252,7 @@ struct BackendClient {
                 request.timeoutInterval = timeout
                 request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
                 if let profileHeader { request.setValue(profileHeader, forHTTPHeaderField: "X-Omi-Profile") }
-                if let body { request.httpBody = body; request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+                if let body { request.httpBody = body; request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
                 try authorize(&request)
                 let session: URLSession
                 if ephemeral || authorization != nil {

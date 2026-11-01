@@ -15,6 +15,18 @@ const recording: CombinedRecording = {
 };
 
 describe("combined uploaded recording", () => {
+  it("marks interruptions in joined session audio and keeps finished text while processing", () => {
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
+      state: "processing", sections: [], interruptions: [{ position_seconds: 4, gap_seconds: 2,
+        previous_end: "2026-10-16T09:00:04Z", next_start: "2026-10-16T09:00:06Z" }],
+    }} timezone="UTC" />);
+    expect(html).toContain("Playback joins available audio; gaps and overlaps are marked here.");
+    expect(html).toContain("09:00:04");
+    expect(html).toContain("09:00:06");
+    expect(html).toContain("Processing audio");
+    expect(html).toContain(recording.text);
+    expect(html.match(/<audio /g)).toHaveLength(1);
+  });
   it("lists a returning topic once and counts adjacent passages as one recording", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording, sections: [
       { ...recording.sections[0], end_offset: 10, end_seconds: 10 },

@@ -28,6 +28,11 @@ export type LabelEntry = Partial<LabelLink> & {
   kind?: string;
   title?: string;
   body?: string;
+  fact?: {
+    note_id: string; family_id: string;
+    status: "confirmed" | "rejected" | "superseded";
+    superseded_by: string | null; created_at: string; updated_at: string;
+  };
   entity_ids?: string[];
   sources: Source[];
   started_at: string;

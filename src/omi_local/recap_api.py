@@ -3,10 +3,11 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 
 from .day_overview import DayOverview
 from .scoped_recap_jobs import with_generation
+from .summary_templates import SummaryTemplate, use_template
 
 
 def recap_routes(get_memory, get_jobs):
@@ -31,10 +32,15 @@ def recap_routes(get_memory, get_jobs):
 
     @router.post("/{day}")
     async def generate(day: date, response: Response, tag_id: UUID | None = None,
-                       zone_id: UUID | None = None) -> dict:
+                       zone_id: UUID | None = None, body: SummaryTemplate | None = None) -> dict:
         response.headers["Cache-Control"] = "no-store"
         if tag_id or zone_id:
+            if body is not None:
+                raise HTTPException(422, "Presentation templates apply to full-day recaps")
             return await get_memory().recap(day, tag_id, zone_id)
+        if body is not None:
+            with use_template(body):
+                return await get_memory().recap(day)
         return await get_memory().recap(day)
 
     return router

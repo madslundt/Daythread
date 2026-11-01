@@ -50,10 +50,11 @@ class Recording:
                        - datetime.fromisoformat(row["started_at"])).total_seconds() * 16000)
                 for row in self.rows]
 
-    def snapshot(self) -> dict:
+    def snapshot(self, *, partial: bool = False) -> dict:
         ready = self.complete and all(row["state"] == "done" for row in self.rows)
         metadata = json.loads(self.rows[0]["source_metadata"])
-        texts = [row["text"] or "" for row in self.rows if (row["text"] or "").strip()]
+        texts = [row["text"] or "" for row in self.rows if (row["text"] or "").strip()
+                 and (not partial or row["state"] == "done")]
         merged_text = "\n".join(texts)
         details = [json.loads(row["topic_details"] or "{}") for row in self.rows]
         sections, offset, seconds = [], 0, 0
@@ -105,7 +106,7 @@ class Recording:
             "state": ("done" if ready else "expired"
                       if any(row["state"] == "expired" for row in self.rows) else "processing"),
             "duration_seconds": seconds,
-            "text": merged_text if ready else None, "sections": sections,
+            "text": merged_text if ready or (partial and texts) else None, "sections": sections,
             "audio_available": available, "audio_availability": availability,
             "transcript_version": version,
         }

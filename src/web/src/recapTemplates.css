@@ -1,0 +1,8 @@
+.recap-template-fields { display: grid; gap: 14px; padding: 14px 0; min-width: 0; }
+.recap-template-fields > .caption { margin: 0; }
+.recap-template-fields > label:not(.checkbox-label) { display: grid; gap: 7px; font-size: 14px; }
+.recap-template-fields :is(select, textarea) { min-width: 0; width: 100%; max-width: 100%; }
+.recap-template-fields > .button { justify-self: start; }
+@media (max-width: 600px) {
+  .recap-template-fields :is(select, textarea) { font-size: 16px; }
+}

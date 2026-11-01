@@ -108,6 +108,8 @@ def test_postgres_sqlite_import_export_preserves_versions_and_order(pg_store, tm
     first = record(source)
     record(source)
     source.save_settings({"summary_language": "da"})
+    with source.connect() as db:
+        db.execute("UPDATE transcription_schedule SET recent_streak=2 WHERE id=1")
     original = source.get_audio(first)
     pg_store.migrate_sqlite(source.root / "omi.sqlite3")
     assert pg_store.get_audio(first)["source_version"] == original["source_version"]
@@ -115,7 +117,13 @@ def test_postgres_sqlite_import_export_preserves_versions_and_order(pg_store, tm
     assert pg_store.runtime_settings() == {"summary_language": "da"}
     assert [row["id"] for row in pg_store.search("budget", 10)] == [first]
     with sqlite3.connect(tmp_path / "export.sqlite3") as exported, pg_store.connect() as db:
+        assert db.execute(
+            "SELECT recent_streak FROM transcription_schedule WHERE id=1"
+        ).fetchone()[0] == 2
         db.backup(exported)
+        assert exported.execute(
+            "SELECT recent_streak FROM transcription_schedule WHERE id=1"
+        ).fetchone()[0] == 2
         assert exported.execute("SELECT count(*) FROM audio").fetchone()[0] == 2
         assert exported.execute("SELECT id FROM canonical_audio").fetchone()[0] == first
         assert exported.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
@@ -280,3 +288,106 @@ def test_postgres_catalog_import_without_audio_database(tmp_path):
         with destination.database.pool.connection() as db:
             db.execute(f'DROP SCHEMA "{schema}" CASCADE')
         asyncio.run(client.aclose())
+
+
+@pytest.mark.parametrize("expire", [False, True])
+def test_postgres_reviewed_fact_family_source_lifecycle_and_backup(pg_store, tmp_path, expire):
+    import importlib.util
+    from pathlib import Path
+
+    from pydantic import TypeAdapter
+
+    from omi_local.label_models import LabelMutation
+    from omi_local.label_schema import validate_labels
+
+    def mutate(action, key=None, **values):
+        key = key or str(uuid4())
+        pg_store.label_mutate(TypeAdapter(LabelMutation).validate_python({
+            "action": action, "id": key, "mutation_id": str(uuid4()),
+            "expected_revision": pg_store.label_revision(), **values,
+        }))
+        return key
+
+    owner = mutate("entity.save", create=True, value={"kind": "person", "name": "Søren"})
+    a, b = record(pg_store), record(pg_store, "Søren now prefers afternoon meetings")
+    first = mutate("fact.save", title="Morning meetings", body="Reviewed", entity_ids=[owner],
+                   sources=[{"id": a, "revision": pg_store.get_audio(a)["source_version"]}])
+    second = mutate("fact.save", title="Afternoon meetings", body="Reviewed replacement",
+                    entity_ids=[owner], supersedes=first,
+                    sources=[{"id": b, "revision": pg_store.get_audio(b)["source_version"]}])
+    pg_store.correct_transcript(b, "Corrected meeting preference")
+    entries = pg_store.label_timeline(owner)["items"]
+    assert next(row for row in entries if row["id"] == second)["needs_review"]
+    spec = importlib.util.spec_from_file_location("archive_fact_pg", Path("scripts/archive.py"))
+    archive = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(archive)
+    target = tmp_path / "fact-backup"
+    archive.restore(pg_store.export_archive(), target, 100_000_000)
+    assert len(Store(target).label_timeline(owner)["items"]) == 2
+    if expire:
+        with pg_store.connect() as db:
+            db.execute("UPDATE audio SET text=NULL WHERE id=?", (a,))
+    else:
+        pg_store.delete_audio(a)
+    assert not pg_store.label_timeline(owner)["items"]
+    with pg_store.connect() as db:
+        for table in ("label_facts", "label_fact_sources", "label_events"):
+            assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+    with sqlite3.connect(target / "omi.sqlite3") as db:
+        db.row_factory = sqlite3.Row
+        validate_labels(db)
+
+
+def test_postgres_import_does_not_overwrite_nonempty_queue_schedule(pg_store, tmp_path):
+    source = Store(tmp_path / "schedule-source")
+    with pg_store.connect() as db:
+        db.execute("UPDATE transcription_schedule SET recent_streak=1 WHERE id=1")
+    with pytest.raises(ValueError, match="already contains transcription scheduling history"):
+        pg_store.migrate_sqlite(source.root / "omi.sqlite3")
+    with pg_store.connect() as db:
+        assert db.execute(
+            "SELECT recent_streak FROM transcription_schedule WHERE id=1"
+        ).fetchone()[0] == 1
+
+
+def test_postgres_capture_health_routing_and_queue_fairness_survive_restart(pg_store, tmp_path):
+    from types import SimpleNamespace
+
+    from omi_local.capture_health import check_capture_health
+    from omi_local.domain import stamp
+    from omi_local.settings import Settings
+
+    now = datetime.now(UTC).replace(hour=12)
+    phone, other = str(uuid4()), str(uuid4())
+    pg_store.save_phone(phone, {
+        "sequence": 1, "observed_at": stamp(now), "device_id": "pendant",
+        "capture_source": "omi", "capture_state": "capturing", "requested_pause": False,
+        "last_persisted_at": stamp(now - timedelta(hours=1)),
+    })
+    pg_store.register_notification_device("first", "ab" * 32, "sandbox", False, phone_id=phone)
+    pg_store.register_notification_device("second", "cd" * 32, "sandbox", False, phone_id=other)
+    memory = SimpleNamespace(store=pg_store, settings=Settings(
+        data_dir=tmp_path, _env_file=None, timezone="UTC", capture_health_enabled=True,
+    ))
+    event, = check_capture_health(memory, now=now)
+    assert [row["device_id"] for row in pg_store.pending_notifications()] == ["first"]
+    assert pg_store.notification_still_pending(event["id"], "first")
+    pg_store.register_notification_device("first", "ab" * 32, "sandbox", False, phone_id=other)
+    assert pg_store.pending_notifications() == []
+    assert not pg_store.notification_still_pending(event["id"], "first")
+    pg_store.clear_capture_health_notifications()
+    assert pg_store.notifications_after(0)["notifications"] == []
+    history = str(uuid4())
+    pg_store.ingest(history, "pendant", now - timedelta(days=1), b"old", 1,
+                    source_kind="manual_upload")
+    live = []
+    for index in range(4):
+        key = str(uuid4())
+        pg_store.ingest(key, "pendant", now - timedelta(minutes=5 - index), str(index).encode(), 1)
+        live.append(key)
+    for key in live[:3]:
+        assert pg_store.claim(now=now)["id"] == key
+    reopened = Store(tmp_path / "reopened-fairness", database_url=URL,
+                     database_schema=pg_store.database.schema)
+    assert reopened.claim(now=now)["id"] == history
+    assert reopened.claim(now=now)["id"] == live[3]

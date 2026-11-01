@@ -49,7 +49,9 @@ struct CompletionResultView: View {
         let _ = interfaceLocale
         NavigationStack {
             Group {
-                if let week = event.target.weekStart, event.target.jobID == nil {
+                if event.kind == "capture_health" {
+                    CaptureView()
+                } else if let week = event.target.weekStart, event.target.jobID == nil {
                     WeeklyReviewView(week: week, version: event.target.versionID ?? "")
                 } else if let day = event.target.day, event.target.jobID == nil, let date = diary.date(for: day) {
                     DayView(date: date)
@@ -153,6 +155,7 @@ struct CompletionResultView: View {
     }
 
     private func load() async {
+        guard event.kind != "capture_health" else { loading = false; return }
         guard let id = event.target.jobID else { loading = false; return }
         let scope = model.archiveIdentity
         job = .null; source = .null

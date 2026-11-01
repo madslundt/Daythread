@@ -1,46 +1,5 @@
 import Foundation
 
-public struct OutboxItem: Codable, Identifiable {
-    public enum Kind: String, Codable { case audio, event, gap, captureState, generation }
-    public let id: UUID
-    public let kind: Kind
-    public let deviceID: String
-    public let capturedAt: Date
-    public var profileID: String?
-    public var destinationID: String?
-    public var resolvedProfileID: String { profileID ?? "default" }
-    public var endedAt: Date?
-    public var location: CaptureLocation?
-    public var codec: Int?
-    public var clock: CaptureClock?
-    public var action: SemanticAction?
-    public var wearableAction: WearableAction?
-    public var durationSeconds: Int?
-    public var language: String?
-    public var audioDependencyIDs: [UUID]?
-    public var awaitingAudioTailAt: Date?
-    public var cutoffGapID: UUID?
-    public var userInitiated: Bool?
-    public var prioritizesUpload: Bool { kind == .generation || kind == .event || userInitiated == true }
-    public var meetingIntent: String?
-    public var meetingID: UUID?
-    public var meetingMaxMinutes: Int?
-    public var meetingMinSeconds: Int?
-    public var markerCooldownSeconds: Int?
-    /// Archived cooldowns remain receipt metadata; current flag behavior is fixed.
-    public var flagAvailableAgainAt: Date? {
-        action == .mark ? capturedAt.addingTimeInterval(60) : nil
-    }
-    public var reason: String?
-    public var cause: String?
-    public var captureState: String?
-    public var ready = false
-    public var acknowledged = false
-    public var attempts = 0
-    public var retryAt = Date.distantPast
-    public var error: String?
-}
-
 /// Atomic index and append-only original frames. Only acknowledged data can expire.
 public final class DurableStore {
     public let directory: URL
@@ -163,6 +122,91 @@ public final class DurableStore {
         items = updated
     }
     private func save() throws { try commit(items) }
+
+    /// Non-destructive ring copies use exact incarnation/sequence IDs, not timestamps for deduplication.
+    /// The local frontier survives upload pruning; it never advances the pendant's own read frontier.
+    public func ringRecoveryCursor(deviceID: String, ringID: UInt64) throws -> UInt64? {
+        let url = directory.appendingPathComponent("ring-receipts.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let receipts = try decoder.decode([String: UInt64].self, from: Data(contentsOf: url))
+        return receipts[ringReceiptKey(deviceID: deviceID, ringID: ringID)]
+    }
+    private func ringReceiptKey(deviceID: String, ringID: UInt64) -> String {
+        "\(destinationID ?? ""):\(profileID):\(deviceID):\(ringID)"
+    }
+    @discardableResult
+    public func copyRingRecords(deviceID: String, ringID: UInt64, records: [OmiRingRecord], codec: Int) throws -> Int {
+        guard !isRecording, destinationID != nil, [20, 21].contains(codec), !records.isEmpty,
+              records.count <= OmiRingProtocol.maximumBatch else { throw OmiRingError.unsupported }
+        for pair in zip(records, records.dropFirst()) {
+            guard pair.0.sequence < UInt64.max, pair.1.sequence == pair.0.sequence + 1,
+                  pair.1.capturedAt >= pair.0.capturedAt,
+                  pair.1.capturedAt.timeIntervalSince(pair.0.capturedAt) <= 60 else {
+                throw OmiRingError.invalidTransfer
+            }
+        }
+        var updated = items, added = 0
+        func sync(_ url: URL) throws {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try synchronizeSource(handle)
+        }
+        guard records.last!.sequence < UInt64.max else { throw OmiRingError.invalidTransfer }
+        for record in records {
+            let id = OmiRingProtocol.stableID(device: deviceID, ring: ringID, sequence: record.sequence)
+            let decoder = try FrameDecoder(codec: codec)
+            var pcm = Data(), original = Data()
+            for frame in record.frames {
+                pcm.append(try decoder.decode(frame))
+                var length = UInt32(frame.count).littleEndian
+                withUnsafeBytes(of: &length) { original.append(contentsOf: $0) }
+                original.append(frame)
+            }
+            if let item = updated.first(where: { $0.id == id }) {
+                guard item.destinationID == destinationID, item.resolvedProfileID == profileID,
+                      item.sourceID == "omi-ring:\(deviceID):\(ringID):\(record.sequence)", item.ready,
+                      item.codec == codec, item.capturedAt == record.capturedAt,
+                      try Data(contentsOf: file(id, extension: "ring")) == record.raw else { throw OmiRingError.changed }
+                // A replay repairs derived files from the exact original record;
+                // it never grants a local frontier merely because an index row exists.
+                for (ext, data) in [("frames", original), ("wav", WAV.encode(pcm))] {
+                    let url = file(id, extension: ext)
+                    if (try? Data(contentsOf: url)) != data {
+                        let additional = max(0, Int64(data.count) - (try size(of: url)))
+                        guard usedBytes + additional + 8192 < maximumBytes else { throw CaptureError.storageFull }
+                        try write(data, to: url); try sync(url)
+                    }
+                }
+                continue
+            }
+            let end = record.capturedAt.addingTimeInterval(Double(pcm.count) / 32000)
+            // Timing alone cannot prove identity with existing live capture. Leave
+            // the device's original untouched and require explicit source inspection.
+            if items.contains(where: { $0.kind == .audio && $0.deviceID == deviceID &&
+                $0.sourceKind != "manual_upload" && $0.destinationID == destinationID &&
+                $0.resolvedProfileID == profileID && $0.capturedAt < end.addingTimeInterval(1) &&
+                ($0.endedAt ?? $0.capturedAt) > record.capturedAt.addingTimeInterval(-1) }) {
+                throw OmiRingError.overlap
+            }
+            guard usedBytes + Int64(record.raw.count + original.count + pcm.count + 8192) < maximumBytes else { throw CaptureError.storageFull }
+            try write(record.raw, to: file(id, extension: "ring")); try sync(file(id, extension: "ring"))
+            try write(original, to: file(id, extension: "frames")); try sync(file(id, extension: "frames"))
+            try write(WAV.encode(pcm), to: file(id, extension: "wav")); try sync(file(id, extension: "wav"))
+            var item = OutboxItem(id: id, kind: .audio, deviceID: deviceID, capturedAt: record.capturedAt)
+            item.destinationID = destinationID; item.profileID = profileID; item.codec = codec
+            item.sourceKind = "manual_upload"; item.sourceID = "omi-ring:\(deviceID):\(ringID):\(record.sequence)"
+            item.endedAt = end; item.ready = true
+            updated.append(item); added += 1
+        }
+        try commit(updated); try sync(directory.appendingPathComponent("index.json"))
+        let receiptURL = directory.appendingPathComponent("ring-receipts.json")
+        var receipts = FileManager.default.fileExists(atPath: receiptURL.path)
+            ? try decoder.decode([String: UInt64].self, from: Data(contentsOf: receiptURL)) : [:]
+        let key = ringReceiptKey(deviceID: deviceID, ringID: ringID)
+        receipts[key] = max(receipts[key] ?? 0, records.last!.sequence + 1)
+        try write(encoder.encode(receipts), to: receiptURL); try sync(receiptURL)
+        return added
+    }
 
     public func begin(deviceID: String, codec: Int, clock: CaptureClock, location: CaptureLocation? = nil) throws {
         guard currentID == nil else { return }
@@ -357,7 +401,7 @@ public final class DurableStore {
     public func pruneAcknowledged(before date: Date) throws {
         let expired = items.filter { $0.acknowledged && ($0.endedAt ?? $0.capturedAt) < date }
         for item in expired {
-            for ext in ["wav", "frames", "json"] {
+            for ext in ["wav", "frames", "json", "ring"] {
                 let url = file(item.id, extension: ext)
                 if FileManager.default.fileExists(atPath: url.path) {
                     let size = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
@@ -399,6 +443,15 @@ public final class DurableStore {
         let interrupted = Set(items.filter { $0.kind == .generation && !$0.ready && $0.awaitingAudioTailAt != nil }.map(\.id))
         try finishWearableAudioCutoffs(interrupted, missingTail: true)
     }
+    /// Copy only current decoded samples; this never closes capture or mutates outbox custody.
+    public func transcriptionPreview(seconds: Int = 15) -> Data? {
+        guard let currentID, !pcm.isEmpty,
+              let item = items.first(where: { $0.id == currentID }),
+              item.destinationID == destinationID, item.resolvedProfileID == profileID else { return nil }
+        let count = min(pcm.count, max(1, min(15, seconds)) * 32000)
+        return WAV.encode(Data(pcm.suffix(count - count % 2)))
+    }
+
     /// Uses the same archive and time window as playback, including acknowledged buffer audio.
     public func canRewind(minutes: Int, end: Date) -> Bool {
         rewindAudio(minutes: minutes, end: end).contains {

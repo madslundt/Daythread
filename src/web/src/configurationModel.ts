@@ -5,7 +5,7 @@ export type ConfigurationField = {
   key: string;
   label: string;
   group: string;
-  kind: "string" | "integer" | "number" | "boolean" | "secret" | "routes";
+  kind: "string" | "integer" | "number" | "boolean" | "secret" | "routes" | "terms";
   nullable: boolean;
   restart_required: boolean;
   description: string;
@@ -20,10 +20,11 @@ export type ModelOverride = {
   dimension?: number | null;
   query_prefix?: string | null;
   document_prefix?: string | null;
+  vocabulary_mode?: "off" | "prompt" | "keyterms" | null;
 };
 export type ConfigurationData = {
   fields: ConfigurationField[];
-  values: Record<string, string | number | boolean | null | Record<string, ModelOverride>>;
+  values: Record<string, string | number | boolean | string[] | null | Record<string, ModelOverride>>;
   secrets: Record<string, boolean>;
   revision: string;
   pending_restart: string[];
@@ -77,6 +78,8 @@ export function configurationChanges(
       value = routeChanges(draft.routes[field.key] || [], field.key === "llm_routes", field.key === "embedding_routes");
       previous = routeChanges(Object.entries(previous as Record<string, ModelOverride>)
         .map(([name, route]) => ({ ...route, name, secret: keepSecret() })), field.key === "llm_routes", field.key === "embedding_routes");
+    } else if (field.kind === "terms") {
+      value = typeof value === "string" ? value.split(/\r?\n/).map((term) => term.trim()).filter(Boolean) : value;
     } else if (field.nullable && (value === "" || value == null)) {
       value = null;
     } else if (field.kind === "number" || field.kind === "integer") {
@@ -121,6 +124,9 @@ export function canRebaseConfiguration(
 const advancedKeys = new Set([
   "stt_base_url", "stt_api_key", "stt_model", "stt_routes", "stt_chunk_seconds", "stt_filter_speech",
   "stt_enhancement_mode", "stt_enhancement_timeout_seconds", "stt_segment_timestamps",
+  "stt_vocabulary", "stt_vocabulary_mode", "stt_preview_enabled",
+  "capture_health_enabled", "capture_health_stall_minutes", "capture_health_cooldown_minutes",
+  "capture_health_quiet_start_hour", "capture_health_quiet_end_hour",
   "llm_base_url", "llm_api_key", "llm_model", "llm_revision", "llm_routes", "llm_enable_thinking",
   "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
   "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
@@ -141,6 +147,7 @@ const advancedKeys = new Set([
 export function advancedConfigurationFields(fields: ConfigurationField[], values: Record<string, unknown>): ConfigurationField[] {
   return fields.filter(({ key }) => {
     if (!advancedKeys.has(key)) return false;
+    if (key.startsWith("capture_health_") && key !== "capture_health_enabled") return values.capture_health_enabled === true;
     if (key.startsWith("embedding_") && key !== "embedding_enabled") return values.embedding_enabled === true;
     if (key.startsWith("reranker_") && key !== "reranker_enabled") return values.reranker_enabled === true;
     if (key.startsWith("diarization_") && key !== "diarization_enabled") return values.diarization_enabled === true;
@@ -187,6 +194,7 @@ export function routeChanges(rows: Omit<RouteRow, "id">[], llm: boolean, embeddi
       model: row.model?.trim() || null,
       base_url: row.base_url?.trim() || null,
       ...(llm || embedding ? { revision: row.revision?.trim() || null } : {}),
+      ...(!llm && !embedding && row.vocabulary_mode !== undefined ? { vocabulary_mode: row.vocabulary_mode || null } : {}),
       ...(embedding && row.dimension ? { dimension: Number(row.dimension) } : {}),
       ...(embedding ? {
         query_prefix: row.query_prefix?.trim() || null,

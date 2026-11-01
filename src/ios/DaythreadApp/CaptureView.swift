@@ -9,6 +9,7 @@ struct CaptureView: View {
         let _ = interfaceLocale
         List {
             PhoneRecordingSection()
+            TranscriptionPreviewControl()
             if let failure = model.captureFailure {
                 Section {
                     Text(L10n.text("Capture stopped: \(L10n.key(failure)). Resume explicitly after resolving the failure."))
@@ -75,6 +76,11 @@ struct CaptureView: View {
         } header: { Text(L10n.text("Sync")) }
     }
 
+    private var pendantRecordingRequested: Bool {
+        model.bluetooth.captureEnabled || (model.omiChargingPolicy.paused && model.omiResumeAfterCharging && model.recordingSchedule.enabled
+            && model.recordingSchedule.activeSource == "omi" && !model.paused)
+    }
+
     private var pendantControls: some View {
         List {
             Section {
@@ -84,12 +90,12 @@ struct CaptureView: View {
                     LabeledContent(L10n.text("Battery"), value: model.bluetooth.battery.map { "\($0)%" } ?? L10n.text("Reading…"))
                     LabeledContent(L10n.text("Format"), value: codecName)
                     Button {
-                        if model.bluetooth.captureEnabled { model.disableMicrophone() }
+                        if pendantRecordingRequested { model.disableMicrophone() }
                         else { model.startManualPendant() }
                     } label: {
-                        Label(!model.bluetooth.captureEnabled ? L10n.text("Start recording") : L10n.text("Stop recording"), systemImage: !model.bluetooth.captureEnabled ? "record.circle" : "stop.circle")
+                        Label(!pendantRecordingRequested ? L10n.text("Start recording") : L10n.text("Stop recording"), systemImage: !pendantRecordingRequested ? "record.circle" : "stop.circle")
                     }.buttonStyle(PrimaryActionStyle()).accessibilityIdentifier("capture.toggle")
-                        .disabled(!model.hasSelectedProfile)
+                        .disabled(!model.hasSelectedProfile || (!pendantRecordingRequested && model.omiPauseWhileCharging && model.bluetooth.charging == true))
                     if model.bluetooth.captureEnabled {
                         Button { model.startManualRecording() } label: {
                             Label(L10n.text("Record with iPhone"), systemImage: "mic")
@@ -107,6 +113,68 @@ struct CaptureView: View {
                 }
             } footer: {
                 Text(L10n.text("These controls affect recordings on this iPhone. Saved uploads and other devices continue."))
+            }
+            Section {
+                if model.bluetooth.storage.supported {
+                    if let info = model.bluetooth.storage.info {
+                        Text(L10n.text("Pending records: \(info.unread)"))
+                        if info.dropped > 0 {
+                            Text(L10n.text("Some pendant records were overwritten before recovery."))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button(L10n.text("Check pendant storage")) {
+                        Task { await model.bluetooth.storage.check() }
+                    }.disabled(model.bluetooth.storage.busy || model.bluetooth.captureEnabled)
+                    Button(L10n.text("Copy pendant recordings")) {
+                        Task { await model.copyPendantRecordings() }
+                    }.disabled(model.bluetooth.storage.busy || model.bluetooth.captureEnabled || !model.hasSelectedProfile)
+                    if model.bluetooth.storage.busy { ProgressView() }
+                    if model.bluetooth.captureEnabled {
+                        Text(L10n.text("Stop live recording before copying pendant storage."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(L10n.text("Safe storage recovery is unavailable on this firmware."))
+                        .foregroundStyle(.secondary)
+                }
+                if let message = model.bluetooth.storage.message {
+                    Text(L10n.key(message)).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: { Text(L10n.text("Pendant storage")) }
+              footer: {
+                Text(L10n.text("Device copies are retained. Repeated copies use the same recording IDs."))
+                Text(L10n.text("Device clock timestamps have one-second precision. Existing live audio is not automatically merged."))
+              }
+            Section {
+                if model.bluetooth.lightAvailable {
+                    Toggle(L10n.text("Omi light"), isOn: Binding(
+                        get: { model.bluetooth.light.enabled ?? false },
+                        set: { model.bluetooth.setLight($0) }
+                    ))
+                    .disabled(model.bluetooth.lightBusy || model.bluetooth.light.enabled == nil || model.bluetooth.lightError != nil)
+                    .accessibilityIdentifier("capture.omiLight")
+                    if model.bluetooth.lightBusy { ProgressView(L10n.text("Reading…")) }
+                } else {
+                    LabeledContent(L10n.text("Omi light"), value: model.bluetooth.connected
+                        ? L10n.text("Not available on this firmware") : L10n.text("Not connected"))
+                }
+                if let error = model.bluetooth.lightError {
+                    Text(L10n.key(error)).font(.caption).foregroundStyle(.red)
+                }
+            } footer: {
+                Text(L10n.text("Controls the pendant status light. Recording continues when the light is off."))
+            }
+            Section {
+                Toggle(L10n.text("Stop Omi recording while charging"), isOn: Binding(
+                    get: { model.omiPauseWhileCharging }, set: { model.omiPauseWhileCharging = $0 }
+                )).accessibilityIdentifier("capture.omiPauseWhileCharging")
+                Toggle(L10n.text("Resume Omi recording after charging"), isOn: Binding(
+                    get: { model.omiResumeAfterCharging }, set: { model.omiResumeAfterCharging = $0 }
+                )).accessibilityIdentifier("capture.omiResumeAfterCharging")
+                if model.omiChargingPolicy.paused { Text(L10n.text("Omi recording stopped for charging")).foregroundStyle(.secondary) }
+            } footer: {
+                Text(L10n.text("Stop recording automatically on the charger. Resume recording when Omi is removed if this option is enabled; manual stops and recording schedules still apply. Requires firmware that reports charging status."))
             }
             PendantClickSettings()
         }.listStyle(.insetGrouped).omiScreen().navigationTitle(L10n.text("Omi pendant"))

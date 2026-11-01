@@ -37,6 +37,10 @@ struct SourceDetail: View {
             List {
                 Section(L10n.text("Listen")) {
                     playback
+                    if SourceProvenanceView.isRingCopy(evidence) {
+                        Text(L10n.text("Pendant storage uses the device clock with one-second precision. Device copies were retained."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section(L10n.text("Transcript")) {
                     SourceTranscriptTopicsView(source: evidence, editing: editing, onPlayTopic: canLoadAudio ? { seconds in

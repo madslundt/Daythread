@@ -18,11 +18,30 @@ describe("compact recording sessions", () => {
     const html = render([group]);
     expect(html.match(/class="source-row source-row-compact recording-session"/g)).toHaveLength(1);
     expect(html).toContain("Launch planning");
-    expect(html).toContain("40 recordings");
+    expect(html).toContain("Recording");
+    expect(html).not.toContain("40 recordings");
     expect(html).toContain("09:00");
     expect(html).toContain("40 min");
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("<details open");
+  });
+  it("opens nearby Omi chunks as one player and transcript before topics are ready", () => {
+    vi.mocked(useResource).mockReturnValue({ data: {
+      items: [], total: 2, chapters: [], recording: {
+        id: "group", title: "Recording session", started_at: group.started_at,
+        ended_at: group.ended_at, state: "done", duration_seconds: 8,
+        audio_available: true, text: "First few seconds. The conversation continues.",
+        transcript_version: "current", sections: [],
+      },
+    }, loading: false, error: "", refresh: vi.fn(), setData: vi.fn() });
+    const html = renderToStaticMarkup(<SessionSources group={group}
+      day="2026-10-16" query="café & plans" zoneID="home" tagID="friends" timezone="UTC" onCorrect={() => {}} />);
+    expect(html.match(/<audio /g)).toHaveLength(1);
+    expect(html).toContain("First few seconds. The conversation continues.");
+    expect(html).not.toContain("Next recordings");
+    expect(html).toContain("Full recording &amp; tools");
+    expect(html).toContain("/v1/recording-groups/group/audio?day=2026-10-16&amp;q=caf%C3%A9+%26+plans&amp;zone_id=home&amp;tag_id=friends&amp;version=current&amp;profile_id=default");
+    expect(html).not.toContain("offset=");
   });
   it("keeps a singleton recording directly accessible without a session wrapper", () => {
     const html = render([{ ...group, recording_count: 1, sources: [{

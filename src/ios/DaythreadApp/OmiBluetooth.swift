@@ -11,6 +11,11 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     static let buttonID = CBUUID(string: "23ba7925-0000-1000-7450-346eac492e92")
     static let hapticService = CBUUID(string: "CAB1AB95-2EA5-4F4D-BB56-874B72CFC984")
     static let hapticID = CBUUID(string: "CAB1AB96-2EA5-4F4D-BB56-874B72CFC984")
+    static let settingsService = CBUUID(string: "19b10010-e8f2-537e-4f6c-d104768a1214")
+    static let lightID = CBUUID(string: "19b10011-e8f2-537e-4f6c-d104768a1214")
+    static let chargingID = CBUUID(string: "19b10013-e8f2-537e-4f6c-d104768a1214")
+    private(set) var charging: Bool?
+    @ObservationIgnored var onCharging: (() -> Void)?
     var status = L10n.source("Bluetooth starting")
     var devices: [CBPeripheral] = []
     var connected = false
@@ -22,12 +27,28 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     var name = "Omi"
     var buttonAvailable = false
     private(set) var hapticAvailable = false
+    private(set) var light = OmiLightSetting()
+    private(set) var lightAvailable = false
+    private(set) var lightBusy = false
+    private(set) var lightError: String?
     var identifier: String { peripheral?.identifier.uuidString ?? "iphone" }
-    var captureEnabled = false { didSet { if oldValue != captureEnabled { updateAudioSubscription() } } }
+    let storage = OmiStorageRecovery()
+    @ObservationIgnored private var storageControl: CBCharacteristic?
+    @ObservationIgnored private var storageStatus: CBCharacteristic?
+    var captureEnabled = false { didSet { if oldValue != captureEnabled {
+        if captureEnabled { storage.cancel() }
+        updateAudioSubscription()
+    } } }
     @ObservationIgnored private var manager: CBCentralManager!
     @ObservationIgnored private var peripheral: CBPeripheral?
     @ObservationIgnored private var audio: CBCharacteristic?
     @ObservationIgnored private var haptic: CBCharacteristic?
+    @ObservationIgnored private var chargingCharacteristic: CBCharacteristic?
+    @ObservationIgnored private var chargingRecovery = OmiDiscoveryRecovery(interval: 2, maximumAttempts: 4)
+    @ObservationIgnored private var chargingWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var lightCharacteristic: CBCharacteristic?
+    @ObservationIgnored private var lightWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var lightFaulted = false
     @ObservationIgnored private var pendingHapticCompletions: [@MainActor () -> Void] = []
     @ObservationIgnored private var hapticWatchdog: Task<Void, Never>?
     @ObservationIgnored private var hapticFaulted = false
@@ -87,8 +108,34 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         peripheral.writeValue(command, for: haptic, type: .withResponse)
         armHapticWatchdog()
     }
+    func setLight(_ enabled: Bool) {
+        guard wanted, connected, !lightBusy, !lightFaulted, lightAvailable,
+              let peripheral, peripheral.state == .connected, let lightCharacteristic,
+              let command = light.command(enabled: enabled) else { return }
+        lightBusy = true; lightError = nil
+        peripheral.writeValue(command, for: lightCharacteristic, type: .withResponse)
+        armLightWatchdog()
+    }
+    private func armLightWatchdog() {
+        lightWatchdog?.cancel()
+        lightWatchdog = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            self?.failLight()
+        }
+    }
+    private func failLight() {
+        // Disable until reconnection: a late response cannot safely confirm a newer change.
+        lightWatchdog?.cancel(); lightWatchdog = nil
+        lightFaulted = true; lightBusy = false; light.cancelChange()
+        lightError = L10n.source("Could not update Omi light. Reconnect the pendant to try again.")
+    }
+    private func clearLight() {
+        lightWatchdog?.cancel(); lightWatchdog = nil; lightCharacteristic = nil
+        light = OmiLightSetting(); lightAvailable = false; lightBusy = false; lightError = nil; lightFaulted = false
+    }
     func disconnect() {
         wanted = false; stopScan(); cancelDiscoveryRecovery(); finishPendingHaptics()
+        clearLight()
         if let peripheral { manager.cancelPeripheralConnection(peripheral) }
         UserDefaults.standard.removeObject(forKey: "pairedDevice")
     }
@@ -240,8 +287,13 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         for completion in completions { completion() }
     }
     private func clearCapabilities() {
+        storage.disconnect(); storageControl = nil; storageStatus = nil
+        chargingWatchdog?.cancel(); chargingWatchdog = nil; chargingRecovery.cancel()
+        chargingCharacteristic = nil
         finishPendingHaptics()
+        clearLight()
         audio = nil; codec = nil; buttonAvailable = false; battery = nil
+        charging = nil; onCharging?()
         haptic = nil; hapticAvailable = false; hapticFaulted = false
         model = L10n.source("Unknown"); firmware = L10n.source("Unknown"); pendingSubscriptions.removeAll()
         pendingReads.removeAll(); pendingCharacteristicDiscovery.removeAll(); cancelDiscoveryRecovery()
@@ -279,7 +331,30 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         }
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
+            case CBUUID(string: OmiRingProtocol.control):
+                if service.uuid == CBUUID(string: OmiRingProtocol.service),
+                   characteristic.properties.contains(.write), canNotify(characteristic) {
+                    storageControl = characteristic
+                    subscribe(true, to: characteristic)
+                }
+            case CBUUID(string: OmiRingProtocol.status):
+                if service.uuid == CBUUID(string: OmiRingProtocol.service),
+                   characteristic.properties.contains(.read) { storageStatus = characteristic }
             case Self.audioID: audio = characteristic
+            case Self.chargingID:
+                guard service.uuid == Self.settingsService else { continue }
+                chargingCharacteristic = characteristic
+                readChargingStatus(characteristic)
+                if chargingRecovery.attempts == 0 && !chargingSetupReady {
+                    chargingRecovery.start(at: ProcessInfo.processInfo.systemUptime)
+                    armChargingWatchdog()
+                }
+            case Self.lightID:
+                if !lightFaulted, lightCharacteristic == nil, service.uuid == Self.settingsService,
+                   characteristic.properties.contains([.read, .write]) {
+                    lightCharacteristic = characteristic; lightAvailable = true; lightBusy = true
+                    peripheral.readValue(for: characteristic); armLightWatchdog()
+                }
             case Self.hapticID:
                 if !hapticFaulted, service.uuid == Self.hapticService, characteristic.properties.contains(.write) {
                     haptic = characteristic; hapticAvailable = true
@@ -304,7 +379,50 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
             default: break
             }
         }
-        updateAudioSubscription(); finishDiscoveryIfReady()
+        updateAudioSubscription(); configureStorage(); finishDiscoveryIfReady()
+    }
+    private var chargingSetupReady: Bool {
+        guard charging != nil, let chargingCharacteristic else { return false }
+        return !canNotify(chargingCharacteristic) || chargingCharacteristic.isNotifying
+    }
+    private func readChargingStatus(_ characteristic: CBCharacteristic) {
+        guard let peripheral else { return }
+        if charging == nil, characteristic.properties.contains(.read), !pendingReads.contains(Self.chargingID) {
+            pendingReads.insert(Self.chargingID)
+            peripheral.readValue(for: characteristic)
+        }
+        if canNotify(characteristic) { subscribe(true, to: characteristic) }
+    }
+    private func finishChargingDiscoveryIfReady() {
+        guard chargingSetupReady else { return }
+        chargingWatchdog?.cancel(); chargingWatchdog = nil; chargingRecovery.cancel()
+    }
+    private func armChargingWatchdog() {
+        chargingWatchdog?.cancel(); chargingWatchdog = nil
+        guard let deadline = chargingRecovery.retryAt, let peripheral else { return }
+        let deviceID = peripheral.identifier
+        let delay = max(0.01, deadline - ProcessInfo.processInfo.systemUptime)
+        chargingWatchdog = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self, wanted, connected, !capabilityFailure,
+                  let peripheral = self.peripheral, peripheral.identifier == deviceID,
+                  peripheral.state == .connected else { return }
+            chargingWatchdog = nil
+            switch chargingRecovery.advance(at: ProcessInfo.processInfo.systemUptime, ready: chargingSetupReady) {
+            case .retry:
+                // Initial requests against cached characteristics can stall while services
+                // are rediscovered. Retry using the current instance, independently of audio readiness.
+                if let characteristic = peripheral.services?.first(where: { $0.uuid == Self.settingsService })?
+                    .characteristics?.first(where: { $0.uuid == Self.chargingID }) {
+                    chargingCharacteristic = characteristic
+                    pendingReads.remove(Self.chargingID)
+                    pendingSubscriptions.remove(Self.chargingID)
+                    readChargingStatus(characteristic)
+                }
+            case .exhausted, .wait: break
+            }
+            armChargingWatchdog()
+        }
     }
     private func updateAudioSubscription() {
         guard let audio, !capabilityFailure else { return }
@@ -325,6 +443,7 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
         pendingSubscriptions.remove(characteristic.uuid)
         if characteristic.uuid == Self.buttonID { buttonAvailable = error == nil && characteristic.isNotifying }
+        if characteristic.uuid == Self.chargingID { finishChargingDiscoveryIfReady() }
         if let error {
             if characteristic.uuid == Self.audioID { failCapabilities(L10n.source("Omi audio subscription failed: \(L10n.error(error))")) }
             else { onError?(L10n.source("BLE subscription: \(L10n.error(error))")) }
@@ -332,9 +451,20 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
             status = characteristic.isNotifying ? L10n.source("Receiving audio") : L10n.source("Capture paused")
             updateAudioSubscription()
         }
+        configureStorage()
         finishDiscoveryIfReady()
     }
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if self.peripheral?.identifier == peripheral.identifier, characteristic === storageControl {
+            if error != nil { storage.transportFailed() }
+            return
+        }
+        if self.peripheral?.identifier == peripheral.identifier, wanted, connected,
+           characteristic === lightCharacteristic, !lightFaulted, lightBusy {
+            if error != nil { failLight() }
+            else { peripheral.readValue(for: characteristic); armLightWatchdog() }
+            return
+        }
         guard self.peripheral?.identifier == peripheral.identifier, characteristic.uuid == Self.hapticID, !hapticFaulted else { return }
         hapticWatchdog?.cancel(); hapticWatchdog = nil
         if let error {
@@ -347,7 +477,26 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
     }
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard self.peripheral?.identifier == peripheral.identifier, !capabilityFailure else { return }
+        if characteristic === storageControl || characteristic === storageStatus {
+            guard error == nil, let data = characteristic.value else { storage.transportFailed(); return }
+            if characteristic === storageControl { storage.receiveControl(data) }
+            else { storage.receiveStatus(data) }
+            return
+        }
+        if characteristic.uuid == Self.lightID {
+            guard wanted, connected, characteristic === lightCharacteristic, !lightFaulted, lightBusy else { return }
+            guard error == nil, let data = characteristic.value, light.receive(data) else { failLight(); return }
+            lightWatchdog?.cancel(); lightWatchdog = nil; lightBusy = false
+            return
+        }
         pendingReads.remove(characteristic.uuid)
+        if characteristic.uuid == Self.chargingID {
+            if error == nil, let data = characteristic.value, let value = OmiChargingPolicy.decode(data) {
+                charging = value; onCharging?()
+                finishChargingDiscoveryIfReady()
+            }
+            return
+        }
         if let error {
             if characteristic.uuid == Self.codecID || characteristic.uuid == Self.audioID { failCapabilities(L10n.source("Omi audio read failed: \(L10n.error(error))")) }
             else { onError?(L10n.error(error)) }
@@ -371,5 +520,20 @@ final class OmiBluetooth: NSObject, @preconcurrency CBCentralManagerDelegate, @p
         case CBUUID(string: "2A26"): firmware = String(data: data, encoding: .utf8) ?? L10n.source("Unknown")
         default: break
         }
+        configureStorage()
+    }
+    private func configureStorage() {
+        guard let peripheral, let control = storageControl, let state = storageStatus else { return }
+        storage.configure(available: connected && control.isNotifying &&
+            OmiRingProtocol.firmwareSupportsRing(firmware) && [20, 21].contains(codec ?? -1),
+            write: { [weak self, weak peripheral] command in
+                guard let self, let peripheral, self.peripheral === peripheral,
+                      !self.captureEnabled, control === self.storageControl else { self?.storage.transportFailed(); return }
+                peripheral.writeValue(command, for: control, type: .withResponse)
+            }, read: { [weak self, weak peripheral] in
+                guard let self, let peripheral, self.peripheral === peripheral,
+                      !self.captureEnabled, state === self.storageStatus else { self?.storage.transportFailed(); return }
+                peripheral.readValue(for: state)
+            })
     }
 }

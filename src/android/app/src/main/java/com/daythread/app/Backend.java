@@ -61,6 +61,9 @@ final class Backend {
             case "generation" -> "/v1/jobs";
             default -> "/v1/capture-state/" + item.id();
         };
+        if (item.kind().equals("audio") && item.data().has("source_kind"))
+            path += "&source_kind=" + encode(item.data().getString("source_kind"))
+                + "&source_id=" + encode(item.data().getString("source_id"));
         Response response = request(item.destination(), path, item.kind().equals("event") || item.kind().equals("gap") || item.kind().equals("generation") ? "POST" : "PUT",
             item.kind().equals("audio") ? item.file() : null, item.kind().equals("audio") ? null : item.data());
         outbox.acknowledge(item, response.json, response.profile);

@@ -19,6 +19,59 @@ def anyio_backend():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("model_limit", "effective", "source"),
+    [(32768, 32768, "provider"), (131072, 65536, "override"),
+     (65536, 65536, "provider"), (None, 65536, "override")],
+)
+async def test_configured_context_limit_is_capped_by_model_capacity(
+    tmp_path, model_limit, effective, source,
+):
+    from omi_local.chat_context import context_limit
+
+    settings = Settings(data_dir=tmp_path, chat_context_window_tokens=65536, _env_file=None)
+
+    def response(request):
+        if request.method == "GET":
+            return httpx.Response(
+                200, json={"data": [{"id": "home", "context_window": model_limit}]},
+            )
+        assert_budget(json.loads(request.content), effective)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Useful notes."}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+        inference = Inference(settings, client)
+        assert await context_limit(inference) == (effective, source)
+        assert await context_limit(inference) == (effective, source)
+        state = {}
+        await inference.chat("What next?", [], [
+            {"id": "older", "role": "user", "content": "Earlier history. " * 3000},
+        ], context_state=state)
+        assert state["metadata"]["context_limit"] == effective
+
+
+@pytest.mark.anyio
+async def test_changing_configured_cap_reuses_model_discovery_without_caching_the_old_cap(tmp_path):
+    from omi_local.chat_context import context_limit
+
+    settings = Settings(data_dir=tmp_path, chat_context_window_tokens=65536, _env_file=None)
+    discovered = []
+
+    def response(request):
+        discovered.append(request)
+        return httpx.Response(200, json={"data": [{"id": "home", "context_window": 32768}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+        inference = Inference(settings, client)
+        assert await context_limit(inference) == (32768, "provider")
+        settings.chat_context_window_tokens = 16384
+        assert await context_limit(inference) == (16384, "override")
+        settings.chat_context_window_tokens = 0
+        assert await context_limit(inference) == (32768, "provider")
+    assert len(discovered) == 1
+
+
+@pytest.mark.anyio
 async def test_long_conversation_is_summarized_instead_of_silently_dropping_early_turns(tmp_path):
     store = Store(tmp_path)
     settings = Settings(data_dir=tmp_path, worker_enabled=False, _env_file=None)
@@ -334,6 +387,8 @@ async def test_disabled_compaction_refuses_overflow_without_deleting_messages(tm
     calls = []
 
     def response(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": []})
         calls.append(request)
         raise AssertionError("No overflowing request may reach the provider")
 
@@ -378,7 +433,9 @@ async def test_durable_job_preserves_only_actionable_safe_context_errors(tmp_pat
     store.complete(key, "Accessibility planning")
 
     def response(request):
-        raise AssertionError("An impossible context must fail before a provider request")
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": []})
+        raise AssertionError("An impossible context must fail before a generation request")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
         jobs = GenerationJobs(Memory(store, settings, Inference(settings, client)))

@@ -3068,9 +3068,9 @@
   "Automatic chat compaction": "Automatic chat compaction",
   "Chat context window (tokens)": "Chat context window (tokens)",
   "Summarize older conversation context automatically before the selected chat model fills up. Original messages are kept.": "Summarize older conversation context automatically before the selected chat model fills up. Original messages are kept.",
-  "0 discovers the selected model’s context window from its provider. Set a token limit when the provider does not advertise one.": "0 discovers the selected model’s context window from its provider. Set a token limit when the provider does not advertise one.",
   "This model’s context window is too small for the request.": "This model’s context window is too small for the request.",
   "Conversation compaction could not fit this model’s context window.": "Conversation compaction could not fit this model’s context window.",
   "Automatic chat compaction is disabled and this conversation exceeds the model context window.": "Automatic chat compaction is disabled and this conversation exceeds the model context window.",
-  "Conversation changed while its context was compacted": "Conversation changed while its context was compacted"
+  "Conversation changed while its context was compacted": "Conversation changed while its context was compacted",
+  "Maximum chat context tokens. A smaller model limit always takes precedence. 0 uses automatic detection.": "Maximum chat context tokens. A smaller model limit always takes precedence. 0 uses automatic detection."
 }

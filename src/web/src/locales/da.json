@@ -3068,9 +3068,9 @@
   "Automatic chat compaction": "Automatisk komprimering af chat",
   "Chat context window (tokens)": "Chattens kontekstvindue (tokens)",
   "Summarize older conversation context automatically before the selected chat model fills up. Original messages are kept.": "Opsummér automatisk ældre samtalekontekst, før den valgte chatmodel løber tør for plads. De oprindelige beskeder bevares.",
-  "0 discovers the selected model’s context window from its provider. Set a token limit when the provider does not advertise one.": "0 henter den valgte models kontekstvindue fra udbyderen. Angiv en tokengrænse, hvis udbyderen ikke oplyser den.",
   "This model’s context window is too small for the request.": "Denne models kontekstvindue er for lille til anmodningen.",
   "Conversation compaction could not fit this model’s context window.": "Samtalen kunne ikke komprimeres til denne models kontekstvindue.",
   "Automatic chat compaction is disabled and this conversation exceeds the model context window.": "Automatisk komprimering af chat er slået fra, og samtalen overskrider modellens kontekstvindue.",
-  "Conversation changed while its context was compacted": "Samtalen blev ændret, mens konteksten blev komprimeret"
+  "Conversation changed while its context was compacted": "Samtalen blev ændret, mens konteksten blev komprimeret",
+  "Maximum chat context tokens. A smaller model limit always takes precedence. 0 uses automatic detection.": "Maksimalt antal tokens i chattens kontekst. En lavere modelgrænse gælder altid. 0 bruger automatisk registrering."
 }

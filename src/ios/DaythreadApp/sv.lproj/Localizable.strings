@@ -3024,7 +3024,7 @@
 "Automatic chat compaction" = "Automatisk sammanfattning av chatten";
 "Chat context window (tokens)" = "Chattens kontextfönster (token)";
 "Summarize older conversation context automatically before the selected chat model fills up. Original messages are kept." = "Sammanfatta äldre samtalskontext automatiskt innan den valda chattmodellens utrymme tar slut. Ursprungliga meddelanden sparas.";
-"0 discovers the selected model’s context window from its provider. Set a token limit when the provider does not advertise one." = "0 hämtar den valda modellens kontextfönster från leverantören. Ange en tokengräns om leverantören inte uppger någon.";
+"Maximum chat context tokens. A smaller model limit always takes precedence. 0 uses automatic detection." = "Maximalt antal token i chattens kontext. En lägre modellgräns gäller alltid. 0 använder automatisk identifiering.";
 "This model’s context window is too small for the request." = "Den här modellens kontextfönster är för litet för begäran.";
 "Conversation compaction could not fit this model’s context window." = "Konversationen kunde inte sammanfattas till den här modellens kontextfönster.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "Automatisk sammanfattning av chatten är avstängd och konversationen överskrider modellens kontextfönster.";

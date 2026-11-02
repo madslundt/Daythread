@@ -3024,7 +3024,7 @@
 "Automatic chat compaction" = "Resumen automático del chat";
 "Chat context window (tokens)" = "Ventana de contexto del chat (tokens)";
 "Summarize older conversation context automatically before the selected chat model fills up. Original messages are kept." = "Resume automáticamente el contexto antiguo antes de llenar la ventana del modelo de chat elegido. Se conservan los mensajes originales.";
-"0 discovers the selected model’s context window from its provider. Set a token limit when the provider does not advertise one." = "0 obtiene la ventana de contexto del modelo elegido de su proveedor. Define un límite de tokens si el proveedor no lo indica.";
+"Maximum chat context tokens. A smaller model limit always takes precedence. 0 uses automatic detection." = "Máximo de tokens del contexto del chat. Siempre se aplica un límite menor del modelo. 0 usa la detección automática.";
 "This model’s context window is too small for the request." = "La ventana de contexto de este modelo es demasiado pequeña para la solicitud.";
 "Conversation compaction could not fit this model’s context window." = "No se pudo resumir la conversación para ajustarla a la ventana de contexto de este modelo.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "El resumen automático del chat está desactivado y esta conversación supera la ventana de contexto del modelo.";

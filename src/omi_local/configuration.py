@@ -67,9 +67,8 @@ def group(key: str) -> str:
 DESCRIPTIONS = {
     "chat_auto_compact": "Summarize older conversation context automatically before the selected "
     "chat model fills up. Original messages are kept.",
-    "chat_context_window_tokens": "0 discovers the selected model’s context window "
-    "from its provider. "
-    "Set a token limit when the provider does not advertise one.",
+    "chat_context_window_tokens": "Maximum chat context tokens. A smaller model limit always "
+    "takes precedence. 0 uses automatic detection.",
     "stt_preview_enabled": "Allow explicitly requested previews of up to 15 seconds of current "
     "phone audio. Preview text is temporary and never enters the archive.",
     "summary_template": "Default presentation for new daily recaps. "

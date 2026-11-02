@@ -121,15 +121,19 @@ def fitting_piece(
     return piece
 
 
+def _capped_limit(limit: int, source: str, configured: int) -> tuple[int, str]:
+    if configured and (source != "provider" or configured < limit):
+        return configured, "override"
+    return limit, source
+
+
 async def context_limit(inference: Inference, task: LLMTask = "chat") -> tuple[int, str]:
     configured = inference.settings.chat_context_window_tokens if task == "chat" else 0
-    if configured:
-        return configured, "override"
     route = inference.settings.llm_route(task)
     identity = route.cache_key + hashlib.sha256(route.token.get_secret_value().encode()).hexdigest()
     cached = inference.context_limits.get(identity)
     if cached and cached[0] > time.monotonic():
-        return cached[1], cached[2]
+        return _capped_limit(cached[1], cached[2], configured)
     limit, source = FALLBACK_WINDOW, "fallback"
     try:
         async with asyncio.timeout(2):
@@ -161,7 +165,7 @@ async def context_limit(inference: Inference, task: LLMTask = "chat") -> tuple[i
     except ConnectionFailure, httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError:
         pass
     inference.context_limits[identity] = (time.monotonic() + 300, limit, source)
-    return limit, source
+    return _capped_limit(limit, source, configured)
 
 
 def conversation_task(question: str, summary: str, recent: list[dict]) -> str:

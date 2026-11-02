@@ -3031,3 +3031,16 @@
 "Conversation compaction could not fit this model’s context window." = "Conversation compaction could not fit this model’s context window.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "Automatic chat compaction is disabled and this conversation exceeds the model context window.";
 "Conversation changed while its context was compacted" = "Conversation changed while its context was compacted";
+"A redo is already in progress" = "A redo is already in progress";
+"Choose dates within the available date range" = "Choose dates within the available date range";
+"Enable language model processing before redoing summaries" = "Enable language model processing before redoing summaries";
+"Enable transcription before redoing transcripts" = "Enable transcription before redoing transcripts";
+"No available data in the selected date range" = "No available data in the selected date range";
+"No available data to redo" = "No available data to redo";
+"Supply both dates or choose all available dates" = "Supply both dates or choose all available dates";
+"The end date must be on or after the start date" = "The end date must be on or after the start date";
+"Wait for selected recordings to finish processing" = "Wait for selected recordings to finish processing";
+"A selected recording is unavailable; restore its audio and redo again" = "A selected recording is unavailable; restore its audio and redo again";
+"Enable background processing before starting a redo" = "Enable background processing before starting a redo";
+"Enable the audio worker before redoing transcripts" = "Enable the audio worker before redoing transcripts";
+"Summary generation failed; check model settings and redo again" = "Summary generation failed; check model settings and redo again";

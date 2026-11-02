@@ -27,6 +27,7 @@ const searchTerms: Record<string, string> = {
   appearance: source("daily preferences appearance theme system light dark device display"),
   daily: source("language transcription summary summaries translation languages automatic home timezone time zone diary daily recap"),
   storage: source("storage privacy local archive retention keep original audio transcripts days delete remove expire history sign in access"),
+  redo: source("redo regenerate reprocess transcripts transcription stt summaries summary recap models date range all"),
   connections: source("connections omi plaud pocket apple sony zoom devices brands iphone bluetooth pendant companion cloud import conversations transcripts official app audio forwarding receiver webhook"),
 };
 

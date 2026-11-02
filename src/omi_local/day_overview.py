@@ -197,12 +197,13 @@ class DayOverview:
         self.memory.store._save_evidence(
             db, content["output_id"], evidence, sources, summary=content["summary"])
 
-    async def generate(self, day: date) -> dict:
+    async def generate(self, day: date, *, force: bool = False) -> dict:
         memory = self.memory
         # Share topic generation's lock so concurrent clicks reuse a completed snapshot.
         async with memory.recap_lock:
             current = self.cached(day)
-            if current["summary"] and not current["stale"] or not current["can_generate"]:
+            if not force and (current["summary"] and not current["stale"]
+                              or not current["can_generate"]):
                 return current
             memory.settings.require_inference("llm")
             with memory.processing_activity("summarizing"):
@@ -211,6 +212,9 @@ class DayOverview:
                 language = memory.settings.recap_language
                 recap = await memory.recaps.generate(day, now)
                 if not recap.get("summary"):
+                    if force:
+                        with memory.store.connect() as db:
+                            db.execute("DELETE FROM day_overviews WHERE day=?", (day.isoformat(),))
                     return self.cached(day)
                 sources = recap["sources"]
                 topics = topic_details(recap["summary"])

@@ -40,6 +40,7 @@ from .recording_locations import RecordingLocationStore, decorate_locations
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
 from .recording_uploads import SCHEMA as RECORDING_UPLOADS_SCHEMA
 from .recording_uploads import RecordingUploadStore
+from .reprocessing import SCHEMA as REPROCESSING_SCHEMA
 from .semantic_schema import migrate_semantic_schema
 from .semantic_store import SEMANTIC_SCHEMA, SemanticStore
 from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
@@ -207,6 +208,7 @@ class Store(
             db.executescript(CHAT_CONTEXT_SCHEMA)
             db.executescript(CAPTURE_HEALTH_SCHEMA)
             db.executescript(TRANSCRIPTION_QUEUE_SCHEMA)
+            db.executescript(REPROCESSING_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)
             db.executescript(DISPLAY_TRANSLATION_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)

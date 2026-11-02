@@ -3029,3 +3029,16 @@
 "Conversation compaction could not fit this model’s context window." = "Konversationen kunde inte sammanfattas till den här modellens kontextfönster.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "Automatisk sammanfattning av chatten är avstängd och konversationen överskrider modellens kontextfönster.";
 "Conversation changed while its context was compacted" = "Konversationen ändrades medan dess kontext sammanfattades";
+"A redo is already in progress" = "En bearbetning pågår redan";
+"Choose dates within the available date range" = "Välj datum inom det tillgängliga datumintervallet";
+"Enable language model processing before redoing summaries" = "Aktivera språkmodellbearbetning innan du skapar sammanfattningar igen";
+"Enable transcription before redoing transcripts" = "Aktivera transkription innan du skapar transkript igen";
+"No available data in the selected date range" = "Inga tillgängliga data i det valda datumintervallet";
+"No available data to redo" = "Det finns inga tillgängliga data att bearbeta igen";
+"Supply both dates or choose all available dates" = "Ange båda datumen eller välj alla tillgängliga datum";
+"The end date must be on or after the start date" = "Slutdatumet måste vara samma som eller efter startdatumet";
+"Wait for selected recordings to finish processing" = "Vänta tills de valda inspelningarna har bearbetats klart";
+"A selected recording is unavailable; restore its audio and redo again" = "En vald inspelning är inte tillgänglig; återställ ljudet och bearbeta igen";
+"Enable background processing before starting a redo" = "Aktivera bakgrundsbearbetning innan du startar en ny bearbetning";
+"Enable the audio worker before redoing transcripts" = "Aktivera ljudbearbetning innan du skapar transkript igen";
+"Summary generation failed; check model settings and redo again" = "Det gick inte att skapa sammanfattningar; kontrollera modellinställningarna och försök igen";

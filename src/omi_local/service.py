@@ -297,7 +297,10 @@ class Memory:
         groups = self.recaps.groups(now)
         return [self.recaps.cached(day, now, groups) for day in days]
 
-    async def recap(self, day: date, tag_id=None, zone_id=None, expected_fingerprint=None) -> dict:
+    async def recap(
+        self, day: date, tag_id=None, zone_id=None, expected_fingerprint=None,
+        *, force: bool = False,
+    ) -> dict:
         self.settings.require_inference("llm")
         async with self.recap_lock:
             with self.processing_activity("summarizing"):
@@ -306,6 +309,8 @@ class Memory:
                     return await ScopedRecaps(self, tag_id, zone_id).generate(
                         day, utc_now(), expected_fingerprint,
                     )
+                if force:
+                    return await self.recaps.generate(day, utc_now(), force=True)
                 return await self.recaps.generate(day, utc_now())
 
     def timeline(self) -> dict:

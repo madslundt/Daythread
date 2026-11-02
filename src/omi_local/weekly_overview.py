@@ -219,17 +219,23 @@ class WeekOverview:
                        "citation_source_ids": [source["id"] for source in sources]}]
         raise InferenceError("Weekly recap exceeded the five-minute reading limit")
 
-    async def generate(self, day: date) -> dict:
+    async def generate(self, day: date, *, force: bool = False) -> dict:
         memory = self.memory
         async with memory.recap_lock:
             current = self.cached(day)
-            if not current["can_generate"]:
+            if not force and not current["can_generate"]:
                 return current
             memory.settings.require_inference("llm")
             with memory.processing_activity("summarizing"):
                 now = utc_now()
                 snapshot = self.snapshot(day, now)
                 sources = snapshot["sources"]
+                if not sources:
+                    if force:
+                        with memory.store.connect() as db:
+                            db.execute("DELETE FROM week_overviews WHERE week_start=?",
+                                       (day.isoformat(),))
+                    return self.cached(day)
                 topics = await self.topics(day, now, sources)
                 summary, accuracy, words = await self.compose(day, sources, topics, snapshot)
                 content = {key: snapshot[key] for key in (

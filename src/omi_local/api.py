@@ -64,6 +64,7 @@ from .recap_api import recap_routes
 from .recording_groups import recording_groups
 from .recording_locations import recording_location_routes
 from .recording_uploads import recording_upload_routes
+from .reprocessing import reprocessing_routes
 from .retrieval import DateScopeError
 from .service import Memory, public_source
 from .session_recordings import session_recording_routes
@@ -202,6 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(display_translation_routes(memory))
     app.include_router(notification_routes(memory))
     app.include_router(generation_routes(lambda: runtime().jobs))
+    app.include_router(reprocessing_routes(lambda: runtime().reprocessing))
     app.include_router(recap_routes(memory, lambda: runtime().jobs))
     app.include_router(summary_template_routes(memory))
     app.include_router(calendar_prep_routes(memory))

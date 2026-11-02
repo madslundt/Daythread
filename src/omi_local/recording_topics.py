@@ -184,7 +184,9 @@ def source_sections(rows: list[dict], result: dict, context: str) -> dict[str, d
     return prepared
 
 
-async def organize_context(memory: Memory, context: TopicContext, now: datetime) -> bool:
+async def organize_context(
+    memory: Memory, context: TopicContext, now: datetime, *, force: bool = False,
+) -> bool:
     fingerprint = topic_fingerprint(memory)
     loaded = memory.store.get_audio_many(context.ids)
     if len(loaded) != len(context.ids):
@@ -192,7 +194,8 @@ async def organize_context(memory: Memory, context: TopicContext, now: datetime)
     rows = [loaded[key] for key in context.ids]
     previous = json.loads(rows[0]["topic_details"] or "{}").get("analysis_checkpoint", {})
     cached_windows = previous.get("windows") if (
-        previous.get("fingerprint") == fingerprint and previous.get("context") == context.key
+        not force and previous.get("fingerprint") == fingerprint
+        and previous.get("context") == context.key
         and previous.get("window_size") == MAX_INPUT
     ) else None
     completed_windows = []
@@ -276,7 +279,7 @@ async def organize_context(memory: Memory, context: TopicContext, now: datetime)
     return True
 
 
-async def ensure_topics(memory: Memory, source_ids: set[str]) -> None:
+async def ensure_topics(memory: Memory, source_ids: set[str], *, force: bool = False) -> None:
     """Recap preparation shares the background worker's subject map and cache."""
     if not memory.settings.llm_enabled or not hasattr(memory.inference, "generate_json"):
         return
@@ -286,8 +289,12 @@ async def ensure_topics(memory: Memory, source_ids: set[str]) -> None:
             contexts = topic_contexts(db, now)
         for context in contexts:
             if (source_ids.intersection(context.ids)
-                    and context.due(topic_fingerprint(memory), stamp(now))):
-                await organize_context(memory, context, now)
+                    and context.ready
+                    and (force or context.due(topic_fingerprint(memory), stamp(now)))):
+                if force:
+                    await organize_context(memory, context, now, force=True)
+                else:
+                    await organize_context(memory, context, now)
 
 
 async def process_topics(memory: Memory, now: datetime | None = None) -> bool:

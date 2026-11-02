@@ -18,6 +18,7 @@ from .inference import Inference
 from .notifications import NotificationService
 from .omi_api import OmiAPI
 from .pocket_api import PocketAPI
+from .reprocessing import Reprocessing
 from .reranking import Reranker
 from .service import Memory
 from .settings import Settings
@@ -62,6 +63,8 @@ class ProfileRuntime:
     generation_worker: asyncio.Task | None
     notification_worker: asyncio.Task | None
     vendors: dict[str, TranscriptAdapter]
+    reprocessing: Reprocessing
+    reprocessing_worker: asyncio.Task | None
 
 
 class Profiles:
@@ -149,6 +152,7 @@ class Profiles:
         memory = Memory(store, settings, Inference(settings, self.client))
         memory.notifications = NotificationService(store, settings, profile_id)
         jobs = GenerationJobs(memory)
+        reprocessing = Reprocessing(memory)
         adapters = {"default": Embeddings(settings, self.client)}
         for language in settings.embedding_languages:
             adapters[language] = Embeddings(
@@ -180,6 +184,9 @@ class Profiles:
             asyncio.create_task(memory.notifications.run())
             if settings.background_processing_enabled else None,
             {},
+            reprocessing,
+            asyncio.create_task(reprocessing.run())
+            if settings.background_processing_enabled else None,
         )
         runtime.vendors = {"omi": runtime.omi, "pocket": PocketAPI(settings, self.client, store)}
         self.runtimes[profile_id] = runtime
@@ -208,7 +215,8 @@ class Profiles:
             task
             for runtime in self.runtimes.values()
             for task in (runtime.worker, runtime.embedding_worker, runtime.weekly_worker,
-                         runtime.generation_worker, runtime.notification_worker)
+                         runtime.generation_worker, runtime.notification_worker,
+                         runtime.reprocessing_worker)
             if task is not None
         ]
         for task in tasks:

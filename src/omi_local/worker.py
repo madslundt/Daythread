@@ -63,7 +63,13 @@ async def process_one(memory: Memory) -> bool:
     try:
         memory.store.start_processing(row["id"])
         contract = recognition_contract(memory.settings)
-        duplicate = memory.store.reusable_transcription(row, contract)
+        with memory.store.connect() as db:
+            redo = db.execute(
+                "SELECT 1 FROM reprocessing_sources s JOIN reprocessing_jobs j ON j.id=s.job_id "
+                "WHERE s.source_id=? AND j.state IN ('queued','transcribing','summarizing')",
+                (row["id"],),
+            ).fetchone()
+        duplicate = None if redo else memory.store.reusable_transcription(row, contract)
         if duplicate:
             memory.store.complete(
                 row["id"], duplicate["text"], json.loads(duplicate["segments"]), claimed=True,

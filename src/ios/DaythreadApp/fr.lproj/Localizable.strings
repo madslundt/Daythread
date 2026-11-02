@@ -3029,3 +3029,16 @@
 "Conversation compaction could not fit this model’s context window." = "Le résumé de la conversation n’a pas pu tenir dans la fenêtre de contexte de ce modèle.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "Le résumé automatique du chat est désactivé et cette conversation dépasse la fenêtre de contexte du modèle.";
 "Conversation changed while its context was compacted" = "La conversation a changé pendant le résumé de son contexte";
+"A redo is already in progress" = "Un retraitement est déjà en cours";
+"Choose dates within the available date range" = "Choisissez des dates dans la période disponible";
+"Enable language model processing before redoing summaries" = "Activez le traitement par modèle de langage avant de régénérer les résumés";
+"Enable transcription before redoing transcripts" = "Activez la transcription avant de régénérer les transcriptions";
+"No available data in the selected date range" = "Aucune donnée disponible dans la période sélectionnée";
+"No available data to redo" = "Aucune donnée disponible à retraiter";
+"Supply both dates or choose all available dates" = "Indiquez les deux dates ou choisissez toutes les dates disponibles";
+"The end date must be on or after the start date" = "La date de fin doit être égale ou postérieure à la date de début";
+"Wait for selected recordings to finish processing" = "Attendez la fin du traitement des enregistrements sélectionnés";
+"A selected recording is unavailable; restore its audio and redo again" = "Un enregistrement sélectionné est indisponible ; restaurez son audio et relancez le traitement";
+"Enable background processing before starting a redo" = "Activez le traitement en arrière-plan avant de lancer un retraitement";
+"Enable the audio worker before redoing transcripts" = "Activez le service de traitement audio avant de régénérer les transcriptions";
+"Summary generation failed; check model settings and redo again" = "La génération des résumés a échoué ; vérifiez les paramètres du modèle et réessayez";

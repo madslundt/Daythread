@@ -3029,3 +3029,16 @@
 "Conversation compaction could not fit this model’s context window." = "Die Unterhaltung konnte nicht auf das Kontextfenster dieses Modells verkürzt werden.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "Die automatische Chat-Zusammenfassung ist deaktiviert und diese Unterhaltung überschreitet das Kontextfenster des Modells.";
 "Conversation changed while its context was compacted" = "Die Unterhaltung wurde während der Zusammenfassung ihres Kontexts geändert";
+"A redo is already in progress" = "Eine erneute Verarbeitung läuft bereits";
+"Choose dates within the available date range" = "Wähle Daten innerhalb des verfügbaren Zeitraums";
+"Enable language model processing before redoing summaries" = "Aktiviere die Sprachmodellverarbeitung, bevor du Zusammenfassungen neu erstellst";
+"Enable transcription before redoing transcripts" = "Aktiviere die Transkription, bevor du Transkripte neu erstellst";
+"No available data in the selected date range" = "Keine Daten im ausgewählten Zeitraum verfügbar";
+"No available data to redo" = "Keine Daten zur erneuten Verarbeitung verfügbar";
+"Supply both dates or choose all available dates" = "Gib beide Daten an oder wähle alle verfügbaren Daten";
+"The end date must be on or after the start date" = "Das Enddatum muss am oder nach dem Startdatum liegen";
+"Wait for selected recordings to finish processing" = "Warte, bis die ausgewählten Aufnahmen fertig verarbeitet sind";
+"A selected recording is unavailable; restore its audio and redo again" = "Eine ausgewählte Aufnahme ist nicht verfügbar; stelle ihr Audio wieder her und starte die Verarbeitung erneut";
+"Enable background processing before starting a redo" = "Aktiviere die Hintergrundverarbeitung, bevor du eine erneute Verarbeitung startest";
+"Enable the audio worker before redoing transcripts" = "Aktiviere den Audioverarbeitungsdienst, bevor du Transkripte neu erstellst";
+"Summary generation failed; check model settings and redo again" = "Zusammenfassungen konnten nicht erstellt werden; prüfe die Modelleinstellungen und versuche es erneut";

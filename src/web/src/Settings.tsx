@@ -19,6 +19,7 @@ import { interfaceLanguage, interfaceLanguages, setLanguagePreference, useLangua
 import { ManagedModels } from "./ManagedModels";
 import { ManagedAccountPanel, ManagedConnections, useManagedAccount } from "./ManagedAccount";
 import { Usage } from "./Usage";
+import { RedoProcessing } from "./RedoProcessing";
 
 const retentionOptions = [0, 1, 7, 14, 30, 90, 180, 365, 730, 1825];
 export const editableSettings: (keyof SettingsData)[] = [
@@ -123,7 +124,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
   const showServer = query ? serverMatches?.query !== search || serverMatches.count !== 0 : section === "server";
   const preferencesVisible = show("appearance", "general") || show("daily", "general")
     || show("storage", "storage");
-  const noMatches = query && !["account", "profiles", "appearance", "daily", "storage", "connections", "locations", "usage"].some((group) => matchesSettings(group, query))
+  const noMatches = query && !["account", "profiles", "appearance", "daily", "storage", "redo", "connections", "locations", "usage"].some((group) => matchesSettings(group, query))
     && (managed || serverMatches?.query === search && serverMatches.count === 0);
   const dirty = Boolean(draft && resource.data && editableSettings.some((key) => draft[key] !== resource.data?.[key]));
   useEffect(() => {
@@ -358,6 +359,7 @@ export function Settings({ onSaved, profiles = [], selectedProfile = null, onCre
           </fieldset>
         </form>
       )}
+      {show("redo", "storage") ? <RedoProcessing key={selectedProfile} profileSelected={Boolean(selectedProfile)} /> : null}
       {show("locations", "locations") ? <LocationZones key={selectedProfile} /> : null}
       {!managed ? <div hidden={!showServer}>
         <Configuration selectedProfile={selectedProfile} search={search} refreshRevision={configurationRevision} onDirtyChange={setServerDirty}

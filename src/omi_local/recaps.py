@@ -197,13 +197,17 @@ class Recaps:
 
     async def prepare_group(
         self, group: Conversation, guard: Callable[[sqlite3.Connection], None],
+        *, force: bool = False,
     ) -> str:
         memory = self.memory
         key = self.group_key(group)
-        cached = self.group_summary(key)
+        cached = None if force else self.group_summary(key)
         if cached is not None:
             return cached
-        await self.prepare_topics(group)
+        if force:
+            await ensure_topics(memory, {source["id"] for source in group.sources}, force=True)
+        else:
+            await self.prepare_topics(group)
         sources = self.sources(group)
         if not sources:
             summary = NO_CONTENT
@@ -270,17 +274,21 @@ class Recaps:
 
             await self.prepare_group(group, guard)
 
-    async def generate(self, day: date, now: datetime) -> dict:
+    async def generate(self, day: date, now: datetime, *, force: bool = False) -> dict:
         memory = self.memory
         start, end = memory.day_window(day)
         groups = self.for_day(self.groups(now), day)
+        if force and any(not group.ready and any(source["text"] for source in group.sources)
+                         for group in groups):
+            raise EvidenceChanged("Transcribed recording evidence changed; retry the recap")
         key = self.day_key(groups, day=day)
         guard = self.guard(day, now, groups)
         existing = memory.store.diary(day.isoformat())
-        if existing and existing["fingerprint"] == key:
+        if not force and existing and existing["fingerprint"] == key:
             return self.cached(day, now)
         result = await self.synthesize(
-            day, now, groups, guard, memory.window_data(start, end) | self.status(groups)
+            day, now, groups, guard, memory.window_data(start, end) | self.status(groups),
+            force=force,
         )
         if any(group.ready for group in groups) or existing:
             memory.store.save_diary(day.isoformat(), key, result, guard=guard)
@@ -288,7 +296,7 @@ class Recaps:
             return self.cached(day, now)
         return result
 
-    async def synthesize(self, day, now, groups, guard, result):
+    async def synthesize(self, day, now, groups, guard, result, *, force: bool = False):
         """Share the grounded preparation/synthesis pipeline across independent recap scopes."""
         memory = self.memory
         template = self.presentation(day)
@@ -308,7 +316,7 @@ class Recaps:
             if exact_repeat and not hinted:
                 repeated.extend(source["id"] for source in originals)
                 continue
-            notes = await self.prepare_group(group, guard)
+            notes = await self.prepare_group(group, guard, force=force)
             if notes != NO_CONTENT and originals:
                 inputs.extend(
                     {
@@ -379,7 +387,7 @@ class Recaps:
                 "model": memory.settings.llm_route("summary").identity,
                 "language": memory.settings.summary_language.lower(),
             })
-            summary = memory.store.recap_summary(synthesis_key)
+            summary = None if force else memory.store.recap_summary(synthesis_key)
             if summary is not None:
                 trace["daily_synthesis"] = {
                     "model_calls": 0, "reduction_used": False,

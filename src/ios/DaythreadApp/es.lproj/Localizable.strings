@@ -3029,3 +3029,16 @@
 "Conversation compaction could not fit this model’s context window." = "No se pudo resumir la conversación para ajustarla a la ventana de contexto de este modelo.";
 "Automatic chat compaction is disabled and this conversation exceeds the model context window." = "El resumen automático del chat está desactivado y esta conversación supera la ventana de contexto del modelo.";
 "Conversation changed while its context was compacted" = "La conversación cambió mientras se resumía su contexto";
+"A redo is already in progress" = "Ya hay un procesamiento en curso";
+"Choose dates within the available date range" = "Elige fechas dentro del intervalo disponible";
+"Enable language model processing before redoing summaries" = "Activa el procesamiento con modelos de lenguaje antes de volver a generar resúmenes";
+"Enable transcription before redoing transcripts" = "Activa la transcripción antes de volver a generar transcripciones";
+"No available data in the selected date range" = "No hay datos disponibles en el intervalo seleccionado";
+"No available data to redo" = "No hay datos disponibles para volver a procesar";
+"Supply both dates or choose all available dates" = "Indica ambas fechas o elige todas las fechas disponibles";
+"The end date must be on or after the start date" = "La fecha de fin debe ser igual o posterior a la fecha de inicio";
+"Wait for selected recordings to finish processing" = "Espera a que termine el procesamiento de las grabaciones seleccionadas";
+"A selected recording is unavailable; restore its audio and redo again" = "Una grabación seleccionada no está disponible; restaura su audio y vuelve a procesarla";
+"Enable background processing before starting a redo" = "Activa el procesamiento en segundo plano antes de volver a procesar";
+"Enable the audio worker before redoing transcripts" = "Activa el servicio de procesamiento de audio antes de volver a generar transcripciones";
+"Summary generation failed; check model settings and redo again" = "No se pudieron generar los resúmenes; revisa los ajustes del modelo y vuelve a intentarlo";

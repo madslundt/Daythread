@@ -23,8 +23,8 @@ from omi_local.inference import Inference
 from omi_local.inference_errors import InferenceDisabled
 from omi_local.recording_topics import process_topics
 from omi_local.service import Memory
-from omi_local.speaker_worker import run_speakers
 from omi_local.settings import Settings
+from omi_local.speaker_worker import run_speakers
 from omi_local.store import Store
 from omi_local.weekly import WeeklyReviews
 from omi_local.worker import process_one, run_worker, scheduled_decisions, scheduled_recaps

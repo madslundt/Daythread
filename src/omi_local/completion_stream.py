@@ -80,7 +80,7 @@ async def buffered_completion(response: httpx.Response, token_usage: dict) -> ht
                 raise ValueError("Provider stream error")
             choices = event.get("choices", [])
             if not isinstance(choices, list):
-                raise ValueError("Invalid choices")
+                raise ValueError("Invalid LLM response")
             for choice in choices:
                 if choice.get("index", 0) != 0:
                     continue
@@ -95,7 +95,7 @@ async def buffered_completion(response: httpx.Response, token_usage: dict) -> ht
                 reason = choice.get("finish_reason")
                 if reason is not None:
                     if finished is not None or reason not in {"stop", "length"}:
-                        raise ValueError("Invalid finish reason")
+                        raise ValueError("Invalid LLM response")
                     finished = reason
         if finished is None:
             raise ValueError("Incomplete model stream")

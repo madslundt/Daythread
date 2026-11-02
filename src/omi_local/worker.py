@@ -165,6 +165,18 @@ async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) 
             return
         try:
             key = day.isoformat()
+            with memory.store.connect() as db:
+                owned = db.execute(
+                    "SELECT 1 FROM reprocessing_jobs "
+                    "WHERE state IN ('queued','transcribing','summarizing') "
+                    "AND ? IN (SELECT value FROM json_each(days)) LIMIT 1", (key,),
+                ).fetchone()
+            if owned:
+                # Redo owns its exact snapshot, including cross-midnight spillover.
+                # An automatic recap must not hold recap_lock while awaiting topic work.
+                if batcher:
+                    batcher.pending.pop(key, None)
+                continue
             current = memory.recaps.for_day(groups, day)
             saved = memory.store.diary(key)
             if not saved and not any(group.ready for group in current):

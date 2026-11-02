@@ -360,3 +360,32 @@ def test_truncated_summary_reports_output_limit_and_keeps_transcript(jobs, caplo
     assert job["id"] in caplog.text
     assert "daily summary" in caplog.text
     assert "Private provider response" not in caplog.text
+
+
+def test_summary_redo_proceeds_while_optional_topic_analysis_is_busy(jobs):
+    key = recording(jobs, text="The release is planned for Friday, subject to testing.")
+    before = jobs.store.get_audio(key)
+    model = FakeInference()
+
+    async def organize(*args, **kwargs):
+        raise AssertionError("Summary redo must not require new navigation labels")
+
+    model.generate_json = organize
+    jobs.memory.inference = model
+    jobs.enqueue(RedoRequest(kind="summaries"))
+
+    async def run():
+        # The independent organizer can hold this lock through multiple model retries.
+        async with jobs.memory.topic_lock:
+            async with asyncio.timeout(0.5):
+                assert await jobs.process_one()
+
+    asyncio.run(run())
+    assert jobs.observation()["job"]["state"] == "completed"
+    summary = jobs.memory.cached_recap(date(2026, 10, 15))["summary"]
+    assert "subject to testing" in summary
+    assert key in summary
+    after = jobs.store.get_audio(key)
+    assert (after["text"], after["source_version"]) == (
+        before["text"], before["source_version"],
+    )

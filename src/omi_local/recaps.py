@@ -204,10 +204,10 @@ class Recaps:
         cached = None if force else self.group_summary(key)
         if cached is not None:
             return cached
-        if force:
-            await ensure_topics(memory, {source["id"] for source in group.sources}, force=True)
-        else:
+        if not force:
             await self.prepare_topics(group)
+        # Forced summaries use original transcripts directly. Navigation labels are
+        # optional hints; their independent worker must not hold up an explicit redo.
         sources = self.sources(group)
         if not sources:
             summary = NO_CONTENT

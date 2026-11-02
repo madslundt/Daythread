@@ -521,6 +521,13 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             })
         return result
 
+    @staticmethod
+    def _has_actionable_speaker_evidence(source: dict) -> bool:
+        return any(
+            item.get("attribution") in {"attributed", "overlap"}
+            for item in source.get("speaker_evidence", [])
+        )
+
     async def review_summary(
         self, sources: list[dict], draft: str, *, topics: list[dict] | None = None,
     ) -> tuple[str, dict]:
@@ -603,7 +610,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 original = original_by_span[(
                     source["id"], source.get("speaker_evidence_origin", 0),
                 )]
-                if original.get("speaker_evidence"):
+                if self._has_actionable_speaker_evidence(original):
                     source["text"] = original["text"]
             self.record_summary_filter(filtering, original_sources)
             if trace is not None:
@@ -633,7 +640,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                             source.get("speaker_evidence_origin", 0)
                             + offset + len(text[offset : offset + 8000]),
                         ), ensure_ascii=False)
-                        if source.get("speaker_evidence") else ""
+                        if self._has_actionable_speaker_evidence(source) else ""
                     )
                     + (
                         "\nDiary recaps: "

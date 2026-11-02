@@ -5,6 +5,7 @@ import json
 import sys
 import wave
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -289,6 +290,31 @@ def test_speaker_projection_resolves_one_scope_for_all_source_parts(client, monk
     assert calls == [first]
 
 
+def test_speaker_projection_only_returns_source_keys_for_multiple_scopes(client, monkeypatch):
+    first = insert(client, text="Part one")
+    second = insert(client, AT + timedelta(minutes=7), "Part two")
+    memory = client.app.state.memory
+    rows = memory.store.get_audio_many([first, second])
+    group = SimpleNamespace(sources=[rows[first], rows[second]])
+    scopes = {
+        key: {"key": f"source:{key}", "rows": [rows[key]]}
+        for key in (first, second)
+    }
+    monkeypatch.setattr(
+        memory.speakers, "resolve", lambda _kind, key, *_args, **_kwargs: scopes[key],
+    )
+    monkeypatch.setattr(memory.speakers, "load", lambda *_args: None)
+    monkeypatch.setattr(
+        "omi_local.recaps.project_utterances",
+        lambda _turns, scope_rows, _ready, _speakers: [{
+            "source_id": scope_rows[0]["id"], "text": scope_rows[0]["text"],
+            "attribution": "unknown",
+        }],
+    )
+    projected = memory.recaps.speaker_projection(group)
+    assert set(projected) == {first, second}
+
+
 @pytest.mark.anyio
 async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp_path):
     key = str(uuid4())
@@ -356,6 +382,36 @@ async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp
     assert '"text": "re"' in serialized and '"text": "peated"' in serialized
     assert '"source_id": "' + key + '"' in serialized
     assert "Current source-local speaker evidence" in serialized
+
+
+@pytest.mark.anyio
+async def test_unknown_speaker_spans_keep_summary_filtering_and_avoid_duplicate_transcript(
+    tmp_path,
+):
+    key = str(uuid4())
+    text = "um, we booked the ticket for Friday."
+    captured = []
+
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        captured.append(payload["evidence"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": f"Booked [{key}]"}}]})
+
+    source = {
+        "id": key, "started_at": stamp(AT), "text": text, "source_kind": "manual_upload",
+        "speaker_evidence": [{
+            "source_id": key, "text": text, "start_offset": 0, "end_offset": len(text),
+            "start": None, "end": None, "speaker_id": None, "speaker_label": None,
+            "speaker_name": None, "attribution": "unknown",
+        }],
+    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await Inference(Settings(data_dir=tmp_path, summary_language="en", _env_file=None), http
+                        ).summarize([source], "faithful notes")
+    assert captured
+    assert "um," not in captured[0]
+    assert "we booked the ticket for Friday." in captured[0]
+    assert "Current source-local speaker evidence" not in captured[0]
 
 
 def test_later_context_resynthesizes_all_earlier_topics_without_reusing_the_old_recap(client):

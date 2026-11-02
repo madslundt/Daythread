@@ -120,7 +120,6 @@ class Recaps:
                 "source", group.sources[0]["id"], db, snapshot=snapshot,
                 groups=groups, timeline=timeline,
             )
-            scopes[first["key"]] = first
             if source_ids <= {row["id"] for row in first["rows"]}:
                 scopes = {source_id: first for source_id in source_ids}
             else:
@@ -298,10 +297,13 @@ class Recaps:
             projection = projections.get(source["id"], {})
             source["speaker_evidence_version"] = projection.get("evidence_version")
             source["speaker_evidence_state"] = projection.get("state", "idle")
-            source["speaker_evidence"] = [
+            evidence = [
                 item for item in projection.get("utterances", [])
                 if item.get("source_id") == source["id"]
             ]
+            source["speaker_evidence"] = evidence if any(
+                item.get("attribution") in {"attributed", "overlap"} for item in evidence
+            ) else []
         if not sources:
             summary = NO_CONTENT
         else:

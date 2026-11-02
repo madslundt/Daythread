@@ -1,16 +1,20 @@
 """Daily recaps use completed conversations, independently of audio retention."""
 
 import io
+import json
 import sys
 import wave
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from omi_local.api import create_app
 from omi_local.domain import stamp
+from omi_local.inference import Inference
+from omi_local.recaps import topic_sources
 from omi_local.settings import Settings
 from omi_local.voice_activity import VERSION
 from omi_local.worker import scheduled_recaps
@@ -153,6 +157,203 @@ def test_conversation_notes_are_reused_and_silence_does_not_regenerate_recap(cli
     insert(client, AT + timedelta(minutes=10), "Book the service", kind="manual_upload")
     client.post("/v1/recaps/2026-10-16")
     assert len(memory.inference.calls) == 4  # Only the new conversation plus synthesis.
+
+
+def test_recording_summary_receives_current_speaker_grounded_transcript(client, monkeypatch):
+    transcript = "Our current work is Atlas. We could propose Beacon."
+    boundary = len("Our current work is Atlas.")
+    key = insert(
+        client, kind="manual_upload",
+        text=transcript,
+    )
+    memory = client.app.state.memory
+    projection = {
+        "state": "ready", "version": "speaker-rev-1", "evidence_version": "speaker-rev-1",
+        "speakers": [{"id": "speaker-1", "label": "A", "name": None}],
+        "utterances": [
+                {"source_id": key, "start": 0.0, "end": 0.8, "text": transcript[:boundary],
+                 "start_offset": 0, "end_offset": boundary, "attribution": "attributed",
+             "speaker_id": "speaker-1", "speaker_label": "A", "speaker_name": None},
+                {"source_id": key, "start": 0.8, "end": 1.5, "text": transcript[boundary:],
+                 "start_offset": boundary, "end_offset": len(transcript), "attribution": "unknown",
+             "speaker_id": None, "speaker_label": None, "speaker_name": None},
+        ],
+    }
+    monkeypatch.setattr(
+        memory.recaps, "speaker_projection", lambda group, db=None: {key: projection},
+    )
+    client.post("/v1/recaps/2026-10-16")
+    prepared_sources, purpose = memory.inference.calls[0]
+    assert prepared_sources[0].get("speaker_evidence") == projection["utterances"]
+    assert "anonymous machine cluster" in purpose.lower()
+    assert "proposed" in purpose.lower() and "current project" in purpose.lower()
+    daily_purpose = memory.inference.calls[1][1]
+    assert "first-person statement does not establish" in daily_purpose.lower()
+    assert "tentative options tentative" in daily_purpose.lower()
+
+
+def test_speaker_evidence_revision_invalidates_notes_and_rejects_stale_generation(
+    client, monkeypatch,
+):
+    key = insert(client, kind="manual_upload", text="I work on Atlas; we could propose Beacon.")
+    memory = client.app.state.memory
+    version = ["speaker-rev-1"]
+    projection = {
+        "state": "ready", "version": version[0], "evidence_version": version[0],
+        "speakers": [{"id": "speaker-1", "label": "A", "name": None}],
+        "utterances": [{
+            "source_id": key, "start": 0.0, "end": 1.0, "text": "I work on Atlas;",
+            "start_offset": 0, "end_offset": 16, "attribution": "attributed",
+            "speaker_id": "speaker-1", "speaker_label": "A", "speaker_name": None,
+        }],
+    }
+    monkeypatch.setattr(
+        memory.recaps, "speaker_projection",
+        lambda group, db=None: {key: projection | {
+            "version": version[0], "evidence_version": version[0],
+        }},
+    )
+    group = memory.recaps.groups(AT + timedelta(hours=1))[0]
+    before = memory.recaps.group_key(group)
+    version[0] = "speaker-rev-2"
+    assert memory.recaps.group_key(group) != before
+
+    class SpeakerEditsDuringGeneration(FakeInference):
+        async def summarize(self, sources, purpose):
+            result = await super().summarize(sources, purpose)
+            version[0] = "speaker-rev-3"
+            return result
+
+    memory.inference = SpeakerEditsDuringGeneration()
+    response = client.post("/v1/recaps/2026-10-16")
+    assert response.status_code == 409
+
+
+def test_recap_fingerprint_uses_caller_snapshot_and_timing_only_changes(client, monkeypatch):
+    key = insert(client, kind="manual_upload", text="Atlas continues")
+    memory = client.app.state.memory
+    group = memory.recaps.groups(AT + timedelta(hours=1))[0]
+    timing = [0.0]
+
+    def projection(current_group, db=None):
+        assert db is not None
+        return {key: {
+            "state": "ready", "evidence_version": "same-speaker-version",
+            "utterances": [{"source_id": key, "start": timing[0], "end": timing[0] + 1,
+                            "text": "Atlas continues", "start_offset": 0, "end_offset": 16,
+                            "attribution": "attributed", "speaker_label": "A"}],
+        }}
+
+    seen = []
+    monkeypatch.setattr(memory.recaps, "speaker_projection", projection)
+    original = memory.recaps.group_key
+
+    def capture(current_group, db=None):
+        seen.append(db)
+        return original(current_group, db)
+
+    monkeypatch.setattr(memory.recaps, "group_key", capture)
+    with memory.store.connect() as db:
+        db.execute("BEGIN")
+        memory.recaps.day_key([group], day=AT.date(), db=db)
+        assert seen and all(item is db for item in seen)
+        first = original(group, db)
+        timing[0] = 0.25
+        assert original(group, db) != first
+
+
+def test_speaker_projection_resolves_one_scope_for_all_source_parts(client, monkeypatch):
+    first = insert(client, AT, "Part one", kind="manual_upload")
+    second = insert(client, AT + timedelta(seconds=60), "Part two", kind="manual_upload")
+    store = client.app.state.memory.store
+    with store.connect() as db:
+        db.execute(
+            "UPDATE audio SET source_id='same-file.wav',source_kind='manual_upload' "
+            "WHERE id IN (?,?)", (first, second),
+        )
+    rows = store.get_audio_many([first, second])
+    group = type("Group", (), {"sources": [rows[first], rows[second]]})()
+    speakers = client.app.state.memory.speakers
+    resolve = speakers.resolve
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(args[1])
+        return resolve(*args, **kwargs)
+
+    monkeypatch.setattr(speakers, "resolve", counted)
+    projected = client.app.state.memory.recaps.speaker_projection(group)
+    assert set(projected) == {first, second}
+    assert calls == [first]
+
+
+@pytest.mark.anyio
+async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp_path):
+    key = str(uuid4())
+    left, right = "ALPHA repeated ", "BETA repeated "
+    text = left + right
+    split = len(left)
+    source = {
+        "id": key, "started_at": stamp(AT), "source_kind": "manual_upload", "text": text,
+        "sections": [
+            {"title": "Alpha", "start_offset": 0, "end_offset": split},
+            {"title": "Beta", "start_offset": split, "end_offset": len(text)},
+        ],
+        "speaker_evidence": [
+            {"source_id": key, "text": left, "start_offset": 0, "end_offset": split,
+             "start": 0.0, "end": 1.0, "speaker_label": "A", "attribution": "attributed"},
+            {"source_id": key, "text": right, "start_offset": split, "end_offset": len(text),
+             "start": 1.0, "end": 2.0, "speaker_label": "B", "attribution": "attributed"},
+        ],
+    }
+    topic_inputs = topic_sources([source])
+    assert [item["speaker_evidence"][0]["speaker_label"] for item in topic_inputs] == ["A", "B"]
+    assert topic_inputs[0]["canonical_text"] == text
+
+    long_text = "x" * 7998 + "repeated" + " y" * 5000 + " repeated"
+    first_end = 7998 + len("repeated")
+    later_start = long_text.rfind("repeated")
+    long_source = {
+        "id": key, "started_at": stamp(AT), "source_kind": "manual_upload", "text": long_text,
+        "speaker_evidence": [
+            {"source_id": key, "text": "repeated", "start_offset": 7998,
+             "end_offset": first_end, "start": 2.0, "end": 2.4, "speaker_label": "A",
+             "attribution": "attributed"},
+            {"source_id": key, "text": "repeated", "start_offset": later_start,
+             "end_offset": later_start + len("repeated"), "start": 5.0, "end": 5.4,
+             "speaker_label": "B", "attribution": "attributed"},
+        ],
+    }
+    calls = []
+
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        calls.append(payload["evidence"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": f"Notes [{key}]"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+        inference = Inference(settings, http)
+        await inference.summarize(topic_inputs, "topic notes")
+        assert any("ALPHA repeated" in payload and '"speaker_label": "A"' in payload
+                   for payload in calls)
+        assert any("BETA repeated" in payload and '"speaker_label": "B"' in payload
+                   for payload in calls)
+        assert all("ALPHA repeated" in payload or '"speaker_label": "A"' not in payload
+                   for payload in calls)
+        assert all("BETA repeated" in payload or '"speaker_label": "B"' not in payload
+                   for payload in calls)
+        calls.clear()
+        await inference.summarize([long_source], "faithful notes")
+    assert calls
+    serialized = "\n".join(calls)
+    assert '"speaker_label": "B"' in serialized
+    assert '"speaker_label": "A"' not in serialized
+    assert '"speaker_label": null' in serialized
+    assert '"start": null' in serialized and '"end": null' in serialized
+    assert '"text": "re"' in serialized and '"text": "peated"' in serialized
+    assert '"source_id": "' + key + '"' in serialized
+    assert "Current source-local speaker evidence" in serialized
 
 
 def test_later_context_resynthesizes_all_earlier_topics_without_reusing_the_old_recap(client):

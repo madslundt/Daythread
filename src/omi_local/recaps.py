@@ -10,12 +10,22 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from .completion_events import publish_recap
-from .conversation_state import Conversation, activity, finished_file, manual_upload, recordings
-from .domain import EvidenceChanged, stamp
+from .conversation_state import (
+    Conversation,
+    activity,
+    conversations,
+    finished_file,
+    manual_upload,
+    meeting_timeline,
+    recordings,
+)
+from .domain import EvidenceChanged, stamp, utc_now
 from .embedding_chunking import topic_regions
 from .inference import SUMMARY_REDUCTION_VERSION, InferenceError, validate_citations
 from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
+from .speaker_projection import project_utterances
+from .speakers import fingerprint as speaker_fingerprint
 from .summary_filter import NO_CONTENT
 from .summary_filter import VERSION as SUMMARY_FILTER_VERSION
 from .summary_templates import VERSION as TEMPLATE_VERSION
@@ -46,6 +56,7 @@ BOUNDARY_NOTE = (
     "configured pause in recorded speech. Missing uploads do not count as silence. "
     "Conversation boundaries are approximate."
 )
+SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-1"
 
 
 def digest(value: object) -> str:
@@ -59,7 +70,19 @@ def topic_sources(sources: list[dict]) -> list[dict]:
         text, sections = source["text"] or "", source.get("sections") or []
         for start, end, index in topic_regions(text, sections):
             subject = sections[index]["title"] if index is not None else ""
-            result.append({**source, "text": text[start:end], "subject_hint": subject})
+            evidence = []
+            for item in source.get("speaker_evidence", []):
+                left, right = item.get("start_offset"), item.get("end_offset")
+                if (item.get("source_id") == source["id"] and type(left) is int
+                        and type(right) is int and 0 <= left < right <= len(text)
+                        and text[left:right] == item.get("text")
+                        and max(start, left) < min(end, right)):
+                    evidence.append(item)
+            result.append({
+                **source, "text": text[start:end], "subject_hint": subject,
+                "speaker_evidence": evidence, "speaker_evidence_origin": start,
+                "canonical_text": text,
+            })
     return result
 
 
@@ -79,7 +102,56 @@ class Recaps:
         # Cross-midnight conversations remain whole; both days disclose full source context.
         return [group for group in groups if group.start < end and group.end > start]
 
-    def group_key(self, group: Conversation) -> str:
+    def speaker_projection(self, group: Conversation, db=None) -> dict[str, dict]:
+        """Read current source-local diarization evidence in the caller's SQLite snapshot."""
+        speakers = self.memory.speakers
+        if db is None:
+            with self.memory.store.connect() as connection:
+                connection.execute("BEGIN")
+                return self.speaker_projection(group, connection)
+        snapshot = self.memory.store.recap_snapshot(db)
+        now = utc_now()
+        timeline = meeting_timeline(snapshot, now)
+        groups = conversations(snapshot, now, 5 * 60, timeline=timeline)
+        source_ids = {row["id"] for row in group.sources}
+        scopes = {}
+        if group.sources:
+            first = speakers.resolve(
+                "source", group.sources[0]["id"], db, snapshot=snapshot,
+                groups=groups, timeline=timeline,
+            )
+            scopes[first["key"]] = first
+            if source_ids <= {row["id"] for row in first["rows"]}:
+                scopes = {source_id: first for source_id in source_ids}
+            else:
+                scopes[group.sources[0]["id"]] = first
+                for row in group.sources[1:]:
+                    scope = speakers.resolve(
+                        "source", row["id"], db, snapshot=snapshot,
+                        groups=groups, timeline=timeline,
+                    )
+                    scopes[row["id"]] = scope
+
+        projected_scopes = {}
+        projections = {}
+        for source_id, scope in scopes.items():
+            scope_key = scope["key"]
+            if scope_key not in projected_scopes:
+                saved = speakers.load(db, scope)
+                ready = saved is not None and saved["fingerprint"] == speaker_fingerprint(scope)
+                payload = json.loads(saved["payload"]) if saved else {"speakers": [], "turns": []}
+                projected_scopes[scope_key] = {
+                    "state": "ready" if ready else "stale" if saved else "idle",
+                    "version": saved["version"] if saved else None,
+                    "evidence_version": saved["version"] if ready else None,
+                    "utterances": project_utterances(
+                        payload["turns"], scope["rows"], ready, payload["speakers"],
+                    ),
+                }
+            projections[source_id] = projected_scopes[scope_key]
+        return projections
+
+    def group_key(self, group: Conversation, db=None) -> str:
         settings = self.memory.settings
         return digest({
             "sources": [(r["id"], r["text"], r["source_version"], r["transcript_version"])
@@ -89,11 +161,23 @@ class Recaps:
             "model": settings.llm_route("summary").identity,
             "language": settings.summary_language.lower(), "timezone": settings.timezone,
             "prompt": PROMPT_VERSION,
+            "speaker_grounded": SPEAKER_GROUNDED_VERSION,
+            "speakers": {
+                source_id: {
+                    "state": projection["state"],
+                    "evidence_version": projection["evidence_version"],
+                    "utterances": [
+                        utterance for utterance in projection["utterances"]
+                        if utterance["source_id"] == source_id
+                    ],
+                }
+                for source_id, projection in self.speaker_projection(group, db).items()
+            },
         })
 
     def day_key(self, groups: list[Conversation], day: date | None = None, db=None) -> str:
         identity = {
-            "conversations": [self.group_key(group) for group in groups if group.ready],
+            "conversations": [self.group_key(group, db) for group in groups if group.ready],
             "prompt": DAY_PROMPT_VERSION,
         }
         presentation = selected(self.memory, day, db)
@@ -109,7 +193,7 @@ class Recaps:
 
         def check(db):
             current = self.for_day(self.groups(now, db), day)
-            actual = {self.group_key(group) for group in current if group.ready}
+            actual = {self.group_key(group, db) for group in current if group.ready}
             # New independent recordings can join the next recap. Corrections,
             # deletion or regrouping of selected evidence must still reject it.
             if not expected <= actual:
@@ -209,6 +293,15 @@ class Recaps:
         # Forced summaries use original transcripts directly. Navigation labels are
         # optional hints; their independent worker must not hold up an explicit redo.
         sources = self.sources(group)
+        projections = self.speaker_projection(group)
+        for source in sources:
+            projection = projections.get(source["id"], {})
+            source["speaker_evidence_version"] = projection.get("evidence_version")
+            source["speaker_evidence_state"] = projection.get("state", "idle")
+            source["speaker_evidence"] = [
+                item for item in projection.get("utterances", [])
+                if item.get("source_id") == source["id"]
+            ]
         if not sources:
             summary = NO_CONTENT
         else:
@@ -221,6 +314,16 @@ class Recaps:
             summary = await memory.inference.summarize(
                 self.note_sources(sources),
                 context + "An uploaded file may contain only part of a conversation. " + RELEVANCE +
+                "Current speaker evidence is provided per original source as exact transcript "
+                "character spans and source-local times. Use it only to attribute words within "
+                "those exact spans. `attribution=unknown` or `overlap` has no known owner; never "
+                "fill those gaps from nearby turns or first-person wording. A label such as "
+                "Speaker A is an anonymous machine cluster, not a verified human identity. "
+                "Only use a personal name when the evidence explicitly supplies a reviewed "
+                "speaker_name. Keep the original source UUID citations. Distinguish a person's "
+                "current role and current project from a proposed, possible or future project; "
+                "keep options tentative until the speakers explicitly decide. Describe explicit "
+                "actions separately from wishes or implied intentions. " +
                 "Preserve short meaningful answers in context, dates, "
                 "agreements and decisions without claiming the conversation has ended. "
                 "Omit fillers, unintelligible fragments and isolated "
@@ -269,7 +372,8 @@ class Recaps:
             expected = self.group_key(group)
 
             def guard(db, expected=expected):
-                if not any(g.ready and self.group_key(g) == expected for g in self.groups(now, db)):
+                current = self.groups(now, db)
+                if not any(g.ready and self.group_key(g, db) == expected for g in current):
                     raise EvidenceChanged("Conversation changed during preparation")
 
             await self.prepare_group(group, guard)
@@ -362,6 +466,12 @@ class Recaps:
                 "completion or cancellation. Preserve useful unique details, original citations, "
                 "conditions, changed plans and conflicts through regrouping. "
                 "State each fact or decision only once, even when recordings repeat it. "
+                "Keep machine speaker labels anonymous; a label or first-person statement does "
+                "not establish a person's identity or ownership outside the words attributed to "
+                "that speaker. Use personal names only when they appear as reviewed speaker "
+                "names in the prepared evidence. Distinguish a person's current role and current "
+                "project from proposed or future work, keep tentative options tentative until "
+                "explicitly decided, and do not turn wishes or implied intentions into actions. "
                 "Output only short specific ## subject headings and one coherent summary per topic "
                 "in a few focused sentences, with a second paragraph only when needed. "
                 "Do not create separate short and long summaries, previews, bullet lists or "

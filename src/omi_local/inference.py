@@ -489,6 +489,38 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         with summary_usage():
             return await self._reduce(sources, purpose, trace)
 
+    @staticmethod
+    def _speaker_evidence_window(source: dict, start: int, end: int) -> list[dict]:
+        """Return only exact anchored text in this request window; edge cuts lose timing."""
+        result = []
+        source_id = source["id"]
+        text = source.get("canonical_text", source.get("text", "")) or ""
+        for item in source.get("speaker_evidence", []):
+            left, right = item.get("start_offset"), item.get("end_offset")
+            if (item.get("source_id") != source_id or type(left) is not int
+                    or type(right) is not int or not 0 <= left < right <= len(text)
+                    or text[left:right] != item.get("text")):
+                continue
+            clipped_left, clipped_right = max(left, start), min(right, end)
+            if clipped_left >= clipped_right:
+                continue
+            if clipped_left == left and clipped_right == right:
+                result.append(item)
+                continue
+            result.append({
+                "source_id": source_id,
+                "text": text[clipped_left:clipped_right],
+                "start_offset": clipped_left,
+                "end_offset": clipped_right,
+                "start": None,
+                "end": None,
+                "speaker_id": None,
+                "speaker_label": None,
+                "speaker_name": None,
+                "attribution": "unknown",
+            })
+        return result
+
     async def review_summary(
         self, sources: list[dict], draft: str, *, topics: list[dict] | None = None,
     ) -> tuple[str, dict]:
@@ -561,6 +593,18 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         original_sources = sources
         if answer_task is None:
             sources, filtering = filter_summary_sources(sources)
+            # Character anchors refer to the final canonical transcript. Keep exact source text
+            # whenever speaker spans are present; filler normalization would shift those anchors.
+            original_by_span = {
+                (source["id"], source.get("speaker_evidence_origin", 0)): source
+                for source in original_sources
+            }
+            for source in sources:
+                original = original_by_span[(
+                    source["id"], source.get("speaker_evidence_origin", 0),
+                )]
+                if original.get("speaker_evidence"):
+                    source["text"] = original["text"]
             self.record_summary_filter(filtering, original_sources)
             if trace is not None:
                 trace["input_filtering"] = filtering
@@ -580,6 +624,17 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                     + ("subject_hint=" + json.dumps(source["subject_hint"], ensure_ascii=False)
                        + " (navigation label only) " if source.get("subject_hint") else "")
                     + text[offset : offset + 8000]
+                    + (
+                        "\nCurrent source-local speaker evidence (exact character offsets; "
+                        "unknown remains unknown): "
+                        + json.dumps(self._speaker_evidence_window(
+                            source,
+                            source.get("speaker_evidence_origin", 0) + offset,
+                            source.get("speaker_evidence_origin", 0)
+                            + offset + len(text[offset : offset + 8000]),
+                        ), ensure_ascii=False)
+                        if source.get("speaker_evidence") else ""
+                    )
                     + (
                         "\nDiary recaps: "
                         + json.dumps(source["diary_summaries"], ensure_ascii=False)

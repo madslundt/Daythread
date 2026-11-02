@@ -136,18 +136,25 @@ def _finish(memory, key, state, fingerprint_value, retry_at, error=None, attempt
 
 
 async def run_speakers(memory):
-    with memory.store.connect() as db:
-        db.execute(
-            "UPDATE speaker_jobs SET state='queued',updated_at=? WHERE state='processing'",
-            (stamp(utc_now()),),
-        )
+    needs_recovery = True
     while True:
+        if not memory.settings.diarization_enabled:
+            # Profiles may deliberately omit a Store while all processing is
+            # disabled. Avoid archive access until this task is enabled.
+            needs_recovery = True
+            await asyncio.sleep(0.5)
+            continue
         try:
-            if memory.settings.diarization_enabled:
-                discover(memory)
-                worked = await process_one(memory)
-            else:
-                worked = False
+            if needs_recovery:
+                with memory.store.connect() as db:
+                    db.execute(
+                        "UPDATE speaker_jobs SET state='queued',updated_at=? "
+                        "WHERE state='processing'",
+                        (stamp(utc_now()),),
+                    )
+                needs_recovery = False
+            discover(memory)
+            worked = await process_one(memory)
         except Exception as exc:
             logger.warning("Automatic speaker queue will retry (%s)", type(exc).__name__)
             worked = False

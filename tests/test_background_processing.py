@@ -23,6 +23,7 @@ from omi_local.inference import Inference
 from omi_local.inference_errors import InferenceDisabled
 from omi_local.recording_topics import process_topics
 from omi_local.service import Memory
+from omi_local.speaker_worker import run_speakers
 from omi_local.settings import Settings
 from omi_local.store import Store
 from omi_local.weekly import WeeklyReviews
@@ -142,6 +143,44 @@ async def test_all_tasks_off_keep_maintenance_without_starting_llm_loops(tmp_pat
     try:
         await asyncio.wait_for(maintained.wait(), 1)
         assert not task.done()
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.anyio
+async def test_speaker_worker_waits_without_store_access_then_recovers_on_enable(
+    tmp_path, monkeypatch,
+):
+    settings = Settings(data_dir=tmp_path, _env_file=None, diarization_enabled=False)
+    store = Store(tmp_path)
+    memory = SimpleNamespace(settings=settings, store=store)
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO speaker_jobs(scope_key,fingerprint,state,updated_at) "
+            "VALUES('source:interrupted','fingerprint','processing',?)", (AT.isoformat(),),
+        )
+    connect = store.connect
+    monkeypatch.setattr(store, "connect", lambda: pytest.fail(
+        "Disabled speaker worker accessed the archive"
+    ))
+    discovered = asyncio.Event()
+    monkeypatch.setattr("omi_local.speaker_worker.discover", lambda _: discovered.set())
+    monkeypatch.setattr("omi_local.speaker_worker.process_one", AsyncMock(return_value=False))
+
+    task = asyncio.create_task(run_speakers(memory))
+    try:
+        await asyncio.sleep(0)
+        assert not task.done()
+        settings.diarization_enabled = True
+        monkeypatch.setattr(store, "connect", connect)
+        await asyncio.wait_for(discovered.wait(), 1)
+        with connect() as db:
+            row = db.execute(
+                "SELECT state FROM speaker_jobs WHERE scope_key='source:interrupted'"
+            ).fetchone()
+        assert row["state"] == "queued"
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):

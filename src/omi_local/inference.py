@@ -1,5 +1,4 @@
 import asyncio
-import codecs
 import json
 import logging
 import re
@@ -17,8 +16,14 @@ from .chat_context import (
     request_tokens,
     safety,
 )
+from .completion_stream import MAX_SUMMARY_CHARACTERS, buffered_completion, stream_data
 from .domain import stamp, utc_now, wav_duration
-from .inference_errors import InferenceError, InferenceTruncated, check_inference_response
+from .inference_errors import (
+    InferenceDisabled,
+    InferenceError,
+    InferenceTruncated,
+    check_inference_response,
+)
 from .inference_usage import (
     InferenceUsage,
     llm_usage,
@@ -28,42 +33,12 @@ from .inference_usage import (
 )
 from .recent_questions import RecentAnswer, generate_recent_answer
 from .settings import LLMTask, Settings
-from .structured_generation import JSON_SYSTEM, StructuredGeneration
+from .structured_generation import JSON_SYSTEM, SUMMARY_OUTPUT_TOKENS, StructuredGeneration
 from .summary_filter import NO_CONTENT, filter_summary_sources
 from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
-
-
-async def stream_data(response: httpx.Response):
-    """Decode SSE across arbitrary byte boundaries with bounded line/response memory."""
-    decoder = codecs.getincrementaldecoder("utf-8")()
-    pending, data, size = "", [], 0
-    async for chunk in response.aiter_bytes():
-        size += len(chunk)
-        if size > 1_000_000:
-            raise InferenceError("Model stream exceeds response budget")
-        pending += decoder.decode(chunk)
-        while "\n" in pending:
-            line, pending = pending.split("\n", 1)
-            line = line.removesuffix("\r")
-            if len(line) > 64000:
-                raise InferenceError("Model stream event exceeds budget")
-            if not line and data:
-                yield "\n".join(data)
-                data = []
-            elif line.startswith("data:"):
-                data.append(line[5:].removeprefix(" "))
-            if sum(map(len, data)) > 64000:
-                raise InferenceError("Model stream event exceeds budget")
-        if len(pending) > 64000:
-            raise InferenceError("Model stream line exceeds budget")
-    pending += decoder.decode(b"", final=True)
-    if pending.startswith("data:"):
-        data.append(pending[5:].removeprefix(" ").rstrip("\r"))
-    if data:
-        yield "\n".join(data)
 
 
 SYSTEM = (
@@ -224,6 +199,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
     async def post(self, provider: str, url: str, **kwargs) -> httpx.Response:
         self.settings.require_inference(provider)
         usage_task = kwargs.pop("_usage_task", None)
+        streaming = kwargs.pop("_buffered_stream", False)
         timeout_seconds = kwargs.pop(
             "_timeout_seconds", self.settings.inference_timeout_seconds,
         )
@@ -240,20 +216,32 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             characters=submitted_characters(kwargs.get("json", {})) if provider == "llm" else None,
         )
         response = None
+        token_usage = {}
         try:
             async with asyncio.timeout(timeout_seconds):
-                response = await self.client.post(
-                    url, timeout=timeout_seconds, **kwargs
-                )
-                await check_inference_response(self, provider, response)
+                if streaming:
+                    async with self.client.stream(
+                        "POST", url, timeout=timeout_seconds, **kwargs,
+                    ) as response:
+                        await check_inference_response(self, provider, response)
+                        response = await buffered_completion(response, token_usage)
+                else:
+                    response = await self.client.post(url, timeout=timeout_seconds, **kwargs)
+                    await check_inference_response(self, provider, response)
         except (httpx.HTTPError, TimeoutError) as exc:
-            self.finish_usage(attempt, response, "failed" if response is not None else "unknown")
+            self.finish_usage(attempt, response, "failed" if response is not None else "unknown",
+                              token_usage=token_usage or None)
             self.health[provider] = {"state": "unavailable", "checked_at": stamp(utc_now())}
             if isinstance(exc, TimeoutError):
                 raise InferenceError("Inference deadline exceeded") from exc
             raise
+        except InferenceError as exc:
+            self.finish_usage(attempt, response, "unknown", token_usage=token_usage or None)
+            if streaming and not isinstance(exc, InferenceDisabled):
+                self.health[provider] = {"state": "unavailable", "checked_at": stamp(utc_now())}
+            raise
         except BaseException:
-            self.finish_usage(attempt, response, "unknown")
+            self.finish_usage(attempt, response, "unknown", token_usage=token_usage or None)
             raise
         self.finish_usage(attempt, response, "succeeded")
         self.health[provider] = {"state": "ready", "checked_at": stamp(utc_now())}
@@ -261,14 +249,15 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
 
     async def generate(self, task: str, evidence: str) -> str:
         system = SUMMARY_SYSTEM if self.task == "summary" else SYSTEM
-        return await self._generate(task, evidence, system, 4000)
+        tokens = SUMMARY_OUTPUT_TOKENS if self.task == "summary" else 4000
+        return await self._generate(task, evidence, system, tokens)
 
     async def generate_json(self, task: str, evidence: str) -> str:
         return await self._generate(
             task,
             evidence,
             JSON_SYSTEM,
-            4000,
+            SUMMARY_OUTPUT_TOKENS if self.task == "summary" else 4000,
         )
 
     @property
@@ -282,19 +271,23 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
     ) -> str:
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
-        budgets = (tokens, min(tokens * 2, 8000), min(tokens * 4, 16000))
+        long_summary = self.task == "summary" and tokens == SUMMARY_OUTPUT_TOKENS
+        budgets = (tokens,) if long_summary else (
+            tokens, min(tokens * 2, 8000), min(tokens * 4, 16000),
+        )
         options = self.llm_template_options
         attempts = [(budget, options) for budget in budgets]
         if self.task == "summary" and self.settings.llm_enable_thinking is True:
             # Reasoning can consume every output token before producing an answer.
-            # Exhaust the normal budgets first, then disable it for this request only.
+            # Try the normal budget first, then disable it for this request only.
             attempts.append((budgets[-1], {
                 **options, "chat_template_kwargs": {
                     **options.get("chat_template_kwargs", {}), "enable_thinking": False,
                 },
             }))
         base_timeout = max(
-            self.settings.inference_timeout_seconds, 300 if tokens >= 4000 else 0,
+            self.settings.inference_timeout_seconds,
+            4096 if long_summary else 300 if tokens >= 4000 else 0,
         )
         for attempt, (budget, template_options) in enumerate(attempts):
             budget = generation_tokens(task, evidence, system, budget)
@@ -302,10 +295,19 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 "llm",
                 f"{route.base_url}/chat/completions",
                 _usage_task=usage_task,
-                _timeout_seconds=max(base_timeout, min(base_timeout * (2 ** attempt), 900)),
-                headers={"Authorization": f"Bearer {token}"} if token else {},
+                _buffered_stream=long_summary,
+                _timeout_seconds=base_timeout if long_summary else max(
+                    base_timeout, min(base_timeout * (2 ** attempt), 900),
+                ),
+                headers={
+                    **({"Authorization": f"Bearer {token}"} if token else {}),
+                    **({"x-litellm-timeout": str(base_timeout),
+                        "x-litellm-stream-timeout": str(base_timeout)} if long_summary else {}),
+                },
                 json={
                     **template_options,
+                    **({"stream": True, "stream_options": {"include_usage": True}}
+                       if long_summary else {}),
                     **({"response_format": response_format} if response_format else {}),
                     "model": route.model,
                     "temperature": 0.1,
@@ -333,7 +335,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 break
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise InferenceError("Invalid LLM response") from exc
-        if not isinstance(text, str) or not text.strip() or len(text) > 60000:
+        maximum_characters = MAX_SUMMARY_CHARACTERS if long_summary else 60000
+        if not isinstance(text, str) or not text.strip() or len(text) > maximum_characters:
             raise InferenceError("Invalid LLM response")
         return text.strip()
 

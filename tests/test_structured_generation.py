@@ -2,14 +2,20 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 import pytest
+from test_extended import audio_data
 
 from omi_local.chat_context import bounded_generation
 from omi_local.inference import Inference
 from omi_local.inference_errors import InferenceTruncated
+from omi_local.reprocessing import RedoRequest, Reprocessing
+from omi_local.service import Memory
 from omi_local.settings import Settings
+from omi_local.store import Store
 from omi_local.topic_analysis import Analysis
 
 
@@ -108,10 +114,9 @@ def test_summary_reasoning_exhaustion_uses_one_request_only_nonthinking_fallback
 
     asyncio.run(run())
     budgets = [body["max_tokens"] for body, _ in requests]
-    assert budgets == ([2000, 4000, 8000, 8000] if structured
-                       else [4000, 8000, 16000, 16000])
+    assert budgets == [65536, 65536]
     assert [body["chat_template_kwargs"]["enable_thinking"] for body, _ in requests] == [
-        True, True, True, False,
+        True, False,
     ]
     # Authentication, response schema, language, task, evidence and model all survive the retry.
     original, original_auth = requests[0]
@@ -124,7 +129,7 @@ def test_summary_reasoning_exhaustion_uses_one_request_only_nonthinking_fallback
 
 
 @pytest.mark.parametrize("task, thinking, expected", [
-    ("summary", True, 4), ("summary", False, 3), ("summary", None, 3), ("chat", True, 3),
+    ("summary", True, 2), ("summary", False, 1), ("summary", None, 1), ("chat", True, 3),
 ])
 def test_truncated_fallback_is_bounded_and_never_returns_partial_content(
     tmp_path, task, thinking, expected,
@@ -190,7 +195,107 @@ def test_nonthinking_summary_fallback_preserves_the_effective_context_budget(tmp
 
     asyncio.run(run())
     budgets = [body["max_tokens"] for body in requests]
-    assert len(budgets) == 4
+    assert len(budgets) == 2
     assert budgets[0] < 4000
     assert budgets[-1] == budgets[-2] == budgets[0]
     assert requests[-1]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+@pytest.mark.parametrize("mode", ["plain", "json", "structured"])
+def test_summary_requests_64k_from_the_first_attempt_with_sufficient_timeout(tmp_path, mode):
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append((body, request.extensions["timeout"]["read"]))
+        enough = body["max_tokens"] == 65536
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop" if enough else "length",
+            "message": {"content": '{"ok":true}' if enough else ""},
+        }]})
+
+    async def run():
+        settings = Settings(data_dir=tmp_path, inference_timeout_seconds=120, _env_file=None)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            inference = Inference(settings, client, task="summary")
+            if mode == "structured":
+                result = await inference.generate_structured_json("Task", "Evidence", {})
+            elif mode == "json":
+                result = await inference.generate_json("Task", "Evidence")
+            else:
+                result = await inference.generate("Task", "Evidence")
+            assert result == '{"ok":true}'
+
+    asyncio.run(run())
+    assert len(requests) == 1
+    assert requests[0][0]["max_tokens"] == 65536
+    assert requests[0][1] >= 3600
+
+
+@pytest.mark.parametrize("length, accepted", [(70000, True), (1048576, True), (1048577, False)])
+def test_large_summary_content_has_a_bounded_response_guard(tmp_path, length, accepted):
+    text = "ø" * length
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop", "message": {"content": text},
+        }]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+            if accepted:
+                assert await inference.generate("Task", "Evidence") == text
+            else:
+                from omi_local.inference_errors import InferenceError
+                with pytest.raises(InferenceError, match="Invalid LLM response"):
+                    await inference.generate("Task", "Evidence")
+
+    asyncio.run(run())
+
+
+def test_real_redo_completes_when_provider_requires_64k_output_capacity(tmp_path):
+    text = "We agreed to send the revised delivery plan on Friday."
+    key = str(uuid4())
+    budgets = []
+
+    def provider(request):
+        body = json.loads(request.content)
+        budgets.append(body["max_tokens"])
+        if body["max_tokens"] != 65536:
+            return httpx.Response(200, json={"choices": [{
+                "finish_reason": "length", "message": {"content": ""},
+            }]})
+        task = json.loads(body["messages"][1]["content"])["task"]
+        if "response_format" in body:
+            result = json.dumps({"title": "Delivery plan", "continues_previous": False,
+                                 "sections": [{"title": "Delivery plan", "start_quote": text}]})
+        elif task.startswith(("Organize useful recorded information",
+                              "Review the complete daily topic plan")):
+            result = json.dumps({"topics": [{"title": "Delivery plan", "scope": "Friday delivery",
+                                             "items": ["n1"]}]})
+        else:
+            result = f"The revised delivery plan is due Friday. [{key}]"
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop", "message": {"content": result},
+        }]})
+
+    async def run():
+        settings = Settings(data_dir=tmp_path, timezone="UTC", summary_language="en",
+                            _env_file=None)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+            memory = Memory(Store(tmp_path), settings, Inference(settings, client))
+            memory.store.ingest(key, "phone", datetime(2026, 10, 15, 12, tzinfo=UTC),
+                                audio_data(), 1, source_kind="manual_upload")
+            memory.store.complete(key, text)
+            jobs = Reprocessing(memory)
+            jobs.enqueue(RedoRequest(kind="transcripts"))
+            memory.store.complete(key, text)
+            assert await jobs.process_one()
+            status = jobs.observation()["job"]
+            assert status["state"] == "completed"
+            assert status["transcript_completed"] == status["summary_completed"] == 1
+            assert "delivery plan" in memory.cached_recap(datetime(2026, 10, 15).date())["summary"]
+
+    asyncio.run(run())
+    assert budgets and set(budgets) == {65536}

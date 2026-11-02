@@ -332,7 +332,7 @@ def test_real_redo_recovers_when_reasoning_exhausts_every_summary_token_budget(j
     status = jobs.observation()["job"]
     assert status["state"] == "completed"
     assert status["transcript_completed"] == status["summary_completed"] == 1
-    assert notes_requests == [(4000, True), (8000, True), (16000, True), (16000, False)]
+    assert notes_requests == [(65536, True), (65536, False)]
     assert jobs.memory.settings.llm_enable_thinking is True
     assert "delivery plan" in jobs.memory.cached_recap(date(2026, 10, 15))["summary"]
 

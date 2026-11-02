@@ -3044,3 +3044,12 @@
 "Enable background processing before starting a redo" = "Aktivér baggrundsbehandling, før du starter genbehandling";
 "Enable the audio worker before redoing transcripts" = "Aktivér lydbearbejdning, før du genererer transskriptioner igen";
 "Summary generation failed; check model settings and redo again" = "Generering af resuméer mislykkedes; kontrollér modelindstillingerne, og prøv igen";
+"Alignment service address" = "Adresse til justeringstjeneste";
+"Enable word timings" = "Aktivér ordtidspunkter";
+"Word alignment language" = "Sprog til ordjustering";
+"Word alignment timeout (seconds)" = "Timeout for ordjustering (sekunder)";
+"Alignment language must be da or en" = "Sproget til justering skal være da eller en";
+"Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score." = "Tilføj uafhængigt beregnede ordtidspunkter til en vellykket transskription. Funktionen er som standard slået fra; utilgængelig eller ufuldstændig justering bevarer transskriptionen. Fuld dækning er ikke et kalibreret mål for tidsnøjagtighed.";
+"Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791." = "Adresse på den lokale tjeneste til tvungen justering, som home-core kan nå. Start scripts/alignment_server.py i det isolerede kørselsmiljø; standardporten er 8791.";
+"Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments." = "Maksimal tid til valgfri ordjustering pr. optagelse. Ved timeout bevares den vellykkede genkendelse uden justerede segmenter.";
+"Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable." = "Sprog for den akustiske justeringsmodel til genkendelsesteksten. Vælg dansk eller engelsk; sætninger med flere sprog kan ikke altid justeres.";

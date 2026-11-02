@@ -3118,5 +3118,14 @@
   "Automatic speaker detection failed: {value0}": "Automatisk talaridentifiering misslyckades: {value0}",
   "Attributed transcript": "Talarmärkt transkription",
   "Time unavailable": "Tid saknas",
-  "Unknown error": "Okänt fel"
+  "Unknown error": "Okänt fel",
+  "Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score.": "Lägger till oberoende justerade ordtidpunkter till lyckade transkriberingar. Avstängt som standard; transkriberingen behålls om justeringen inte är tillgänglig eller är ofullständig. Full täckning är inte ett kalibrerat mått på tidsnoggrannhet.",
+  "Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791.": "URL till den lokala tjänsten för tvingad justering som kan nås från home-core. Starta scripts/alignment_server.py i dess isolerade körmiljö; standardporten är 8791.",
+  "Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments.": "Maximal tid för valfri ordjustering per inspelning. Vid tidsgräns behålls den lyckade igenkänningen utan justerade segment.",
+  "Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable.": "Språket för den akustiska justeringsmodellen för igenkänd text. Välj danska eller engelska; fraser med flera språk kan förbli omöjliga att justera.",
+  "Alignment service address": "Adress till justeringstjänsten",
+  "Enable word timings": "Aktivera ordtidpunkter",
+  "Word alignment language": "Språk för ordjustering",
+  "Word alignment timeout (seconds)": "Tidsgräns för ordjustering (sekunder)",
+  "Alignment language must be da or en": "Språket för justering måste vara da eller en"
 }

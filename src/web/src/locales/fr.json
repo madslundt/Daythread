@@ -3118,5 +3118,14 @@
   "Automatic speaker detection failed: {value0}": "Échec de la détection automatique des locuteurs : {value0}",
   "Attributed transcript": "Transcription attribuée",
   "Time unavailable": "Heure indisponible",
-  "Unknown error": "Erreur inconnue"
+  "Unknown error": "Erreur inconnue",
+  "Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score.": "Ajoute des horaires de mots alignés indépendamment aux transcriptions réussies. Désactivé par défaut ; si l’alignement est indisponible ou incomplet, la transcription est conservée. Une couverture complète ne constitue pas une mesure calibrée de précision temporelle.",
+  "Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791.": "URL du service local d’alignement forcé accessible depuis home-core. Lancez scripts/alignment_server.py dans son environnement isolé ; le port par défaut est 8791.",
+  "Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments.": "Durée maximale consacrée à l’alignement facultatif des mots par enregistrement. En cas de délai dépassé, la reconnaissance réussie est conservée sans segments alignés.",
+  "Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable.": "Langue du modèle acoustique d’alignement pour le texte reconnu. Choisissez le danois ou l’anglais ; les phrases mêlant plusieurs langues peuvent rester inalignables.",
+  "Alignment service address": "Adresse du service d’alignement",
+  "Enable word timings": "Activer les horaires des mots",
+  "Word alignment language": "Langue d’alignement des mots",
+  "Word alignment timeout (seconds)": "Délai d’alignement des mots (secondes)",
+  "Alignment language must be da or en": "La langue d’alignement doit être da ou en"
 }

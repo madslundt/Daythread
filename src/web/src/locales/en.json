@@ -3118,5 +3118,14 @@
   "Automatic speaker detection failed: {value0}": "Automatic speaker detection failed: {value0}",
   "Attributed transcript": "Attributed transcript",
   "Time unavailable": "Time unavailable",
-  "Unknown error": "Unknown error"
+  "Unknown error": "Unknown error",
+  "Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score.": "Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score.",
+  "Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791.": "Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791.",
+  "Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments.": "Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments.",
+  "Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable.": "Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable.",
+  "Alignment service address": "Alignment service address",
+  "Enable word timings": "Enable word timings",
+  "Word alignment language": "Word alignment language",
+  "Word alignment timeout (seconds)": "Word alignment timeout (seconds)",
+  "Alignment language must be da or en": "Alignment language must be da or en"
 }

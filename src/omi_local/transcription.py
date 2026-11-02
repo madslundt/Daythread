@@ -151,7 +151,7 @@ class Transcription:
                     response.raise_for_status()
                     payload = response.json()
                     if not isinstance(payload, dict):
-                        raise ValueError("bad payload")
+                        raise ValueError
                     model = payload.get("model")
                     if not isinstance(model, str):
                         return output or None, {"status": "invalid", "model": None,

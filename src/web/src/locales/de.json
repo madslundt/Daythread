@@ -3118,5 +3118,14 @@
   "Automatic speaker detection failed: {value0}": "Automatische Sprechererkennung fehlgeschlagen: {value0}",
   "Attributed transcript": "Sprechern zugeordnetes Transkript",
   "Time unavailable": "Zeit nicht verfügbar",
-  "Unknown error": "Unbekannter Fehler"
+  "Unknown error": "Unbekannter Fehler",
+  "Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score.": "Ergänzt eine erfolgreiche Transkription um unabhängig ausgerichtete Wortzeitpunkte. Standardmäßig deaktiviert; bei nicht verfügbarer oder unvollständiger Ausrichtung bleibt die Transkription erhalten. Vollständige Abdeckung ist kein kalibrierter Messwert für die Zeitgenauigkeit.",
+  "Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791.": "URL des lokalen Forced-Alignment-Dienstes, erreichbar von home-core. Starten Sie scripts/alignment_server.py in seiner isolierten Laufzeitumgebung; Standardport ist 8791.",
+  "Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments.": "Maximale Zeit für die optionale Wortausrichtung pro Aufnahme. Bei einer Zeitüberschreitung bleibt die erfolgreiche Erkennung ohne ausgerichtete Segmente erhalten.",
+  "Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable.": "Sprache des akustischen Ausrichtungsmodells für den erkannten Text. Wählen Sie Dänisch oder Englisch; gemischtsprachige Formulierungen lassen sich möglicherweise nicht ausrichten.",
+  "Alignment service address": "Adresse des Ausrichtungsdienstes",
+  "Enable word timings": "Wortzeitpunkte aktivieren",
+  "Word alignment language": "Sprache der Wortausrichtung",
+  "Word alignment timeout (seconds)": "Zeitlimit für Wortausrichtung (Sekunden)",
+  "Alignment language must be da or en": "Die Sprache der Ausrichtung muss da oder en sein"
 }

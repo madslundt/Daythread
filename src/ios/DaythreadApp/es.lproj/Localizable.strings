@@ -3042,3 +3042,12 @@
 "Enable background processing before starting a redo" = "Activa el procesamiento en segundo plano antes de volver a procesar";
 "Enable the audio worker before redoing transcripts" = "Activa el servicio de procesamiento de audio antes de volver a generar transcripciones";
 "Summary generation failed; check model settings and redo again" = "No se pudieron generar los resúmenes; revisa los ajustes del modelo y vuelve a intentarlo";
+"Alignment service address" = "Dirección del servicio de alineación";
+"Enable word timings" = "Activar tiempos de palabra";
+"Word alignment language" = "Idioma de alineación de palabras";
+"Word alignment timeout (seconds)" = "Tiempo límite de alineación de palabras (segundos)";
+"Alignment language must be da or en" = "El idioma de alineación debe ser da o en";
+"Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score." = "Añade tiempos de palabra alineados de forma independiente a las transcripciones correctas. Está desactivado de forma predeterminada; si la alineación no está disponible o es incompleta, se conserva la transcripción. La cobertura completa no es una medida calibrada de precisión temporal.";
+"Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791." = "URL del servicio local de alineación forzada accesible desde home-core. Inicia scripts/alignment_server.py en su entorno aislado; el puerto predeterminado es 8791.";
+"Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments." = "Tiempo máximo dedicado a la alineación opcional de palabras por grabación. Si se agota el tiempo, se conserva el reconocimiento correcto sin segmentos alineados.";
+"Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable." = "Idioma del modelo acústico de alineación para el texto reconocido. Elige danés o inglés; es posible que no se puedan alinear frases con varios idiomas.";

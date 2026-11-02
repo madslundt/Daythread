@@ -3042,3 +3042,12 @@
 "Enable background processing before starting a redo" = "Aktivera bakgrundsbearbetning innan du startar en ny bearbetning";
 "Enable the audio worker before redoing transcripts" = "Aktivera ljudbearbetning innan du skapar transkript igen";
 "Summary generation failed; check model settings and redo again" = "Det gick inte att skapa sammanfattningar; kontrollera modellinställningarna och försök igen";
+"Alignment service address" = "Adress till justeringstjänsten";
+"Enable word timings" = "Aktivera ordtidpunkter";
+"Word alignment language" = "Språk för ordjustering";
+"Word alignment timeout (seconds)" = "Tidsgräns för ordjustering (sekunder)";
+"Alignment language must be da or en" = "Språket för justering måste vara da eller en";
+"Add independently aligned word timings to successful recognition. Disabled by default; unavailable or incomplete alignment preserves the transcript. Complete coverage is not a calibrated timing-accuracy score." = "Lägger till oberoende justerade ordtidpunkter till lyckade transkriberingar. Avstängt som standard; transkriberingen behålls om justeringen inte är tillgänglig eller är ofullständig. Full täckning är inte ett kalibrerat mått på tidsnoggrannhet.";
+"Local forced-alignment service URL reachable from home-core. Start scripts/alignment_server.py in its isolated runtime; default port 8791." = "URL till den lokala tjänsten för tvingad justering som kan nås från home-core. Starta scripts/alignment_server.py i dess isolerade körmiljö; standardporten är 8791.";
+"Maximum time spent on optional word alignment per recording. Timeout preserves successful recognition without aligned segments." = "Maximal tid för valfri ordjustering per inspelning. Vid tidsgräns behålls den lyckade igenkänningen utan justerade segment.";
+"Alignment acoustic model language for recognition text. Choose Danish or English; mixed-language phrases may remain unalignable." = "Språket för den akustiska justeringsmodellen för igenkänd text. Välj danska eller engelska; fraser med flera språk kan förbli omöjliga att justera.";

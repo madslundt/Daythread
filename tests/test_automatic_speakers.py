@@ -13,7 +13,12 @@ from test_speakers import detector, recordings, wav
 from omi_local.api import create_app
 from omi_local.domain import utc_now
 from omi_local.settings import Settings
-from omi_local.speaker_projection import attach_text, project_utterances
+from omi_local.speaker_projection import (
+    add_conversation_audio_times,
+    attach_text,
+    conversation_audio_parts,
+    project_utterances,
+)
 from omi_local.speaker_worker import discover, process_one
 from omi_local.store import Store
 
@@ -94,6 +99,45 @@ def test_projection_keeps_unaligned_words_and_marks_turn_crossings_unknown(clien
     assert pieces[-1]["text"] == " beta gamma"
     assert pieces[-1]["attribution"] == "unknown"
     assert [(piece["start_offset"], piece["end_offset"]) for piece in pieces] == [(0, 5), (5, 16)]
+
+
+def test_conversation_audio_clock_clips_parts_and_does_not_count_capture_gaps():
+    base = utc_now().replace(microsecond=0)
+    def stamp_at(seconds):
+        return (base + timedelta(seconds=seconds)).isoformat()
+
+    scope = {
+        "bounds": [stamp_at(1), stamp_at(9)],
+        "rows": [
+            {"id": "first", "started_at": stamp_at(0), "ended_at": stamp_at(2)},
+            {"id": "second", "started_at": stamp_at(5), "ended_at": stamp_at(8)},
+            {"id": "third", "started_at": stamp_at(8), "ended_at": stamp_at(10)},
+        ],
+    }
+    parts = conversation_audio_parts(scope)
+    assert [parts[key]["part_index"] for key in ("first", "second", "third")] == [1, 2, 3]
+    assert [parts[key]["part_count"] for key in ("first", "second", "third")] == [3, 3, 3]
+    items = [
+        {"source_id": "first", "start": 1.25, "end": 1.75},
+        {"source_id": "second", "start": 4.5, "end": 5.5},  # crosses the clipped edge
+        {"source_id": "third", "start": 0.5, "end": 0.75},
+        {"source_id": "third", "start": None, "end": None},
+        {"source_id": "outside", "start": 0.0, "end": 1.0},
+    ]
+
+    add_conversation_audio_times(items, parts, audio_available=True)
+
+    assert [(item["audio_start"], item["audio_end"]) for item in items] == [
+        (0.25, 0.75), (None, None), (4.5, 4.75), (None, None), (None, None),
+    ]
+    assert [item["part_index"] for item in items] == [1, 2, 3, 3, None]
+    assert items[0]["start"] == 1.25  # source-local evidence stays unchanged
+    add_conversation_audio_times(items, parts, audio_available=False)
+    assert all(item["audio_start"] is None and item["audio_end"] is None for item in items)
+
+
+def test_scope_without_timed_audio_sources_has_no_conversation_elapsed_clock():
+    assert conversation_audio_parts({"bounds": ["invalid", "bounds"], "rows": []}) == {}
 
 
 def test_automatic_failure_is_visible_and_backed_off(client):

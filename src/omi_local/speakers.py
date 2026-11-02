@@ -17,7 +17,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .conversation_state import conversations, meeting_timeline
 from .domain import stamp, utc_now
-from .speaker_projection import attach_text, project_utterances
+from .speaker_projection import (
+    add_conversation_audio_times,
+    attach_text,
+    conversation_audio_parts,
+    project_utterances,
+)
 
 if TYPE_CHECKING:
     from .service import Memory
@@ -176,6 +181,9 @@ class Speakers:
         audio_available = bool(scope["rows"]) and all(
             r["audio_available"] and self.memory.store.has_audio(r["id"]) for r in scope["rows"]
         )
+        parts = conversation_audio_parts(scope)
+        add_conversation_audio_times(turns, parts, audio_available)
+        add_conversation_audio_times(utterances, parts, audio_available)
         recognition = self.memory.voices.annotate(db, scope, payload, ready and audio_available)
         job = db.execute("SELECT state,error,retry_at FROM speaker_jobs WHERE scope_key=?",
                          (scope["key"],)).fetchone()

@@ -3127,5 +3127,10 @@
   "Enable word timings": "Aktivera ordtidpunkter",
   "Word alignment language": "Språk för ordjustering",
   "Word alignment timeout (seconds)": "Tidsgräns för ordjustering (sekunder)",
-  "Alignment language must be da or en": "Språket för justering måste vara da eller en"
+  "Alignment language must be da or en": "Språket för justering måste vara da eller en",
+  "Elapsed audio {value0}–{value1}": "Förfluten ljudtid {value0}–{value1}",
+  "Part {value0} of {value1}": "Del {value0} av {value1}",
+  "Source time {value0}–{value1}": "Källtid {value0}–{value1}",
+  "Speaker for turn at {value0}": "Talare för tur vid {value0}",
+  "Speaker for turn at {value0} in part {value1} of {value2}": "Talare för tur vid {value0} i del {value1} av {value2}"
 }

@@ -4,6 +4,74 @@ import json
 import math
 from datetime import datetime
 
+SAMPLE_RATE = 16000
+
+
+def conversation_audio_parts(scope: dict) -> dict[str, dict]:
+    """Map scoped source clips to the concatenated audio order, without reading audio."""
+    try:
+        left, right = map(datetime.fromisoformat, scope["bounds"])
+    except (KeyError, TypeError, ValueError):
+        return {}
+    parts = {}
+    offset_frames = 0
+    for row in scope.get("rows", []):
+        try:
+            source_start = datetime.fromisoformat(row["started_at"])
+            source_end = datetime.fromisoformat(row["ended_at"])
+            clip_start = max(0.0, (left - source_start).total_seconds())
+            clip_end = (min(right, source_end) - source_start).total_seconds()
+            first_frame = round(clip_start * SAMPLE_RATE)
+            last_frame = round(clip_end * SAMPLE_RATE)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if last_frame <= first_frame:
+            continue
+        parts[row["id"]] = {
+            "part_index": len(parts) + 1,
+            "first_frame": first_frame,
+            "last_frame": last_frame,
+            "offset_frames": offset_frames,
+        }
+        offset_frames += last_frame - first_frame
+    for part in parts.values():
+        part["part_count"] = len(parts)
+    return parts
+
+
+def add_conversation_audio_times(
+    items: list[dict], parts: dict[str, dict], audio_available: bool,
+) -> None:
+    """Add display-only concatenated elapsed times, keeping source-local times intact."""
+    for item in items:
+        part = parts.get(item.get("source_id"))
+        item["part_index"] = part["part_index"] if part else None
+        item["part_count"] = part["part_count"] if part else None
+        item["audio_start"] = item["audio_end"] = None
+        if not part or not audio_available:
+            continue
+        start, end = item.get("start"), item.get("end")
+        if (
+            type(start) not in (int, float)
+            or type(end) not in (int, float)
+            or not math.isfinite(start)
+            or not math.isfinite(end)
+            or not 0 <= start < end
+        ):
+            continue
+        source_left, source_right = start * SAMPLE_RATE, end * SAMPLE_RATE
+        if source_left < part["first_frame"] or source_right > part["last_frame"]:
+            continue
+        first_frame, last_frame = round(source_left), round(source_right)
+        if last_frame <= first_frame:
+            continue
+        item["audio_start"] = round(
+            (part["offset_frames"] + first_frame - part["first_frame"]) / SAMPLE_RATE, 6,
+        )
+        item["audio_end"] = round(
+            (part["offset_frames"] + last_frame - part["first_frame"]) / SAMPLE_RATE, 6,
+        )
+
 
 def project_utterances(
     turns: list[dict],

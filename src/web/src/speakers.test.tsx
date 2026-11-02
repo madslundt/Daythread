@@ -341,18 +341,39 @@ describe("speaker display", () => {
 
   it("renders the attributed transcript with stable speaker and timestamp labels", () => {
     const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, utterances: [
-      { id: "u1", source_id: "recording-uuid", start: 12.5, end: 13.2, text: "Hello there.",
+      { id: "u1", source_id: "recording-uuid", start: 12.5, end: 13.2, audio_start: 31.5,
+        audio_end: 32.2, part_index: 2, part_count: 3, text: "Hello there.",
         speaker_id: "s1", speaker_label: "A", speaker_name: "Mads", attribution: "attributed",
         start_offset: 0, end_offset: 12 },
       { id: "u2", source_id: "recording-uuid", start: null, end: null, text: "unclear words",
+        audio_start: null, audio_end: null, part_index: 3, part_count: 3,
         speaker_id: null, speaker_label: null, speaker_name: null, attribution: "unknown",
         start_offset: 12, end_offset: 25 },
     ] }} />);
     expect(html).toContain("Attributed transcript");
-    expect(html).toContain("0:12");
+    expect(html).toContain("Elapsed audio 0:31–0:32");
+    expect(html).toContain("Part 2 of 3");
     expect(html).toContain("Mads");
     expect(html).toContain("Unknown speaker");
     expect(html).toContain("Time unavailable");
     expect(html).toContain("unclear words");
+    expect(html).not.toContain("recording-uuid");
+  });
+
+  it("uses the conversation audio clock and part label for speaking turns", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, turns: [
+      { ...data.turns[0], source_id: "source-audio-uuid", audio_start: 65, audio_end: 75,
+        part_index: 2, part_count: 3 },
+    ] }} />);
+    expect(html).toContain("Elapsed audio 1:05–1:15");
+    expect(html).toContain("Part 2 of 3");
+    expect(html).toContain("Speaker for turn at 1:05 in part 2 of 3");
+    expect(html).not.toContain("source-audio-uuid");
+  });
+
+  it("keeps source-local display compatibility when elapsed metadata is absent", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...view} data={data} />);
+    expect(html).toContain("Source time 0:10–0:20");
+    expect(html).toContain("Speaker for turn at 0:10");
   });
 });

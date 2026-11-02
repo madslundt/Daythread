@@ -101,6 +101,27 @@ def test_detect_names_and_playback_share_a_whole_upload_and_persist(client):
         assert db.execute("SELECT count(*) FROM speaker_events").fetchone()[0] == 2
 
 
+def test_multipart_turns_keep_source_times_and_add_conversation_elapsed_times(client):
+    keys, path = recordings(client)
+    detector(client)
+
+    response = client.post(path)
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert [
+        (turn["source_id"], turn["start"], turn["end"], turn["audio_start"],
+         turn["audio_end"], turn["part_index"], turn["part_count"])
+        for turn in result["turns"]
+    ] == [
+        (keys[0], 0.0, 1.0, 0.0, 1.0, 1, 2),
+        (keys[0], 1.0, 2.0, 1.0, 2.0, 1, 2),
+        (keys[1], 0.0, 1.0, 2.0, 3.0, 2, 2),
+        (keys[1], 1.0, 2.0, 3.0, 4.0, 2, 2),
+    ]
+    assert all(turn["source_id"] in keys for turn in result["turns"])
+
+
 def test_reassignment_merge_and_version_conflicts(client):
     _, path = recordings(client)
     detector(client)
@@ -195,7 +216,55 @@ def test_meeting_clips_turns_and_names_are_shared_with_its_sources(client):
     result = client.post(path)
     assert result.status_code == 200, result.text
     assert result.json()["scope"] == {"kind": "meeting", "id": str(meeting_id)}
+    assert [
+        (turn["source_id"], turn["start"], turn["end"],
+         turn["audio_start"], turn["audio_end"], turn["part_index"])
+        for turn in result.json()["turns"]
+    ] == [
+        (keys[0], 0.0, 1.0, 0.0, 1.0, 1),
+        (keys[0], 1.0, 2.0, 1.0, 2.0, 1),
+        (keys[1], 0.0, 1.0, 2.0, 3.0, 2),
+        (keys[1], 1.0, 2.0, 3.0, 4.0, 2),
+    ]
     assert client.get(f"/v1/speakers/source/{keys[0]}").json() == result.json()
+
+
+def test_meeting_elapsed_clock_clips_sources_without_counting_capture_gaps(client):
+    store = client.app.state.memory.store
+    start = utc_now() - timedelta(minutes=10)
+    keys = [str(uuid4()), str(uuid4())]
+    for key, offset in zip(keys, (0, 5)):
+        store.ingest(key, "manual-web", start + timedelta(seconds=offset), wav(100, 2), 2,
+                     source_kind="manual_upload", source_id="meeting-gap.wav")
+        store.complete(key, "Meeting source", segments=[])
+    meeting_id = uuid4()
+    for event_id, at in [(meeting_id, start + timedelta(seconds=1)),
+                         (uuid4(), start + timedelta(seconds=70))]:
+        store.append_event(ButtonEvent(event_id=event_id, device_id="manual-web", occurred_at=at,
+                                    action="meeting_toggle"), 120, 60)
+
+    async def detect(data, num_speakers=None):
+        return {"model": "test", "model_revision": "rev-a", "runtime": "test-runtime",
+                "runtime_version": "1.2", "turns": [
+                    {"start": 0, "end": 0.5, "speaker": "voice0"},
+                    {"start": 0.5, "end": 1, "speaker": "voice1"},
+                    {"start": 1, "end": 2, "speaker": "voice0"},
+                    {"start": 2, "end": 3, "speaker": "voice1"},
+                ]}
+
+    client.app.state.memory.speakers.detect_turns = detect
+    result = client.post(f"/v1/speakers/meeting/{meeting_id}")
+    assert result.status_code == 200, result.text
+    assert [
+        (turn["source_id"], turn["start"], turn["end"],
+         turn["audio_start"], turn["audio_end"], turn["part_index"])
+        for turn in result.json()["turns"]
+    ] == [
+        (keys[0], 1.0, 1.5, 0.0, 0.5, 1),
+        (keys[0], 1.5, 2.0, 0.5, 1.0, 1),
+        (keys[1], 0.0, 1.0, 1.0, 2.0, 2),
+        (keys[1], 1.0, 2.0, 2.0, 3.0, 2),
+    ]
 
 
 @pytest.mark.parametrize("turns", [

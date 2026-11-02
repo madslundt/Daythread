@@ -16,12 +16,18 @@ export type VoiceProfile = {
 };
 export type VoiceProfilesData = { revision: string; profiles: VoiceProfile[]; recognition: VoiceRecognition };
 export type RememberVoiceChoice = ({ profile_id: string } | { name: string }) & { is_self?: true; voice_revision?: string };
-export type SpeakerTurn = { id: string; source_id: string; start: number; end: number; speaker_id: string; text?: string };
+export type SpeakerTurn = {
+  id: string; source_id: string; start: number; end: number; speaker_id: string; text?: string;
+  audio_start?: number | null; audio_end?: number | null;
+  part_index?: number | null; part_count?: number | null;
+};
 export type SpeakerUtterance = {
   id: string; source_id: string; start: number | null; end: number | null; text: string;
   speaker_id: string | null; speaker_label: string | null; speaker_name: string | null;
   attribution: "attributed" | "unknown" | "overlap";
   start_offset: number; end_offset: number;
+  audio_start?: number | null; audio_end?: number | null;
+  part_index?: number | null; part_count?: number | null;
 };
 export type SpeakersData = {
   state: "idle" | "ready" | "stale";

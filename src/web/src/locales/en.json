@@ -3127,5 +3127,10 @@
   "Enable word timings": "Enable word timings",
   "Word alignment language": "Word alignment language",
   "Word alignment timeout (seconds)": "Word alignment timeout (seconds)",
-  "Alignment language must be da or en": "Alignment language must be da or en"
+  "Alignment language must be da or en": "Alignment language must be da or en",
+  "Elapsed audio {value0}–{value1}": "Elapsed audio {value0}–{value1}",
+  "Part {value0} of {value1}": "Part {value0} of {value1}",
+  "Source time {value0}–{value1}": "Source time {value0}–{value1}",
+  "Speaker for turn at {value0}": "Speaker for turn at {value0}",
+  "Speaker for turn at {value0} in part {value1} of {value2}": "Speaker for turn at {value0} in part {value1} of {value2}"
 }

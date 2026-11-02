@@ -3127,5 +3127,10 @@
   "Enable word timings": "Wortzeitpunkte aktivieren",
   "Word alignment language": "Sprache der Wortausrichtung",
   "Word alignment timeout (seconds)": "Zeitlimit für Wortausrichtung (Sekunden)",
-  "Alignment language must be da or en": "Die Sprache der Ausrichtung muss da oder en sein"
+  "Alignment language must be da or en": "Die Sprache der Ausrichtung muss da oder en sein",
+  "Elapsed audio {value0}–{value1}": "Verstrichene Audiozeit {value0}–{value1}",
+  "Part {value0} of {value1}": "Teil {value0} von {value1}",
+  "Source time {value0}–{value1}": "Quellzeit {value0}–{value1}",
+  "Speaker for turn at {value0}": "Sprecher für Turn bei {value0}",
+  "Speaker for turn at {value0} in part {value1} of {value2}": "Sprecher für Turn bei {value0} in Teil {value1} von {value2}"
 }

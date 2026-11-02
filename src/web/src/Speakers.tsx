@@ -194,6 +194,36 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
   </SpeakersView>;
 }
 
+function SpeakerPosition({ sourceStart, sourceEnd, audioStart, audioEnd, partIndex, partCount }: {
+  sourceStart: number | null; sourceEnd: number | null;
+  audioStart?: number | null; audioEnd?: number | null;
+  partIndex?: number | null; partCount?: number | null;
+}) {
+  const hasAudioTimeline = audioStart !== undefined;
+  const start = hasAudioTimeline ? audioStart! : sourceStart;
+  const end = hasAudioTimeline ? audioEnd! : sourceEnd;
+  const range = start !== null && end !== null
+    ? t(hasAudioTimeline ? "Elapsed audio {value0}–{value1}" : "Source time {value0}–{value1}", {
+      value0: speakerTime(start), value1: speakerTime(end),
+    })
+    : t("Time unavailable");
+  return <span className="caption">
+    {range}{partIndex != null && partCount != null
+      ? <> {"·"} {t("Part {value0} of {value1}", { value0: partIndex, value1: partCount })}</>
+      : null}
+  </span>;
+}
+
+function speakerPositionLabel(turn: SpeakersData["turns"][number]): string {
+  const start = turn.audio_start !== undefined ? turn.audio_start : turn.start;
+  const time = start === null ? t("Time unavailable") : speakerTime(start);
+  return turn.part_index != null && turn.part_count != null
+    ? t("Speaker for turn at {value0} in part {value1} of {value2}", {
+      value0: time, value1: turn.part_index, value2: turn.part_count,
+    })
+    : t("Speaker for turn at {value0}", { value0: time });
+}
+
 export function SpeakersView({ data, voices, voiceError, loading, busy, detecting = false, error, onDetect, onRetry, onRename, onListen, onMerge, onReassign, onRemember, onConfirm, onForget, onSetSelf, children }: {
   data?: SpeakersData;
   voices?: VoiceProfilesData;
@@ -258,8 +288,10 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
         <ol>{data.turns.map((turn) => <li key={turn.id}>
           <div className="speaker-turn-heading">
             <strong>{speakers.has(turn.speaker_id) ? speakerName(speakers.get(turn.speaker_id)!) : t("Unknown speaker")}</strong>
-            <span className="caption">{speakerTime(turn.start)}–{speakerTime(turn.end)} {t("in recording")}{" "}{turn.source_id.slice(0, 8)}</span>
-            <label>{t("Speaker")}{" "}<select aria-label={t("Speaker for turn at {value0} in recording {value1}", { value0: speakerTime(turn.start), value1: turn.source_id })}
+            <SpeakerPosition sourceStart={turn.start} sourceEnd={turn.end}
+              audioStart={turn.audio_start} audioEnd={turn.audio_end}
+              partIndex={turn.part_index} partCount={turn.part_count} />
+            <label>{t("Speaker")}{" "}<select aria-label={speakerPositionLabel(turn)}
               value={turn.speaker_id} disabled={!editable} onChange={(event) => onReassign(turn.id, event.target.value)}>
               {data.speakers.map((speaker) => <option key={speaker.id} value={speaker.id}>{speakerName(speaker)}</option>)}
             </select></label>
@@ -273,9 +305,9 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
       <ol>{data.utterances.map((utterance) => <li key={utterance.id}>
         <div className="speaker-turn-heading">
           <strong>{utterance.speaker_name || utterance.speaker_label || t("Unknown speaker")}</strong>
-          <span className="caption">{utterance.start !== null && utterance.end !== null
-            ? `${speakerTime(utterance.start)}–${speakerTime(utterance.end)}`
-            : t("Time unavailable")} {t("in recording")} {utterance.source_id.slice(0, 8)}</span>
+          <SpeakerPosition sourceStart={utterance.start} sourceEnd={utterance.end}
+            audioStart={utterance.audio_start} audioEnd={utterance.audio_end}
+            partIndex={utterance.part_index} partCount={utterance.part_count} />
         </div>
         <p className="transcript-text">{utterance.text}</p>
       </li>)}</ol>

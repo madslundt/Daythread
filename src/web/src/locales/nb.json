@@ -3127,5 +3127,10 @@
   "Enable word timings": "Aktiver ordtidspunkter",
   "Word alignment language": "Språk for ordjustering",
   "Word alignment timeout (seconds)": "Tidsavbrudd for ordjustering (sekunder)",
-  "Alignment language must be da or en": "Språket for justering må være da eller en"
+  "Alignment language must be da or en": "Språket for justering må være da eller en",
+  "Elapsed audio {value0}–{value1}": "Forløpt lydtid {value0}–{value1}",
+  "Part {value0} of {value1}": "Del {value0} av {value1}",
+  "Source time {value0}–{value1}": "Kildetid {value0}–{value1}",
+  "Speaker for turn at {value0}": "Taler for tur ved {value0}",
+  "Speaker for turn at {value0} in part {value1} of {value2}": "Taler for tur ved {value0} i del {value1} av {value2}"
 }

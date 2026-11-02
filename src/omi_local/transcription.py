@@ -1,6 +1,8 @@
 """Speech-only request copies with timestamps anchored to original recordings."""
 
 import asyncio
+import math
+import re
 from uuid import uuid4
 
 from .audio import amplify_quiet_audio, contains_speech_energy, transcription_chunks
@@ -34,6 +36,7 @@ class Transcription:
         settings = self.settings
         chunks = []
         originals = []
+        alignment_inputs = []
         try:
             # Finish every original pass before optional work can consume its budget.
             async with asyncio.timeout(settings.inference_timeout_seconds) as deadline:
@@ -68,6 +71,10 @@ class Transcription:
                         else await self._transcribe_chunk(prepared, settings)
                     )
                     if result["text"]:
+                        text_offset = sum(map(len, texts)) + len(texts)
+                        alignment_inputs.append((offset, chunk, result["text"],
+                                                 result.get("recognition", {}).get(
+                                                     "detected_language"), text_offset))
                         texts.append(result["text"])
                     segments.extend(
                         {**segment, "start": segment["start"] + offset,
@@ -98,6 +105,15 @@ class Transcription:
         # Optional cancellation/cleanup is outside the required-pass timeout so it
         # cannot discard successful recognition. Its budget still uses that deadline.
         remaining = deadline.when() - asyncio.get_running_loop().time()
+        alignment_status = {"status": "disabled"}
+        if settings.alignment_enabled:
+            alignment_budget = min(settings.alignment_timeout_seconds, max(0, remaining))
+            aligned, alignment_status = await self._align_chunks(
+                alignment_inputs, settings, alignment_budget,
+            )
+            if aligned:
+                segments = aligned
+            remaining = deadline.when() - asyncio.get_running_loop().time()
         budget = min(settings.stt_enhancement_timeout_seconds, remaining)
         await self._enhancement_candidates(chunks, originals, settings, budget, on_progress)
         return {
@@ -106,8 +122,101 @@ class Transcription:
                 "version": 2, "preserve_quiet": settings.stt_preserve_quiet,
                 "filtering": filtering,
                 "enhancement_mode": settings.stt_enhancement_mode, "chunks": chunks,
+                "alignment": alignment_status,
             },
         }
+
+    async def _align_chunks(self, parts, settings: Settings, budget: float):
+        """Keep validated timing fragments; status makes incomplete coverage explicit."""
+        if not parts:
+            return [], {"status": "empty", "model": None}
+        if budget <= 0:
+            return None, {"status": "timeout", "model": None}
+        output = []
+        model = None
+        overall = "aligned"
+        languages = set()
+        try:
+            async with asyncio.timeout(budget):
+                for offset, audio, text, language, text_offset in parts:
+                    language = language or settings.alignment_language
+                    languages.add(language)
+                    response = await self.client.post(
+                        f"{settings.alignment_base_url}/align",
+                        files={"file": ("chunk.wav", audio, "audio/wav")},
+                        data={"text": text, "language": language},
+                        timeout=settings.alignment_timeout_seconds,
+                        follow_redirects=False,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    if not isinstance(payload, dict):
+                        raise ValueError("bad payload")
+                    model = payload.get("model")
+                    if not isinstance(model, str):
+                        return output or None, {"status": "invalid", "model": None,
+                                                "languages": sorted(languages)}
+                    if payload.get("language") != language:
+                        overall = "invalid"
+                        continue
+                    segments = payload.get("segments")
+                    expected = list(re.finditer(r"\S+", text))
+                    if not isinstance(segments, list):
+                        overall = "partial"
+                        continue
+                    duration = wav_duration(audio)
+                    previous = 0.0
+                    last_character = 0
+                    local = []
+                    covered_ranges = set()
+                    if len(segments) != len(expected) or payload.get("status") != "aligned":
+                        overall = "partial"
+                    covered_chars = set()
+                    for segment in segments:
+                        if not isinstance(segment, dict):
+                            overall = "invalid"
+                            continue
+                        first, last = segment.get("start_offset"), segment.get("end_offset")
+                        start, end = segment.get("start"), segment.get("end")
+                        if (isinstance(first, bool) or isinstance(last, bool)
+                                or not isinstance(first, int) or not isinstance(last, int)
+                                or not 0 <= first < last <= len(text)
+                                or text[first:last] != segment.get("text")
+                                or any(first < match.end() and last > match.start()
+                                       for match in expected
+                                       if match.start() != first or match.end() != last)
+                                or first < last_character):
+                            overall = "invalid"
+                            continue
+                        if any(index in covered_chars for index in range(first, last)):
+                            overall = "invalid"
+                            continue
+                        if (isinstance(start, bool) or isinstance(end, bool)
+                                or not isinstance(start, (int, float))
+                                or not isinstance(end, (int, float))
+                                or not math.isfinite(start) or not math.isfinite(end)
+                                or not previous <= start < end <= duration):
+                            overall = "invalid"
+                            continue
+                        previous = end
+                        last_character = last
+                        covered_chars.update(range(first, last))
+                        covered_ranges.add((first, last))
+                        local.append({"start": start + offset, "end": end + offset,
+                                      "text": text[first:last],
+                                      "start_offset": first + text_offset,
+                                      "end_offset": last + text_offset, "kind": "word"})
+                    if covered_ranges != {(match.start(), match.end()) for match in expected}:
+                        overall = "partial" if overall == "aligned" else overall
+                    output.extend(local)
+        except TimeoutError:
+            return output or None, {"status": "timeout", "model": model,
+                                    "languages": sorted(languages)}
+        except Exception:
+            # Optional alignment must never retry or discard successful recognition.
+            return output or None, {"status": "unavailable", "model": model,
+                                    "languages": sorted(languages)}
+        return output, {"status": overall, "model": model, "languages": sorted(languages)}
 
     async def _enhancement_candidates(
         self, chunks: list[dict], originals: list[tuple[bytes, dict]],

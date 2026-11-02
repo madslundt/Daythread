@@ -301,6 +301,10 @@ Manual labels do not influence existing recap/chat, weekly review, inbox extract
 
 ## Local inference
 
+Optional word timing is an independent forced-alignment step. It is disabled by default and runs
+in a separate local Python 3.12 sidecar, with explicit offline model provisioning. See the
+[alignment guide](alignment.md) for the API contract, model pins and CPU setup.
+
 Use **web Settings → Models, keys & server settings** or **iPhone Settings → Transcription → Models, keys & all server settings** to configure backend settings. Search or browse the groups for transcription models and language routes, LLM task routes, endpoints, reasoning options, gateway credentials, Omi API/forwarding keys, embeddings, capture hints, retention and processing. Managed subscription account owners can save their own STT and embedding endpoints and credentials; these stay in that account's private server settings. Route editors support inherited defaults, route-specific keys and no authentication. Saved keys are never returned to either client; select Keep, Replace or Clear explicitly. Concurrent edits are rejected with a reload message so one client cannot silently overwrite another.
 
 STT/LLM configuration, keys and ordinary preferences apply to subsequent work immediately. Embedding configuration, worker enablement, web assets and archive paths are saved with a **restart required** marker; the response lists pending fields. Restart the backend process using your deployment's normal procedure. Enabling embeddings still requires a model, immutable revision and dimension in one valid save. Changing `data_dir` selects that archive on restart; it does not migrate existing recordings.

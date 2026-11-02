@@ -42,6 +42,8 @@ def plain(value):
 def group(key: str) -> str:
     if key.startswith("apns_"):
         return "Push notifications"
+    if key.startswith("alignment_"):
+        return "Transcription"
     if key.startswith(("diarization_", "voice_recognition_")):
         return "Speaker detection"
     if key.startswith("stt_"):
@@ -100,6 +102,15 @@ DESCRIPTIONS = {
     "Start scripts/diarization_server.py in its isolated Python runtime; default port 8790.",
     "diarization_timeout_seconds": "Maximum time for one conversation's speaker detection. "
     "Runs separately from transcription and preserves original recordings and transcripts.",
+    "alignment_enabled": "Add independently aligned word timings to successful recognition. "
+        "Disabled by default; unavailable or incomplete alignment preserves the transcript. "
+        "Complete coverage is not a calibrated timing-accuracy score.",
+    "alignment_base_url": "Local forced-alignment service URL reachable from home-core. "
+        "Start scripts/alignment_server.py in its isolated runtime; default port 8791.",
+    "alignment_timeout_seconds": "Maximum time spent on optional word alignment per recording. "
+        "Timeout preserves successful recognition without aligned segments.",
+    "alignment_language": "Alignment acoustic model language for recognition text. "
+        "Choose Danish or English; mixed-language phrases may remain unalignable.",
     "recap_hour": "Legacy scheduling setting. Uploaded recordings are summarized after "
     "transcription; live conversations wait for the configured pause.",
     "recap_interval_minutes": "Legacy scheduling setting. Uploaded recordings are summarized "
@@ -259,6 +270,10 @@ def descriptors() -> list[dict]:
             "diarization_enabled": "Enable speaker detection",
             "diarization_base_url": "Speaker service address",
             "diarization_timeout_seconds": "Speaker detection timeout (seconds)",
+            "alignment_enabled": "Enable word timings",
+            "alignment_base_url": "Alignment service address",
+            "alignment_timeout_seconds": "Word alignment timeout (seconds)",
+            "alignment_language": "Word alignment language",
         }.get(key, title)
         result.append(
             {
@@ -313,7 +328,7 @@ class Configuration:
                 if (
                     key in account_model_fields
                     or not key.startswith(("stt_", "llm_", "embedding_", "chat_", "inference_",
-                                          "diarization_", "voice_recognition_",
+                                          "alignment_", "diarization_", "voice_recognition_",
                                           "audio_forwarding_"))
                 ) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
             }

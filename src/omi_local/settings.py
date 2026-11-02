@@ -267,6 +267,10 @@ class Settings(BaseSettings):
     chat_query_expansion_timeout_seconds: float = Field(default=5, gt=0, le=60)
     silence_threshold: int = Field(default=35, ge=0, le=32767)
     stt_segment_timestamps: bool = False
+    alignment_enabled: bool = False
+    alignment_base_url: str = "http://127.0.0.1:8791"
+    alignment_timeout_seconds: int = Field(default=120, ge=1, le=600)
+    alignment_language: str = "da"
     diarization_enabled: bool = False
     diarization_base_url: str = "http://127.0.0.1:8790"
     diarization_timeout_seconds: int = Field(default=600, ge=1, le=3600)
@@ -472,10 +476,18 @@ class Settings(BaseSettings):
     def valid_inference_endpoint(cls, value: str) -> str:
         return inference_endpoint(value)
 
-    @field_validator("diarization_base_url")
+    @field_validator("alignment_base_url", "diarization_base_url")
     @classmethod
     def local_endpoint(cls, value: str) -> str:
         return local_endpoint(value)
+
+    @field_validator("alignment_language")
+    @classmethod
+    def valid_alignment_language(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"da", "en"}:
+            raise ValueError("Alignment language must be da or en")
+        return value
 
 
 RUNTIME_FIELDS = (

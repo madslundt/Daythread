@@ -1,0 +1,35 @@
+services:
+  daythread-diarization:
+    image: ${NEMOTRON_DIARIZATION_IMAGE:?Set NEMOTRON_DIARIZATION_IMAGE to the locally built verified image}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    read_only: true
+    expose:
+      - "8790"
+    cpus: 4.0
+    mem_limit: 4g
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=2300m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; response=json.load(urllib.request.urlopen('http://127.0.0.1:8790/health', timeout=5)); assert response['ready']"
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+
+networks:
+  default:
+    external: true
+    name: omi-local_default

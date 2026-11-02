@@ -1,10 +1,10 @@
-# Local Nemotron diarization staging
+# Local Nemotron diarization
 
 Daythread includes an optional adapter for NVIDIA Nemotron 3 Diarization through
 the official NVIDIA NeMo-Speech.cpp native runtime. The model is anonymous: it
-does not assign names or identify the recording owner. This staging setup is
-for Apple Silicon macOS CPU evaluation. It does not alter Daythread settings or
-deploy the runtime.
+does not assign names or identify the recording owner. The instructions below
+cover local staging and a private Linux Compose service; they do not start or
+deploy the runtime by themselves.
 
 ## Pinned artifacts
 
@@ -57,17 +57,17 @@ remain concurrent; each model output channel is normalized to an anonymous
 `SPEAKER_00`-style ID. An explicit requested speaker count is rejected because
 this CLI path does not expose a safe count-forcing option.
 
-## Linux x86_64 container image
+## Persistent private Linux x86_64 service
 
 NixOS does not provide the generic Linux dynamic loader required by NVIDIA's
 release executable. The official CPU archive runs inside the pinned Debian
-container below. This also provides a reproducible, no-download-at-request-time
-service image. Provision the assets on the target Linux x86_64 host, then build
-the image locally:
+container. Provision the assets on the target Linux x86_64 host, then build the
+image locally with an explicit, versioned tag:
 
 ```sh
 sh scripts/provision_nemotron_diarization.sh /tmp/nemotron-assets
-sudo sh scripts/build_nemotron_cpu_image.sh /tmp/nemotron-assets
+sudo sh scripts/build_nemotron_cpu_image.sh /tmp/nemotron-assets daythread-nemotron-diarization:0.3.0-verified
+sudo docker image inspect daythread-nemotron-diarization:0.3.0-verified --format '{{.Id}}'
 ```
 
 `scripts/build_nemotron_cpu_image.sh /tmp/nemotron-assets` creates a minimal,
@@ -77,20 +77,79 @@ Python base image digest and Python service package versions. It copies in the
 verified executable and GGUF; neither the image build nor inference relies on
 an implicit model download.
 
-The image listens on port 8790 inside the container. Run it only after review,
-with explicit resource bounds and a host binding reachable only where intended:
+The private Compose overlay is [`config/compose.nemotron.yaml`](../config/compose.nemotron.yaml).
+It attaches only to the existing `omi-local_default` network, exposes port 8790
+to peer containers without publishing a host port, and sets CPU, memory, PID,
+and writable `/tmp` limits. It keeps the read-only root filesystem, dropped
+capabilities, non-root image user, and no-new-privileges setting. `pull_policy:
+never` prevents an implicit registry pull. The image variable is required; use
+the versioned local tag produced above, verify its local image ID, and do not
+use `latest`.
+
+Before applying it, confirm the existing backend and network are present:
 
 ```sh
-sudo docker run --rm --cpus=8 --memory=4g \
-  --publish 127.0.0.1:8790:8790 daythread-nemotron-diarization:0.3.0
+docker compose --env-file .env -f config/compose.yaml ps backend
+docker network inspect omi-local_default
 ```
 
-The server serializes inference and caps each request at eight hours. The 8 CPU
-and 4 GiB limits are staging values verified on home-core's 14-thread, 46 GiB
-host; adjust only after measuring on the target. A backend in another container
-cannot call its own `127.0.0.1` to reach this service: configure a private,
-host-reachable address and firewall policy separately. This document does not
-start the container or change Daythread's saved speaker setting.
+```sh
+NEMOTRON_DIARIZATION_IMAGE=daythread-nemotron-diarization:0.3.0-verified \
+  docker compose --env-file .env -f config/compose.yaml \
+  -f config/compose.nemotron.yaml config --quiet
+```
+
+This renders and validates the merged files only; it does not create or start
+containers.
+
+Before applying, confirm that the existing backend project is running and owns
+the expected private network. Set these values in the existing root `.env` only
+when enabling this reviewed deployment:
+
+```dotenv
+OMI_DIARIZATION_ENABLED=true
+OMI_DIARIZATION_BASE_URL=http://daythread-diarization:8790
+OMI_DIARIZATION_TIMEOUT_SECONDS=1800
+```
+
+The 1800-second request timeout gives margin over the measured 875-second Linux
+CPU run for the 18.7-minute qualification recording; it does not change the
+application default. Then start only the new service. Specifying the service
+name does not recreate the backend or change its ports, certificate routing,
+archive volume, or other Compose services:
+
+```sh
+NEMOTRON_DIARIZATION_IMAGE=daythread-nemotron-diarization:0.3.0-verified \
+  docker compose --env-file .env -f config/compose.yaml \
+  -f config/compose.nemotron.yaml up -d daythread-diarization
+NEMOTRON_DIARIZATION_IMAGE=daythread-nemotron-diarization:0.3.0-verified \
+  docker compose --env-file .env -f config/compose.yaml \
+  -f config/compose.nemotron.yaml ps daythread-diarization
+```
+
+The service serializes inference, bounds uploads to eight hours, and runs with
+4 CPUs and 4 GiB memory. Its `/tmp` tmpfs is capped at 2300 MiB to hold the
+maximum accepted multipart upload and inference copy. The service health check
+verifies local model/runtime provenance. A backend can address the service by
+Compose DNS name only because both are attached to `omi-local_default`.
+
+For rollback, stop and remove just the optional service, then restore the
+previous `OMI_DIARIZATION_*` values in `.env` and recreate only the backend if
+those values changed. Do not use `docker compose down` or `down -v` for this
+rollback:
+
+```sh
+NEMOTRON_DIARIZATION_IMAGE=daythread-nemotron-diarization:0.3.0-verified \
+  docker compose --env-file .env -f config/compose.yaml \
+  -f config/compose.nemotron.yaml rm --stop --force daythread-diarization
+```
+
+If the backend configuration changed, apply the restored values by recreating
+only that service:
+
+```sh
+docker compose --env-file .env -f config/compose.yaml up -d --force-recreate backend
+```
 
 ## Recording qualification
 

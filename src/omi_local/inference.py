@@ -283,10 +283,20 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
         budgets = (tokens, min(tokens * 2, 8000), min(tokens * 4, 16000))
+        options = self.llm_template_options
+        attempts = [(budget, options) for budget in budgets]
+        if self.task == "summary" and self.settings.llm_enable_thinking is True:
+            # Reasoning can consume every output token before producing an answer.
+            # Exhaust the normal budgets first, then disable it for this request only.
+            attempts.append((budgets[-1], {
+                **options, "chat_template_kwargs": {
+                    **options.get("chat_template_kwargs", {}), "enable_thinking": False,
+                },
+            }))
         base_timeout = max(
             self.settings.inference_timeout_seconds, 300 if tokens >= 4000 else 0,
         )
-        for attempt, budget in enumerate(budgets):
+        for attempt, (budget, template_options) in enumerate(attempts):
             budget = generation_tokens(task, evidence, system, budget)
             response = await self.post(
                 "llm",
@@ -295,7 +305,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 _timeout_seconds=max(base_timeout, min(base_timeout * (2 ** attempt), 900)),
                 headers={"Authorization": f"Bearer {token}"} if token else {},
                 json={
-                    **self.llm_template_options,
+                    **template_options,
                     **({"response_format": response_format} if response_format else {}),
                     "model": route.model,
                     "temperature": 0.1,
@@ -314,8 +324,10 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             try:
                 choice = response.json()["choices"][0]
                 if choice.get("finish_reason") == "length":
-                    if attempt < len(budgets) - 1 and budgets[attempt + 1] > budget:
-                        continue
+                    if attempt < len(attempts) - 1:
+                        next_budget, next_options = attempts[attempt + 1]
+                        if next_budget > budget or next_options != template_options:
+                            continue
                     raise InferenceTruncated("LLM output was truncated")
                 text = choice["message"]["content"]
                 break

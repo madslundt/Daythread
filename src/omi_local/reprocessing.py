@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from .blob_storage import audio_is_present
 from .domain import EvidenceChanged, stamp, utc_now
+from .inference_errors import InferenceTruncated
 
 logger = logging.getLogger(__name__)
 SCHEMA = """
@@ -187,6 +188,8 @@ class Reprocessing:
             completed = json.loads(row["completed_days"])
             pending = [day for day in json.loads(row["days"]) if day not in completed]
             db.execute("UPDATE reprocessing_jobs SET state='summarizing' WHERE id=?", (row["id"],))
+        stage = "daily summary"
+        target = pending[0] if pending else row["end_day"]
         try:
             if pending:
                 day = date.fromisoformat(pending[0])
@@ -197,11 +200,13 @@ class Reprocessing:
                 await self.memory.recap(day, force=True)
                 if pending[0] in json.loads(row["overview_days"]):
                     from .day_overview import DayOverview
+                    stage = "day overview"
                     await DayOverview(self.memory).generate(day, force=True)
                 completed.append(pending[0])
             if len(pending) <= 1:
                 from .weekly_overview import WeekOverview
                 for week in json.loads(row["overview_weeks"]):
+                    stage, target = "week overview", week
                     await WeekOverview(self.memory).generate(date.fromisoformat(week), force=True)
             with self.store.connect() as db:
                 db.execute(
@@ -212,11 +217,13 @@ class Reprocessing:
         except EvidenceChanged:
             return False  # Late arrivals/corrections retry against the next settled snapshot.
         except Exception as exc:
-            logger.warning("Archive redo failed (%s)", type(exc).__name__)
+            logger.warning("Archive redo %s failed during %s for %s (%s)",
+                           row["id"], stage, target, type(exc).__name__)
+            error = ("LLM output was truncated" if isinstance(exc, InferenceTruncated) else
+                     "Summary generation failed; check model settings and redo again")
             with self.store.connect() as db:
                 db.execute("UPDATE reprocessing_jobs SET state='failed',error=? WHERE id=?",
-                           ("Summary generation failed; check model settings and redo again",
-                            row["id"]))
+                           (error, row["id"]))
         return True
 
     async def run(self):

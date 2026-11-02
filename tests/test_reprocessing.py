@@ -6,6 +6,7 @@ from datetime import date, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from test_recaps import FakeInference
 
 from omi_local.api import create_app
 from omi_local.domain import EvidenceChanged
+from omi_local.inference import Inference
 from omi_local.recording_topics import ensure_topics, topic_fingerprint
 from omi_local.reprocessing import RedoRequest, Reprocessing
 from omi_local.service import Memory
@@ -282,3 +284,79 @@ def test_failed_redo_preserves_previous_diary(jobs):
     assert asyncio.run(jobs.process_one())
     assert jobs.observation()["job"]["state"] == "failed"
     assert jobs.memory.cached_recap(day)["output_id"] == old["output_id"]
+
+
+def test_real_redo_recovers_when_reasoning_exhausts_every_summary_token_budget(jobs):
+    text = "We agreed to send the revised delivery plan on Friday."
+    key = recording(jobs, text=text)
+    jobs.memory.settings = jobs.memory.settings.model_copy(update={
+        "llm_enable_thinking": True, "summary_language": "en",
+    })
+    notes_requests = []
+
+    def provider(request):
+        body = json.loads(request.content)
+        payload = json.loads(body["messages"][1]["content"])
+        task = payload["task"]
+        notes = task.startswith("Create notes from")
+        thinking = body["chat_template_kwargs"]["enable_thinking"]
+        if notes:
+            notes_requests.append((body["max_tokens"], thinking))
+            if thinking:
+                return httpx.Response(200, json={"choices": [{
+                    "finish_reason": "length", "message": {
+                        "content": "", "reasoning_content": "Unfinished reasoning",
+                    },
+                }]})
+        if "response_format" in body:
+            result = json.dumps({"title": "Delivery plan", "continues_previous": False,
+                                 "sections": [{"title": "Delivery plan", "start_quote": text}]})
+        elif task.startswith(("Organize useful recorded information",
+                              "Review the complete daily topic plan")):
+            result = json.dumps({"topics": [{"title": "Delivery plan", "scope": "Friday delivery",
+                                             "items": ["n1"]}]})
+        else:
+            result = f"The revised delivery plan is due Friday. [{key}]"
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop", "message": {"content": result},
+        }]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+            jobs.memory.inference = Inference(jobs.memory.settings, client)
+            jobs.enqueue(RedoRequest(kind="transcripts"))
+            jobs.store.complete(key, text)  # The STT worker has finished every selected transcript.
+            assert await jobs.process_one()
+
+    asyncio.run(run())
+    status = jobs.observation()["job"]
+    assert status["state"] == "completed"
+    assert status["transcript_completed"] == status["summary_completed"] == 1
+    assert notes_requests == [(4000, True), (8000, True), (16000, True), (16000, False)]
+    assert jobs.memory.settings.llm_enable_thinking is True
+    assert "delivery plan" in jobs.memory.cached_recap(date(2026, 10, 15))["summary"]
+
+
+def test_truncated_summary_reports_output_limit_and_keeps_transcript(jobs, caplog):
+    from omi_local.inference_errors import InferenceTruncated
+
+    key = recording(jobs)
+    before = jobs.store.get_audio(key)
+    job = jobs.enqueue(RedoRequest(kind="summaries"))
+
+    async def fail(*args, **kwargs):
+        raise InferenceTruncated("Private provider response must stay private")
+
+    jobs.memory.recap = fail
+    assert asyncio.run(jobs.process_one())
+    failed = jobs.observation()["job"]
+    assert failed["state"] == "failed"
+    assert failed["error"] == "LLM output was truncated"
+    assert failed["summary_completed"] == 0
+    after = jobs.store.get_audio(key)
+    assert (after["text"], after["state"], after["source_version"]) == (
+        before["text"], before["state"], before["source_version"],
+    )
+    assert job["id"] in caplog.text
+    assert "daily summary" in caplog.text
+    assert "Private provider response" not in caplog.text

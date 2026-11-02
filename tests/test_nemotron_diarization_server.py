@@ -169,6 +169,8 @@ def anyio_backend():
 
 @pytest.mark.anyio
 async def test_http_contract_rejects_invalid_counts_and_preserves_overlap():
+    pytest.importorskip("multipart")
+
     class FakeRuntime(service.NemotronRuntime):
         def diarize(self, stream, num_speakers=None):
             assert service.inspect_wav(stream) == 1.0

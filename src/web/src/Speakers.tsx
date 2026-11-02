@@ -199,14 +199,17 @@ function SpeakerPosition({ sourceStart, sourceEnd, audioStart, audioEnd, partInd
   audioStart?: number | null; audioEnd?: number | null;
   partIndex?: number | null; partCount?: number | null;
 }) {
-  const hasAudioTimeline = audioStart !== undefined;
-  const start = hasAudioTimeline ? audioStart! : sourceStart;
-  const end = hasAudioTimeline ? audioEnd! : sourceEnd;
-  const range = start !== null && end !== null
-    ? t(hasAudioTimeline ? "Elapsed audio {value0}–{value1}" : "Source time {value0}–{value1}", {
-      value0: speakerTime(start), value1: speakerTime(end),
+  const hasAudioRange = audioStart != null && audioEnd != null;
+  const hasSourceRange = sourceStart !== null && sourceEnd !== null;
+  const range = hasAudioRange
+    ? t("Elapsed audio {value0}–{value1}", {
+      value0: speakerTime(audioStart), value1: speakerTime(audioEnd),
     })
-    : t("Time unavailable");
+    : hasSourceRange
+      ? t("Source time {value0}–{value1}", {
+        value0: speakerTime(sourceStart), value1: speakerTime(sourceEnd),
+      })
+      : t("Time unavailable");
   return <span className="caption">
     {range}{partIndex != null && partCount != null
       ? <> {"·"} {t("Part {value0} of {value1}", { value0: partIndex, value1: partCount })}</>
@@ -215,7 +218,7 @@ function SpeakerPosition({ sourceStart, sourceEnd, audioStart, audioEnd, partInd
 }
 
 function speakerPositionLabel(turn: SpeakersData["turns"][number]): string {
-  const start = turn.audio_start !== undefined ? turn.audio_start : turn.start;
+  const start = turn.audio_start ?? turn.start;
   const time = start === null ? t("Time unavailable") : speakerTime(start);
   return turn.part_index != null && turn.part_count != null
     ? t("Speaker for turn at {value0} in part {value1} of {value2}", {

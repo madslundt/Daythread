@@ -349,6 +349,10 @@ describe("speaker display", () => {
         audio_start: null, audio_end: null, part_index: 3, part_count: 3,
         speaker_id: null, speaker_label: null, speaker_name: null, attribution: "unknown",
         start_offset: 12, end_offset: 25 },
+      { id: "u3", source_id: "recording-uuid", start: 54, end: 55, text: "audio expired",
+        audio_start: null, audio_end: null, part_index: 3, part_count: 3,
+        speaker_id: "s1", speaker_label: "A", speaker_name: "Mads", attribution: "attributed",
+        start_offset: 25, end_offset: 38 },
     ] }} />);
     expect(html).toContain("Attributed transcript");
     expect(html).toContain("Elapsed audio 0:31–0:32");
@@ -356,6 +360,7 @@ describe("speaker display", () => {
     expect(html).toContain("Mads");
     expect(html).toContain("Unknown speaker");
     expect(html).toContain("Time unavailable");
+    expect(html).toContain("Source time 0:54–0:55");
     expect(html).toContain("unclear words");
     expect(html).not.toContain("recording-uuid");
   });
@@ -375,5 +380,14 @@ describe("speaker display", () => {
     const html = renderToStaticMarkup(<SpeakersView {...view} data={data} />);
     expect(html).toContain("Source time 0:10–0:20");
     expect(html).toContain("Speaker for turn at 0:10");
+  });
+
+  it("falls back to source-local times when elapsed audio coordinates are null", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, turns: [
+      { ...data.turns[0], audio_start: null, audio_end: null, part_index: 2, part_count: 3 },
+    ] }} />);
+    expect(html).toContain("Source time 0:10–0:20");
+    expect(html).toContain("Speaker for turn at 0:10 in part 2 of 3");
+    expect(html).not.toContain("Time unavailable");
   });
 });

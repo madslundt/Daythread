@@ -187,6 +187,8 @@ def test_recording_summary_receives_current_speaker_grounded_transcript(client, 
     assert prepared_sources[0].get("speaker_evidence") == projection["utterances"]
     assert "anonymous machine cluster" in purpose.lower()
     assert "proposed" in purpose.lower() and "current project" in purpose.lower()
+    assert "preserve names and roles mentioned in speech as third parties" in purpose.lower()
+    assert "map them to an anonymous voice" in purpose.lower()
     daily_purpose = memory.inference.calls[1][1]
     assert "first-person statement does not establish" in daily_purpose.lower()
     assert "tentative options tentative" in daily_purpose.lower()

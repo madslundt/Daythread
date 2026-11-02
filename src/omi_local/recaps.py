@@ -319,8 +319,10 @@ class Recaps:
                 "those exact spans. `attribution=unknown` or `overlap` has no known owner; never "
                 "fill those gaps from nearby turns or first-person wording. A label such as "
                 "Speaker A is an anonymous machine cluster, not a verified human identity. "
-                "Only use a personal name when the evidence explicitly supplies a reviewed "
-                "speaker_name. Keep the original source UUID citations. Distinguish a person's "
+                "Use a personal name to identify a speaker only when the evidence explicitly "
+                "supplies a reviewed speaker_name. Preserve names and roles mentioned in speech "
+                "as third parties; do not map them to an anonymous voice or assign them its "
+                "actions. Keep the original source UUID citations. Distinguish a person's "
                 "current role and current project from a proposed, possible or future project; "
                 "keep options tentative until the speakers explicitly decide. Describe explicit "
                 "actions separately from wishes or implied intentions. " +

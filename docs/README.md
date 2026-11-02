@@ -196,6 +196,8 @@ model access, exported runtime variables, offline weights and Docker host addres
 Model loading is lazy; `/health` distinguishes configured, loaded and busy states.
 Detection is requested explicitly, runs locally, and supports up to eight hours of
 retained audio. The optional runtime has its own Python/PyTorch dependencies.
+For pinned Apple Silicon CPU staging with the official NVIDIA Nemotron model and
+native runtime, see [Nemotron local diarization](nemotron-diarization.md).
 
 When a complete conversation has finished transcription and its original audio is available,
 Daythread queues local speaker detection automatically. The **Speakers** panel shows queued,

@@ -54,7 +54,8 @@ def detector(client, callback=None):
             calls.append(stream.getnframes())
         if callback:
             callback()
-        return {"model": "test", "turns": [
+        return {"model": "test", "model_revision": "rev-a",
+                "runtime": "test-runtime", "runtime_version": "1.2", "turns": [
             {"start": 0, "end": 1, "speaker": "voice0"},
             {"start": 1, "end": 3, "speaker": "voice1"},
             {"start": 3, "end": 4, "speaker": "voice0"},
@@ -73,6 +74,10 @@ def test_detect_names_and_playback_share_a_whole_upload_and_persist(client):
     response = client.post(path)
     assert response.status_code == 200, response.text
     result = response.json()
+    assert result["model_provenance"] == {
+        "model": "test", "model_revision": "rev-a", "runtime": "test-runtime",
+        "runtime_version": "1.2",
+    }
     assert calls == [64000]
     assert result["source_count"] == 2
     assert [s["label"] for s in result["speakers"]] == ["A", "B"]

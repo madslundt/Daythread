@@ -35,6 +35,9 @@ class DetectedTurn(BaseModel):
 class Detection(BaseModel):
     model_config = ConfigDict(extra="ignore")
     model: str = Field(default="local", max_length=200)
+    model_revision: str | None = Field(default=None, max_length=200)
+    runtime: str | None = Field(default=None, max_length=200)
+    runtime_version: str | None = Field(default=None, max_length=100)
     turns: list[DetectedTurn] = Field(max_length=100000)
 
 
@@ -190,6 +193,9 @@ class Speakers:
                 "scope": scope["scope"], "source_count": len(scope["rows"]),
                 "speakers": speakers, "turns": turns,
                 "utterances": utterances,
+                "model_provenance": ({key: payload.get(key) for key in (
+                    "model", "model_revision", "runtime", "runtime_version",
+                )} if saved else None),
                 "evidence_version": saved["version"] if ready else None,
                 "recognition": recognition,
                 "audio_available": audio_available}
@@ -287,7 +293,11 @@ class Speakers:
                                   "speaker_id": speakers[turn.speaker]["id"]})
         order = {m["source_id"]: i for i, m in enumerate(mappings)}
         turns.sort(key=lambda t: (order[t["source_id"]], t["start"], t["end"]))
-        return {"speakers": list(speakers.values()), "turns": turns, "model": detected.model}
+        return {
+            "speakers": list(speakers.values()), "turns": turns, "model": detected.model,
+            "model_revision": detected.model_revision, "runtime": detected.runtime,
+            "runtime_version": detected.runtime_version,
+        }
 
     @staticmethod
     def event(db, scope: dict, action: str, payload: dict) -> None:

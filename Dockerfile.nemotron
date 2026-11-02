@@ -1,0 +1,32 @@
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    OMI_NEMO_SPEECH_BIN=/opt/nemo/bin/nemo-speech \
+    OMI_NEMO_DIARIZATION_MODEL=/opt/models/Nemotron-3-Diarization.q8_0.gguf \
+    OMI_NEMO_PROVENANCE=/opt/PROVENANCE.txt \
+    OMI_DIARIZATION_HOST=0.0.0.0 \
+    OMI_DIARIZATION_PORT=8790
+
+COPY requirements-nemotron.txt /opt/daythread/requirements.txt
+RUN pip install --no-cache-dir --requirement /opt/daythread/requirements.txt \
+    && useradd --uid 10001 --create-home --shell /usr/sbin/nologin diarizer
+
+COPY nemo-speech-0.3.0-linux-x86_64-cpu /opt/nemo
+COPY Nemotron-3-Diarization.q8_0.gguf /opt/models/Nemotron-3-Diarization.q8_0.gguf
+COPY PROVENANCE.txt /opt/PROVENANCE.txt
+COPY nemotron_diarization_server.py /opt/daythread/nemotron_diarization_server.py
+COPY nemotron_provenance.py /opt/daythread/nemotron_provenance.py
+
+RUN printf '%s  %s\n' \
+    '08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1' \
+    '/opt/models/Nemotron-3-Diarization.q8_0.gguf' \
+    | sha256sum -c - \
+    && printf '%s  %s\n' \
+    'b38ff5adbe5faba96dea1482e1ba9f9c048d3da07f38b1ca2b092a06c968de61' \
+    '/opt/nemo/bin/nemo-speech' \
+    | sha256sum -c -
+
+USER 10001:10001
+EXPOSE 8790
+CMD ["python", "/opt/daythread/nemotron_diarization_server.py"]

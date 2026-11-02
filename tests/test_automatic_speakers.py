@@ -141,8 +141,10 @@ def test_background_processing_disabled_does_not_start_speaker_worker(tmp_path):
         assert client.app.state.profiles.runtimes["default"].worker is None
 
 
-def test_restart_requeues_processing_job_and_cancellation_leaves_it_durable(client):
-    from omi_local.speaker_worker import run_speakers
+def test_restart_requeues_processing_job_only_after_enable_and_cancellation_is_durable(
+    client, monkeypatch
+):
+    import omi_local.speaker_worker as speaker_worker
 
     recordings(client)
     memory = client.app.state.memory
@@ -151,14 +153,27 @@ def test_restart_requeues_processing_job_and_cancellation_leaves_it_durable(clie
         db.execute("UPDATE speaker_jobs SET state='processing'")
     memory.settings.diarization_enabled = False
 
-    async def run_once_then_cancel():
-        worker = asyncio.create_task(run_speakers(memory))
+    async def run_disabled_then_enable():
+        worker = asyncio.create_task(speaker_worker.run_speakers(memory))
         await asyncio.sleep(0.01)
+        with memory.store.connect() as db:
+            assert db.execute("SELECT state FROM speaker_jobs").fetchone()["state"] == "processing"
+        memory.settings.diarization_enabled = True
+        observed = asyncio.Event()
+
+        async def cancel_after_recovery(_memory):
+            with memory.store.connect() as db:
+                assert db.execute("SELECT state FROM speaker_jobs").fetchone()["state"] == "queued"
+            observed.set()
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(speaker_worker, "process_one", cancel_after_recovery)
+        await asyncio.wait_for(observed.wait(), timeout=1)
         worker.cancel()
         with pytest.raises(asyncio.CancelledError):
             await worker
 
-    asyncio.run(run_once_then_cancel())
+    asyncio.run(run_disabled_then_enable())
     with memory.store.connect() as db:
         assert db.execute("SELECT state FROM speaker_jobs").fetchone()["state"] == "queued"
         assert db.execute("SELECT attempts FROM speaker_jobs").fetchone()["attempts"] == 0

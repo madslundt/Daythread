@@ -8,6 +8,15 @@ from copy import copy
 
 import httpx
 
+from .chat_context import (
+    bounded_generation,
+    compact_evidence,
+    context_limit,
+    generation_tokens,
+    prepare_context,
+    request_tokens,
+    safety,
+)
 from .domain import stamp, utc_now, wav_duration
 from .inference_errors import InferenceError, InferenceTruncated, check_inference_response
 from .inference_usage import (
@@ -197,6 +206,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         self.settings = settings
         self.client = client
         self.task = task
+        self.context_limits: dict[str, tuple] = {}
         self.health = {
             kind: {"state": "unknown" if getattr(settings, kind + "_enabled") else "disabled"}
             for kind in ("stt", "llm")
@@ -207,6 +217,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             return self
         bound = Inference(self.settings, self.client, task)
         bound.health = self.health
+        bound.context_limits = self.context_limits
         bound.usage_recorder = self.usage_recorder
         return bound
 
@@ -276,6 +287,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             self.settings.inference_timeout_seconds, 300 if tokens >= 4000 else 0,
         )
         for attempt, budget in enumerate(budgets):
+            budget = generation_tokens(task, evidence, system, budget)
             response = await self.post(
                 "llm",
                 f"{route.base_url}/chat/completions",
@@ -320,7 +332,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         text, finished = "", False
         request_body = {
             **self.llm_template_options,
-            "model": route.model, "temperature": 0.1, "max_tokens": 1600, "stream": True,
+            "model": route.model, "temperature": 0.1,
+            "max_tokens": generation_tokens(task, evidence, SYSTEM, 1600), "stream": True,
             "messages": [
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": json.dumps(
@@ -448,10 +461,13 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         return text, trace
 
     async def chat_traced(
-        self, question: str, sources: list[dict], history: list[dict], on_delta: Delta | None = None
+        self, question: str, sources: list[dict], history: list[dict],
+        on_delta: Delta | None = None,
+        *, context_state: dict | None = None, on_compact=None,
     ) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}
-        text = await self.chat(question, sources, history, trace, on_delta)
+        text = await self.chat(question, sources, history, trace, on_delta,
+                               context_state=context_state, on_compact=on_compact)
         return text, trace
 
     async def summarize(self, sources: list[dict], purpose: str, trace: dict | None = None) -> str:
@@ -737,6 +753,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         history: list[dict] | None = None,
         trace: dict | None = None,
         on_delta: Delta | None = None,
+        *, context_state: dict | None = None, on_compact=None,
     ) -> str:
         evidence, diary_budget = [], 2000
         for row in sources:
@@ -762,32 +779,45 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             evidence.append(item)
         payload = json.dumps(evidence, ensure_ascii=False)
         original_question = question
-        if history:
-            # Prior turns help resolve follow-ups, but are never a source of factual evidence.
-            context = [
-                {"role": row["role"], "content": row["content"][:1500]} for row in history[-6:]
-            ]
-            question = json.dumps({"question": question, "conversation_context": context})
-        if len(payload) > 16000 and not all("matches" in row for row in sources):
-            if trace is not None:
-                trace["reduction_used"] = True
-            with llm_usage("chat"):
-                return await self._reduce(
-                    sources,
-                    "evidence notes relevant to: " + original_question,
-                    trace,
-                    answer_task=question,
-                    on_delta=on_delta,
-                )
+        plan = await prepare_context(self, question, payload, history, SYSTEM, context_state,
+                                     on_compact)
+        question = plan.task
         if trace is not None:
-            trace["model_calls"] += 1
-            trace["final_prompt_source_ids"] = self.prompt_source_ids(payload, sources)
-        answer = (
-            await self.generate_stream(question, payload, on_delta)
-            if on_delta is not None
-            else await self.for_task("chat").generate(question, payload)
-        )
+            trace["conversation_context"] = plan.metadata
+        with bounded_generation(plan.limit, plan.metadata):
+            oversized = (request_tokens(question, payload, SYSTEM) + safety(plan.limit)
+                         + min(4000, plan.limit // 4) > plan.limit)
+            if oversized and plan.limit < 16384:
+                payload = await compact_evidence(self, original_question, question, evidence,
+                                                 sources, plan.limit, SYSTEM, trace)
+            elif len(payload) > 16000 and not all("matches" in row for row in sources):
+                summary_limit, _ = await context_limit(self, "summary")
+                if summary_limit < 16384:
+                    payload = await compact_evidence(self, original_question, question, evidence,
+                                                     sources, plan.limit, SYSTEM, trace)
+                else:
+                    if trace is not None:
+                        trace["reduction_used"] = True
+                    with llm_usage("chat"), bounded_generation(
+                        min(plan.limit, summary_limit), plan.metadata,
+                    ):
+                        return await self._reduce(
+                            sources, "evidence notes relevant to: " + original_question, trace,
+                            answer_task=question, on_delta=on_delta,
+                        )
+            elif oversized:
+                payload = await compact_evidence(self, original_question, question, evidence,
+                                                 sources, plan.limit, SYSTEM, trace)
+            if trace is not None:
+                trace["model_calls"] += 1
+                trace["final_prompt_source_ids"] = self.prompt_source_ids(payload, sources)
+            answer = (
+                await self.generate_stream(question, payload, on_delta)
+                if on_delta is not None
+                else await self.for_task("chat").generate(question, payload)
+            )
         return validate_citations(answer, sources)
+
 
 
 def for_task(inference, task: LLMTask):

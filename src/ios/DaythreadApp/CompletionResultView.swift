@@ -49,7 +49,9 @@ struct CompletionResultView: View {
         let _ = interfaceLocale
         NavigationStack {
             Group {
-                if event.kind == "capture_health" {
+                if event.kind == "chat", let sessionID = event.target.sessionID {
+                    ChatView(initialSessionID: sessionID.uuidString.lowercased())
+                } else if event.kind == "capture_health" {
                     CaptureView()
                 } else if let week = event.target.weekStart, event.target.jobID == nil {
                     WeeklyReviewView(week: week, version: event.target.versionID ?? "")
@@ -155,6 +157,7 @@ struct CompletionResultView: View {
     }
 
     private func load() async {
+        guard event.kind != "chat" else { loading = false; return }
         guard event.kind != "capture_health" else { loading = false; return }
         guard let id = event.target.jobID else { loading = false; return }
         let scope = model.archiveIdentity

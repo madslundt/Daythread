@@ -367,6 +367,9 @@ async def test_candidates_never_enter_chat_or_summary_model_prompts(tmp_path):
     prompts = []
 
     def handler(request):
+        if request.method == "GET":
+            assert request.url.path.endswith("/models")
+            return httpx.Response(200, json={"data": []})
         prompts.append(request.content.decode())
         return httpx.Response(200, json={"choices": [{
             "message": {"content": f"Original [{source['id']}]"}, "finish_reason": "stop",
@@ -376,6 +379,7 @@ async def test_candidates_never_enter_chat_or_summary_model_prompts(tmp_path):
         inference = Inference(settings, client)
         await inference.chat("What was said?", [source])
         await inference.summarize([source], "summary")
+    assert len(prompts) == 2
     assert all("Unreviewed secret" not in prompt for prompt in prompts)
     assert all("Verified original speech" in prompt for prompt in prompts)
 

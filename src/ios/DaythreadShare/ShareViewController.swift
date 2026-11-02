@@ -6,7 +6,6 @@ import OmiCore
 final class ShareViewController: UIViewController {
     var audioProviders: [NSItemProvider] = []
     let status = UILabel()
-    let progressBar = UIProgressView(progressViewStyle: .default)
     let saveButton = UIButton(type: .system)
     let cancelButton = UIButton(type: .system)
     let openAppButton = UIButton(type: .system)
@@ -20,7 +19,6 @@ final class ShareViewController: UIViewController {
     var staging = false
     var busy = false
     var uploadOperation: Task<Void, Never>?
-    var activeUploadTask: URLSessionUploadTask?
     var didCancelUpload = false
     var endpoints: BackendEndpointConfiguration?
     var profileID = ""
@@ -66,6 +64,8 @@ final class ShareViewController: UIViewController {
         )
         heading.textColor = .label
         heading.textAlignment = .center
+        heading.numberOfLines = 0
+        heading.adjustsFontForContentSizeCategory = true
 
         status.text = audioProviders.isEmpty
             ? "No compatible audio files were shared."
@@ -75,16 +75,6 @@ final class ShareViewController: UIViewController {
         status.textAlignment = .center
         status.numberOfLines = 0
         status.accessibilityIdentifier = "share.status"
-
-        progressBar.progressTintColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.90, green: 0.62, blue: 0.50, alpha: 1)
-                : UIColor(red: 0.60, green: 0.32, blue: 0.24, alpha: 1)
-        }
-        progressBar.trackTintColor = .tertiarySystemFill
-        progressBar.isHidden = true
-        progressBar.accessibilityLabel = "Upload progress"
-        progressBar.accessibilityIdentifier = "share.progress"
 
         configureOptionButton(tagsButton, title: "Tags (optional)")
         configureOptionButton(locationButton, title: "Location (optional)")
@@ -114,7 +104,7 @@ final class ShareViewController: UIViewController {
         }
         saveButton.accessibilityIdentifier = "share.save"
 
-        cancelButton.setTitle("Cancel", for: .normal)
+        cancelButton.setTitle("Cancel preparation", for: .normal)
         cancelButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
         cancelButton.addTarget(self, action: #selector(cancelUpload), for: .touchUpInside)
         cancelButton.isHidden = true
@@ -144,7 +134,7 @@ final class ShareViewController: UIViewController {
         options.axis = .horizontal; options.spacing = 10; options.distribution = .fillEqually
         recordingOptions.axis = .vertical
         recordingOptions.spacing = 16
-        let stack = UIStackView(arrangedSubviews: [icon, heading, options, recordingOptions, status, progressBar, saveButton, cancelButton, openAppButton])
+        let stack = UIStackView(arrangedSubviews: [icon, heading, options, recordingOptions, status, saveButton, cancelButton, openAppButton])
         stack.axis = .vertical
         stack.spacing = 16
         stack.alignment = .fill
@@ -261,7 +251,6 @@ final class ShareViewController: UIViewController {
         guard busy else { return }
         didCancelUpload = true
         cancelButton.isHidden = true
-        activeUploadTask?.cancel()
         uploadOperation?.cancel()
         status.text = "Canceling import…"
     }
@@ -271,7 +260,6 @@ final class ShareViewController: UIViewController {
             busy = false
             setOptionsEnabled(true)
             uploadOperation = nil
-            activeUploadTask = nil
         }
         do {
             guard let endpoints, !profileID.isEmpty else { throw ShareImportError("Open Daythread and select an archive before importing audio.") }
@@ -279,7 +267,7 @@ final class ShareViewController: UIViewController {
                 throw ShareImportError("Open Daythread to import audio to your signed-in archive.")
             }
             for (index, url) in urls.enumerated() {
-                setStatus("Importing recording \(index + 1) of \(urls.count)…")
+                setStatus("Preparing recording \(index + 1) of \(urls.count)…")
                 try await upload(url, configuration: endpoints)
                 try? FileManager.default.removeItem(at: url)
                 stagedURLs.removeAll { $0 == url }
@@ -287,21 +275,18 @@ final class ShareViewController: UIViewController {
                 timeEditors.removeValue(forKey: url)
                 plans.removeValue(forKey: url)
             }
-            setStatus("Import complete. Your recording is ready in Daythread.")
-            await MainActor.run {
-                cancelButton.isHidden = true
-                saveButton.setTitle("Close", for: .normal)
-                saveButton.isEnabled = true
-                saveButton.removeTarget(self, action: #selector(saveAudio), for: .touchUpInside)
-                saveButton.addTarget(self, action: #selector(finish), for: .touchUpInside)
-                openAppButton.isHidden = false
-            }
+            // Every file-backed transfer and its retry metadata are now owned by iOS.
+            // The extension can end without waiting for the archive connection.
+            finish()
         } catch {
             await MainActor.run {
                 cancelButton.isHidden = true
                 saveButton.setTitle("Retry import", for: .normal)
                 saveButton.isEnabled = true
-                status.text = didCancelUpload ? "Import canceled. You can retry when ready." : error.localizedDescription
+                openAppButton.isHidden = false
+                status.text = didCancelUpload
+                    ? "Preparation canceled. Any recordings already queued will continue uploading."
+                    : error.localizedDescription
             }
         }
     }
@@ -310,7 +295,7 @@ final class ShareViewController: UIViewController {
         let attributes = try FileManager.default.attributesOfItem(atPath: source.path)
         let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? 0
         try RecordingImport.validateFile(name: Self.originalName(source.lastPathComponent), bytes: byteCount)
-        let digest = try RecordingAudioConverter.fileDigest(source)
+        let digest = try await Self.fileDigest(source)
         let duplicateData = try await send("v1/recording-uploads/check", method: "POST", configuration: configuration,
                                            body: try JSONSerialization.data(withJSONObject: ["digest": digest]))
         if plans[source] == nil,
@@ -344,63 +329,25 @@ final class ShareViewController: UIViewController {
             editor.locked = true
         }
         try plan.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount)
-        let totalBytes = converted.parts.reduce(Int64(0)) { $0 + Int64($1.bytes) }
-        var completedBytes = zip(plan.parts, converted.parts).reduce(Int64(0)) { total, pair in
-            total + (pair.0.uploaded ? Int64(pair.1.bytes) : 0)
-        }
-        setUploadProgress(sent: completedBytes, total: totalBytes)
-        for index in plan.parts.indices where !plan.parts[index].uploaded {
-            try Task.checkCancellation()
-            let partBytes = Int64(converted.parts[index].bytes)
-            let partBaseline = completedBytes
-            let query = try plan.query(for: index)
-            let receipt = try await uploadFile(converted.parts[index].url, id: plan.parts[index].id,
-                                               query: query, configuration: configuration) { sent in
-                self.setUploadProgress(sent: partBaseline + min(sent, partBytes), total: totalBytes)
-            }
-            try plan.validateReceipt(receipt, part: index, sampleCount: converted.parts[index].samples)
-            completedBytes += partBytes
-        }
         try Task.checkCancellation()
-        try await applyOptionalDetails(plan, configuration: configuration)
+        var location: [String: Any]?
+        if let selectedPlace {
+            location = ["zone_id": selectedPlace.zoneID, "location_id": selectedPlace.locationID]
+        } else if let currentLocation {
+            location = ["kind": "current", "latitude": currentLocation.latitude,
+                        "longitude": currentLocation.longitude, "horizontal_accuracy": currentLocation.horizontalAccuracy]
+        }
+        _ = try BackgroundRecordingImport.enqueue(
+            converted: converted, plan: plan, sourceName: Self.originalName(source.lastPathComponent),
+            configuration: configuration, profileID: profileID,
+            tagIDs: selectedTagIDs.sorted(), tagNames: pendingTagNames.sorted(),
+            locationData: try location.map { try JSONSerialization.data(withJSONObject: $0) },
+            wiFiOnly: UserDefaults(suiteName: "group.com.daythread.app")?.bool(forKey: "uploadWiFiOnly") ?? false
+        )
     }
 
-    private func applyOptionalDetails(_ plan: RecordingUploadPlan, configuration: BackendEndpointConfiguration) async throws {
-        guard !selectedTagIDs.isEmpty || !pendingTagNames.isEmpty || selectedPlace != nil || currentLocation != nil else { return }
-        for part in plan.parts {
-            let sourceID = part.id.uuidString.lowercased()
-            if !selectedTagIDs.isEmpty || !pendingTagNames.isEmpty {
-                let path = "v1/sources/\(sourceID)/tags"
-                var selection = try JSONSerialization.jsonObject(with: await send(path, method: "GET", configuration: configuration)) as? [String: Any] ?? [:]
-                let existing = (selection["tags"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
-                let changes = selectedTagIDs.subtracting(existing).sorted().map { ["tag_id": $0] }
-                    + pendingTagNames.sorted().map { ["name": $0] }
-                for change in changes {
-                    let body = [
-                        "expected_revision": selection["revision"] as? String ?? "",
-                        "expected_membership": selection["membership"] as? String ?? "",
-                        "action": "add",
-                    ].merging(change) { _, value in value }
-                    let data = try await send(path, method: "PUT", configuration: configuration,
-                                              body: try JSONSerialization.data(withJSONObject: body))
-                    selection = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-                }
-            }
-            var place: [String: Any]?
-            if let selectedPlace { place = ["zone_id": selectedPlace.zoneID, "location_id": selectedPlace.locationID] }
-            else if let currentLocation {
-                place = ["kind": "current", "latitude": currentLocation.latitude, "longitude": currentLocation.longitude,
-                         "horizontal_accuracy": currentLocation.horizontalAccuracy]
-            }
-            if let place {
-                let path = "v1/sources/\(sourceID)/location"
-                let data = try await send(path, method: "GET", configuration: configuration)
-                let version = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["version"] as? Int ?? 0
-                let body: [String: Any] = ["expected_version": version, "location": place]
-                _ = try await send(path, method: "PUT", configuration: configuration,
-                                   body: try JSONSerialization.data(withJSONObject: body))
-            }
-        }
+    nonisolated private static func fileDigest(_ url: URL) async throws -> String {
+        try RecordingAudioConverter.fileDigest(url)
     }
 
     private static func originalName(_ stagedName: String) -> String {
@@ -409,16 +356,6 @@ final class ShareViewController: UIViewController {
     }
 
     @MainActor private func setStatus(_ text: String) { status.text = text }
-
-    private func setUploadProgress(sent: Int64, total: Int64) {
-        let fraction = total > 0 ? min(1, max(0, Double(sent) / Double(total))) : 1
-        let percent = Int((fraction * 100).rounded())
-        DispatchQueue.main.async {
-            self.progressBar.isHidden = false
-            self.progressBar.setProgress(Float(fraction), animated: true)
-            self.status.text = "Uploading · \(percent)%"
-        }
-    }
 
     @objc private func finish() { extensionContext?.completeRequest(returningItems: nil) }
 

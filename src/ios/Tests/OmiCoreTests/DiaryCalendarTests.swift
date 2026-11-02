@@ -37,6 +37,38 @@ final class DiaryCalendarTests: XCTestCase {
         }
     }
 
+    func testDayTitlesUseTheSelectedCivilDayAndIncludeOlderYears() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-01T23:30:00Z"))
+        let today = try XCTUnwrap(diary.date(for: "2026-11-02"))
+        let yesterday = try XCTUnwrap(diary.date(for: "2026-11-01"))
+        XCTAssertEqual(diary.dayTitle(today, relativeTo: now), AppLocalization.text("Today"))
+        XCTAssertEqual(diary.dayTitle(yesterday, relativeTo: now), AppLocalization.text("Yesterday"))
+        for (key, template) in [("2026-10-31", "d MMM"), ("2025-11-02", "d MMM yyyy"), ("2026-11-03", "d MMM")] {
+            let selected = try XCTUnwrap(diary.date(for: key))
+            XCTAssertEqual(diary.dayTitle(selected, relativeTo: now), diary.label(selected, template: template))
+        }
+        let later = try XCTUnwrap(diary.date(for: "2026-11-03"))
+        XCTAssertEqual(diary.dayTitle(today, relativeTo: later), AppLocalization.text("Yesterday"))
+        XCTAssertEqual(diary.dayKey(today), "2026-11-02")
+    }
+
+    func testYesterdayTitlesSurviveDaylightSavingAndNewYear() throws {
+        for (current, previous) in [("2026-03-30", "2026-03-29"), ("2026-10-26", "2026-10-25"), ("2026-01-01", "2025-12-31")] {
+            let now = try XCTUnwrap(diary.date(for: current))
+            let yesterday = try XCTUnwrap(diary.date(for: previous))
+            XCTAssertEqual(diary.dayTitle(yesterday, relativeTo: now), AppLocalization.text("Yesterday"), current)
+        }
+    }
+
+    func testDateTitlesFollowTheInterfaceLocale() throws {
+        for language in AppLocalization.languages {
+            let localized = DiaryCalendar(timeZone: diary.calendar.timeZone, locale: Locale(identifier: language))
+            let now = try XCTUnwrap(localized.date(for: "2026-11-02"))
+            let selected = try XCTUnwrap(localized.date(for: "2026-10-15"))
+            XCTAssertEqual(localized.dayTitle(selected, relativeTo: now, template: "d MMMM"), localized.label(selected, template: "d MMMM"))
+        }
+    }
+
     func testCompletePeriodShortcutsCrossNewYearAndKeepFutureEndDates() throws {
         let firstJanuary = try XCTUnwrap(diary.date(for: "2026-01-01"))
         let expected: [(DiaryPeriod, Bool, String, String)] = [

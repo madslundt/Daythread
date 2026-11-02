@@ -93,8 +93,43 @@ CAPTURE_HEALTH_STALLED = {
 }
 
 
+CHAT_READY = {
+    "en": "Chat reply ready", "da": "Chatsvar klar", "de": "Chatantwort bereit",
+    "es": "Respuesta de chat lista", "fr": "Réponse au chat prête",
+    "nb": "Chatsvar klart", "sv": "Chattsvar klart",
+}
+CHAT_READY_BODY = {
+    "en": "Your reply is saved. Open the chat to read it.",
+    "da": "Dit svar er gemt. Åbn chatten for at læse det.",
+    "de": "Ihre Antwort wurde gespeichert. Öffnen Sie den Chat, um sie zu lesen.",
+    "es": "Tu respuesta está guardada. Abre el chat para leerla.",
+    "fr": "Votre réponse est enregistrée. Ouvrez le chat pour la lire.",
+    "nb": "Svaret ditt er lagret. Åpne chatten for å lese det.",
+    "sv": "Ditt svar har sparats. Öppna chatten för att läsa det.",
+}
+CHAT_FAILED = {
+    "en": "Chat could not finish", "da": "Chatten kunne ikke afsluttes",
+    "de": "Chat konnte nicht abgeschlossen werden", "es": "No se pudo completar el chat",
+    "fr": "Le chat n’a pas pu aboutir", "nb": "Chatten kunne ikke fullføres",
+    "sv": "Chatten kunde inte slutföras",
+}
+CHAT_FAILED_BODY = {
+    "en": "Your question is saved. Open the chat to try again.",
+    "da": "Dit spørgsmål er gemt. Åbn chatten for at prøve igen.",
+    "de": "Ihre Frage wurde gespeichert. Öffnen Sie den Chat, um es erneut zu versuchen.",
+    "es": "Tu pregunta está guardada. Abre el chat para intentarlo de nuevo.",
+    "fr": "Votre question est enregistrée. Ouvrez le chat pour réessayer.",
+    "nb": "Spørsmålet ditt er lagret. Åpne chatten for å prøve igjen.",
+    "sv": "Din fråga har sparats. Öppna chatten för att försöka igen.",
+}
+
+
 def present_notification(event: dict, interface_language: str = "en") -> dict:
     language = interface_language if interface_language in QUESTION_NOUNS else "en"
+    if event["kind"] == "chat":
+        ready = event["title"] == CHAT_READY["en"]
+        return event | {"title": (CHAT_READY if ready else CHAT_FAILED)[language],
+                        "body": (CHAT_READY_BODY if ready else CHAT_FAILED_BODY)[language]}
     if event["kind"] == "capture_health":
         bodies = (CAPTURE_HEALTH_STALE if event["target"].get("issue") == "report_stale"
                   else CAPTURE_HEALTH_STALLED)

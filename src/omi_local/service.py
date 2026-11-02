@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .audio import coverage_gaps
+from .chat_context_store import load_context, save_context
+from .chat_jobs import ensure_chat_available, save_chat_exchange, user_message_id
 from .completeness import audio_availability, revision
 from .completion_events import generating_job
 from .conversation_state import meeting_timeline
@@ -386,6 +388,7 @@ class Memory:
         end_day: date | None = None,
         retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
         query_override: str | None = None,
+        exclude_message_id: str | None = None,
     ) -> dict:
         if (start_day is None) != (end_day is None) or (
             start_day is not None and start_day > end_day
@@ -426,6 +429,7 @@ class Memory:
             if session_id
             else []
         )
+        history = [message for message in history if message["id"] != exclude_message_id]
         today = utc_now().astimezone(ZoneInfo(self.settings.timezone)).date()
         scope = (day, day) if day else ((start_day, end_day) if start_day else None)
         if meeting_id:
@@ -599,8 +603,12 @@ class Memory:
         start_day: date | None = None,
         end_day: date | None = None,
         on_event: Callable[[dict], Awaitable[None]] | None = None,
+        request_id: str | None = None,
     ) -> dict:
         self.settings.require_inference("llm")
+        if session_id:
+            with self.store.connect() as db:
+                ensure_chat_available(db, session_id, request_id)
         began = perf_counter()
         first_token = None
         if on_event:
@@ -614,6 +622,7 @@ class Memory:
             scope_supplied,
             start_day,
             end_day,
+            exclude_message_id=user_message_id(request_id) if request_id else None,
         )
         scope = result["scope"]
         start = datetime.fromisoformat(scope["start"]) if scope else None
@@ -652,6 +661,7 @@ class Memory:
                         start_day,
                         end_day,
                         query_override=query,
+                        exclude_message_id=user_message_id(request_id) if request_id else None,
                     )
                     result["retrieval_details"]["query_expanded"] = True
                     result["retrieval_details"]["notice"] += " Used alternate search wording."
@@ -672,13 +682,24 @@ class Memory:
                 end_day=result["end_day"],
             )
             result["session_id"] = session["id"]
+        context_state = {}
+        if isinstance(self.inference, Inference):
+            history, context_state = load_context(
+                self.store, result["session_id"],
+                user_message_id(request_id) if request_id else None,
+            )
         trace = None
         generation_start = perf_counter()
+
+        async def compacting():
+            if on_event:
+                await on_event({"type": "status", "stage": "compacting"})
 
         async def delta(text: str):
             nonlocal first_token
             if first_token is None:
                 first_token = (perf_counter() - began) * 1000
+                await on_event({"type": "status", "stage": "generating"})
             await on_event({"type": "delta", "text": text})
 
         if not sources:
@@ -694,17 +715,22 @@ class Memory:
                 if message["role"] != "assistant"
                 or not self.store.sources_stale(message["sources"])
             ]
-            if on_event and isinstance(self.inference, Inference):
-                answer, trace = await self.inference.chat_traced(question, sources, history, delta)
+            if isinstance(self.inference, Inference):
+                answer, trace = await self.inference.chat_traced(
+                    question, sources, history, delta if on_event else None,
+                    context_state=context_state, on_compact=compacting,
+                )
             elif hasattr(self.inference, "chat_traced"):
                 answer, trace = await self.inference.chat_traced(question, sources, history)
             else:
                 answer = await self.inference.chat(question, sources, history)
             answer = validate_citations(answer, sources)
+            if isinstance(self.inference, Inference):
+                save_context(self.store, result["session_id"], history, context_state)
         generation_ms = (perf_counter() - generation_start) * 1000
         if not sources and result["retrieval_details"].get("fallback_reason"):
             answer += " Semantic search is unavailable; only keyword search was used."
-        output_id = str(uuid4())
+        output_id = request_id or str(uuid4())
         evidence = self.evidence_metadata(
             sources, answer, result["retrieval"], start, end, trace=trace, counts=counts
         )
@@ -717,6 +743,10 @@ class Memory:
             "total_ms": round((perf_counter() - began) * 1000, 2),
         }
         evidence["timings"] = timings
+        if request_id:
+            return save_chat_exchange(self.store, request_id, result | {
+                "answer": answer, "output_id": output_id, "evidence": evidence, "timings": timings,
+            })
         message_ids = self.store.save_exchange(
             result["session_id"],
             question,

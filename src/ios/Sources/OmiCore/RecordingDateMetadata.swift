@@ -28,7 +28,7 @@ public struct RecordingDateSuggestion: Equatable, Sendable {
 }
 
 extension RecordingImport {
-    /// Recording timestamps take priority over container creation and filesystem
+    /// Embedded timestamps take priority over filename suggestions and filesystem
     /// modification. Filesystem creation is deliberately never a capture clock.
     public static func dateSuggestion(in url: URL, modifiedAt: Date? = nil, now: Date = Date(),
                                       timeZone: TimeZone = .current) async -> RecordingDateSuggestion? {
@@ -41,9 +41,73 @@ extension RecordingImport {
         let wav = wavDateSuggestion(in: url, now: now, timeZone: timeZone)
         let embedded = await metadataDateSuggestion(from: metadata, now: now, timeZone: timeZone)
         if let best = [wav, embedded].compactMap({ $0 }).min(by: { $0.priority < $1.priority }) { return best }
+        if let filename = filenameDateSuggestion(url.lastPathComponent, modifiedAt: modifiedAt, now: now, timeZone: timeZone) {
+            return filename
+        }
         guard let date = suggestedEnd(modifiedAt: modifiedAt, now: now) else { return nil }
         return RecordingDateSuggestion(date: date, reference: .end,
                                        source: AppLocalization.source("File modification date"), needsConfirmation: true)
+    }
+
+    /// Filename conventions are hints, never authoritative recording clocks.
+    /// Only year-first dates and an initial MM-dd date are accepted; locale-based
+    /// dd/MM versus MM/dd guessing would silently move recordings to another day.
+    private static func filenameDateSuggestion(_ filename: String, modifiedAt: Date?, now: Date,
+                                               timeZone: TimeZone) -> RecordingDateSuggestion? {
+        var name = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        // The share extension prefixes staged filenames with a UUID.
+        if let separator = name.range(of: "__"), UUID(uuidString: String(name[..<separator.lowerBound])) != nil {
+            name = String(name[separator.upperBound...])
+        }
+        let datePattern = #"(?<![0-9])(?:[0-9]{4}[-_.][0-9]{2}[-_.][0-9]{2}|[0-9]{8})(?![0-9])"#
+        guard let dateExpression = try? NSRegularExpression(pattern: datePattern) else { return nil }
+        let matches = dateExpression.matches(in: name, range: NSRange(name.startIndex..., in: name))
+        guard matches.count <= 1 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let anchor = suggestedEnd(modifiedAt: modifiedAt, now: now) ?? now
+        let anchorParts = calendar.dateComponents([.year, .hour, .minute, .second], from: anchor)
+        let dateText: String
+        let suffix: String
+        var inferredYear = false
+        if let match = matches.first, let range = Range(match.range, in: name) {
+            let digits = name[range].filter(\.isNumber)
+            dateText = String(digits.prefix(4)) + "-" + String(digits.dropFirst(4).prefix(2)) + "-" + String(digits.suffix(2))
+            suffix = String(name[range.upperBound...])
+        } else {
+            guard let range = name.range(of: #"^[0-9]{2}-[0-9]{2}(?=$|[_ ])"#, options: .regularExpression),
+                  let year = anchorParts.year else { return nil }
+            dateText = String(year) + "-" + name[range]
+            suffix = String(name[range.upperBound...])
+            inferredYear = true
+        }
+        let clockPatterns = [
+            #"^[Tt _-]+([0-9]{2})[:-]([0-9]{2})(?:[:-]([0-9]{2}))?(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:?[0-9]{2})?(?=$|[_ -][^0-9]|[A-Za-z])"#,
+            #"^[Tt _-]+([0-9]{2})([0-9]{2})([0-9]{2})?(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:?[0-9]{2})?(?=$|[_ -][^0-9]|[A-Za-z])"#,
+        ]
+        for pattern in clockPatterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(in: suffix, range: NSRange(suffix.startIndex..., in: suffix)) else { continue }
+            func group(_ index: Int) -> String {
+                Range(match.range(at: index), in: suffix).map { String(suffix[$0]) } ?? ""
+            }
+            let seconds = group(3).isEmpty ? "00" : group(3)
+            let timestamp = dateText + "T" + group(1) + ":" + group(2) + ":" + seconds + group(4) + group(5)
+            guard let parsed = parseRecordingTimestamp(timestamp, now: now, timeZone: timeZone) else { return nil }
+            return RecordingDateSuggestion(date: parsed.date, reference: .end,
+                source: AppLocalization.source("Filename date and time"), needsConfirmation: true)
+        }
+        // A malformed clock must not be quietly downgraded to a date-only guess.
+        guard suffix.range(of: #"^[Tt _-]+[0-9]"#, options: .regularExpression) == nil else { return nil }
+        let clock = String(format: "%02d:%02d:%02d", anchorParts.hour ?? 0, anchorParts.minute ?? 0, anchorParts.second ?? 0)
+        var timestamp = dateText + "T" + clock
+        if inferredYear, let candidate = parseRecordingTimestamp(timestamp, now: .distantFuture, timeZone: timeZone), candidate.date > anchor {
+            guard let year = anchorParts.year else { return nil }
+            timestamp = String(year - 1) + timestamp.dropFirst(4)
+        }
+        guard let parsed = parseRecordingTimestamp(timestamp, now: now, timeZone: timeZone) else { return nil }
+        return RecordingDateSuggestion(date: parsed.date, reference: .end,
+            source: AppLocalization.source("Filename date (time needs review)"), needsConfirmation: true)
     }
 
     static func metadataDateSuggestion(from metadata: [AVMetadataItem], now: Date,

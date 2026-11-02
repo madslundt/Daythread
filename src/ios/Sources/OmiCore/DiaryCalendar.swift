@@ -78,6 +78,15 @@ public struct DiaryCalendar {
         return formatter.string(from: date)
     }
 
+    /// Relative labels follow the diary's civil day, including timezone and daylight-saving boundaries.
+    public func dayTitle(_ date: Date, relativeTo now: Date, template: String = "d MMM") -> String {
+        let offset = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day
+        if offset == 0 { return AppLocalization.text("Today") }
+        if offset == -1 { return AppLocalization.text("Yesterday") }
+        let includesYear = calendar.component(.year, from: date) != calendar.component(.year, from: now)
+        return label(date, template: template + (includesYear ? " yyyy" : ""))
+    }
+
     public var weekdaySymbols: [String] {
         let symbols = calendar.veryShortStandaloneWeekdaySymbols
         let offset = calendar.firstWeekday - 1

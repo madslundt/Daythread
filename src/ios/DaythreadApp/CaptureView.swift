@@ -4,11 +4,15 @@ import OmiCore
 struct CaptureView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var sharedImports: [BackgroundRecordingImport.JobSummary] = []
+    @State private var sharedImportError: String?
 
     var body: some View {
         let _ = interfaceLocale
         List {
             PhoneRecordingSection()
+            sharedImportSection
             TranscriptionPreviewControl()
             if let failure = model.captureFailure {
                 Section {
@@ -46,8 +50,49 @@ struct CaptureView: View {
             } header: { Text(L10n.text("Recording options")) }
         }.listStyle(.insetGrouped).omiScreen()
             .navigationTitle(L10n.text("Capture")).navigationBarTitleDisplayMode(.large)
-            .refreshable { await model.refreshStatus() }
-            .task(id: model.archiveIdentity) { model.microphone.selectArchive(model.archiveIdentity) }
+            .refreshable {
+                await model.refreshStatus()
+                refreshSharedImports()
+            }
+            .task(id: model.archiveIdentity) {
+                model.microphone.selectArchive(model.archiveIdentity)
+                refreshSharedImports()
+            }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { refreshSharedImports() } }
+            .onReceive(NotificationCenter.default.publisher(for: .backgroundRecordingImportChanged)) { _ in
+                refreshSharedImports()
+            }
+    }
+
+    @ViewBuilder private var sharedImportSection: some View {
+        if !sharedImports.isEmpty {
+            Section {
+                ForEach(sharedImports, id: \.id) { job in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(job.sourceName).font(.subheadline).lineLimit(2)
+                        ProgressView(value: Double(job.uploadedParts), total: Double(max(1, job.totalParts)))
+                        Text(job.error ?? L10n.text("Uploading in the background…"))
+                            .font(.caption).foregroundStyle(job.error == nil ? Color.secondary : .red)
+                    }
+                }
+                if sharedImports.contains(where: { $0.error != nil }) {
+                    Button(L10n.text("Retry import")) {
+                        sharedImportError = nil
+                        do {
+                            try BackgroundRecordingImport.retryPending(
+                                archiveIdentity: model.backendConfiguration.archiveIdentity, profileID: model.selectedProfileID)
+                        } catch { sharedImportError = error.localizedDescription }
+                        refreshSharedImports()
+                    }
+                }
+                ErrorNote(message: sharedImportError)
+            } header: { Text(L10n.text("Shared recordings")) }
+        }
+    }
+
+    private func refreshSharedImports() {
+        sharedImports = model.usesManagedHosting ? [] : BackgroundRecordingImport.pendingJobs(
+            archiveIdentity: model.backendConfiguration.archiveIdentity, profileID: model.selectedProfileID)
     }
 
     private var syncSection: some View {

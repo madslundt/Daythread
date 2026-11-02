@@ -1,62 +1,5 @@
 import SwiftUI
 
-private struct VoiceRecognitionReadiness: Decodable {
-    let state: String
-    let message: String
-}
-
-private struct SavedVoiceDirectory: Decodable {
-    struct Profile: Decodable, Identifiable {
-        struct Example: Decodable, Identifiable {
-            let id: String
-            let scope: ConversationSpeakers.Scope
-            let speaker_id: String
-            let seconds: Double
-            let created_at: String
-        }
-        let id: String
-        let name: String
-        let example_count: Int
-        let conversation_count: Int
-        let examples: [Example]
-    }
-    let revision: String
-    let profiles: [Profile]
-    let recognition: VoiceRecognitionReadiness
-}
-
-private struct ConversationSpeakers: Decodable {
-    struct Scope: Decodable { let kind: String; let id: String }
-    struct Speaker: Decodable, Identifiable {
-        struct Suggestion: Decodable { let profile_id: String; let name: String }
-        let id: String
-        let label: String
-        let name: String?
-        let seconds: Double
-        let voice_profile_id: String?
-        let remembered_example_id: String?
-        let suggestion: Suggestion?
-        var displayName: String { name?.isEmpty == false ? name! : label }
-    }
-    struct Turn: Decodable, Identifiable {
-        let id: String
-        let source_id: String
-        let start: Double
-        let end: Double
-        let speaker_id: String
-        let text: String?
-    }
-    let state: String
-    let configured: Bool
-    let version: String?
-    let speakers: [Speaker]
-    let turns: [Turn]
-    let audio_available: Bool
-    let scope: Scope
-    let source_count: Int
-    let recognition: VoiceRecognitionReadiness?
-}
-
 /// Conversation names remain local; saved voice examples require explicit confirmation.
 struct SpeakersView: View {
     let kind: String
@@ -108,6 +51,7 @@ struct SpeakersView: View {
                 ErrorNote(message: voiceError)
                 if !busy && (result == nil || error != nil || voiceError != nil) { Button(L10n.text("Refresh speakers and saved voices")) { Task { await load() } } }
             }
+            MyVoiceSection(voices: voices, busy: busy) { setMyVoice(nil) }
             savedVoicesSection
             if let result {
                 detectionSection(result)
@@ -140,7 +84,7 @@ struct SpeakersView: View {
         .onDisappear { invalidate() }
         .refreshable { invalidate(); await load() }
         .sheet(item: $rememberSpeaker) { speaker in
-            RememberVoiceSheet(speaker: speaker, profiles: voices?.profiles ?? []) { choice in
+            RememberVoiceSheet(speaker: speaker, directory: voices) { choice in
                 mutate(path + "/" + speaker.id + "/remember", method: "POST", body: choice)
             }
         }
@@ -194,9 +138,18 @@ struct SpeakersView: View {
                                         .buttonStyle(.borderless).disabled(busy)
                                 }
                             }
+                            if profile.is_self != true {
+                                Button(L10n.text("Use as my voice")) { setMyVoice(profile.id) }
+                                    .buttonStyle(.borderless).disabled(busy)
+                            }
                             Button(L10n.text("Forget voice"), role: .destructive) { forgettingVoice = profile; forgettingExample = nil }
                                 .buttonStyle(.borderless).disabled(busy)
-                        } label: { Text(profile.name) }
+                        } label: {
+                            HStack {
+                                Text(profile.name)
+                                if profile.is_self == true { Text(L10n.text("My voice")).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
                     }
                 } else { Text(voiceError == nil ? L10n.text("Loading saved voices…") : L10n.text("Saved voices could not be loaded.")).foregroundStyle(.secondary) }
             }
@@ -231,6 +184,7 @@ struct SpeakersView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(speaker.displayName).font(.headline)
+                if speaker.is_self == true { Text(L10n.text("My voice")).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Text(L10n.text("\(Int(speaker.seconds.rounded()))s")).font(.caption).foregroundStyle(.secondary)
             }
@@ -381,18 +335,30 @@ struct SpeakersView: View {
     }
 
     private func forget(_ profile: SavedVoiceDirectory.Profile, example: SavedVoiceDirectory.Profile.Example?) {
-        guard !busy, let voices else { return }
+        guard let voices else { return }
+        let endpoint = "v1/voice-profiles/" + profile.id + (example.map { "/examples/" + $0.id } ?? "")
+        mutateVoices(endpoint, method: "DELETE", query: ["revision": voices.revision])
+    }
+
+    private func setMyVoice(_ profileID: String?) {
+        guard let voices else { return }
+        mutateVoices("v1/voice-profiles/self", method: "PATCH", body: [
+            "revision": voices.revision, "profile_id": profileID.map { $0 as Any } ?? NSNull()
+        ])
+    }
+
+    private func mutateVoices(_ endpoint: String, method: String, query: [String: String] = [:], body: [String: Any]? = nil) {
+        guard !busy else { return }
         let identity = model.archiveIdentity, request = UUID()
         let client: BackendClient
         do { client = try model.client() }
         catch { voiceError = L10n.error(error); return }
-        let endpoint = "v1/voice-profiles/" + profile.id + (example.map { "/examples/" + $0.id } ?? "")
-        requestID = request; busy = true; activity = L10n.text("Removing saved voice…"); voiceError = nil; stopPlayback()
+        requestID = request; busy = true; activity = L10n.text("Updating speakers…"); voiceError = nil; stopPlayback()
         operation = Task {
             defer { if requestID == request { busy = false; operation = nil } }
             do {
                 try Task.checkCancellation()
-                let directory = try await client.decoded(endpoint, method: "DELETE", query: ["revision": voices.revision], as: SavedVoiceDirectory.self)
+                let directory = try await client.decoded(endpoint, method: method, query: query, body: body, as: SavedVoiceDirectory.self)
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
                 self.voices = directory
                 let scope = try await client.decoded(path, as: ConversationSpeakers.self)
@@ -402,9 +368,11 @@ struct SpeakersView: View {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
                 voiceError = L10n.error(error)
                 if (error as? BackendFailure)?.status == 409 {
-                    let directory = try? await client.decoded("v1/voice-profiles", as: SavedVoiceDirectory.self)
+                    async let scope = try? client.decoded(path, as: ConversationSpeakers.self)
+                    async let directory = try? client.decoded("v1/voice-profiles", as: SavedVoiceDirectory.self)
+                    let refreshed = await (scope, directory)
                     guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
-                    self.voices = directory
+                    result = refreshed.0; self.voices = refreshed.1
                 }
             }
         }
@@ -428,57 +396,6 @@ struct SpeakersView: View {
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
                 self.error = L10n.error(error)
             }
-        }
-    }
-}
-
-private struct RememberVoiceSheet: View {
-    let speaker: ConversationSpeakers.Speaker
-    let profiles: [SavedVoiceDirectory.Profile]
-    let onConfirm: ([String: Any]) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedProfile = ""
-    @State private var newName: String
-
-    init(speaker: ConversationSpeakers.Speaker, profiles: [SavedVoiceDirectory.Profile], onConfirm: @escaping ([String: Any]) -> Void) {
-        self.speaker = speaker; self.profiles = profiles; self.onConfirm = onConfirm
-        _newName = State(initialValue: speaker.name ?? "")
-        _selectedProfile = State(initialValue: speaker.voice_profile_id ?? "")
-    }
-
-    private var trimmedName: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    @Environment(\.locale) private var interfaceLocale
-    var body: some View {
-        let _ = interfaceLocale
-        NavigationStack {
-            Form {
-                Section {
-                    Text(L10n.text("After listening, explicitly choose whose voice \(speaker.displayName) is. This saves a voice example and names the speaker in this conversation."))
-                    Text(L10n.text("Future conversations may suggest this voice; you confirm every suggestion. A new profile remains separate even when its name matches another profile."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section(L10n.text("Save voice to")) {
-                    Picker(L10n.text("Voice profile"), selection: $selectedProfile) {
-                        Text(L10n.text("Create a new voice profile")).tag("")
-                        ForEach(profiles) { profile in
-                            Text(L10n.text("\(profile.name) · \(profile.example_count) examples")).tag(profile.id)
-                        }
-                    }
-                    if selectedProfile.isEmpty {
-                        TextField(L10n.text("New voice profile name"), text: $newName).textInputAutocapitalization(.words)
-                        if trimmedName.count > 120 { Text(L10n.text("Use a name up to 120 characters.")).foregroundStyle(.red) }
-                    }
-                }
-                Section {
-                    Button(L10n.text("Confirm and remember voice")) {
-                        onConfirm(selectedProfile.isEmpty ? ["name": trimmedName] : ["profile_id": selectedProfile])
-                        dismiss()
-                    }.disabled(selectedProfile.isEmpty && (trimmedName.isEmpty || trimmedName.count > 120))
-                }
-            }
-            .navigationTitle(L10n.text("Remember voice")).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("Cancel")) { dismiss() } } }
         }
     }
 }

@@ -19,6 +19,9 @@
 .speaker-remember, .voice-profiles { margin-block: 12px; }
 .speaker-remember > summary, .voice-profiles > summary { cursor: pointer; font-size: 13px; }
 .speaker-suggestion { border-left: 3px solid var(--accent); padding-left: 12px; margin-top: 12px; }
+.my-voice-setup { margin-block: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.my-voice-setup p { margin-block: 8px 0; overflow-wrap: anywhere; }
+.speaker-self-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .voice-profile { margin-top: 12px; border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
 .voice-profile ul { list-style: none; padding: 0; margin-bottom: 0; }
 .voice-profile li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; margin-top: 8px; }

@@ -261,6 +261,8 @@ class Settings(BaseSettings):
     audio_retention_days: int = Field(default=7, ge=0, le=36500)
     transcript_retention_days: int = Field(default=30, ge=0, le=36500)
     inference_timeout_seconds: int = Field(default=120, ge=1, le=1800)
+    chat_auto_compact: bool = True
+    chat_context_window_tokens: int = Field(default=0, ge=0, le=2_000_000)
     chat_query_expansion: bool = True
     chat_query_expansion_timeout_seconds: float = Field(default=5, gt=0, le=60)
     silence_threshold: int = Field(default=35, ge=0, le=32767)
@@ -491,6 +493,8 @@ RUNTIME_FIELDS = (
     "recap_interval_minutes",
     "recap_quiet_minutes",
     "summary_language",
+    "chat_auto_compact",
+    "chat_context_window_tokens",
     "summary_template",
     "summary_template_instructions",
     "capture_health_enabled",

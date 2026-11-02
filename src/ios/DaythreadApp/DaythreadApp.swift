@@ -16,7 +16,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
-        Task { @MainActor in BackgroundUploader.backgroundCompletion = completionHandler }
+        Task { @MainActor in
+            if BackgroundRecordingImport.handleEvents(identifier: identifier, completion: completionHandler) { return }
+            BackgroundUploader.backgroundCompletion = completionHandler
+        }
     }
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Task { @MainActor in CompletionNotifications.shared.receivedToken(deviceToken) }
@@ -72,6 +75,7 @@ struct RootView: View {
     @State private var selectedTab: RootTab = UserDefaults.standard.string(forKey: "selectedProfileID")?.isEmpty == false ? .today : .more
     @State private var settingsPath: [SettingsDestination] = []
     @State private var todayNavigationID = UUID()
+    @State private var selectedDay: Date?
     @State private var incomingAudio: ImportedAudio?
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
@@ -81,7 +85,12 @@ struct RootView: View {
                 if tab == .today && model.hasSelectedProfile { todayNavigationID = UUID() }
                 selectedTab = model.hasSelectedProfile ? tab : .more
             })) {
-                NavigationStack { if model.hasSelectedProfile { DayView() } }.id(todayNavigationID).tabItem { Label(L10n.text("Today"), systemImage: "sun.max") }.tag(RootTab.today)
+                NavigationStack { if model.hasSelectedProfile { DayView(selection: $selectedDay) } }
+                    .id(todayNavigationID)
+                    .tabItem {
+                        let diary = DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current)
+                        Label(diary.dayTitle(selectedDay ?? model.now, relativeTo: model.now), systemImage: "sun.max")
+                    }.tag(RootTab.today)
                 NavigationStack { if model.hasSelectedProfile { CaptureView() } }.tabItem { Label(L10n.text("Capture"), systemImage: "waveform") }.tag(RootTab.capture)
                 NavigationStack { if model.hasSelectedProfile { ChatView() } }.tabItem { Label(L10n.text("Chat"), systemImage: "bubble.left.and.bubble.right") }.tag(RootTab.chat)
                 NavigationStack(path: $settingsPath) {
@@ -96,6 +105,7 @@ struct RootView: View {
             }
             .id(model.archiveIdentity + (model.usesManagedHosting && !model.managedAccount.hostingVerified ? ".offline" : ""))
             .environment(\.goToToday, {
+                selectedDay = nil
                 todayNavigationID = UUID()
                 selectedTab = .today
             })
@@ -113,6 +123,7 @@ struct RootView: View {
         .onChange(of: model.selectedProfileID) { _, _ in
             settingsPath = model.hasSelectedProfile ? [] : [model.usesManagedHosting ? .account : .profiles]
             selectedTab = model.hasSelectedProfile ? .today : .more
+            retrySharedImports()
         }
         .onChange(of: model.hasSelectedProfile) { _, ready in
             notifications.configure(model: model)
@@ -120,7 +131,7 @@ struct RootView: View {
         }
         .onChange(of: model.managedAccount.hostingVerified) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.managedAccount.sessionID) { _, _ in notifications.configure(model: model) }
-        .onChange(of: model.archiveIdentity) { _, _ in notifications.configure(model: model) }
+        .onChange(of: model.archiveIdentity) { _, _ in selectedDay = nil; notifications.configure(model: model) }
         .onChange(of: model.backendConfiguration) { _, _ in notifications.configure(model: model) }
         .onChange(of: model.archiveRevision) { old, _ in if !old.isEmpty { notifications.clearPreviews() } }
         .onChange(of: interfaceLocale.identifier) { _, _ in notifications.setActive(scenePhase == .active) }
@@ -142,9 +153,15 @@ struct RootView: View {
             selectedTab = .today
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { receiveSharedAudio() }
+            if phase == .active {
+                receiveSharedAudio()
+                retrySharedImports()
+            }
         }
-        .onAppear { receiveSharedAudio() }
+        .onAppear { receiveSharedAudio(); retrySharedImports() }
+        .onReceive(NotificationCenter.default.publisher(for: .backgroundRecordingImportChanged)) { _ in
+            Task { await model.refreshStatus() }
+        }
         .sheet(item: $incomingAudio) { item in
             AudioImportView(sharedURLs: item.urls)
         }
@@ -161,12 +178,22 @@ private struct ImportedAudio: Identifiable {
 }
 
 private extension RootView {
+    func retrySharedImports() {
+        guard !model.usesManagedHosting, model.hasSelectedProfile else { return }
+        do {
+            try BackgroundRecordingImport.retryPending(archiveIdentity: model.backendConfiguration.archiveIdentity, profileID: model.selectedProfileID)
+        } catch { model.error = error.localizedDescription }
+    }
+
     func receiveSharedAudio() {
         guard incomingAudio == nil,
               let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.daythread.app")?.appendingPathComponent("SharedAudio", isDirectory: true),
-              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil),
-              !files.isEmpty else { return }
-        incomingAudio = ImportedAudio(urls: files.filter { !$0.lastPathComponent.hasPrefix(".") })
+              let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        let files = contents.filter {
+            !$0.lastPathComponent.hasPrefix(".") && (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        }
+        guard !files.isEmpty else { return }
+        incomingAudio = ImportedAudio(urls: files)
         selectedTab = .today
     }
 }

@@ -174,6 +174,35 @@ def test_real_api_gate_only_suggests_then_explicit_confirmation_names_and_enroll
     assert next_detected["speakers"][0]["name"] is None
 
 
+def test_own_voice_suggestion_is_not_self_until_explicit_confirmation(client, tmp_path):
+    owners = confirmed_gallery(client)
+    designated = client.patch("/v1/voice-profiles/self", json={
+        "profile_id": owners["Mads"], "revision": directory(client)["revision"],
+    })
+    assert designated.status_code == 200, designated.text
+    temporary_software_report(client, tmp_path, owners["Mads"])
+    before = directory(client)
+    path, speaker, detected = detect_source(client, 100)
+    assert detected["recognition"]["state"] == "ready"
+    assert detected["speakers"][0]["suggestion"]["profile_id"] == owners["Mads"]
+    for view in (detected, client.get(path).json()):
+        assert view["speakers"][0]["is_self"] is False
+        assert view["speakers"][0]["voice_profile_id"] is None
+        assert view["speakers"][0]["remembered_example_id"] is None
+        assert view["speakers"][0]["name"] is None
+    assert directory(client)["profiles"] == before["profiles"]
+    confirmed = client.post(f"{path}/{speaker}/confirm", json={
+        "version": detected["version"], "profile_id": owners["Mads"],
+    })
+    assert confirmed.status_code == 200, confirmed.text
+    own = confirmed.json()["speakers"][0]
+    assert own["is_self"] is True
+    assert own["voice_profile_id"] == owners["Mads"]
+    assert own["remembered_example_id"]
+    assert own["suggestion"] is None
+    assert client.get(path).json()["speakers"][0]["is_self"] is True
+
+
 @pytest.mark.parametrize("change", ["runtime_model", "report_contents", "rehashed_contents"])
 def test_mismatch_and_modified_report_disable_api_suggestions(client, tmp_path, change):
     owners = confirmed_gallery(client)

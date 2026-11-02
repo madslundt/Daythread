@@ -8,6 +8,18 @@ INSERT OR IGNORE INTO voice_meta VALUES(1,lower(hex(randomblob(16))));
 CREATE TABLE IF NOT EXISTS voice_profiles (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS self_voice (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1), profile_id TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS self_voice_insert AFTER INSERT ON self_voice BEGIN
+ UPDATE voice_meta SET revision=lower(hex(randomblob(16)));
+END;
+CREATE TRIGGER IF NOT EXISTS self_voice_delete AFTER DELETE ON self_voice BEGIN
+ UPDATE voice_meta SET revision=lower(hex(randomblob(16)));
+END;
+CREATE TRIGGER IF NOT EXISTS self_voice_profile_delete AFTER DELETE ON voice_profiles BEGIN
+ DELETE FROM self_voice WHERE profile_id=OLD.id;
+END;
 CREATE TABLE IF NOT EXISTS voice_examples (
  id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, scope_key TEXT NOT NULL,
  speaker_id TEXT NOT NULL, embedding TEXT NOT NULL, model TEXT NOT NULL,

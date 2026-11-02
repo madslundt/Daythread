@@ -6,6 +6,7 @@ import UIKit
 
 @MainActor @Observable
 final class AppModel {
+    let chatConversations = ChatConversations()
     let microphone = PhoneRecorder()
     var omiPauseWhileCharging = (UserDefaults.standard.object(forKey: "omiPauseWhileCharging") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(omiPauseWhileCharging, forKey: "omiPauseWhileCharging"); updateOmiCharging() }
@@ -240,6 +241,7 @@ final class AppModel {
     var uploadWiFiOnly: Bool {
         didSet {
             UserDefaults.standard.set(uploadWiFiOnly, forKey: "uploadWiFiOnly")
+            UserDefaults(suiteName: "group.com.daythread.app")?.set(uploadWiFiOnly, forKey: "uploadWiFiOnly")
             uploader?.setUploadWiFiOnly(uploadWiFiOnly)
         }
     }
@@ -566,6 +568,7 @@ final class AppModel {
         shared.set(try? JSONEncoder().encode(backendConfiguration), forKey: "backendEndpoints.v1")
         shared.set(backendAddress, forKey: "backendURL")
         shared.set(selectedProfileID, forKey: "selectedProfileID")
+        shared.set(uploadWiFiOnly, forKey: "uploadWiFiOnly")
         shared.set(usesManagedHosting || managedAccount.signedIn, forKey: "managedArchiveSelected")
     }
     func tick() async {

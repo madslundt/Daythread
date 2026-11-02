@@ -103,11 +103,11 @@ struct BackendClient {
         let bodyData = try body.map { try JSONSerialization.data(withJSONObject: $0) }
         let inference = method == "POST" && (path == "v1/chat" || path == "v1/rewind" || path.hasPrefix("v1/recaps/") || path.hasPrefix("v1/meetings/") || path.hasPrefix("v1/speakers/") || ((path.hasPrefix("v1/transcripts/") || path.hasPrefix("v1/outputs/")) && path.hasSuffix("/translation")))
         let responseData = try await data(path: path, method: method, query: query, body: bodyData, profileHeader: global ? nil : profileID, timeout: inference ? 3600 : 180)
-        return try JSONDecoder().decode(JSONValue.self, from: responseData)
+        return responseData.isEmpty ? .null : try JSONDecoder().decode(JSONValue.self, from: responseData)
     }
 
     @MainActor
-    private static func waitForForeground() async throws {
+    static func waitForForeground() async throws {
         // Preserve the accepted job while suspending its UI polling with no periodic wakeups.
         let activations = NotificationCenter.default.notifications(named: UIApplication.didBecomeActiveNotification)
         if UIApplication.shared.applicationState != .active {

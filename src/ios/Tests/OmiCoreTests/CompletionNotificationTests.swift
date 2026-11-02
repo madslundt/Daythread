@@ -157,4 +157,17 @@ final class CompletionNotificationTests: XCTestCase {
         XCTAssertEqual(weekly.target.weekStart, "2026-10-12")
         XCTAssertEqual(weekly.target.versionID, "version-1")
     }
+
+    func testChatReplyTargetsItsSavedConversationAndDeletingOnlyRemovesThatPreview() throws {
+        let sessionID = UUID()
+        let chat = try event(2, target: "{\"session_id\":\"\(sessionID.uuidString)\",\"job_id\":\"\(UUID().uuidString)\"}")
+        XCTAssertEqual(chat.target.sessionID, sessionID)
+        var inbox = CompletionInbox()
+        inbox.receive(try event(1))
+        inbox.receive(chat)
+        inbox.advanceCursor(to: 2)
+        inbox.removeChat(sessionID)
+        XCTAssertEqual(inbox.items.map(\.sequence), [1])
+        XCTAssertEqual(inbox.cursor, 2)
+    }
 }

@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .archive_store import EXTENDED_SCHEMA, ArchiveStore
 from .capture_health import SCHEMA as CAPTURE_HEALTH_SCHEMA
+from .chat_context_store import SCHEMA as CHAT_CONTEXT_SCHEMA
 from .completeness import SCHEMA as COMPLETENESS_SCHEMA
 from .completeness import CompletenessStore
 from .conversation_tags import SCHEMA as CONVERSATION_TAGS_SCHEMA
@@ -203,6 +204,7 @@ class Store(
             db.executescript(IMPORTANCE_SCHEMA)
             db.executescript(RECAP_SCHEMA)
             db.executescript(NOTIFICATION_SCHEMA)
+            db.executescript(CHAT_CONTEXT_SCHEMA)
             db.executescript(CAPTURE_HEALTH_SCHEMA)
             db.executescript(TRANSCRIPTION_QUEUE_SCHEMA)
             db.executescript(RECORDING_TOPICS_SCHEMA)

@@ -5,7 +5,7 @@ import OmiCore
 final class ShareRecordingTimeView: UIStackView {
     private let datePicker = UIDatePicker()
     private let referencePicker = UISegmentedControl(items: [
-        AppLocalization.text("Recording ended"), AppLocalization.text("Recording started")
+        AppLocalization.text("Recording started"), AppLocalization.text("Recording ended")
     ])
     private let confirmButton = UIButton(type: .system)
     private let provenance = UILabel()
@@ -13,7 +13,7 @@ final class ShareRecordingTimeView: UIStackView {
     var onChanged: (() -> Void)?
     var locked = false { didSet { setEnabled(!locked) } }
     var recordedAt: Date { datePicker.date }
-    var reference: RecordingTimeReference { referencePicker.selectedSegmentIndex == 1 ? .start : .end }
+    var reference: RecordingTimeReference { referencePicker.selectedSegmentIndex == 0 ? .start : .end }
 
     init(name: String, suggestion: RecordingDateSuggestion?) {
         isConfirmed = suggestion.map { !$0.needsConfirmation } ?? false
@@ -25,7 +25,9 @@ final class ShareRecordingTimeView: UIStackView {
         title.font = .preferredFont(forTextStyle: .headline)
         title.numberOfLines = 0
         addArrangedSubview(title)
-        referencePicker.selectedSegmentIndex = suggestion?.reference == .start ? 1 : 0
+        referencePicker.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .caption1)], for: .normal)
+        referencePicker.apportionsSegmentWidthsByContent = true
+        referencePicker.selectedSegmentIndex = suggestion?.reference == .start ? 0 : 1
         referencePicker.accessibilityIdentifier = "share.timeReference"
         referencePicker.addTarget(self, action: #selector(confirmTime), for: .valueChanged)
         addArrangedSubview(referencePicker)

@@ -106,6 +106,11 @@ async def test_large_chat_reduces_with_summary_model_and_answers_without_extra_c
     calls = []
 
     def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [
+                {"id": "fast", "context_window": 32768},
+                {"id": "sum", "context_window": 32768},
+            ]})
         body = json.loads(request.content)
         calls.append(body)
         return httpx.Response(
@@ -115,7 +120,7 @@ async def test_large_chat_reduces_with_summary_model_and_answers_without_extra_c
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         answer, trace = await Inference(settings, http).chat_traced("What happened?", [source], [])
     assert key in answer
-    # Three map batches, then answer directly from the bounded notes.
+    # With advertised 32k windows, retain three summary maps and answer from their bounded notes.
     assert [call["model"] for call in calls] == ["sum", "sum", "sum", "fast"]
     assert trace["model_calls"] == 4
     assert trace["reduction_used"]

@@ -7,6 +7,9 @@ options:
 packages:
   OmiCore:
     path: .
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    exactVersion: 2.4.1
 targets:
   Daythread:
     type: application
@@ -14,6 +17,7 @@ targets:
     sources: [DaythreadApp]
     dependencies:
       - package: OmiCore
+      - package: MarkdownUI
       - target: DaythreadShare
         embed: true
     settings:

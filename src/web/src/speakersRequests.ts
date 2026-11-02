@@ -6,13 +6,16 @@ export type Speaker = {
   id: string; label: string; name: string | null; seconds: number;
   voice_profile_id?: string | null;
   remembered_example_id?: string | null;
+  is_self?: boolean;
   suggestion?: { profile_id: string; name: string } | null;
 };
 export type VoiceProfile = {
   id: string; name: string; example_count: number; conversation_count: number;
+  is_self?: boolean;
   examples: { id: string; scope: { kind: string; id: string }; speaker_id: string; seconds: number; created_at: string }[];
 };
 export type VoiceProfilesData = { revision: string; profiles: VoiceProfile[]; recognition: VoiceRecognition };
+export type RememberVoiceChoice = ({ profile_id: string } | { name: string }) & { is_self?: true; voice_revision?: string };
 export type SpeakerTurn = { id: string; source_id: string; start: number; end: number; speaker_id: string; text?: string };
 export type SpeakersData = {
   state: "idle" | "ready" | "stale";
@@ -62,6 +65,9 @@ export class SpeakersRequests extends ScopedRequests<SpeakersData> {
 
 export class VoiceProfilesRequests extends ScopedRequests<VoiceProfilesData> {
   constructor() { super("/v1/voice-profiles"); }
+  setSelf(profileId: string | null, revision: string) {
+    return this.run("PATCH", "/self", { profile_id: profileId, revision });
+  }
   forget(profileId: string, revision: string, exampleId?: string) {
     return this.run("DELETE", `/${encodeURIComponent(profileId)}${exampleId ? `/examples/${encodeURIComponent(exampleId)}` : ""}?${new URLSearchParams({ revision })}`);
   }

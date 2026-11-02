@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SpeakersView, VoiceProfilesManager } from "./Speakers";
+import { MyVoiceSetup, SpeakersView, VoiceProfilesManager } from "./Speakers";
 import { SpeakersRequests, VoiceProfilesRequests, type SpeakersData, type VoiceProfilesData } from "./speakersRequests";
 import { selectProfile } from "./profiles";
 
@@ -91,6 +91,34 @@ describe("speaker scope requests", () => {
 });
 
 describe("confirmed voice learning requests", () => {
+  it("designates and clears the archive owner's voice using a directory revision", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(voices)));
+    vi.stubGlobal("fetch", fetch);
+    selectProfile("alice");
+    const directory = new VoiceProfilesRequests();
+    await directory.setSelf("voice-1", "directory-v1");
+    await directory.setSelf(null, "directory-v2");
+    expect(fetch.mock.calls.map(([url, options]) => [url, options.method, JSON.parse(options.body)])).toEqual([
+      ["/v1/voice-profiles/self", "PATCH", { profile_id: "voice-1", revision: "directory-v1" }],
+      ["/v1/voice-profiles/self", "PATCH", { profile_id: null, revision: "directory-v2" }],
+    ]);
+    expect(new Headers(fetch.mock.calls[0][1].headers).get("X-Omi-Profile")).toBe("alice");
+    selectProfile("bob");
+    await expect(directory.setSelf("voice-2", "directory-v2")).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("explicitly enrolls the owner's sample with both speaker and directory versions", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
+    vi.stubGlobal("fetch", fetch);
+    await new SpeakersRequests("source", "recording").run("POST", "/s1/remember", {
+      name: "Mads", version: "v1", is_self: true, voice_revision: "directory-v1",
+    });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      name: "Mads", version: "v1", is_self: true, voice_revision: "directory-v1",
+    });
+  });
+
   it("keeps profile reads independent from in-flight speaker actions and does not learn on read", async () => {
     let finish!: (response: Response) => void;
     const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }))
@@ -162,6 +190,33 @@ describe("confirmed voice learning requests", () => {
 
 describe("confirmed voice learning display", () => {
   const learning = { ...view, onRemember: () => {}, onConfirm: () => {}, onForget: () => {} };
+
+  it("guides enrollment without guessing which named profile belongs to the owner", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...learning} voices={voices} data={data} onSetSelf={() => {}} />);
+    expect(html).toContain("No voice has been marked as yours in this archive.");
+    expect(html).toContain("This is my voice");
+    expect(html).toContain("Use as my voice");
+    expect(html).not.toContain("Clear my voice");
+    expect(html).not.toContain('type="checkbox" checked');
+  });
+
+  it("shows learning progress and preserves evaluation requirements after two conversations", () => {
+    const own = { ...voices, profiles: [{ ...voices.profiles[0], is_self: true }] };
+    const first = renderToStaticMarkup(<MyVoiceSetup voices={own} busy={false} onSetSelf={() => {}} />);
+    expect(first).toContain("Clear my voice");
+    expect(first).toContain("two separate conversations");
+    const learned = renderToStaticMarkup(<MyVoiceSetup voices={{ ...own, profiles: [{ ...own.profiles[0], conversation_count: 2, example_count: 2 }] }} busy={false} />);
+    expect(learned).toContain("Suggestions still require a passing evaluation and your confirmation.");
+  });
+
+  it("keeps self identity management available when learning is disabled", () => {
+    const own = { ...voices, recognition: { state: "disabled" as const, message: "Disabled" }, profiles: [{ ...voices.profiles[0], is_self: true }] };
+    const html = renderToStaticMarkup(<SpeakersView {...learning} voices={own} data={{ ...data, recognition: own.recognition }} onSetSelf={() => {}} />);
+    expect(html).not.toContain('disabled="">Clear my voice');
+    expect(html).toContain('disabled="">Confirm and remember voice');
+    const busy = renderToStaticMarkup(<MyVoiceSetup voices={own} busy onSetSelf={() => {}} />);
+    expect(busy).toContain('disabled="">Clear my voice');
+  });
 
   it("shows a suggested identity separately without renaming the current speaker or playback", () => {
     const html = renderToStaticMarkup(<SpeakersView {...learning} voices={{ ...voices, recognition: { state: "ready", message: "Suggestions require confirmation." } }}

@@ -1,5 +1,39 @@
 import SwiftUI
 import OmiCore
+import MarkdownUI
+
+/// Shared by live drafts and saved answers so formatting stays consistent as a reply streams in.
+struct ChatMarkdownText: View {
+    let content: String
+
+    var body: some View {
+        Markdown(content)
+            .markdownTextStyle(\.text) {
+                FontSize(17)
+                ForegroundColor(.primary)
+                BackgroundColor(.clear)
+            }
+            .markdownTextStyle(\.link) {
+                ForegroundColor(Theme.accent)
+            }
+            .markdownBlockStyle(\.paragraph) { configuration in
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .relativeLineSpacing(.em(0.235))
+                    .markdownMargin(top: 0, bottom: 12)
+            }
+            .markdownBlockStyle(\.table) { configuration in
+                ScrollView(.horizontal) {
+                    configuration.label
+                }
+                .markdownTableBorderStyle(.init(color: .secondary.opacity(0.25)))
+                .markdownMargin(top: 0, bottom: 12)
+            }
+            .markdownTheme(.gitHub)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
 struct ChatBottomPreference: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -12,7 +46,11 @@ struct ChatQuestionBubble: View {
         HStack {
             Spacer(minLength: 32)
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text("You")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                HStack(spacing: 0) {
+                    Text(L10n.text("You")).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                    Spacer(minLength: 8)
+                    ChatMessageTextActions(content: text, markdown: false)
+                }
                 Text(text).textSelection(.enabled)
             }.padding(16).background(Theme.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
         }.frame(maxWidth: .infinity, alignment: .trailing)
@@ -32,6 +70,7 @@ struct ChatMessageView: View {
                 HStack {
                     Label("Daythread", systemImage: "sparkle").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                     Spacer()
+                    ChatMessageTextActions(content: message["content"].text)
                     ShareLink(item: message["content"].text) {
                         Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44)
                     }.accessibilityLabel(L10n.text("Share answer"))
@@ -40,8 +79,7 @@ struct ChatMessageView: View {
                     Label(L10n.text("Historical answer: transcript evidence changed. Ask again for a current answer."), systemImage: "clock.arrow.circlepath")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text(.init(message["content"].text)).textSelection(.enabled).lineSpacing(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                ChatMarkdownText(content: message["content"].text)
                 if !message["retrieval_details"]["notice"].text.isEmpty {
                     Text(L10n.key(message["retrieval_details"]["notice"].text)).font(.caption).foregroundStyle(.secondary)
                 }
@@ -62,11 +100,6 @@ struct ChatMessageView: View {
                     Text(L10n.text("Evidence & feedback")).font(.caption)
                 }.tint(.secondary)
             }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 22))
-                .contextMenu {
-                    Button { UIPasteboard.general.string = message["content"].text } label: {
-                        Label(L10n.text("Copy"), systemImage: "doc.on.doc")
-                    }
-                }
         }
     }
 }
@@ -107,12 +140,35 @@ struct ChatHistoryView: View {
     let error: String?
     let refresh: () async -> Void
     let select: (String) -> Void
+    let remove: (String) async -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
     @State private var query = ""
+    @State private var deletingIDs: Set<String> = []
 
     private var matches: [JSONValue] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return sessions.filter { text.isEmpty || $0["title"].text.localizedStandardContains(text) }
+        return sessions.filter { text.isEmpty || title($0).localizedStandardContains(text) }
+            .sorted { (date($0) ?? .distantPast) > (date($1) ?? .distantPast) }
+    }
+
+    private func title(_ session: JSONValue) -> String {
+        let question = session["messages"].array.first { $0["role"].text == "user" }?["content"].text
+            ?? session["pending_job"]["parameters"]["question"].text
+        return ChatHistoryPresentation.title(session["title"].text, firstQuestion: question)
+    }
+
+    private func date(_ session: JSONValue) -> Date? {
+        AppModel.date(session["updated_at"].text) ?? AppModel.date(session["created_at"].text)
+    }
+
+    private func delete(_ id: String) {
+        guard deletingIDs.insert(id).inserted else { return }
+        Task {
+            await remove(id)
+            deletingIDs.remove(id)
+        }
     }
 
     var body: some View {
@@ -127,18 +183,34 @@ struct ChatHistoryView: View {
                     Button { select(session["id"].text) } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(session["title"].text.isEmpty ? L10n.text("Conversation") : session["title"].text)
+                                Text(title(session))
                                     .font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(2)
-                                if let date = AppModel.date(session["updated_at"].text) {
-                                    Text(date, style: .date).font(.caption).foregroundStyle(.secondary)
+                                if let date = date(session) {
+                                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                                        Text(ChatHistoryPresentation.timestamp(date, relativeTo: context.date, locale: locale, timeZone: timeZone))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                            .accessibilityLabel(date.formatted(.dateTime.year().month().day().hour().minute().locale(locale)))
+                                    }
                                 }
                             }
                             Spacer(minLength: 0)
-                            if session["id"].text == selectedID {
+                            if deletingIDs.contains(session["id"].text) {
+                                ProgressView()
+                            } else if session["id"].text == selectedID {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
                             }
                         }.padding(.vertical, 6).contentShape(Rectangle())
-                    }.buttonStyle(.plain).disabled(loading)
+                    }.buttonStyle(.plain).disabled(loading || deletingIDs.contains(session["id"].text))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { delete(session["id"].text) } label: {
+                                Label(L10n.text("Delete conversation"), systemImage: "trash")
+                            }.disabled(deletingIDs.contains(session["id"].text))
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) { delete(session["id"].text) } label: {
+                                Label(L10n.text("Delete conversation"), systemImage: "trash")
+                            }.disabled(deletingIDs.contains(session["id"].text))
+                        }
                 }
             }.omiScreen().navigationTitle(L10n.text("Conversation history")).navigationBarTitleDisplayMode(.inline)
                 .refreshable { await refresh() }

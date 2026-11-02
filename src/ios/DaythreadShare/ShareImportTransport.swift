@@ -17,39 +17,6 @@ extension ShareViewController {
         return try await checkedData(for: request)
     }
 
-    func uploadFile(_ file: URL, id: UUID, query: [String: String], configuration: BackendEndpointConfiguration,
-                            onProgress: @escaping (Int64) -> Void) async throws -> Data {
-        try Task.checkCancellation()
-        guard let endpoint = configuration.activeEndpoint, let base = URL(string: endpoint.address) else { throw ShareImportError("Daythread’s archive address is unavailable.") }
-        var components = URLComponents(url: base.appendingPathComponent("v1/audio/\(id.uuidString.lowercased())"), resolvingAgainstBaseURL: false)!
-        components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) }
-        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        var request = URLRequest(url: components.url!); request.httpMethod = "PUT"; request.timeoutInterval = 180
-        request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
-        request.setValue(profileID, forHTTPHeaderField: "X-Omi-Profile")
-        request.setValue(ManagedServiceOrigin.ownDestination(archiveIdentity: configuration.archiveIdentity), forHTTPHeaderField: "X-Daythread-Destination")
-        return try await withCheckedThrowingContinuation { continuation in
-            let delegate = ShareUploadProgressDelegate(onProgress: onProgress)
-            let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: .main)
-            let task = session.uploadTask(with: request, fromFile: file) { data, response, error in
-                session.finishTasksAndInvalidate()
-                self.activeUploadTask = nil
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                let responseData = data ?? Data()
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                    continuation.resume(throwing: ShareImportError(Self.message(from: responseData)))
-                    return
-                }
-                continuation.resume(returning: responseData)
-            }
-            activeUploadTask = task
-            task.resume()
-        }
-    }
-
     func checkedData(for request: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: request)
         try Task.checkCancellation()
@@ -61,19 +28,6 @@ extension ShareViewController {
         (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["detail"] as? String ?? "Daythread couldn’t import this recording. Open the app to retry."
     }
 
-}
-
-final class ShareUploadProgressDelegate: NSObject, URLSessionTaskDelegate {
-    private let onProgress: (Int64) -> Void
-
-    init(onProgress: @escaping (Int64) -> Void) {
-        self.onProgress = onProgress
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
-                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        onProgress(totalBytesSent)
-    }
 }
 
 struct ShareImportError: LocalizedError {

@@ -11,6 +11,9 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from .chat_context import generation_error
+from .chat_jobs import SCHEMA as CHAT_SCHEMA
+from .chat_jobs import ChatJobs, ChatParameters
 from .completion_events import generating_job, job_notice
 from .domain import EvidenceChanged, stamp, utc_now
 from .inference_errors import InferenceDisabled, InferenceUnavailable
@@ -115,11 +118,13 @@ class GenerationRequest(Parameters):
     id: UUID
     kind: Literal[
         "rewind", "recap", "translation", "summary_translation", "meeting_recap", "wearable_action",
+        "chat",
     ]
     parameters: dict
 
 
 PARAMETERS = {
+    "chat": ChatParameters,
     "rewind": RewindParameters, "recap": RecapParameters,
     "translation": TranslationParameters, "summary_translation": SummaryTranslationParameters,
     "meeting_recap": MeetingParameters,
@@ -130,12 +135,13 @@ RAW_REWIND = (
 )
 
 
-class GenerationJobs:
+class GenerationJobs(ChatJobs):
     def __init__(self, memory):
         self.memory = memory
         self.store = memory.store
+        self.chat_progress: dict[str, dict] = {}
         with self.store.connect() as db:
-            db.executescript(SCHEMA)
+            db.executescript(SCHEMA + CHAT_SCHEMA)
             columns = {row["name"] for row in db.execute("PRAGMA table_info(generation_jobs)")}
             if "retry_at" not in columns:
                 db.execute(
@@ -158,7 +164,7 @@ class GenerationJobs:
         return dict(row) | {
             "parameters": json.loads(row["parameters"]),
             "result": json.loads(row["result"]) if row["result"] else None,
-        }
+        } | self.chat_progress.get(job_id, {})
 
     def observation(self) -> dict:
         """Counts of generation tasks, separate from audio chunks awaiting STT."""
@@ -208,7 +214,6 @@ class GenerationJobs:
                 for progress in self.memory.background_progress.copy().values()
             ]
         return result | {"paused": paused} if not self.memory.settings.llm_enabled else result
-
     def enqueue(self, body: GenerationRequest) -> dict:
         try:
             params = PARAMETERS[body.kind].model_validate(body.parameters).model_dump(mode="json")
@@ -224,6 +229,8 @@ class GenerationJobs:
             existing = db.execute(
                 "SELECT * FROM generation_jobs WHERE id=?", (job_id,)
             ).fetchone()
+            if body.kind == "chat":
+                params = self.prepare_chat(params, db, job_id, existing, body.parameters)
             if existing:
                 previous = json.loads(existing["parameters"])
                 if body.kind == "recap" and not scoped(params):
@@ -258,9 +265,10 @@ class GenerationJobs:
                      int(body.kind == "recap" and scoped(params))),
                 )
         return self.get(job_id)
-
     async def execute(self, job: dict) -> dict:
         params, kind, memory = job["parameters"], job["kind"], self.memory
+        if kind == "chat":
+            return await self.execute_chat(job)
         if kind == "wearable_action":
             return await generate_wearable_action(memory, params, job["id"])
         if kind == "rewind":
@@ -299,7 +307,6 @@ class GenerationJobs:
             "meeting notes with decisions and action items", kind="meeting",
         )
         return result | {"meeting": meeting}
-
     def complete(self, job: dict, result: dict) -> None:
         sources = result.get("sources", [])
         if job["kind"] == "translation":
@@ -308,6 +315,8 @@ class GenerationJobs:
                         "transcript_version": translation.get("transcript_version")}]
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if job["kind"] == "chat":
+                return  # Chat saves the exchange and job result in one transaction.
             if job["kind"] == "recap" and scoped(job["parameters"]):
                 validate_result(self.memory, job["parameters"], result, db)
             if job["kind"] == "summary_translation":
@@ -334,7 +343,6 @@ class GenerationJobs:
                 "UPDATE generation_jobs SET state='completed',result=?,error=NULL WHERE id=?",
                 (json.dumps(result), job["id"]),
             )
-
     def notify_completed(self) -> None:
         notifications = getattr(self.memory, "notifications", None)
         if notifications is None:
@@ -349,7 +357,6 @@ class GenerationJobs:
                 self.notify_one(row["id"], notifications)
             except Exception as exc:
                 logger.warning("Completion notice will retry (%s)", type(exc).__name__)
-
     def notify_one(self, job_id: str, notifications) -> None:
         job = self.get(job_id)
         if job["state"] == "completed":
@@ -367,6 +374,8 @@ class GenerationJobs:
                 raise EvidenceChanged("Recorded evidence changed")
 
         target = {"job_id": job["id"], "kind": job["kind"]}
+        if job["kind"] == "chat":
+            target["session_id"] = job["parameters"]["session_id"]
         if job["kind"] == "wearable_action" and job["state"] == "completed":
             target["action"] = job["result"]["action"]
             if target["action"] == "answer":
@@ -378,7 +387,6 @@ class GenerationJobs:
         )
         with self.store.connect() as db:
             db.execute("UPDATE generation_jobs SET notified=1 WHERE id=?", (job["id"],))
-
     async def process_one(self) -> bool:
         policy = "" if self.memory.settings.llm_enabled else f" AND {RAW_REWIND}"
         with self.store.connect() as db:
@@ -414,17 +422,16 @@ class GenerationJobs:
             with self.store.connect() as db:
                 db.execute("UPDATE generation_jobs SET state='queued' WHERE id=?", (job["id"],))
             raise
-        except Exception:
+        except Exception as exc:
             # Provider responses can contain credentials or transcript text.
             with self.store.connect() as db:
                 db.execute(
                     "UPDATE generation_jobs SET state='failed',error=? WHERE id=?",
-                    ("Generation could not finish. Check home-core and try again.", job["id"]),
+                    (generation_error(exc), job["id"]),
                 )
         finally:
             generating_job.reset(token)
         return True
-
     async def run(self) -> None:
         while True:
             try:

@@ -39,6 +39,7 @@
     "src/web/src/ZoneLocationPicker.tsx::&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>": "Required map data attribution with a provider name and copyright link."
   },
   "ios": {
+    "com.daythread.share-import.": "Background URLSession identifier prefix; must remain untranslated.",
     "Daythread": "Product or language self-name",
     "Omi": "Product or language self-name",
     "English": "Product or language self-name",
@@ -57,6 +58,8 @@
     "EEEE d MMMM": "Date formatting template",
     "d MMM yyyy HHmm": "Date formatting template",
     "d MMM": "Date formatting template",
+    "d MMMM": "Date formatting template",
+    "src/ios/Sources/OmiCore/DiaryCalendar.swift:: yyyy": "Year suffix for a localized date formatting template.",
     "d MMM HHmm": "Date formatting template",
     "d MMM y": "Date formatting template",
     "EEEE d MMM": "Date formatting template",
@@ -93,6 +96,11 @@
     "src/ios/DaythreadApp/RecapTopicRow.swift::recap.topic.": "SwiftUI accessibility identifier prefix; not interface copy.",
     "src/ios/DaythreadApp/RecapTopicRow.swift::recap.originalPassages.": "SwiftUI accessibility identifier prefix; not interface copy.",
     "src/ios/Sources/OmiCore/RecapTranslationMapping.swift::^(\\s*(?:[-*+]|\\d+[.)])\\s+(?:\\[[ xX]\\]\\s+)?)(.*)$": "Regular expression validating canonical Markdown list structure; not interface copy.",
-    "src/ios/Sources/OmiCore/RecapTranslationMapping.swift::## Follow-ups": "Internal canonical heading used to retain original legacy action grouping; never rendered as interface copy."
+    "src/ios/Sources/OmiCore/RecapTranslationMapping.swift::## Follow-ups": "Internal canonical heading used to retain original legacy action grouping; never rendered as interface copy.",
+    "src/ios/DaythreadApp/ChatConversations.swift::chat.selection.": "Profile/archive-scoped UserDefaults storage key; not interface copy.",
+    "src/ios/DaythreadApp/ChatConversations.swift::chat.replies.": "Profile/archive-scoped UserDefaults storage key; not interface copy.",
+    "src/ios/DaythreadApp/ChatConversations.swift::Save chat request": "UIKit background execution task name for diagnostics; not interface copy.",
+    "src/ios/Sources/OmiCore/ChatHistoryPresentation.swift::new conversation": "Legacy generic server title used for matching and fallback; not interface copy.",
+    "src/ios/Sources/OmiCore/ChatHistoryPresentation.swift::new chat": "Legacy generic server title used for matching and fallback; not interface copy."
   }
 }

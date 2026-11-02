@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 
 public enum RecordingTimeReference: String, CaseIterable, Identifiable, Sendable {
-    case end, start
+    case start, end
     public var id: Self { self }
     public var title: String { self == .end ? AppLocalization.text("Recording ended") : AppLocalization.text("Recording started") }
 }
@@ -118,8 +118,8 @@ public struct VendorCatalog: Decodable, Sendable {
     public var fileUploadVendors: [VendorDefinition] { items.filter(\.supportsFileUpload) }
 }
 
-public struct RecordingUploadPlan: Decodable, Sendable {
-    public struct Part: Decodable, Sendable {
+public struct RecordingUploadPlan: Codable, Sendable {
+    public struct Part: Codable, Sendable {
         public let id: UUID
         public let digest: String
         public let uploaded: Bool

@@ -11,13 +11,14 @@ public struct CompletionNotification: Codable, Equatable, Identifiable, Sendable
 
     public struct Target: Codable, Equatable, Sendable {
         public let jobID: UUID?
+        public let sessionID: UUID?
         public let day: String?
         public let weekStart: String?
         public let versionID: String?
         public let action: String?
         public let questionCount: Int?
         enum CodingKeys: String, CodingKey {
-            case jobID = "job_id", day, weekStart = "week_start", versionID = "version_id", action, questionCount = "question_count"
+            case jobID = "job_id", sessionID = "session_id", day, weekStart = "week_start", versionID = "version_id", action, questionCount = "question_count"
         }
     }
     enum CodingKeys: String, CodingKey {
@@ -51,6 +52,8 @@ public struct CompletionInbox: Codable, Sendable {
 
     public mutating func advanceCursor(to value: Int) { cursor = max(cursor, value) }
     public mutating func clearPreviews() { items = [] }
+
+    public mutating func removeChat(_ id: UUID) { items.removeAll { $0.target.sessionID == id } }
 
     public static func acceptsPush(profile: String, installation: String, currentProfile: String, currentInstallation: String) -> Bool {
         !currentProfile.isEmpty && !currentInstallation.isEmpty && profile == currentProfile && installation == currentInstallation

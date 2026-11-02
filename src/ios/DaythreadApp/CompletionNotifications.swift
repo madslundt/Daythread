@@ -178,6 +178,12 @@ final class CompletionNotifications {
     }
 
     func open(_ item: CompletionNotification) { banner = nil; opened = item }
+    func removeChat(_ id: UUID) {
+        inbox.removeChat(id)
+        if banner?.target.sessionID == id { banner = nil }
+        if opened?.target.sessionID == id { opened = nil }
+        save()
+    }
     func clearPreviews() { inbox.clearPreviews(); banner = nil; opened = nil; rehydrate = true; previewRevision = UUID() }
 
     private func foregroundLoop(generation current: UUID) async {

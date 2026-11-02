@@ -5,7 +5,10 @@ struct DayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     /// Nil follows the current server day, including midnight while the app is open.
-    @State private var selectedDate: Date?
+    @State private var localSelectedDate: Date?
+    private let selection: Binding<Date?>?
+    private var selectedDateBinding: Binding<Date?> { selection ?? $localSelectedDate }
+    private var selectedDate: Date? { selectedDateBinding.wrappedValue }
     private enum Destination: Hashable { case rewind, chat(String), questions(String) }
     @State private var destination: Destination?
     private enum Sheet: Identifiable {
@@ -51,8 +54,9 @@ struct DayView: View {
     @State private var preparedTopicRequestID: UUID?
     private static let topicListAnchor = "day.recap.topics"
 
-    init(date: Date? = nil, filters: DayFilterScope = .init(), topicTitle: String? = nil) {
-        _selectedDate = State(initialValue: date)
+    init(date: Date? = nil, filters: DayFilterScope = .init(), topicTitle: String? = nil, selection: Binding<Date?>? = nil) {
+        _localSelectedDate = State(initialValue: date)
+        self.selection = selection
         _tagID = State(initialValue: filters.tagID)
         _zoneID = State(initialValue: filters.zoneID)
         _requestedTopic = State(initialValue: topicTitle.map { RecapTopicRequest(title: $0) })
@@ -81,7 +85,7 @@ struct DayView: View {
     private func dayContent(scroll: ScrollViewProxy) -> some View {
         List {
             Section {
-                DayCalendarPicker(selectedDate: $selectedDate)
+                DayCalendarPicker(selectedDate: selectedDateBinding)
                 if diary.dayKey(day) == diary.dayKey(model.now) { CaptureGlance() }
                 Button { destination = .questions(dayKey) } label: {
                     Label(L10n.text("Questions"), systemImage: "questionmark.bubble")
@@ -158,7 +162,7 @@ struct DayView: View {
             }
         }
         .listStyle(.insetGrouped).omiScreen()
-        .navigationTitle(selectedDate == nil ? L10n.text("Today") : L10n.text("Your day"))
+        .navigationTitle(diary.dayTitle(day, relativeTo: model.now, template: "d MMMM"))
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

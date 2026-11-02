@@ -82,6 +82,7 @@ class Voices(VoiceStore):
     async def remember(
         self, kind: Kind, key: str, speaker_id: str, version: str,
         profile_id: str | None = None, name: str | None = None, confirm: bool = False,
+        *, is_self: bool = False, voice_revision: str | None = None,
     ) -> dict:
         if not self.memory.settings.voice_recognition_enabled:
             raise HTTPException(409, "Enable Remember speakers in server settings first")
@@ -94,6 +95,8 @@ class Voices(VoiceStore):
                     db, kind, key, speaker_id, version, profile_id, confirm,
                 )
                 revision = self.revision(db)
+                if is_self and voice_revision != revision:
+                    raise HTTPException(409, "Saved voices changed; reload and retry")
                 expected_model = None
                 if confirm:
                     row = db.execute(
@@ -154,6 +157,10 @@ class Voices(VoiceStore):
                     db, current, current_payload, speaker_id, profile_id, name, model, voice,
                     source_ids,
                 )
+                if is_self:
+                    learned = db.execute("SELECT profile_id FROM voice_examples WHERE id=?",
+                                         (example_id,)).fetchone()
+                    self.save_self(db, learned["profile_id"])
                 new_version = str(uuid4())
                 db.execute("UPDATE speaker_scopes SET version=?,payload=? WHERE scope_key=?", (
                     new_version, json.dumps(current_payload), current["key"],

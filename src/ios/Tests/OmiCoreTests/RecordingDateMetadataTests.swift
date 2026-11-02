@@ -106,6 +106,81 @@ final class RecordingDateMetadataTests: XCTestCase {
         XCTAssertEqual(result?.source, "Embedded creation date")
     }
 
+    func testFilenameTimestampDefaultsBeforeFileModificationWhenMetadataIsMissing() async throws {
+        let modified = RecordingImport.date("2026-10-23T10:00:00Z")!
+        for name in ["Meeting_2026-10-20_09-12-34.wav", "20261020_091234.wav",
+                     "Recording 2026-10-20 09:12:34.wav", "2026-10-20T09:12:34+02:00.wav"] {
+            let suggestion = try await filenameSuggestion(name, modifiedAt: modified)
+            let expected = name.contains("+02:00") ? "2026-10-20T07:12:34Z" : "2026-10-20T09:12:34Z"
+            XCTAssertEqual(suggestion?.date, RecordingImport.date(expected), name)
+            XCTAssertEqual(suggestion?.reference, .end, name)
+            XCTAssertEqual(suggestion?.source, "Filename date and time", name)
+            XCTAssertEqual(suggestion?.needsConfirmation, true, name)
+        }
+    }
+
+    func testFilenameClockWithoutTimezoneUsesLocalTimezone() async throws {
+        let suggestion = try await filenameSuggestion("2026-10-20_09-12.wav",
+            timeZone: TimeZone(identifier: "Europe/Copenhagen")!)
+        XCTAssertEqual(suggestion?.date, RecordingImport.date("2026-10-20T07:12:00Z"))
+        XCTAssertEqual(suggestion?.needsConfirmation, true)
+    }
+
+    func testStagedFilenameKeepsYearlessDateAndMissingFilesystemClockStaysReviewable() async throws {
+        let prefix = UUID().uuidString + "__"
+        let modified = RecordingImport.date("2026-10-30T12:32:11Z")!
+        let staged = try await filenameSuggestion(prefix + "10-29_Weekly_Meeting.wav", modifiedAt: modified)
+        XCTAssertEqual(staged?.date, RecordingImport.date("2026-10-29T12:32:11Z"))
+        let withoutModified = try await filenameSuggestion("2026-10-29_Weekly_Meeting.wav")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let guessed = try XCTUnwrap(withoutModified)
+        XCTAssertEqual(calendar.dateComponents([.hour, .minute, .second], from: guessed.date),
+                       calendar.dateComponents([.hour, .minute, .second], from: now))
+        XCTAssertEqual(guessed.source, "Filename date (time needs review)")
+        XCTAssertTrue(guessed.needsConfirmation)
+    }
+
+    func testDateOnlyFilenameRetainsFallbackClockAndDisclosesMissingTime() async throws {
+        let modified = RecordingImport.date("2026-10-30T12:32:11Z")!
+        for name in ["2026-10-29_Weekly_Meeting.wav", "10-29_Weekly_Meeting.wav"] {
+            let suggestion = try await filenameSuggestion(name, modifiedAt: modified)
+            XCTAssertEqual(suggestion?.date, RecordingImport.date("2026-10-29T12:32:11Z"), name)
+            XCTAssertEqual(suggestion?.source, "Filename date (time needs review)", name)
+            XCTAssertEqual(suggestion?.needsConfirmation, true, name)
+        }
+        let newYear = RecordingImport.date("2026-01-02T12:32:11Z")!
+        let previousYear = try await filenameSuggestion("12-31_Meeting.wav", modifiedAt: newYear)
+        XCTAssertEqual(previousYear?.date, RecordingImport.date("2025-12-31T12:32:11Z"))
+    }
+
+    func testInvalidAmbiguousAndUnrelatedFilenameNumbersKeepFilesystemFallback() async throws {
+        let modified = RecordingImport.date("2026-10-30T12:32:11Z")!
+        for name in ["2026-02-30_10-30-00.wav", "2030-10-20_10-30-00.wav", "2026-10-20_25-12-34.wav",
+                     "2026-10-20_to_2026-10-21.wav", "Meeting_03-04-26.wav", "Meeting_123456789012345.wav"] {
+            let suggestion = try await filenameSuggestion(name, modifiedAt: modified)
+            XCTAssertEqual(suggestion?.date, modified, name)
+            XCTAssertEqual(suggestion?.source, "File modification date", name)
+        }
+    }
+
+    func testEmbeddedTimestampStillWinsOverFilenameTimestamp() async throws {
+        let info = Data("INFO".utf8) + chunk("ICRD", Data("2026-10-20T09:12:34Z\0".utf8))
+        let suggestion = try await filenameSuggestion("2026-10-21_10-30-00.wav", chunks: [("LIST", info)])
+        XCTAssertEqual(suggestion?.date, RecordingImport.date("2026-10-20T09:12:34Z"))
+        XCTAssertEqual(suggestion?.source, "WAV creation date")
+    }
+
+    private func filenameSuggestion(_ name: String, modifiedAt: Date? = nil, timeZone: TimeZone? = nil,
+                                    chunks: [(String, Data)] = []) async throws -> RecordingDateSuggestion? {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent(name)
+        try wav(chunks: chunks).write(to: url)
+        return await RecordingImport.dateSuggestion(in: url, modifiedAt: modifiedAt, now: now, timeZone: timeZone ?? utc)
+    }
+
     private func item(_ identifier: String, _ value: String) -> AVMetadataItem {
         let item = AVMutableMetadataItem()
         item.identifier = AVMetadataIdentifier(rawValue: identifier)

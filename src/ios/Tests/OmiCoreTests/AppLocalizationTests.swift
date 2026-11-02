@@ -20,6 +20,20 @@ final class AppLocalizationTests: XCTestCase {
         }
     }
 
+    func testDayTitleTranslationsExistInEverySupportedLanguage() throws {
+        let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("DaythreadApp")
+        let expected = ["en": ["Today", "Yesterday"], "da": ["I dag", "I går"],
+                        "de": ["Heute", "Gestern"], "es": ["Hoy", "Ayer"],
+                        "fr": ["Aujourd’hui", "Hier"], "nb": ["I dag", "I går"], "sv": ["Idag", "Igår"]]
+        for language in AppLocalization.languages {
+            let data = try Data(contentsOf: app.appendingPathComponent("\(language).lproj/Localizable.strings"))
+            let translations = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String])
+            XCTAssertEqual(AppLocalization.resolve("Today", translations: translations), expected[language]?[0], language)
+            XCTAssertEqual(AppLocalization.resolve("Yesterday", translations: translations), expected[language]?[1], language)
+        }
+    }
+
     func testInterpolatedMessagesHaveStableKeysAndPreserveValues() {
         let message: AppLocalization.Message = "Imported \(2) recordings from \("Today")"
         XCTAssertEqual(message.key, "Imported {value0} recordings from {value1}")

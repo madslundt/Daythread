@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from .chat_context_store import context_metadata
+from .chat_jobs import ensure_chat_available
 from .completeness import audio_availability
 from .conversation_tags import decorate_tags, tag_filter
 from .decision_export import diary_markdown, export_days
@@ -370,6 +372,7 @@ class ArchiveStore:
                     )
                 message["sources"] = projected
         return dict(row) | {
+            "context": context_metadata(self, key),
             "messages": [
                 message
                 | {
@@ -406,6 +409,7 @@ class ArchiveStore:
             db.execute("BEGIN IMMEDIATE")
             if not db.execute("SELECT id FROM chat_sessions WHERE id=?", (session_id,)).fetchone():
                 raise EvidenceChanged("Chat was removed while the answer was generated")
+            ensure_chat_available(db, session_id)
             self.verify_sources(db, sources)
             for role, content, message_sources in (
                 ("user", question, []),

@@ -93,6 +93,37 @@ class VoiceStore:
         return db.execute("SELECT revision FROM voice_meta WHERE singleton=1").fetchone()[0]
 
     @staticmethod
+    def self_profile_id(db) -> str | None:
+        row = db.execute("SELECT profile_id FROM self_voice WHERE singleton=1").fetchone()
+        return row["profile_id"] if row else None
+
+    def save_self(self, db, profile_id: str | None) -> None:
+        if profile_id and not db.execute("SELECT 1 FROM voice_profiles WHERE id=?",
+                                         (profile_id,)).fetchone():
+            raise HTTPException(404, "Saved voice not found")
+        previous = self.self_profile_id(db)
+        if previous == profile_id:
+            return
+        db.execute("DELETE FROM self_voice WHERE singleton=1")
+        if previous:
+            db.execute("INSERT INTO voice_events VALUES(?,?,?,?,?)", (
+                str(uuid4()), previous, None, "self_cleared", stamp(utc_now()),
+            ))
+        if profile_id:
+            db.execute("INSERT INTO self_voice VALUES(1,?)", (profile_id,))
+            db.execute("INSERT INTO voice_events VALUES(?,?,?,?,?)", (
+                str(uuid4()), profile_id, None, "self_designated", stamp(utc_now()),
+            ))
+
+    def designate_self(self, profile_id: str | None, revision: str) -> dict:
+        with self.memory.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if self.revision(db) != revision:
+                raise HTTPException(409, "Saved voices changed; reload and retry")
+            self.save_self(db, profile_id)
+            return self.directory(db)
+
+    @staticmethod
     def gallery(db) -> list[dict]:
         from .blob_storage import audio_is_present
 
@@ -180,6 +211,7 @@ class VoiceStore:
             for profile, count in independent_conversation_counts(group).items():
                 conversation_counts[profile] = max(conversation_counts.get(profile, 0), count)
         profiles = []
+        self_profile = self.self_profile_id(db)
         for row in db.execute("SELECT * FROM voice_profiles ORDER BY created_at,id"):
             examples = []
             for item in db.execute(
@@ -191,6 +223,7 @@ class VoiceStore:
                                  "speaker_id": item["speaker_id"], "seconds": item["seconds"],
                                  "created_at": item["created_at"]})
             profiles.append({"id": row["id"], "name": row["name"], "examples": examples,
+                             "is_self": row["id"] == self_profile,
                              "example_count": len(examples),
                              "conversation_count": conversation_counts.get(row["id"], 0)})
         return {"revision": self.revision(db), "profiles": profiles,
@@ -241,9 +274,11 @@ class VoiceStore:
         if gallery:
             models[json.dumps(gallery[0]["model"], sort_keys=True)] = (recognition, report)
         names = {r["id"]: r["name"] for r in db.execute("SELECT * FROM voice_profiles")}
+        self_profile = self.self_profile_id(db)
         for speaker in payload["speakers"]:
             speaker.pop("voice_key", None)
-            speaker.update(voice_profile_id=None, remembered_example_id=None, suggestion=None)
+            speaker.update(voice_profile_id=None, remembered_example_id=None, suggestion=None,
+                           is_self=False)
             if not ready:
                 continue
             learned = db.execute(
@@ -252,7 +287,8 @@ class VoiceStore:
             ).fetchone()
             if learned:
                 speaker.update(voice_profile_id=learned["profile_id"],
-                               remembered_example_id=learned["id"])
+                               remembered_example_id=learned["id"],
+                               is_self=learned["profile_id"] == self_profile)
             if speaker["name"] is not None or learned or recognition["state"] != "ready":
                 continue
             vector = db.execute(

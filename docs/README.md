@@ -216,6 +216,24 @@ one by name. Identical names do not merge identities. Plain conversation names a
 suggestions never create training examples. You can also enroll previously named
 conversations while their original audio is retained.
 
+To teach Daythread your own voice, open a recording or meeting's **Speakers** panel
+on web or iPhone. Detect speakers, listen to your turns, then open **Remember speaker
+for future conversations** and select **This is my voice** before confirming. Choose
+an existing voice or enter a name for your first profile. Later examples reuse your
+own profile. **My voice** shows your saved examples and independent conversation
+count; collect at least ten seconds of clear speech in each of two separate conversations.
+You can also choose **Use as my voice** on an existing saved voice. Each archive has
+one own-voice identity. **Clear my voice** removes that designation while preserving
+saved examples; **Forget voice** removes the profile and its examples. Names alone
+never establish which voice is yours. This establishes identity for future personal
+analysis; it does not generate a personal analysis or bypass the evaluation below.
+
+`PATCH /v1/voice-profiles/self` accepts `{ "revision": "<directory revision>",
+"profile_id": "<saved voice UUID>" }`; use `null` to clear the designation. The
+directory and confirmed speaker responses expose `is_self`. Enrollment can atomically
+designate a voice with `is_self: true` and `voice_revision` alongside the existing
+speaker `version` and either `name` or `profile_id`. Stale revisions are rejected.
+
 Enrollment rechecks up to 60 seconds of that speaker's current original turns with the
 local model. It requires at least ten seconds of usable clean speech, excludes detected
 overlap, and rejects distorted or mixed samples. Recognition needs confirmed examples

@@ -308,3 +308,159 @@ def test_model_upgrades_leave_voice_management_available_without_combining_examp
     assert voices["recognition"]["state"] == "unvalidated"
     assert client.delete(f"/v1/voice-profiles/{profile}",
                          params={"revision": voices["revision"]}).status_code == 200
+
+
+def set_self(client, profile_id, revision=None, **kwargs):
+    return client.patch("/v1/voice-profiles/self", json={
+        "profile_id": profile_id, "revision": revision or directory(client)["revision"],
+    }, **kwargs)
+
+
+def test_self_enrollment_is_explicit_and_accumulates_without_guessing_from_names(client):
+    _, path, speaker, data = scope(client)
+    assert data["speakers"][0]["is_self"] is False
+    response = remember(client, path, speaker, data, name="Me", is_self=True,
+                        voice_revision=directory(client)["revision"])
+    assert response.status_code == 200, response.text
+    own = response.json()["speakers"][0]
+    assert own["is_self"] is True
+    profile_id = own["voice_profile_id"]
+    assert directory(client)["profiles"][0]["is_self"] is True
+    _, second, other, data = scope(client)
+    assert data["speakers"][0]["is_self"] is False
+    saved = remember(client, second, other, data, profile_id=profile_id)
+    assert saved.json()["speakers"][0]["is_self"] is True
+    assert directory(client)["profiles"][0]["conversation_count"] == 2
+    _, third, another, data = scope(client)
+    saved = remember(client, third, another, data, name="Me")
+    assert saved.json()["speakers"][0]["is_self"] is False
+    assert [p["is_self"] for p in directory(client)["profiles"]] == [True, False]
+
+
+def test_designation_switch_clear_and_reload_preserve_examples_and_names(client):
+    scopes, ids = [], []
+    for name in ("Mads", "Alice"):
+        _, path, speaker, data = scope(client)
+        saved = remember(client, path, speaker, data, name=name).json()
+        scopes.append(path)
+        ids.append(saved["speakers"][0]["voice_profile_id"])
+    before = directory(client)
+    assert [p["is_self"] for p in before["profiles"]] == [False, False]
+    designated = set_self(client, ids[0])
+    assert designated.status_code == 200, designated.text
+    assert designated.json()["revision"] != before["revision"]
+    assert client.get(scopes[0]).json()["speakers"][0]["is_self"] is True
+    # Reopening an existing archive preserves the designation and installs no duplicate rows.
+    store = Store(client.app.state.memory.store.root)
+    with store.connect() as db:
+        assert db.execute("SELECT profile_id FROM self_voice").fetchone()[0] == ids[0]
+    assert set_self(client, ids[1], before["revision"]).status_code == 409
+    switched = set_self(client, ids[1])
+    assert switched.status_code == 200, switched.text
+    assert [p["is_self"] for p in switched.json()["profiles"]] == [False, True]
+    assert client.get(scopes[0]).json()["speakers"][0]["is_self"] is False
+    assert client.get(scopes[1]).json()["speakers"][0]["is_self"] is True
+    cleared = set_self(client, None)
+    assert cleared.status_code == 200, cleared.text
+    assert [p["is_self"] for p in cleared.json()["profiles"]] == [False, False]
+    assert [p["examples"] for p in cleared.json()["profiles"]] == [
+        p["examples"] for p in before["profiles"]
+    ]
+    assert client.get(scopes[1]).json()["speakers"][0]["name"] == "Alice"
+
+
+def test_self_enrollment_requires_directory_revision_and_rejects_stale_requests(client):
+    _, path, speaker, data = scope(client)
+    for identity in ({"is_self": True}, {"is_self": True, "voice_revision": ""},
+                     {"is_self": "true", "voice_revision": "version"}):
+        assert remember(client, path, speaker, data, name="Mads", **identity).status_code == 422
+    assert remember(client, path, speaker, data, name="Mads", is_self=True,
+                    voice_revision="old").status_code == 409
+    assert directory(client)["profiles"] == []
+    assert set_self(client, str(uuid4())).status_code == 404
+    for body in ({"revision": directory(client)["revision"]},
+                 {"profile_id": "invalid", "revision": "old"}):
+        assert client.patch("/v1/voice-profiles/self", json=body).status_code == 422
+
+
+def test_self_management_works_when_disabled_and_forgetting_clears_designation(client):
+    _, path, speaker, data = scope(client)
+    saved = remember(client, path, speaker, data, name="Mads").json()
+    profile_id = saved["speakers"][0]["voice_profile_id"]
+    client.app.state.memory.settings.voice_recognition_enabled = False
+    assert set_self(client, profile_id).status_code == 200
+    assert client.get(path).json()["speakers"][0]["is_self"] is True
+    voices = directory(client)
+    removed = client.delete(f"/v1/voice-profiles/{profile_id}",
+                            params={"revision": voices["revision"]})
+    assert removed.status_code == 200
+    with client.app.state.memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM self_voice").fetchone()[0] == 0
+    assert client.get(path).json()["speakers"][0]["is_self"] is False
+
+
+def test_self_designation_is_archive_scoped_and_lost_evidence_is_not_self(client):
+    key, path, speaker, data = scope(client)
+    saved = remember(client, path, speaker, data, name="Mads", is_self=True,
+                     voice_revision=directory(client)["revision"])
+    profile_id = saved.json()["speakers"][0]["voice_profile_id"]
+    other = client.post("/v1/profiles", json={"name": "Other archive"}).json()["id"]
+    headers = {"x-omi-profile": other}
+    revision = client.get("/v1/voice-profiles", headers=headers).json()["revision"]
+    assert set_self(client, profile_id, revision, headers=headers).status_code == 404
+    assert directory(client)["profiles"][0]["is_self"] is True
+    client.app.state.memory.store.correct_transcript(key, "Changed")
+    assert client.get(path).json()["speakers"][0]["is_self"] is False
+    assert directory(client)["profiles"][0]["example_count"] == 0
+
+
+def test_inflight_self_enrollment_cannot_overwrite_new_designation(client):
+    _, path, speaker, data = scope(client)
+    saved = remember(client, path, speaker, data, name="Existing").json()
+    existing = saved["speakers"][0]["voice_profile_id"]
+    _, other, another, data = scope(client)
+    revision = directory(client)["revision"]
+
+    async def detect(audio, num_speakers=None):
+        client.app.state.memory.voices.designate_self(existing, revision)
+        return result()
+
+    client.app.state.memory.speakers.detect_turns = detect
+    rejected = remember(client, other, another, data, name="New", is_self=True,
+                        voice_revision=revision)
+    assert rejected.status_code == 409, rejected.text
+    profiles = directory(client)["profiles"]
+    assert len(profiles) == 1
+    assert profiles[0]["is_self"] is True
+    assert profiles[0]["example_count"] == 1
+
+
+def test_self_enrollment_switches_only_after_sample_quality_passes(client):
+    _, path, speaker, data = scope(client)
+    first = remember(client, path, speaker, data, name="First", is_self=True,
+                     voice_revision=directory(client)["revision"])
+    assert first.status_code == 200, first.text
+    _, other, another, data = scope(client)
+    revision = directory(client)["revision"]
+
+    async def poor(audio, num_speakers=None):
+        return result(seconds=9)
+
+    client.app.state.memory.speakers.detect_turns = poor
+    rejected = remember(client, other, another, data, name="Second", is_self=True,
+                        voice_revision=revision)
+    assert rejected.status_code == 409
+    assert directory(client)["revision"] == revision
+    assert len(directory(client)["profiles"]) == 1
+    assert directory(client)["profiles"][0]["is_self"] is True
+
+    async def clear(audio, num_speakers=None):
+        return result()
+
+    client.app.state.memory.speakers.detect_turns = clear
+    saved = remember(client, other, another, data, name="Second", is_self=True,
+                     voice_revision=revision)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["speakers"][0]["is_self"] is True
+    assert client.get(path).json()["speakers"][0]["is_self"] is False
+    assert [p["is_self"] for p in directory(client)["profiles"]] == [False, True]

@@ -45,38 +45,47 @@ struct ChatView: View {
     @Environment(AppModel.self) private var model
     let initialScope: ChatScope?
     let initialQuestion: String
-    @State private var scope: ChatScope
-    @State private var question = ""
-    @State private var sessions: [JSONValue] = []
-    @State private var sessionID: String?
-    @State private var messages: [JSONValue] = []
-    @State private var loading = false
-    @State private var error: String?
-    @State private var cached = false
+    let initialSessionID: String?
     @State private var sheet: ChatSheet?
-    @State private var loadedCacheKey: String?
     @State private var followsLatest = true
-    @State private var retryAction: ChatRetry = .load
+    @State private var openedInitialSession = false
+    @State private var preparedQuestion = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private enum ChatSheet: String, Identifiable { case history, scope; var id: String { rawValue } }
-    private enum ChatRetry { case load, select(String), send }
-    @State private var requestID = UUID()
-    @State private var sendTask: Task<Void, Never>?
-    @State private var streamingText = ""
-    @State private var streamStage = "searching"
-    @State private var pendingQuestion = ""
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var focused: Bool
+    private enum ChatSheet: String, Identifiable { case history, scope; var id: String { rawValue } }
 
-    init(initialScope: ChatScope? = nil, initialQuestion: String = "") {
+    init(initialScope: ChatScope? = nil, initialQuestion: String = "", initialSessionID: String? = nil) {
         self.initialScope = initialScope
         self.initialQuestion = String(initialQuestion.prefix(2000))
-        _scope = State(initialValue: initialScope ?? .all)
-        _question = State(initialValue: String(initialQuestion.prefix(2000)))
+        self.initialSessionID = initialSessionID
     }
 
     private var cacheKey: String { model.archiveIdentity + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }
+    private var chat: ChatConversationModel {
+        model.chatConversations.workspace(key: cacheKey, scope: initialScope ?? .all, question: initialQuestion)
+    }
+    private var scope: ChatScope { chat.scope }
+    private var question: String { chat.question }
+    private var sessions: [JSONValue] { chat.sessions }
+    private var sessionID: String? { chat.sessionID }
+    private var messages: [JSONValue] { chat.messages }
+    private var loading: Bool { chat.loading }
+    private var error: String? { chat.displayedError }
+    private var cached: Bool { chat.cached }
+    private var pendingQuestion: String { chat.pendingQuestion }
+    private var streamingText: String { chat.streamingText }
+    private var streamStage: String { chat.streamStage }
     private var trimmedQuestion: String { question.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canSend: Bool { !loading && sendTask == nil && scope.isReady && !trimmedQuestion.isEmpty && trimmedQuestion.unicodeScalars.count <= 2000 }
+    private var canSend: Bool { !loading && !chat.generating && scope.isReady && !trimmedQuestion.isEmpty && trimmedQuestion.unicodeScalars.count <= 2000 }
+    private var replyProgress: String {
+        switch streamStage {
+        case "compacting": L10n.text("Compacting conversation…")
+        case "expanding": L10n.text("Trying alternate search wording…")
+        case "generating": L10n.text("Writing your answer…")
+        default: L10n.text("Reading recorded evidence…")
+        }
+    }
     private var diary: DiaryCalendar { DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current) }
     private var meetings: [JSONValue] {
         model.serverTimeline["meetings"].array.filter { !$0["id"].text.isEmpty }
@@ -102,22 +111,33 @@ struct ChatView: View {
                             Text(L10n.text("Saved conversation on this iPhone; source availability and corrections may have changed"))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        if messages.isEmpty && pendingQuestion.isEmpty && !loading {
-                            ChatWelcomeView { question = $0; focused = true }
+                        if chat.context["compaction_count"].integer > 0 {
+                            Label(L10n.text("Earlier messages summarized. Your full chat is kept."), systemImage: "text.alignleft")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if messages.isEmpty && pendingQuestion.isEmpty && !loading && !chat.generating {
+                            ChatWelcomeView { chat.question = $0; focused = true }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element["id"].text) { _, message in
                             ChatMessageView(message: message)
                         }
                         if !pendingQuestion.isEmpty {
                             ChatQuestionBubble(text: pendingQuestion)
+                        }
+                        if chat.generating {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Daythread").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                                if !streamingText.isEmpty {
-                                    Text(streamingText).textSelection(.enabled)
-                                    Text(L10n.text("Draft answer · sources are checked before saving.")).font(.caption).foregroundStyle(.secondary)
+                                HStack {
+                                    Text("Daythread").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                                    Spacer()
+                                    if !streamingText.isEmpty { ChatMessageTextActions(content: streamingText) }
                                 }
-                                ProgressView(streamStage == "expanding" ? L10n.text("Trying alternate search wording…") : streamStage == "generating" ? L10n.text("Writing your answer…") : L10n.text("Reading recorded evidence…"))
+                                if !streamingText.isEmpty {
+                                    ChatMarkdownText(content: streamingText)
+                                }
+                                ProgressView(replyProgress)
                                     .font(.callout).tint(Theme.accent)
+                                Text(L10n.text("You can leave this chat. Your reply will be saved."))
+                                    .font(.caption).foregroundStyle(.secondary)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         } else if loading {
                             ProgressView(L10n.text("Loading conversation…")).frame(maxWidth: .infinity)
@@ -149,7 +169,7 @@ struct ChatView: View {
                 .onChange(of: viewport.size.height) { _, _ in if followsLatest { proxy.scrollTo("chat.bottom", anchor: .bottom) } }
             }
         }
-        .background(Theme.canvas).navigationTitle(L10n.text("Chat")).navigationBarTitleDisplayMode(.inline)
+        .background(Theme.canvas).navigationTitle(chat.title).navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top, spacing: 0) {
             Button { focused = false; sheet = .scope } label: {
                 HStack(spacing: 10) {
@@ -165,9 +185,9 @@ struct ChatView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { focused = false; sheet = .history } label: { Image(systemName: "clock.arrow.circlepath") }
-                    .accessibilityLabel(L10n.text("Conversation history")).accessibilityIdentifier("chat.history").disabled(loading)
+                    .accessibilityLabel(L10n.text("Conversation history")).accessibilityIdentifier("chat.history")
                 Button { newConversation(scope, clearDraft: true); focused = true } label: { Image(systemName: "square.and.pencil") }
-                    .accessibilityLabel(L10n.text("New conversation")).accessibilityIdentifier("chat.new").disabled(loading)
+                    .accessibilityLabel(L10n.text("New conversation")).accessibilityIdentifier("chat.new")
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -177,10 +197,11 @@ struct ChatView: View {
         .sheet(item: $sheet) { destination in
             switch destination {
             case .history:
-                ChatHistoryView(sessions: sessions, selectedID: sessionID, loading: loading, error: error, refresh: { await load(restore: false) }) { id in
-                    sheet = nil
-                    Task { await select(id) }
-                }
+                ChatHistoryView(sessions: sessions, selectedID: sessionID, loading: loading, error: error,
+                    refresh: { await chat.refresh() }, select: { id in
+                        sheet = nil; followsLatest = true
+                        Task { await chat.select(id) }
+                    }, remove: { id in await chat.remove(id) })
             case .scope:
                 NavigationStack {
                     List { scopeControls }.omiScreen().navigationTitle(L10n.text("Search within"))
@@ -189,14 +210,23 @@ struct ChatView: View {
                 }.presentationDragIndicator(.visible)
             }
         }
-        .task(id: cacheKey + model.archiveRevision) {
-            cancelRequest()
-            await load(restore: loadedCacheKey != cacheKey)
+        .task(id: cacheKey + model.archiveRevision + String(scenePhase == .active)) {
+            guard scenePhase == .active else { return }
+            do {
+                try chat.connect(client: model.client())
+                if !initialQuestion.isEmpty, !preparedQuestion {
+                    preparedQuestion = true
+                    chat.newConversation(initialScope ?? .all, clearDraft: true)
+                    chat.question = initialQuestion
+                }
+                if let initialSessionID, !openedInitialSession {
+                    openedInitialSession = true
+                    await chat.select(initialSessionID)
+                } else { await chat.refresh() }
+            } catch { chat.connectionFailed(error) }
+            if !initialQuestion.isEmpty { focused = true }
         }
-        .task(id: question) {
-            do { try await Task.sleep(for: .milliseconds(350)); save() } catch { }
-        }
-        .onDisappear { save(); cancelRequest() }
+        .onDisappear { chat.save() }
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -209,7 +239,7 @@ struct ChatView: View {
                 HStack(alignment: .top) {
                     ErrorNote(message: error)
                     Spacer(minLength: 8)
-                    Button(L10n.text("Retry")) { retry() }.disabled(loading || sendTask != nil)
+                    Button(L10n.text("Retry")) { Task { await chat.retry() } }.disabled(loading)
                 }.font(.callout).accessibilityIdentifier("chat.error")
             }
             if trimmedQuestion.unicodeScalars.count > 1800 {
@@ -217,43 +247,33 @@ struct ChatView: View {
                     .font(.caption).foregroundStyle(trimmedQuestion.unicodeScalars.count > 2000 ? Color.red : .secondary)
             }
             HStack(alignment: .bottom, spacing: 10) {
-                TextField(L10n.text("Ask about your recordings"), text: $question, axis: .vertical)
+                TextField(L10n.text("Ask about your recordings"), text: Binding(get: { question }, set: { chat.question = $0 }), axis: .vertical)
                     .lineLimit(1...5).focused($focused).padding(.horizontal, 14).padding(.vertical, 12)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22))
                     .overlay { RoundedRectangle(cornerRadius: 22).stroke(Theme.accent.opacity(focused ? 0.6 : 0.18), lineWidth: 1) }
                     .accessibilityLabel(L10n.text("Question about your recordings")).accessibilityIdentifier("chat.question")
-                    .disabled(sendTask != nil)
+                    .disabled(chat.generating)
                 Button {
-                    if sendTask != nil { cancelRequest(); focused = true }
-                    else { startSend() }
+                    guard canSend else { return }
+                    focused = false; followsLatest = true; chat.send()
+                    Task {
+                        let notifications = CompletionNotifications.shared
+                        await notifications.refreshAuthorization()
+                        if notifications.permission == .notDetermined { await notifications.requestPermission() }
+                    }
                 } label: {
-                    Image(systemName: sendTask != nil ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold))
-                        .frame(width: 48, height: 48)
-                        .foregroundStyle(canSend || sendTask != nil ? Theme.onAccent : Color.secondary)
-                        .background(canSend || sendTask != nil ? Theme.accent : Color.secondary.opacity(0.12), in: Circle())
-                }.buttonStyle(.plain).disabled(sendTask == nil && !canSend)
-                    .accessibilityLabel(sendTask != nil ? L10n.text("Stop") : L10n.text("Send question"))
-                    .accessibilityIdentifier(sendTask != nil ? "chat.stop" : "chat.send")
+                    Group {
+                        if chat.generating { ProgressView().tint(.secondary) }
+                        else { Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)) }
+                    }
+                    .frame(width: 48, height: 48)
+                    .foregroundStyle(canSend ? Theme.onAccent : Color.secondary)
+                    .background(canSend ? Theme.accent : Color.secondary.opacity(0.12), in: Circle())
+                }.buttonStyle(.plain).disabled(!canSend)
+                    .accessibilityLabel(L10n.text("Send question"))
+                    .accessibilityIdentifier("chat.send")
             }
         }.padding(.horizontal, 16).padding(.vertical, 10).frame(maxWidth: 760).frame(maxWidth: .infinity).background(.bar)
-    }
-
-    private func startSend() {
-        guard canSend else { return }
-        sendTask = Task { await send() }
-    }
-
-    private func cancelRequest() {
-        requestID = UUID()
-        sendTask?.cancel(); sendTask = nil; loading = false; pendingQuestion = ""; streamingText = ""
-    }
-
-    private func retry() {
-        switch retryAction {
-        case .send: startSend()
-        case .load: Task { await load(restore: false) }
-        case .select(let id): Task { await select(id) }
-        }
     }
 
     private var scopeControls: some View {
@@ -334,111 +354,7 @@ struct ChatView: View {
     }
 
     private func newConversation(_ selection: ChatScope, clearDraft: Bool = false) {
-        guard !loading else { return }
-        scope = selection; sessionID = nil; messages = []; error = nil; cached = false; followsLatest = true
-        if clearDraft { question = "" }
-        save()
-    }
-
-    private func load(restore: Bool) async {
-        guard restore || !loading else { return }
-        let key = cacheKey, request = UUID()
-        requestID = request; loading = true; error = nil; retryAction = .load
-        if restore {
-            loadedCacheKey = key
-            scope = initialScope ?? .all; sessionID = nil; messages = []; sessions = []; question = initialQuestion; cached = false
-            if initialQuestion.isEmpty, let value = LocalCache.load(key) {
-                sessions = value["sessions"].array
-                let savedScope = ChatScope(value)
-                if initialScope == nil || initialScope == savedScope {
-                    messages = value["messages"].array; scope = savedScope; question = value["draft"].text
-                    sessionID = value["session_id"].text.isEmpty ? nil : value["session_id"].text; cached = true
-                }
-            }
-            if !initialQuestion.isEmpty { focused = true }
-        }
-        defer { if requestID == request { loading = false } }
-        do {
-            let result = try await model.client().request("v1/chat/sessions")
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            sessions = result["items"].array
-            if let savedID = sessionID {
-                do {
-                    let restored = try await model.client().request("v1/chat/sessions/\(savedID)")
-                    guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-                    messages = restored["messages"].array; cached = false
-                } catch let failure as BackendFailure where failure.status == 404 {
-                    guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-                    messages = []; sessionID = nil; cached = false
-                }
-            }
-            save()
-        } catch {
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            self.error = L10n.error(error)
-        }
-    }
-
-    private func select(_ id: String) async {
-        guard !loading else { return }
-        let key = cacheKey, request = UUID()
-        requestID = request; loading = true; error = nil; retryAction = .select(id)
-        defer { if requestID == request { loading = false } }
-        do {
-            let result = try await model.client().request("v1/chat/sessions/\(id)")
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            followsLatest = true
-            scope = ChatScope(result); sessionID = id; messages = result["messages"].array; question = ""; cached = false; save()
-        } catch {
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            self.error = L10n.error(error)
-        }
-    }
-
-    private func send() async {
-        guard !Task.isCancelled else { return }
-        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !loading, scope.isReady else { sendTask = nil; return }
-        guard !text.isEmpty, text.unicodeScalars.count <= 2000 else { sendTask = nil; error = L10n.text("Keep questions under 2,000 characters."); return }
-        let key = cacheKey, request = UUID(), client: BackendClient
-        do { client = try model.client() } catch { sendTask = nil; retryAction = .send; self.error = L10n.error(error); return }
-        requestID = request; focused = false; loading = true; error = nil; retryAction = .send
-        pendingQuestion = text; streamingText = ""; streamStage = "searching"
-        defer { if requestID == request { sendTask = nil; loading = false; pendingQuestion = ""; streamingText = "" } }
-        var body: [String: Any] = ["question": text]
-        if let sessionID { body["session_id"] = sessionID }
-        else { for (field, value) in scope.fields { body[field] = value } }
-        do {
-            let result = try await client.chat(body: body) { event in
-                guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-                if event["type"].text == "delta" { streamingText += event["text"].text }
-                else if event["type"].text == "status" { streamStage = event["stage"].text }
-            }
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            messages.append(.object(["id": result["user_message_id"], "role": .string("user"), "content": .string(text)]))
-            messages.append(.object(["id": result["message_id"], "role": .string("assistant"), "content": result["answer"], "sources": result["sources"], "evidence": result["evidence"], "retrieval_details": result["retrieval_details"]]))
-            if !result["session_id"].text.isEmpty { sessionID = result["session_id"].text }
-            let old = sessions.first { $0["id"].text == sessionID }
-            let entry: JSONValue = .object([
-                "id": result["session_id"],
-                "title": old?["title"] ?? .string(String(text.prefix(120))),
-                "updated_at": result["evidence"]["generated_at"],
-                "day": result["day"], "meeting_id": result["meeting_id"],
-                "start_day": result["start_day"], "end_day": result["end_day"]
-            ])
-            sessions.removeAll { $0["id"].text == sessionID }
-            sessions.insert(entry, at: 0)
-            question = ""; cached = false; save()
-        } catch {
-            guard !Task.isCancelled, requestID == request, cacheKey == key else { return }
-            self.error = L10n.error(error)
-        }
-    }
-
-    private func save() {
-        guard loadedCacheKey == cacheKey else { return }
-        var value: [String: JSONValue] = ["draft": .string(question), "sessions": .array(sessions), "messages": .array(messages), "session_id": sessionID.map(JSONValue.string) ?? .null]
-        for (field, text) in scope.fields { value[field] = .string(text) }
-        LocalCache.save(.object(value), key: cacheKey)
+        followsLatest = true
+        chat.newConversation(selection, clearDraft: clearDraft)
     }
 }

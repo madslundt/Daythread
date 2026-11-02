@@ -21,6 +21,7 @@ from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .blob_storage import storage_from_settings
 from .calendar_prep import calendar_prep_routes
+from .chat_context import ChatContextError, generation_error
 from .configuration import RESTART_FIELDS, Configuration
 from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
@@ -240,6 +241,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(httpx.HTTPError)
     @app.exception_handler(InferenceError)
     async def upstream_error(request: Request, exc: Exception) -> Response:
+        if isinstance(exc, ChatContextError):
+            return JSONResponse(status_code=409, content={"detail": generation_error(exc)})
         if isinstance(exc, InferenceDisabled):
             return JSONResponse(status_code=409, content={"detail": str(exc)})
         return JSONResponse(status_code=502, content={"detail": "Local inference is unavailable"})
@@ -902,13 +905,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if isinstance(exc, (ChatScopeNotFound, KeyError)):
                         status, message = 404, "Chat or selected recordings not found"
                     elif isinstance(exc, ChatScopeConflict):
-                        status, message = 409, "Start a new chat to choose a different scope"
+                        status, message = 409, str(exc)
                     elif isinstance(exc, EvidenceChanged):
                         status, message = 409, "Recorded evidence changed; reload and retry"
                     elif isinstance(exc, DateScopeError):
                         status, message = 422, "Use valid ISO calendar dates"
                     elif isinstance(exc, InferenceDisabled):
                         status, message = 409, str(exc)
+                    elif isinstance(exc, ChatContextError):
+                        status, message = 409, generation_error(exc)
                     elif isinstance(exc, (InferenceError, httpx.HTTPError, TimeoutError)):
                         status, message = 502, "Local inference is unavailable"
                     else:
@@ -965,7 +970,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = memory().store.chat_session(str(session_id))
         if not session:
             raise HTTPException(404, "Chat session not found")
-        return session
+        return session | {"pending_job": runtime().jobs.pending_chat(str(session_id))}
+
+    @app.delete("/v1/chat/sessions/{session_id}", status_code=204)
+    def delete_chat_session(session_id: UUID) -> Response:
+        if not runtime().jobs.delete_chat(str(session_id)):
+            raise HTTPException(404, "Chat session not found")
+        return Response(status_code=204)
 
     app.include_router(weekly_routes(lambda: runtime().weekly))
 

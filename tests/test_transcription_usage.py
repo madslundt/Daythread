@@ -102,6 +102,93 @@ def test_small_timestamp_rounding_overrun_still_produces_valid_alignment():
     assert result["segments"] == [{"start": 9, "end": 10, "text": "Hej"}]
 
 
+def test_explicit_character_anchors_trim_and_retain_only_exact_partial_spans():
+    text = "  Møde møde ukendt  "
+    result = Inference._transcription_result({
+        "text": text,
+        "segments": [
+            {"start": .1, "end": .3, "start_offset": 2, "end_offset": 6,
+             "text": "Møde", "kind": "word"},
+            {"start": .4, "end": .6, "start_offset": 7, "end_offset": 11,
+             "text": "møde", "kind": "word"},
+            {"start": .7, "end": .8, "start_offset": 12, "end_offset": 18,
+             "text": "wrong", "kind": "word"},
+        ],
+    }, wav())
+    assert result["text"] == "Møde møde ukendt"
+    assert result["segments"] == [
+        {"start": .1, "end": .3, "text": "Møde", "start_offset": 0, "end_offset": 4,
+         "kind": "word"},
+        {"start": .4, "end": .6, "text": "møde", "start_offset": 5, "end_offset": 9,
+         "kind": "word"},
+    ]
+    assert result["timestamp_status"] == "partial"
+
+
+@pytest.mark.parametrize("segment", [
+    {"start": .1, "end": .3, "start_offset": True, "end_offset": 4, "text": "Hej"},
+    {"start": float("nan"), "end": .3, "start_offset": 0, "end_offset": 3, "text": "Hej"},
+    {"start": .1, "end": .3, "start_offset": 0, "end_offset": 2, "text": "Hej"},
+    {"start": .1, "end": .3, "start_offset": 8, "end_offset": 11, "text": "Hej"},
+])
+def test_invalid_explicit_anchors_never_fall_back_to_segment_only_timing(segment):
+    result = Inference._transcription_result({"text": "Hej igen", "segments": [segment]}, wav())
+    assert result["text"] == "Hej igen"
+    assert result["segments"] == []
+    assert result["timestamp_status"] == "discarded_invalid"
+
+
+@pytest.mark.anyio
+async def test_worker_rebases_explicit_anchors_after_filtered_gaps_and_newline_join(
+    tmp_path, monkeypatch,
+):
+    from omi_local import transcription
+
+    audio_a, audio_b = wav(2), wav(1)
+    monkeypatch.setattr("omi_local.worker.analyze_voice", lambda _data: activity())
+    monkeypatch.setattr(transcription, "filter_transcription_audio", lambda *_args, **_kwargs: {
+        "spans": [(0.5, audio_a), (3.5, audio_b)], "status": "filtered",
+        "version": 1, "original_seconds": 5, "retained_seconds": 3,
+        "detected_speech_seconds": 3,
+    })
+    store = Store(tmp_path)
+    key = str(uuid4())
+    original = wav(5)
+    store.ingest(key, "omi", datetime.now(UTC), original, 5)
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_filter_speech=True,
+                        stt_segment_timestamps=True, stt_enhancement_mode="off")
+    replies = [
+        {"text": "  navn navn  ", "segments": [
+            {"start": .1, "end": .3, "start_offset": 2, "end_offset": 6,
+             "text": "navn", "kind": "word"},
+            {"start": .4, "end": .6, "start_offset": 7, "end_offset": 11,
+             "text": "navn", "kind": "word"},
+        ]},
+        {"text": " navn", "segments": [
+            {"start": .2, "end": .5, "start_offset": 1, "end_offset": 5,
+             "text": "navn", "kind": "word"},
+        ]},
+    ]
+
+    def provider(_request):
+        return httpx.Response(200, json=replies.pop(0))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        inference = Inference(settings, client)
+        memory = SimpleNamespace(store=store, settings=settings, inference=inference)
+        assert await process_one(memory)
+    row = store.get_audio(key)
+    assert row["state"] == "done"
+    assert row["text"] == "navn navn\nnavn"
+    segments = json.loads(row["segments"])
+    assert [(s["start"], s["start_offset"], s["end_offset"], s["text"])
+            for s in segments] == [
+        (.6, 0, 4, "navn"), (.9, 5, 9, "navn"), (3.7, 10, 14, "navn"),
+    ]
+    assert all(row["text"][s["start_offset"]:s["end_offset"]] == s["text"] for s in segments)
+    assert store.read_audio(key) == original
+
+
 @pytest.mark.parametrize("text", [None, 123, "x" * 20001])
 def test_invalid_transcript_text_is_still_rejected(text):
     with pytest.raises(InferenceError, match="Invalid STT response"):

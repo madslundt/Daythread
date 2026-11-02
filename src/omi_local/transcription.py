@@ -76,11 +76,15 @@ class Transcription:
                                                  result.get("recognition", {}).get(
                                                      "detected_language"), text_offset))
                         texts.append(result["text"])
-                    segments.extend(
-                        {**segment, "start": segment["start"] + offset,
-                         "end": segment["end"] + offset}
-                        for segment in result["segments"]
-                    )
+                    for segment in result["segments"]:
+                        shifted = {
+                            **segment, "start": segment["start"] + offset,
+                            "end": segment["end"] + offset,
+                        }
+                        if "start_offset" in segment and "end_offset" in segment:
+                            shifted["start_offset"] = segment["start_offset"] + text_offset
+                            shifted["end_offset"] = segment["end_offset"] + text_offset
+                        segments.append(shifted)
                     status = "pending"
                     if quiet:
                         status = "digital_silence"
@@ -328,12 +332,60 @@ class Transcription:
         text = payload.get("text")
         if not isinstance(text, str) or len(text) > 20000:
             raise InferenceError("Invalid STT response")
-        segments = []
+        canonical_text = text.strip()
+        leading_trim = len(text) - len(text.lstrip())
+        trailing_end = len(text.rstrip())
         duration = wav_duration(data)
         raw_segments = payload.get("segments", [])
         if not isinstance(raw_segments, list):
-            return {"text": text.strip(), "segments": [],
+            return {"text": canonical_text, "segments": [],
                     "timestamp_status": "discarded_invalid"}
+
+        explicit_anchors = any(
+            isinstance(segment, dict)
+            and any(field in segment for field in ("start_offset", "end_offset", "kind"))
+            for segment in raw_segments
+        )
+        if explicit_anchors:
+            segments = []
+            invalid = False
+            previous_text_end, previous_time_end = 0, 0.0
+            for segment in raw_segments:
+                try:
+                    start, end = segment["start"], segment["end"]
+                    left, right = segment["start_offset"], segment["end_offset"]
+                    segment_text = segment["text"]
+                    valid_numbers = (
+                        type(start) in (int, float) and type(end) in (int, float)
+                        and math.isfinite(start) and math.isfinite(end)
+                    )
+                    if (
+                        not valid_numbers or type(left) is not int or type(right) is not int
+                        or not isinstance(segment_text, str)
+                        or not 0 <= leading_trim <= left < right <= trailing_end
+                        or text[left:right] != segment_text
+                        or not 0 <= start < min(end, duration) or end > duration + 0.5
+                        or left < previous_text_end or start < previous_time_end
+                    ):
+                        raise ValueError
+                    item = {
+                        "start": float(start), "end": min(float(end), duration),
+                        "text": segment_text,
+                        "start_offset": left - leading_trim,
+                        "end_offset": right - leading_trim,
+                    }
+                    if segment.get("kind") in {"word", "segment", "token"}:
+                        item["kind"] = segment["kind"]
+                    segments.append(item)
+                    previous_text_end, previous_time_end = right, end
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    invalid = True
+            result = {"text": canonical_text, "segments": segments}
+            if invalid:
+                result["timestamp_status"] = "partial" if segments else "discarded_invalid"
+            return result
+
+        segments = []
         for segment in raw_segments:
             try:
                 start, end = float(segment["start"]), float(segment["end"])
@@ -347,7 +399,7 @@ class Transcription:
             except (KeyError, TypeError, ValueError, OverflowError):
                 # Timing is optional. Do not invent alignment or repeat a successful
                 # recognition request because the provider's timing is unusable.
-                return {"text": text.strip(), "segments": [],
+                return {"text": canonical_text, "segments": [],
                         "timestamp_status": "discarded_invalid"}
-        return {"text": text.strip(), "segments": segments}
+        return {"text": canonical_text, "segments": segments}
 

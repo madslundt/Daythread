@@ -3112,5 +3112,11 @@
   "A selected recording is unavailable; restore its audio and redo again": "Et valgt opptak er utilgjengelig; gjenopprett lyden og behandle på nytt",
   "Enable background processing before starting a redo": "Aktiver bakgrunnsbehandling før du starter ny behandling",
   "Enable the audio worker before redoing transcripts": "Aktiver lydbehandling før du lager transkripsjoner på nytt",
-  "Summary generation failed; check model settings and redo again": "Kunne ikke lage sammendrag; sjekk modellinnstillingene og prøv igjen"
+  "Summary generation failed; check model settings and redo again": "Kunne ikke lage sammendrag; sjekk modellinnstillingene og prøv igjen",
+  "Automatic speaker detection is queued.": "Automatisk talerregistrering står i kø.",
+  "Automatic speaker detection is processing.": "Automatisk talerregistrering behandles.",
+  "Automatic speaker detection failed: {value0}": "Automatisk talerregistrering mislyktes: {value0}",
+  "Attributed transcript": "Talerattribuert transkripsjon",
+  "Time unavailable": "Tidspunkt ikke tilgjengelig",
+  "Unknown error": "Ukjent feil"
 }

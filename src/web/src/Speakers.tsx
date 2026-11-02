@@ -57,6 +57,19 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
   }, [requests, voiceRequests, revision]);
 
   useEffect(() => {
+    if (data?.processing?.state !== "queued" && data?.processing?.state !== "processing") return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void requests.run("GET").then((result) => {
+        if (active && result) setData(result);
+      }).catch((failure) => {
+        if (active) setError(errorMessage(failure));
+      });
+    }, 1500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [data?.processing?.state, requests]);
+
+  useEffect(() => {
     const refresh = () => {
       operationEpoch.current += 1;
       requests.cancel();
@@ -202,18 +215,22 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
   children?: ReactNode;
 }) {
   const stale = data?.state === "stale";
+  const automaticBusy = data?.processing?.state === "queued" || data?.processing?.state === "processing";
   const editable = Boolean(data?.version && !stale && !loading && !busy);
   const speakers = new Map(data?.speakers.map((speaker) => [speaker.id, speaker]));
   return <section className="speakers-panel" aria-label={t("Speakers")}>
     <div className="speaker-heading">
       <h3>{data?.speakers.length ? t("{value0} {value1} detected", { value0: data.speakers.length, value1: data.speakers.length === 1 ? t("speaker") : t("speakers") }) : t("Speakers")}</h3>
       <button type="button" className="button small" onClick={onDetect}
-        disabled={loading || busy || !data?.configured || !data?.audio_available}>
+        disabled={loading || busy || automaticBusy || !data?.configured || !data?.audio_available}>
         {detecting ? t("Detecting speakers…") : busy ? t("Saving…") : data?.state !== "idle" && data ? t("Detect speakers again") : t("Detect speakers")}
       </button>
     </div>
     {loading ? <p className="caption" role="status">{t("Loading speakers…")}</p> : null}
     {detecting ? <p className="caption" role="status">{t("Analyzing retained audio with your local speaker service. This may take a few minutes.")}</p> : null}
+    {data?.processing?.state === "queued" ? <p className="caption" role="status">{t("Automatic speaker detection is queued.")}</p> : null}
+    {data?.processing?.state === "processing" ? <p className="caption" role="status">{t("Automatic speaker detection is processing.")}</p> : null}
+    {data?.processing?.state === "error" ? <p className="caption" role="alert">{t("Automatic speaker detection failed: {value0}", { value0: data.processing.error || t("Unknown error") })}</p> : null}
     {error ? <ErrorState message={error} retry={onRetry} /> : null}
     {data?.recognition || voices?.recognition ? <p className="caption" role="status">{t((data?.recognition || voices?.recognition)?.message || "")}</p> : null}
     <p className="caption">{t("Voice profiles stay in the selected archive. A suggestion never changes a name until you confirm it.")}</p>
@@ -251,6 +268,18 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
         </li>)}</ol>
       </details>
     </> : null}
+    {data?.utterances?.length ? <details className="speaker-turns speaker-transcript">
+      <summary>{t("Attributed transcript")}</summary>
+      <ol>{data.utterances.map((utterance) => <li key={utterance.id}>
+        <div className="speaker-turn-heading">
+          <strong>{utterance.speaker_name || utterance.speaker_label || t("Unknown speaker")}</strong>
+          <span className="caption">{utterance.start !== null && utterance.end !== null
+            ? `${speakerTime(utterance.start)}–${speakerTime(utterance.end)}`
+            : t("Time unavailable")} {t("in recording")} {utterance.source_id.slice(0, 8)}</span>
+        </div>
+        <p className="transcript-text">{utterance.text}</p>
+      </li>)}</ol>
+    </details> : null}
   </section>;
 }
 

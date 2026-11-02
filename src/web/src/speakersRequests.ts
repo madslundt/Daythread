@@ -17,6 +17,12 @@ export type VoiceProfile = {
 export type VoiceProfilesData = { revision: string; profiles: VoiceProfile[]; recognition: VoiceRecognition };
 export type RememberVoiceChoice = ({ profile_id: string } | { name: string }) & { is_self?: true; voice_revision?: string };
 export type SpeakerTurn = { id: string; source_id: string; start: number; end: number; speaker_id: string; text?: string };
+export type SpeakerUtterance = {
+  id: string; source_id: string; start: number | null; end: number | null; text: string;
+  speaker_id: string | null; speaker_label: string | null; speaker_name: string | null;
+  attribution: "attributed" | "unknown" | "overlap";
+  start_offset: number; end_offset: number;
+};
 export type SpeakersData = {
   state: "idle" | "ready" | "stale";
   configured: boolean;
@@ -27,6 +33,8 @@ export type SpeakersData = {
   scope?: { kind: "source" | "meeting"; id: string };
   source_count?: number;
   recognition?: VoiceRecognition;
+  processing?: { state: "queued" | "processing" | "error"; error?: string | null; retry_at?: string | null } | null;
+  utterances?: SpeakerUtterance[];
 };
 
 // Each open scope owns its transport and profile. A delayed response cannot

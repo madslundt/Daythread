@@ -175,11 +175,12 @@ def capture_stops(snapshot: dict, now: datetime) -> dict[str, list[CaptureStop]]
 
 def conversations(
     snapshot: dict, now: datetime, quiet_seconds: int, *, respect_open_meeting: bool = True,
+    timeline: dict | None = None,
 ) -> list[Conversation]:
     settled = stamp(now - timedelta(seconds=30))
     streams: dict[str, list[dict]] = {}
     result = []
-    timeline = meeting_timeline(snapshot, now)
+    timeline = timeline if timeline is not None else meeting_timeline(snapshot, now)
     active = timeline["active_meeting"]
     active_device = active["meeting_capture_device_id"] if active else None
     stops = capture_stops(snapshot, now) if not respect_open_meeting else {}

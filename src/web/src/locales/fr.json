@@ -3112,5 +3112,11 @@
   "A selected recording is unavailable; restore its audio and redo again": "Un enregistrement sélectionné est indisponible ; restaurez son audio et relancez le traitement",
   "Enable background processing before starting a redo": "Activez le traitement en arrière-plan avant de lancer un retraitement",
   "Enable the audio worker before redoing transcripts": "Activez le service de traitement audio avant de régénérer les transcriptions",
-  "Summary generation failed; check model settings and redo again": "La génération des résumés a échoué ; vérifiez les paramètres du modèle et réessayez"
+  "Summary generation failed; check model settings and redo again": "La génération des résumés a échoué ; vérifiez les paramètres du modèle et réessayez",
+  "Automatic speaker detection is queued.": "La détection automatique des locuteurs est en attente.",
+  "Automatic speaker detection is processing.": "La détection automatique des locuteurs est en cours.",
+  "Automatic speaker detection failed: {value0}": "Échec de la détection automatique des locuteurs : {value0}",
+  "Attributed transcript": "Transcription attribuée",
+  "Time unavailable": "Heure indisponible",
+  "Unknown error": "Erreur inconnue"
 }

@@ -329,4 +329,30 @@ describe("speaker display", () => {
     expect(pending).toContain("Detecting speakers…");
     expect(pending).toContain("This may take a few minutes");
   });
+
+  it("shows automatic processing progress without offering a destructive reset", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...view}
+      data={{ ...data, state: "idle", speakers: [], turns: [],
+        processing: { state: "processing" } }} />);
+    expect(html).toContain("Automatic speaker detection is processing");
+    expect(html).toContain('disabled="">Detect speakers');
+    expect(html).not.toContain("Detecting again replaces");
+  });
+
+  it("renders the attributed transcript with stable speaker and timestamp labels", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, utterances: [
+      { id: "u1", source_id: "recording-uuid", start: 12.5, end: 13.2, text: "Hello there.",
+        speaker_id: "s1", speaker_label: "A", speaker_name: "Mads", attribution: "attributed",
+        start_offset: 0, end_offset: 12 },
+      { id: "u2", source_id: "recording-uuid", start: null, end: null, text: "unclear words",
+        speaker_id: null, speaker_label: null, speaker_name: null, attribution: "unknown",
+        start_offset: 12, end_offset: 25 },
+    ] }} />);
+    expect(html).toContain("Attributed transcript");
+    expect(html).toContain("0:12");
+    expect(html).toContain("Mads");
+    expect(html).toContain("Unknown speaker");
+    expect(html).toContain("Time unavailable");
+    expect(html).toContain("unclear words");
+  });
 });

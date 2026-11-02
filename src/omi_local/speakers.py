@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .conversation_state import conversations, meeting_timeline
 from .domain import stamp, utc_now
+from .speaker_projection import attach_text, project_utterances
 
 if TYPE_CHECKING:
     from .service import Memory
@@ -86,13 +87,17 @@ class Speakers:
         self.memory = memory
         self.lock = asyncio.Lock()
 
-    def resolve(self, kind: Kind, key: str, db) -> dict:
-        snapshot = self.memory.store.recap_snapshot(db)
+    def resolve(
+        self, kind: Kind, key: str, db, snapshot: dict | None = None,
+        groups=None, timeline: dict | None = None,
+    ) -> dict:
+        snapshot = snapshot or self.memory.store.recap_snapshot(db)
         rows = snapshot["rows"]
         source = next((r for r in rows if r["id"] == key), None) if kind == "source" else None
         if kind == "source" and source is None:
             raise HTTPException(404, "Recording not found")
-        meetings = meeting_timeline(snapshot, utc_now())["meetings"]
+        timeline = timeline if timeline is not None else meeting_timeline(snapshot, utc_now())
+        meetings = timeline["meetings"]
         meeting = next((m for m in meetings if (
             m["id"] == key if kind == "meeting" else
             m["started_at"] < source["ended_at"]
@@ -124,13 +129,26 @@ class Speakers:
             key = rows[0]["id"]
             left, right = rows[0]["started_at"], rows[-1]["ended_at"]
         else:
-            groups = conversations(
-                snapshot, utc_now(), 5 * 60,
-            )
+            if groups is None:
+                groups = conversations(snapshot, utc_now(), 5 * 60, timeline=timeline)
             group = next((g for g in groups if any(r["id"] == key for r in g.sources)), None)
             rows = group.sources if group else [source]
             key = rows[0]["id"]
             left, right = rows[0]["started_at"], rows[-1]["ended_at"]
+        if rows:
+            source_data = {}
+            source_ids = [row["id"] for row in rows]
+            for offset in range(0, len(source_ids), 500):
+                batch = source_ids[offset : offset + 500]
+                marks = ",".join("?" for _ in batch)
+                source_data.update(
+                    (r["id"], dict(r))
+                    for r in db.execute(
+                        f"SELECT id,text,segments FROM audio WHERE id IN ({marks})", batch
+                    )
+                )
+            for row in rows:
+                row.update(source_data.get(row["id"], {}))
         return {"scope": {"kind": kind, "id": key}, "key": f"{kind}:{key}",
                 "rows": rows, "bounds": [left, right]}
 
@@ -149,21 +167,30 @@ class Speakers:
         payload = json.loads(saved["payload"]) if saved else {"speakers": [], "turns": []}
         turns = payload["turns"]
         if ready:
-            self.attach_text(turns, scope["rows"])
+            attach_text(turns, scope["rows"])
         speakers = payload["speakers"]
+        utterances = project_utterances(turns, scope["rows"], ready, speakers)
         audio_available = bool(scope["rows"]) and all(
             r["audio_available"] and self.memory.store.has_audio(r["id"]) for r in scope["rows"]
         )
         recognition = self.memory.voices.annotate(db, scope, payload, ready and audio_available)
+        job = db.execute("SELECT state,error,retry_at FROM speaker_jobs WHERE scope_key=?",
+                         (scope["key"],)).fetchone()
         for speaker in speakers:
             # Union same-speaker overlap so totals agree with playback.
             speaker["seconds"] = round(sum(b - a for _, a, b in
                 self.intervals(turns, speaker["id"])), 3)
         return {"state": "ready" if ready else "stale" if saved else "idle",
+                "processing": ({"state": job["state"], "error": job["error"],
+                                "retry_at": job["retry_at"]}
+                               if job and job["state"] in {"queued", "processing", "error"}
+                               and self.memory.settings.diarization_enabled else None),
                 "configured": self.memory.settings.diarization_enabled,
                 "version": saved["version"] if saved else None,
                 "scope": scope["scope"], "source_count": len(scope["rows"]),
                 "speakers": speakers, "turns": turns,
+                "utterances": utterances,
+                "evidence_version": saved["version"] if ready else None,
                 "recognition": recognition,
                 "audio_available": audio_available}
 
@@ -172,25 +199,6 @@ class Speakers:
             db.execute("BEGIN")
             scope = self.resolve(kind, key, db)
             return self.view(scope, self.load(db, scope), db)
-
-    @staticmethod
-    def attach_text(turns: list[dict], rows: list[dict]) -> None:
-        # Assign each timestamped segment once; never invent word-level speaker alignment.
-        for row in rows:
-            matching = [t for t in turns if t["source_id"] == row["id"]]
-            for segment in json.loads(row.get("segments") or "[]"):
-                if not matching or not segment.get("text"):
-                    continue
-                start, end = segment.get("start"), segment.get("end")
-                if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-                    continue
-                overlapping = [t for t in matching
-                               if min(t["end"], end) > max(t["start"], start)]
-                if not overlapping or len({t["speaker_id"] for t in overlapping}) != 1:
-                    continue
-                best = max(overlapping, key=lambda t: min(t["end"], end) - max(t["start"], start))
-                if min(best["end"], end) - max(best["start"], start) >= (end - start) * 0.8:
-                    best["text"] = (best.get("text", "") + " " + segment["text"]).strip()
 
     @staticmethod
     def intervals(turns: list[dict], speaker: str) -> list[tuple[str, float, float]]:
@@ -329,6 +337,10 @@ class Speakers:
                 db.execute("DELETE FROM speaker_dependencies WHERE scope_key=?", (scope["key"],))
                 db.executemany("INSERT INTO speaker_dependencies VALUES(?,?)",
                                [(scope["key"], row["id"]) for row in scope["rows"]])
+                db.execute(
+                    "UPDATE speaker_jobs SET state='done',retry_at=NULL,error=NULL,updated_at=? "
+                    "WHERE scope_key=?", (stamp(utc_now()), scope["key"]),
+                )
                 self.memory.voices.invalidate_scope(db, scope["key"])
                 self.memory.voices.save_vectors(db, scope, payload, result)
                 # Detection snapshots plus later edit events can replay this projection.

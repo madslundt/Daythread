@@ -19,6 +19,7 @@ from .recaps import digest
 from .recording_topics import run_topics
 from .service import Memory
 from .source_matching import recognition_contract
+from .speaker_worker import run_speakers
 from .voice_activity import analyze_voice
 
 logger = logging.getLogger(__name__)
@@ -270,6 +271,7 @@ async def maintenance(memory: Memory) -> None:
 
 async def run_worker(memory: Memory) -> None:
     tasks = [asyncio.create_task(maintenance(memory))]
+    tasks.append(asyncio.create_task(run_speakers(memory)))
     if memory.settings.llm_enabled:
         tasks.extend(asyncio.create_task(work(memory)) for work in (
             run_inbox, run_topics, run_insights, run_recaps,

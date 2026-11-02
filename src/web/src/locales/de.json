@@ -3112,5 +3112,11 @@
   "A selected recording is unavailable; restore its audio and redo again": "Eine ausgewählte Aufnahme ist nicht verfügbar; stelle ihr Audio wieder her und starte die Verarbeitung erneut",
   "Enable background processing before starting a redo": "Aktiviere die Hintergrundverarbeitung, bevor du eine erneute Verarbeitung startest",
   "Enable the audio worker before redoing transcripts": "Aktiviere den Audioverarbeitungsdienst, bevor du Transkripte neu erstellst",
-  "Summary generation failed; check model settings and redo again": "Zusammenfassungen konnten nicht erstellt werden; prüfe die Modelleinstellungen und versuche es erneut"
+  "Summary generation failed; check model settings and redo again": "Zusammenfassungen konnten nicht erstellt werden; prüfe die Modelleinstellungen und versuche es erneut",
+  "Automatic speaker detection is queued.": "Automatische Sprechererkennung ist eingereiht.",
+  "Automatic speaker detection is processing.": "Automatische Sprechererkennung wird verarbeitet.",
+  "Automatic speaker detection failed: {value0}": "Automatische Sprechererkennung fehlgeschlagen: {value0}",
+  "Attributed transcript": "Sprechern zugeordnetes Transkript",
+  "Time unavailable": "Zeit nicht verfügbar",
+  "Unknown error": "Unbekannter Fehler"
 }

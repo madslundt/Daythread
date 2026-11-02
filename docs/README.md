@@ -197,11 +197,15 @@ Model loading is lazy; `/health` distinguishes configured, loaded and busy state
 Detection is requested explicitly, runs locally, and supports up to eight hours of
 retained audio. The optional runtime has its own Python/PyTorch dependencies.
 
-Playback joins the selected speaker's original speaking turns in order; overlapping
-voices can remain audible. Names and assignments can be corrected, merged or reset.
-Text is shown beside turns only when existing transcript timestamps support an
-unambiguous assignment; enable **STT segment timestamps** in Settings with a compatible STT
-provider to request timestamps for future recordings. The original transcript stays intact.
+When a complete conversation has finished transcription and its original audio is available,
+Daythread queues local speaker detection automatically. The **Speakers** panel shows queued,
+running or failed work; use **Detect speakers** to retry or explicitly reprocess a reviewed scope.
+Playback joins the selected speaker's original speaking turns in order; overlapping voices can
+remain audible. Names and assignments can be corrected, merged or reset. The attributed
+transcript shows timed words only when exact word alignment and speaker-turn evidence are
+unambiguous; uncovered words remain unknown. Enable **STT segment timestamps** in Settings
+with a compatible STT provider to request timestamp data for future recordings. The original
+transcript stays intact.
 Transcript edits and late
 chunks mark assignments stale. Detecting again explicitly replaces labels and names.
 Audio expiry disables playback; transcript expiry or source deletion removes associated

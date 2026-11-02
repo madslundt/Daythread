@@ -3112,5 +3112,11 @@
   "A selected recording is unavailable; restore its audio and redo again": "A selected recording is unavailable; restore its audio and redo again",
   "Enable background processing before starting a redo": "Enable background processing before starting a redo",
   "Enable the audio worker before redoing transcripts": "Enable the audio worker before redoing transcripts",
-  "Summary generation failed; check model settings and redo again": "Summary generation failed; check model settings and redo again"
+  "Summary generation failed; check model settings and redo again": "Summary generation failed; check model settings and redo again",
+  "Automatic speaker detection is queued.": "Automatic speaker detection is queued.",
+  "Automatic speaker detection is processing.": "Automatic speaker detection is processing.",
+  "Automatic speaker detection failed: {value0}": "Automatic speaker detection failed: {value0}",
+  "Attributed transcript": "Attributed transcript",
+  "Time unavailable": "Time unavailable",
+  "Unknown error": "Unknown error"
 }

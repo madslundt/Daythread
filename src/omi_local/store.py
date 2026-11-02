@@ -47,6 +47,7 @@ from .source_evidence import SCHEMA as SOURCE_EVIDENCE_SCHEMA
 from .source_matching import MATCH_VERSION, SourceMatchingStore, UploadGrouping
 from .source_matching import SCHEMA as SOURCE_MATCHING_SCHEMA
 from .speaker_store import SCHEMA as SPEAKER_SCHEMA
+from .speaker_store import migrate_speaker_triggers
 from .summary_translation import SCHEMA as SUMMARY_TRANSLATION_SCHEMA
 from .summary_translation import SummaryTranslationStore
 from .transcription_queue import SCHEMA as TRANSCRIPTION_QUEUE_SCHEMA
@@ -194,6 +195,7 @@ class Store(
             db.executescript(TRANSLATION_SCHEMA)
             db.executescript(SUMMARY_TRANSLATION_SCHEMA)
             db.executescript(SPEAKER_SCHEMA)
+            migrate_speaker_triggers(db)
             db.executescript(VOICE_SCHEMA)
             message_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_messages)")

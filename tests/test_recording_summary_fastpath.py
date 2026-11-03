@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from omi_local import inference as inference_module
-from omi_local.inference import Inference
+from omi_local.inference import SUMMARY_SYSTEM, Inference
 from omi_local.recaps import Recaps
 from omi_local.settings import Settings
 from omi_local.summary_filter import NO_CONTENT
@@ -394,6 +394,39 @@ async def test_useful_recording_keeps_raw_text_in_anchored_prompt_after_filter_c
 
 
 @pytest.mark.anyio
+async def test_complete_recording_uses_reversible_short_citation_alias(tmp_path):
+    source_id = str(uuid4())
+    _, source = full_recording("The original text has a useful outcome.", source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    requests = []
+    output = f"## Outcome\nThe outcome is supported [{source_id}]"
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        body = json.loads(request.content)
+        requests.append(body)
+        payload = json.loads(body["messages"][1]["content"])
+        assert "[src_1]" in payload["task"]
+        assert source_id not in payload["task"]
+        assert source_id not in body["messages"][1]["content"]
+        return completion(output.replace(source_id, "src_1"))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_complete_recording_traced(
+            source, "a daily recap", require_subject_headings=True,
+        )
+    assert result == output and trace["model_calls"] == 1
+    body = requests[0]
+    assert trace["complete_context"]["request_characters"] == (
+        len(SUMMARY_SYSTEM) + len(body["messages"][1]["content"]) + 128
+    )
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("invalid_output", ["## Topic\nNo citation", "No heading here"])
 async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
     tmp_path, invalid_output,
@@ -415,7 +448,8 @@ async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
         if len(requests) == 1:
             return completion(invalid_output)
         assert "previous draft" in task
-        return completion(output)
+        assert "[src_1]" in task
+        return completion(output.replace(source_id, "src_1"))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         inference = Inference(settings, client)

@@ -42,8 +42,9 @@ from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
-COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-v1"
+COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v2"
 COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT = 64_000
+SOURCE_UUID_PATTERN = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 
 
 SYSTEM = (
@@ -173,11 +174,13 @@ def validate_citations(text: str, sources: list[dict]) -> str:
 
 def _summary_request(
     task: str, evidence: str, sources: list[dict], *, compact_references: bool,
+    compact_single_reference: bool = False,
 ) -> tuple[str, str, dict[int, str]]:
     """Use the same reversible source IDs for context budgeting and model requests."""
     ids = sorted({source["id"].lower() for source in sources})
-    uuid_pattern = r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"
-    if not compact_references or len(ids) < 4 or not all(
+    uuid_pattern = SOURCE_UUID_PATTERN
+    minimum_references = 1 if compact_single_reference else 4
+    if not compact_references or len(ids) < minimum_references or not all(
         re.fullmatch(uuid_pattern, key) for key in ids
     ):
         return task, evidence, {}
@@ -545,6 +548,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         if (
             source.get("reference_type") != "recording_transcription"
             or not isinstance(source_id, str) or not source_id
+            or re.fullmatch(SOURCE_UUID_PATTERN, source_id) is None
             or source.get("recording_id") != source_id
             or not isinstance(source.get("result_version"), str)
             or not source.get("result_version")
@@ -596,13 +600,20 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             "Do not force category sections; omit empty sections and statements that "
             "nothing was recorded for a category. "
             + summary_language_instruction(inference.settings.summary_language)
-            + " Cite only original source UUIDs copied exactly from this allowed list; do not "
-            "invent or cite any other UUID: " + source_id + "."
+            + " Cite only this allowed source UUID exactly in square brackets; do not invent "
+            "or cite any other UUID: [" + source_id + "]."
         )
-        request_size = request_tokens(task, evidence, SUMMARY_SYSTEM)
+        allowed_sources = [{"id": source_id}]
+        rendered_task, rendered_evidence, _ = _summary_request(
+            task, evidence, allowed_sources,
+            compact_references=True, compact_single_reference=True,
+        )
+        request_size = request_tokens(rendered_task, rendered_evidence, SUMMARY_SYSTEM)
         request_characters = (
             len(SUMMARY_SYSTEM)
-            + len(json.dumps({"task": task, "evidence": evidence}, ensure_ascii=False))
+            + len(json.dumps({
+                "task": rendered_task, "evidence": rendered_evidence,
+            }, ensure_ascii=False))
             + 128
         )
         if request_characters > COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT:
@@ -632,7 +643,6 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 "complete_context_one_pass": False,
             }
 
-        allowed_sources = [{"id": source_id}]
         trace = {
             "model_calls": 0,
             "reduction_used": False,
@@ -648,8 +658,9 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         with summary_usage(), bounded_generation(limit):
             trace["model_calls"] += 1
             answer = await inference._summary_generate(
-                task, evidence, allowed_sources, compact_references=False,
+                task, evidence, allowed_sources, compact_references=True,
                 output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
+                compact_single_reference=True,
             )
             try:
                 return self._validate_complete_recording_output(
@@ -665,9 +676,11 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 repaired = await inference._summary_generate(
                     task + " The previous draft failed citation or required-format validation. "
                     "Recreate the summary from the complete evidence, copying the one allowed "
-                    "source UUID exactly. Omit any unsupported claim." + heading_requirement,
-                    evidence, allowed_sources, compact_references=False,
+                    "source UUID exactly in square brackets. Omit any unsupported claim."
+                    + heading_requirement,
+                    evidence, allowed_sources, compact_references=True,
                     output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
+                    compact_single_reference=True,
                 )
                 return self._validate_complete_recording_output(
                     repaired, source_id, require_subject_headings,
@@ -978,13 +991,15 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
 
     async def _summary_generate(
         self, task, evidence, sources, *, compact_references, output_tokens=None,
-        buffered_summary_stream=False,
+        buffered_summary_stream=False, compact_single_reference=False,
     ):
         # Long consolidations need not make the model reproduce dozens of 36-character
         # UUIDs. Short per-request keys reduce copying errors and output-token overhead;
         # expand them before any citation validation, persistence or client response.
         task, evidence, originals = _summary_request(
-            task, evidence, sources, compact_references=compact_references)
+            task, evidence, sources, compact_references=compact_references,
+            compact_single_reference=compact_single_reference,
+        )
         summary_inference = self.for_task("summary")
         answer = (
             await summary_inference.generate(task, evidence) if output_tokens is None else

@@ -97,6 +97,11 @@ SUMMARY_SYSTEM = SYSTEM.replace(
 ) + ACTION_STATE_RULES
 
 
+# Require both a majority of all letters and a clear lead over the runner-up.
+SUMMARY_AUTO_MIN_SHARE = 0.6
+SUMMARY_AUTO_MIN_MARGIN = 0.3
+
+
 def resolve_summary_language(language: str, transcript: str) -> str:
     if language.lower() != "auto" or not transcript.strip():
         return language
@@ -104,7 +109,14 @@ def resolve_summary_language(language: str, transcript: str) -> str:
     from .translation import analyze_transcript_languages
 
     analysis = analyze_transcript_languages(transcript)
-    if analysis["dominant_language_share"] >= 0.7 and analysis["dominant_language"]:
+    dominant = analysis["dominant_language"]
+    share = analysis["dominant_language_share"]
+    runner_up = max(
+        (value for code, value in analysis["language_shares"].items() if code != dominant),
+        default=0.0,
+    )
+    if (dominant and share >= SUMMARY_AUTO_MIN_SHARE
+            and share - runner_up >= SUMMARY_AUTO_MIN_MARGIN):
         return analysis["dominant_language"]
     return language
 
@@ -607,6 +619,13 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
     ) -> str:
         # Map/reduce keeps a full day's evidence in scope without silently truncating its tail.
         original_sources = sources
+        language_instruction = ""
+        if answer_task is None:
+            original_text = "\n".join(source.get("text") or "" for source in original_sources)
+            output_language = resolve_summary_language(
+                self.settings.summary_language, original_text,
+            )
+            language_instruction = summary_language_instruction(output_language)
         if answer_task is None:
             sources, filtering = filter_summary_sources(sources)
             # Character anchors refer to the final canonical transcript. Keep exact source text
@@ -646,12 +665,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             "nothing was recorded for a category."
         )
         # Large chat also uses this reducer, but keeps its existing language behavior.
-        language_instruction = ""
         if answer_task is None:
-            language_instruction = summary_language_instruction(
-                self.settings.summary_language,
-                "\n".join(source.get("text") or "" for source in sources),
-            )
             task += language_instruction
         allowed_source_ids = {
             source["id"] for source in original_sources

@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 
 from omi_local.api import create_app
 from omi_local.domain import stamp
-from omi_local.inference import Inference, InferenceTruncated
+from omi_local.inference import (
+    Inference,
+    InferenceTruncated,
+    resolve_summary_language,
+)
 from omi_local.settings import Settings
 
 AT = datetime(2026, 10, 6, 12, tzinfo=UTC)
@@ -63,6 +67,79 @@ def test_summary_language_is_independent_live_persisted_and_validated(tmp_path):
 def test_summary_language_loads_from_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("OMI_SUMMARY_LANGUAGE", "da")
     assert config(tmp_path).summary_language == "da"
+
+
+@pytest.mark.parametrize(("shares", "expected"), [
+    ({"da": 0.64, "en": 0.12}, "da"),
+    ({"da": 0.64, "no": 0.35}, "auto"),
+    ({"da": 0.52, "en": 0.48}, "auto"),
+])
+def test_auto_summary_language_requires_majority_and_margin(monkeypatch, shares, expected):
+    dominant = max(shares, key=shares.get)
+    analysis = {
+        "dominant_language": dominant,
+        "dominant_language_share": shares[dominant],
+        "language_shares": shares,
+    }
+    monkeypatch.setattr(
+        "omi_local.translation.analyze_transcript_languages", lambda _text: analysis,
+    )
+    assert resolve_summary_language("auto", "synthetic source language sample") == expected
+
+
+def test_explicit_summary_language_bypasses_auto_detection(monkeypatch):
+    def unexpected(_text):
+        raise AssertionError("explicit summary language should not run detection")
+
+    monkeypatch.setattr("omi_local.translation.analyze_transcript_languages", unexpected)
+    assert resolve_summary_language("fr", "synthetic source language sample") == "fr"
+
+
+@pytest.mark.anyio
+async def test_auto_summary_language_is_locked_from_original_text_across_reduction_levels(
+    tmp_path, monkeypatch,
+):
+    source_id = str(uuid4())
+    original_text = "synthetic-source-language " * 900
+    analyzed_texts = []
+    notes_instructions = []
+    final_tasks = []
+
+    def analyze(text):
+        analyzed_texts.append(text)
+        return {
+            "dominant_language": "da",
+            "dominant_language_share": 0.68,
+            "language_shares": {"da": 0.68, "en": 0.14},
+        }
+
+    monkeypatch.setattr("omi_local.translation.analyze_transcript_languages", analyze)
+
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        final_tasks.append(payload["task"])
+        return httpx.Response(200, json={"choices": [{
+            "message": {"content": f"Dansk opsummering [{source_id}]"},
+        }]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        inference = Inference(config(tmp_path), http)
+
+        async def english_intermediate(
+            _batch, _allowed_sources, _trace, _maximum, language_instruction=None,
+        ):
+            notes_instructions.append(language_instruction or "")
+            return f"English intermediate evidence [{source_id}]"
+
+        inference._summary_notes = english_intermediate
+        await inference.summarize([{
+            "id": source_id, "started_at": stamp(AT), "text": original_text,
+        }], "a synthetic recap")
+
+    assert len(notes_instructions) > 1
+    assert all("language with code da" in instruction for instruction in notes_instructions)
+    assert final_tasks and all("language with code da" in task for task in final_tasks)
+    assert analyzed_texts == [original_text]
 
 
 def test_recap_language_is_independent_validated_live_and_persisted(tmp_path, monkeypatch):
@@ -194,9 +271,8 @@ async def test_requested_language_reaches_every_summary_reduction_call(tmp_path,
         assert key in task
         if language == "auto":
             assert "language with code da" in task
-            assert "Use the transcript language." in task
-            assert "titles, headings and summary prose" in task
-            assert "predominant language of the original transcripts" in task
+            assert "Write all generated titles, headings and summary prose" in task
+            assert "regardless of the transcript language" in task
             assert "Respond in the user's language." not in body["messages"][0]["content"]
         else:
             assert f"language with code {language.lower()}" in task

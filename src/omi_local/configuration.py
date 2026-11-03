@@ -12,7 +12,8 @@ from pydantic import SecretStr, ValidationError
 from .settings import DEPLOYMENT_FIELDS, RUNTIME_FIELDS, Settings, validate_setting_changes
 
 RESTART_FIELDS = {"data_dir", "web_dir", "worker_enabled"} | {
-    key for key in Settings.model_fields if key.startswith(("embedding_", "reranker_"))
+    key for key in Settings.model_fields
+    if key.startswith(("embedding_", "reranker_", "recording_transcription_"))
 }
 ROUTE_FIELDS = {"stt_routes", "llm_routes", "embedding_routes"}
 RETIRED_FIELDS = {
@@ -148,6 +149,20 @@ DESCRIPTIONS = {
     "Cleanup failures preserve the original transcript.",
     "stt_base_url": "Compatible transcription endpoint including /v1. Local HTTP(S) and hosted "
     "HTTPS endpoints are supported. Hosted providers receive the audio sent for transcription.",
+    "recording_transcription_enabled": "Run an optional exact whole-file pass for complete manual "
+    "uploads. It leaves canonical per-source transcripts, search and summaries unchanged.",
+    "recording_transcription_base_url": "Private local Whisper.cpp endpoint including /v1.",
+    "recording_transcription_api_key": "Private sidecar credential. Empty inherits the configured "
+    "STT route credential.",
+    "recording_transcription_expected_model_sha256": "Expected model SHA-256; mismatches are "
+    "refused.",
+    "recording_transcription_expected_model_snapshot": "Expected immutable model snapshot "
+    "identifier.",
+    "recording_transcription_expected_runtime_commit": "Expected immutable runtime commit.",
+    "recording_transcription_max_seconds": "Maximum whole-file duration; up to 7200 seconds.",
+    "recording_transcription_max_bytes": "Maximum assembled PCM WAV upload size, up to 256 MiB.",
+    "recording_transcription_timeout_seconds": "Bounded long whole-file request timeout; up to "
+    "7200 seconds.",
     "llm_base_url": "Compatible chat completions endpoint including /v1. Local HTTP(S) and hosted "
     "HTTPS endpoints are supported. Hosted providers receive prompts and selected transcripts.",
     "embedding_base_url": "Compatible embeddings endpoint including /v1. Hosted HTTPS providers "
@@ -336,7 +351,7 @@ class Configuration:
                     key in account_model_fields
                     or not key.startswith(("stt_", "llm_", "embedding_", "chat_", "inference_",
                                           "alignment_", "diarization_", "voice_recognition_",
-                                          "audio_forwarding_"))
+                                          "audio_forwarding_", "recording_transcription_"))
                 ) and key not in {"worker_enabled", "silence_threshold", "data_dir", "web_dir"}
             }
         try:

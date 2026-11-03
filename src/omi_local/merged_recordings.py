@@ -32,12 +32,22 @@ class Recording:
 
     @property
     def complete(self) -> bool:
-        expected = json.loads(self.rows[0]["source_metadata"])["part_count"]
-        indices = [json.loads(row["source_metadata"])["part_index"] for row in self.rows]
-        return indices == list(range(expected)) and all(
-            abs((datetime.fromisoformat(right["started_at"])
-                 - datetime.fromisoformat(left["ended_at"])).total_seconds()) <= 1 / 16000
-            for left, right in zip(self.rows, self.rows[1:])
+        metadata = [json.loads(row["source_metadata"]) for row in self.rows]
+        expected = metadata[0]["part_count"]
+        indices = [part["part_index"] for part in metadata]
+        return (
+            all(part["part_count"] == expected for part in metadata)
+            and indices == list(range(expected))
+            and all(
+                abs(
+                    (
+                        datetime.fromisoformat(right["started_at"])
+                        - datetime.fromisoformat(left["ended_at"])
+                    ).total_seconds()
+                )
+                <= 1 / 16000
+                for left, right in zip(self.rows, self.rows[1:])
+            )
         )
 
     @property
@@ -112,13 +122,19 @@ class Recording:
         }
 
 
-def load_recording(store: Store, recording_id: str) -> Recording:
-    with store.connect() as db:
-        rows = [dict(row) for row in db.execute(
+def load_recording(store: Store, recording_id: str, db=None) -> Recording:
+    if db is None:
+        with store.connect() as db:
+            return load_recording(store, recording_id, db)
+    rows = [
+        dict(row)
+        for row in db.execute(
             "SELECT * FROM audio WHERE json_extract(source_metadata,'$.recording_id')=? AND "
-            + MANUAL_UPLOAD_SQL + " ORDER BY json_extract(source_metadata,'$.part_index'),id",
+            + MANUAL_UPLOAD_SQL
+            + " ORDER BY json_extract(source_metadata,'$.part_index'),id",
             (recording_id,),
-        )]
+        )
+    ]
     if not rows:
         raise HTTPException(404, "Recording unavailable")
     # Identical retries with a different source UUID still represent one file part.
@@ -229,7 +245,15 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
     @router.get("/{recording_id}")
     def recording(recording_id: UUID, response: Response) -> dict:
         response.headers["Cache-Control"] = "no-store"
-        return load_recording(memory().store, str(recording_id)).snapshot()
+        app = memory()
+        with app.store.connect() as db:
+            db.execute("BEGIN")
+            current = load_recording(app.store, str(recording_id), db)
+            value = current.snapshot()
+            value["recording_transcription"] = app.store.recording_transcription_view(
+                current, app.settings, db,
+            )
+            return value
 
     @router.api_route("/{recording_id}/audio", methods=["GET", "HEAD"])
     def audio(recording_id: UUID, request: Request) -> Response:

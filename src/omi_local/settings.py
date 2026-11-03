@@ -181,6 +181,21 @@ class Settings(BaseSettings):
     stt_enhancement_mode: Literal["off", "on_empty", "compare"] = "on_empty"
     stt_enhancement_timeout_seconds: float = Field(default=15, gt=0, le=60)
     stt_routes: dict[str, STTRouteOverride] = Field(default_factory=dict)
+    recording_transcription_enabled: bool = False
+    recording_transcription_base_url: str = "http://127.0.0.1:8793/v1"
+    recording_transcription_api_key: SecretStr | None = None
+    recording_transcription_expected_model_sha256: str = Field(
+        default="", pattern=r"^(?:[0-9a-f]{64})?$",
+    )
+    recording_transcription_expected_model_snapshot: str = Field(default="", max_length=200)
+    recording_transcription_expected_runtime_commit: str = Field(
+        default="", pattern=r"^(?:[0-9a-f]{7,40})?$",
+    )
+    recording_transcription_max_seconds: int = Field(default=1200, ge=1, le=7200)
+    recording_transcription_max_bytes: int = Field(
+        default=40_000_000, ge=44, le=268_435_456,
+    )
+    recording_transcription_timeout_seconds: int = Field(default=1800, ge=1, le=7200)
     llm_model: str = "home"
     llm_enable_thinking: bool | None = None
     llm_summary_thinking_token_budget: int | None = Field(default=None, ge=1, le=65_536)
@@ -477,7 +492,9 @@ class Settings(BaseSettings):
     def valid_inference_endpoint(cls, value: str) -> str:
         return inference_endpoint(value)
 
-    @field_validator("alignment_base_url", "diarization_base_url")
+    @field_validator(
+        "alignment_base_url", "diarization_base_url", "recording_transcription_base_url",
+    )
     @classmethod
     def local_endpoint(cls, value: str) -> str:
         return local_endpoint(value)
@@ -496,6 +513,18 @@ class Settings(BaseSettings):
         if isinstance(value, bool):
             raise ValueError()
         return value
+
+    @model_validator(mode="after")
+    def recording_transcription_contract(self):
+        if self.recording_transcription_enabled and not (
+            self.recording_transcription_expected_model_sha256
+            and self.recording_transcription_expected_model_snapshot
+            and self.recording_transcription_expected_runtime_commit
+        ):
+            raise ValueError(
+                "Whole-recording transcription needs pinned local model/runtime provenance"
+            )
+        return self
 
 
 RUNTIME_FIELDS = (

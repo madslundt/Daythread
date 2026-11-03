@@ -1,0 +1,152 @@
+"""Bounded private WAV spooling and the pinned local CPP request contract."""
+
+import json
+import math
+import os
+import struct
+from pathlib import Path
+
+import httpx
+
+from .merged_recordings import pcm
+
+SPOOL_DIR = ".recording-transcription-spool"
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+
+def _spool_wav(store, recording, path: Path, maximum_bytes: int, maximum_seconds: int, on_part):
+    frames = recording.frames
+    expected_frames = sum(frames)
+    byte_count = 44 + expected_frames * 2
+    if expected_frames <= 0 or expected_frames / 16000 > maximum_seconds:
+        raise ValueError("duration_cap")
+    if byte_count > maximum_bytes:
+        raise ValueError("byte_cap")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    data_size = expected_frames * 2
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        data_size + 36,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        1,
+        16000,
+        32000,
+        2,
+        16,
+        b"data",
+        data_size,
+    )
+    written_frames = 0
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as output:
+        output.write(header)
+        for index, (row, count) in enumerate(zip(recording.rows, frames), start=1):
+            part = pcm(store, row, count)
+            if written_frames * 2 + len(part) + 44 > maximum_bytes:
+                raise ValueError("byte_cap")
+            output.write(part)
+            written_frames += count
+            del part
+            on_part(index, len(frames))
+    if written_frames != expected_frames or path.stat().st_size != byte_count:
+        raise ValueError("invalid_audio")
+    return byte_count, expected_frames
+
+
+async def _request(settings, path: Path):
+    headers = {}
+    secret = settings.recording_transcription_api_key
+    if secret is None:
+        secret = settings.stt_route("auto").token
+    if secret:
+        value = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        if value:
+            headers["Authorization"] = f"Bearer {value}"
+    timeout = httpx.Timeout(settings.recording_transcription_timeout_seconds, connect=10, pool=10)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        with path.open("rb") as audio:
+            async with client.stream(
+                "POST",
+                f"{settings.recording_transcription_base_url.rstrip('/')}/audio/transcriptions",
+                headers=headers,
+                data={
+                    "model": "whisper",
+                    "response_format": "verbose_json",
+                    "max_context": "0",
+                    "language": "auto",
+                    "temperature": "0",
+                    "temperature_inc": "0",
+                    "carry_initial_prompt": "false",
+                    "translate": "false",
+                },
+                files={"file": ("recording.wav", audio, "audio/wav")},
+            ) as response:
+                response.raise_for_status()
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_RESPONSE_BYTES:
+                        raise ValueError("response_cap")
+                return dict(response.headers), json.loads(body)
+
+
+def _validate_response(headers, payload, settings, duration):
+    expected = {
+        "x-homecompute-stt-model-sha256": (settings.recording_transcription_expected_model_sha256),
+        "x-homecompute-stt-model-snapshot": (
+            settings.recording_transcription_expected_model_snapshot
+        ),
+        "x-homecompute-stt-runtime-commit": (
+            settings.recording_transcription_expected_runtime_commit
+        ),
+    }
+    provenance = {key.removeprefix("x-homecompute-stt-"): headers.get(key) for key in expected}
+    provenance["runtime"] = headers.get("x-homecompute-stt-runtime")
+    if not provenance["runtime"] or any(
+        not value or headers.get(key) != value for key, value in expected.items()
+    ):
+        raise ValueError("provenance_mismatch")
+    text = payload.get("text") if isinstance(payload, dict) else None
+    segments = payload.get("segments") if isinstance(payload, dict) else None
+    if not isinstance(text, str) or not isinstance(segments, list):
+        raise ValueError("invalid_response")
+    native, last = [], 0.0
+    exact_join = []
+    for item in segments:
+        if not isinstance(item, dict):
+            raise ValueError("invalid_response")
+        start, end = item.get("start"), item.get("end")
+        part_text = item.get("text")
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, (int, float))
+            or not isinstance(end, (int, float))
+            or not math.isfinite(start)
+            or not math.isfinite(end)
+            or start < last
+            or end <= start
+            or start < 0
+            or end > duration
+            or not isinstance(part_text, str)
+        ):
+            raise ValueError("invalid_segments")
+        last = end
+        exact_join.append(part_text)
+        native.append({"start": start, "end": end, "text": part_text, "kind": "segment"})
+    joined = "".join(exact_join)
+    if joined == text:
+        cursor = 0
+        for item in native:
+            item["start_offset"] = cursor
+            cursor += len(item["text"])
+            item["end_offset"] = cursor
+    else:
+        for item in native:
+            item["start_offset"] = item["end_offset"] = None
+    return text, native, provenance

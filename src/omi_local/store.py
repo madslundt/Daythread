@@ -38,6 +38,8 @@ from .recap_store import RecapStore
 from .recording_locations import SCHEMA as RECORDING_LOCATIONS_SCHEMA
 from .recording_locations import RecordingLocationStore, decorate_locations
 from .recording_topics import SCHEMA as RECORDING_TOPICS_SCHEMA
+from .recording_transcription_store import SCHEMA as RECORDING_TRANSCRIPTION_SCHEMA
+from .recording_transcription_store import RecordingTranscriptionStore
 from .recording_uploads import SCHEMA as RECORDING_UPLOADS_SCHEMA
 from .recording_uploads import RecordingUploadStore
 from .reprocessing import SCHEMA as REPROCESSING_SCHEMA
@@ -97,6 +99,7 @@ class Store(
     RecapStore,
     SourceMatchingStore,
     RecordingUploadStore,
+    RecordingTranscriptionStore,
     ProcessingProgressStore,
 ):
     def __init__(
@@ -215,6 +218,7 @@ class Store(
             db.executescript(DISPLAY_TRANSLATION_SCHEMA)
             db.executescript(SOURCE_MATCHING_SCHEMA)
             db.executescript(RECORDING_UPLOADS_SCHEMA)
+            db.executescript(RECORDING_TRANSCRIPTION_SCHEMA)
             db.executescript(VENDOR_IMPORT_SCHEMA)
             db.executescript(SOURCE_EVIDENCE_SCHEMA)
             db.execute(

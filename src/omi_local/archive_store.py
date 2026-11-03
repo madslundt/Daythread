@@ -441,6 +441,8 @@ class ArchiveStore:
             if not row:
                 return False
             self.invalidate_decision_sources(db, [key], purge=True)
+            recording_id = json.loads(row["source_metadata"] or "{}").get("recording_id")
+            self.delete_recording_transcriptions(db, recording_id)
             db.execute("INSERT OR IGNORE INTO audio_deletions(audio_id) VALUES(?)", (key,))
             db.execute("DELETE FROM audio WHERE id=?", (key,))
             db.execute("DELETE FROM transcript_search WHERE id=?", (key,))
@@ -478,7 +480,7 @@ class ArchiveStore:
             if transcript_days:
                 cutoff = stamp(now - timedelta(days=transcript_days))
                 rows = db.execute(
-                    "SELECT id FROM audio WHERE ended_at<? "
+                    "SELECT id,source_metadata FROM audio WHERE ended_at<? "
                     "AND (text IS NOT NULL OR state!='expired' "
                     "OR json_type(source_metadata,'$.location') IS NOT NULL)",
                     (cutoff,),
@@ -490,6 +492,9 @@ class ArchiveStore:
                 )
                 removed_transcripts = [row["id"] for row in rows]
                 self.invalidate_decision_sources(db, removed_transcripts, purge=True)
+                for row in rows:
+                    recording_id = json.loads(row["source_metadata"] or "{}").get("recording_id")
+                    self.delete_recording_transcriptions(db, recording_id)
                 for key in removed_transcripts:
                     db.execute(
                         "UPDATE audio SET text=NULL,segments='[]',transcription_details='{}',"

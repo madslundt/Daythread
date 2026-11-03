@@ -35,7 +35,7 @@ public struct RecordingTranscriptCitation: Decodable, Equatable, Sendable {
               Self.isDigest(pipelineFingerprint), !sourceIDs.isEmpty,
               sourceIDs.allSatisfy({ UUID(uuidString: $0) != nil }) else {
             throw DecodingError.dataCorruptedError(forKey: .referenceType, in: values,
-                debugDescription: "Invalid whole-recording transcript citation")
+                debugDescription: AppLocalization.text("Recording transcript unavailable"))
         }
     }
 

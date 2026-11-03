@@ -374,25 +374,24 @@ async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp
         settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
         inference = Inference(settings, http)
         await inference.summarize(topic_inputs, "topic notes")
-        assert any("ALPHA repeated" in payload and '"speaker_label": "A"' in payload
+        assert any("ALPHA repeated" in payload and '"speaker_label":"A"' in payload
                    for payload in calls)
-        assert any("BETA repeated" in payload and '"speaker_label": "B"' in payload
+        assert any("BETA repeated" in payload and '"speaker_label":"B"' in payload
                    for payload in calls)
-        assert all("ALPHA repeated" in payload or '"speaker_label": "A"' not in payload
+        assert all("ALPHA repeated" in payload or '"speaker_label":"A"' not in payload
                    for payload in calls)
-        assert all("BETA repeated" in payload or '"speaker_label": "B"' not in payload
+        assert all("BETA repeated" in payload or '"speaker_label":"B"' not in payload
                    for payload in calls)
         calls.clear()
         await inference.summarize([long_source], "faithful notes")
     assert calls
     serialized = "\n".join(calls)
-    assert '"speaker_label": "B"' in serialized
-    assert '"speaker_label": "A"' not in serialized
-    assert '"speaker_label": null' in serialized
-    assert '"start": null' in serialized and '"end": null' in serialized
-    assert '"text": "re"' in serialized and '"text": "peated"' in serialized
-    assert '"source_id": "' + key + '"' in serialized
-    assert "Current source-local speaker evidence" in serialized
+    assert '"speaker_label":"B"' in serialized
+    assert '"speaker_label":"A"' not in serialized
+    assert '"attribution":"unknown"' in serialized
+    assert '"text":"re"' in serialized and '"text":"peated"' in serialized
+    assert f"[{key}]" in serialized
+    assert "Speaker evidence (JSON" in serialized
 
 
 @pytest.mark.anyio
@@ -422,7 +421,7 @@ async def test_unknown_speaker_spans_keep_summary_filtering_and_avoid_duplicate_
     assert captured
     assert "um," not in captured[0]
     assert "we booked the ticket for Friday." in captured[0]
-    assert "Current source-local speaker evidence" not in captured[0]
+    assert "Speaker evidence (JSON" not in captured[0]
 
 
 def test_later_context_resynthesizes_all_earlier_topics_without_reusing_the_old_recap(client):

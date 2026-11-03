@@ -628,36 +628,17 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 if trace is not None:
                     trace["final_prompt_source_ids"] = []
                 return NO_CONTENT
+        prepared = any(source.get("citation_source_ids") for source in sources)
+        context_budget = 24000 if answer_task is None and prepared else 12000
+        from .summary_speaker_evidence import source_prompt_pieces
+
         pieces = []
         for source in sources:
-            text = source["text"] or ""
-            for offset in range(0, len(text), 8000):
-                pieces.append(
-                    f"[{source['id']}] {source['started_at']} "
-                    f"source_kind={source.get('source_kind', '')} "
-                    f"important_hint={source.get('important', False)} "
-                    f"meeting_hint_ids={source.get('meeting_hint_ids', [])} "
-                    + ("subject_hint=" + json.dumps(source["subject_hint"], ensure_ascii=False)
-                       + " (navigation label only) " if source.get("subject_hint") else "")
-                    + text[offset : offset + 8000]
-                    + (
-                        "\nCurrent source-local speaker evidence (exact character offsets; "
-                        "unknown remains unknown): "
-                        + json.dumps(self._speaker_evidence_window(
-                            source,
-                            source.get("speaker_evidence_origin", 0) + offset,
-                            source.get("speaker_evidence_origin", 0)
-                            + offset + len(text[offset : offset + 8000]),
-                        ), ensure_ascii=False)
-                        if self._has_actionable_speaker_evidence(source) else ""
-                    )
-                    + (
-                        "\nDiary recaps: "
-                        + json.dumps(source["diary_summaries"], ensure_ascii=False)
-                        if offset == 0 and source.get("diary_summaries")
-                        else ""
-                    )
+            pieces.extend(
+                piece.content for piece in source_prompt_pieces(
+                    source, self._speaker_evidence_window, max_chars=context_budget,
                 )
+            )
         task = (
             f"Create {purpose}. Preserve useful supported details and source UUID citations. "
             "Use concise Markdown. Follow the requested organization. "
@@ -685,7 +666,6 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             " Cite only original source UUIDs copied exactly from this allowed list; do not "
             "invent or cite any other UUID: " + ", ".join(allowed_ids) + "."
         )
-        prepared = any(source.get("citation_source_ids") for source in sources)
         for level in range(8):
             # Prepared notes can be consolidated in a larger bounded context than
             # noisy raw excerpts, avoiding repeated compression of an hour's useful facts.
@@ -693,10 +673,12 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             batches: list[str] = []
             current = ""
             for piece in pieces:
-                if len(current) + len(piece) > context_budget and current:
+                if current and len(current) + 1 + len(piece) > context_budget:
                     batches.append(current)
                     current = ""
-                current += piece + "\n"
+                if len(piece) > context_budget:
+                    raise InferenceError("Summary evidence piece exceeds bounded context")
+                current += ("\n" if current else "") + piece
             if current:
                 batches.append(current)
             if len(batches) <= 1:

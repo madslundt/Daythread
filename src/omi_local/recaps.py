@@ -59,7 +59,7 @@ BOUNDARY_NOTE = (
     "configured pause in recorded speech. Missing uploads do not count as silence. "
     "Conversation boundaries are approximate."
 )
-SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-1"
+SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-2"
 
 
 def digest(value: object) -> str:
@@ -401,8 +401,9 @@ class Recaps:
                 "Current speaker evidence is provided per original source as exact transcript "
                 "character spans with source-local times; a full recording source uses elapsed "
                 "concatenated-file times. Use it only to attribute words within "
-                "those exact spans. `attribution=unknown` or `overlap` has no known owner; never "
-                "fill those gaps from nearby turns or first-person wording. A label such as "
+                "those exact spans. `attribution=unknown` or `overlap` has no known owner; text "
+                "not listed in the speaker spans is also unknown. Never fill those gaps from "
+                "nearby turns or first-person wording. A label such as "
                 "Speaker A is an anonymous machine cluster, not a verified human identity. "
                 "Use a personal name to identify a speaker only when the evidence explicitly "
                 "supplies a reviewed speaker_name. Preserve names and roles mentioned in speech "

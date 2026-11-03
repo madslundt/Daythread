@@ -89,6 +89,21 @@ def test_topic_fingerprint_tracks_summary_thinking_budget(recording):
     assert topic_fingerprint(memory) != before
 
 
+def test_topic_fingerprint_tracks_effective_summary_thinking_setting(recording):
+    _client, memory, _key = recording
+    memory.settings = memory.settings.model_copy(update={
+        "llm_enable_thinking": False, "llm_summary_enable_thinking": None,
+    })
+    inherited_off = topic_fingerprint(memory)
+    memory.settings = memory.settings.model_copy(update={"llm_summary_enable_thinking": True})
+    summary_on = topic_fingerprint(memory)
+    assert summary_on != inherited_off
+    memory.settings = memory.settings.model_copy(update={
+        "llm_enable_thinking": True, "llm_summary_enable_thinking": True,
+    })
+    assert topic_fingerprint(memory) == summary_on
+
+
 def test_today_reports_waiting_and_active_topic_work_without_counting_it_twice(recording):
     client, memory, key = recording
     assert client.get("/v1/status").json()["generation"] == {

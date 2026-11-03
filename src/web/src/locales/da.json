@@ -3194,5 +3194,7 @@
   "Selected recording transcript changed; retry the request": "Den valgte optagelsestransskription er ændret; prøv anmodningen igen",
   "Recording transcript evidence expired; retry the request": "Dokumentationen for optagelsestransskriptionen er udløbet; prøv anmodningen igen",
   "Recording transcript membership changed; retry the request": "Optagelsens dele er ændret; prøv anmodningen igen",
-  "Recording transcript unavailable": "Optagelsestransskriptionen er utilgængelig"
+  "Recording transcript unavailable": "Optagelsestransskriptionen er utilgængelig",
+  "Summary reasoning": "Ræsonnering i opsummeringer",
+  "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.": "Tilsidesæt den fælles indstilling for ræsonnering ved generering af opsummeringer. Modelstandard arver den fælles indstilling; andre LLM-opgaver påvirkes ikke."
 }

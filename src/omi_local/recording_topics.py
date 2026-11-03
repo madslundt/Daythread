@@ -153,7 +153,7 @@ def topic_fingerprint(memory: Memory) -> str:
     identity = {
         "version": VERSION, "model": memory.settings.llm_route("summary").identity,
         "language": memory.settings.summary_language,
-        "thinking": memory.settings.llm_enable_thinking,
+        "thinking": memory.settings.effective_summary_thinking,
         "thinking_token_budget": memory.settings.llm_summary_thinking_token_budget,
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()

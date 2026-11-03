@@ -3097,3 +3097,6 @@
 "Original part transcripts" = "Oprindelige deludskrifter";
 "Unknown speaker" = "Ukendt taler";
 "Overlapping speech" = "Overlappende tale";
+
+"Summary reasoning" = "Ræsonnering i opsummeringer";
+"Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Tilsidesæt den fælles indstilling for ræsonnering ved generering af opsummeringer. Modelstandard arver den fælles indstilling; andre LLM-opgaver påvirkes ikke.";

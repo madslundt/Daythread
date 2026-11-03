@@ -29,9 +29,11 @@ describe("simplified settings", () => {
 
   const field = (key: string): ConfigurationField => ({ key, label: key, group: "Test", kind: "string", description: "", nullable: false, restart_required: false });
   it("curates advanced controls instead of exposing new backend, retired or fixed-policy fields", () => {
-    const keys = ["stt_model", "llm_model", "meeting_max_minutes", "meeting_quiet_minutes", "meeting_context_seconds", "marker_cooldown_seconds",
+    const keys = ["stt_model", "llm_model", "llm_summary_enable_thinking", "meeting_max_minutes", "meeting_quiet_minutes", "meeting_context_seconds", "marker_cooldown_seconds",
       "translation_languages", "capture_paused", "recap_hour", "recap_quiet_minutes", "silence_threshold", "data_dir", "new_backend_option"];
-    expect(advancedConfigurationFields(keys.map(field), {}).map(({ key }) => key)).toEqual(["stt_model", "llm_model"]);
+    expect(advancedConfigurationFields(keys.map(field), {}).map(({ key }) => key)).toEqual([
+      "stt_model", "llm_model", "llm_summary_enable_thinking",
+    ]);
   });
 
   it("shows tuning only after the corresponding feature is enabled", () => {

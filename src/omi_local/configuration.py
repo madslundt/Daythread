@@ -224,6 +224,8 @@ DESCRIPTIONS = {
     "llm_revision": "Change this when replacing model weights to invalidate derived caches.",
     "llm_enable_thinking": "Default uses the model's setting. Supported gateways can enable or "
     "disable reasoning explicitly.",
+    "llm_summary_enable_thinking": "Override the shared thinking setting for summary generation. "
+    "Model default inherits the shared setting; other LLM tasks are unaffected.",
     "llm_summary_thinking_token_budget": "Optional reasoning token cap for summary calls. Sent "
     "only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning "
     "budget never exceeds half of the available output capacity, leaving room for the answer.",
@@ -292,6 +294,7 @@ def descriptors() -> list[dict]:
             "llm_base_url": "Summaries & chat endpoint",
             "llm_api_key": "Summaries & chat API key",
             "llm_model": "Summaries & chat model",
+            "llm_summary_enable_thinking": "Summary reasoning",
             "llm_summary_thinking_token_budget": "Summary thinking token budget",
             "voice_recognition_enabled": "Remember speakers",
             "voice_recognition_report": "Speaker recognition evaluation report",

@@ -296,6 +296,34 @@ async def test_coherence_preserves_64k_provider_capacity_unless_thinking_is_expl
 
 
 @pytest.mark.anyio
+async def test_coherence_output_budget_uses_summary_override(tmp_path):
+    source_id = str(uuid4())
+    output = f"## Topic\nA supported conclusion [{source_id}]"
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return response(output)
+
+    settings = Settings(
+        data_dir=tmp_path, summary_language="en", llm_enable_thinking=False,
+        llm_summary_enable_thinking=True, llm_summary_thinking_token_budget=8192,
+        _env_file=None,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.cohere_completed_summary(
+            [{"id": source_id, "text": "The original supports the conclusion."}],
+            f"## Topic\nA draft [{source_id}]", "A concise recap.",
+        )
+
+    assert result == output and trace["model_calls"] == 1
+    assert requests[0]["max_tokens"] == 65536
+    assert requests[0]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert requests[0]["thinking_token_budget"] == 8192
+
+
+@pytest.mark.anyio
 async def test_coherence_explicitly_disabled_thinking_does_not_retry_larger_after_length(tmp_path):
     source_id = str(uuid4())
     requests = []

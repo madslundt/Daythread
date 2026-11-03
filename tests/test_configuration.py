@@ -199,6 +199,40 @@ def test_summary_thinking_budget_defaults_validates_and_roundtrips(settings):
         ] == 8192
 
 
+def test_summary_thinking_override_defaults_validates_and_roundtrips(settings):
+    with TestClient(create_app(settings)) as client:
+        view = client.get("/v1/configuration").json()
+        assert view["values"]["llm_summary_enable_thinking"] is None
+        field = next(item for item in view["fields"]
+                     if item["key"] == "llm_summary_enable_thinking")
+        assert field["kind"] == "boolean" and field["nullable"] is True
+        assert field["label"] == "Summary reasoning"
+        assert "other LLM tasks are unaffected" in field["description"]
+        assert field["restart_required"] is False
+        shared_thinking = view["values"]["llm_enable_thinking"]
+        assert save(client, {"llm_summary_enable_thinking": True}).status_code == 200
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_summary_enable_thinking"
+        ] is True
+        assert save(client, {"llm_summary_enable_thinking": False}).status_code == 200
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_summary_enable_thinking"
+        ] is False
+        assert save(client, {"llm_summary_enable_thinking": None}).status_code == 200
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_summary_enable_thinking"
+        ] is None
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_enable_thinking"
+        ] == shared_thinking
+        for invalid in ("sometimes", 1.5, []):
+            assert save(client, {"llm_summary_enable_thinking": invalid}).status_code == 422
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_summary_enable_thinking"
+        ] is None
+
+
 def test_route_keys_can_be_replaced_disabled_inherited_and_removed(settings):
     with TestClient(create_app(settings)) as client:
         for token, expected in [

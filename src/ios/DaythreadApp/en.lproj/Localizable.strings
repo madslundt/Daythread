@@ -3097,3 +3097,6 @@
 "Original part transcripts" = "Original part transcripts";
 "Unknown speaker" = "Unknown speaker";
 "Overlapping speech" = "Overlapping speech";
+
+"Summary reasoning" = "Summary reasoning";
+"Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.";

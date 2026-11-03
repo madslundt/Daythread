@@ -324,6 +324,44 @@ def test_recap_preparation_fingerprint_tracks_summary_thinking_budget(client):
     assert memory.recaps.group_key(group) != before
 
 
+def test_recap_fingerprint_uses_effective_summary_thinking_setting(client):
+    insert(client, kind="manual_upload", text="Atlas continues")
+    memory = client.app.state.memory
+    group = memory.recaps.groups(AT + timedelta(hours=1))[0]
+    memory.settings = memory.settings.model_copy(update={
+        "llm_enable_thinking": False, "llm_summary_enable_thinking": None,
+    })
+    inherited_off = memory.recaps.group_key(group)
+    memory.settings = memory.settings.model_copy(update={"llm_summary_enable_thinking": True})
+    summary_on = memory.recaps.group_key(group)
+    assert summary_on != inherited_off
+    memory.settings = memory.settings.model_copy(update={
+        "llm_enable_thinking": True, "llm_summary_enable_thinking": True,
+    })
+    assert memory.recaps.group_key(group) == summary_on
+
+
+def test_daily_recap_cache_identity_uses_effective_summary_thinking(client, monkeypatch):
+    insert(client, kind="manual_upload", text="Atlas continues")
+    memory = client.app.state.memory
+    keys = []
+    original = memory.store.recap_summary
+
+    def capture(key, *args, **kwargs):
+        keys.append(key)
+        return original(key, *args, **kwargs)
+
+    monkeypatch.setattr(memory.store, "recap_summary", capture)
+    memory.settings = memory.settings.model_copy(update={
+        "llm_enable_thinking": False, "llm_summary_enable_thinking": None,
+    })
+    client.post("/v1/recaps/2026-10-16")
+    first_key = keys[-1]
+    memory.settings = memory.settings.model_copy(update={"llm_summary_enable_thinking": True})
+    client.post("/v1/recaps/2026-10-16")
+    assert keys[-1] != first_key
+
+
 def test_speaker_projection_resolves_one_scope_for_all_source_parts(client, monkeypatch):
     first = insert(client, AT, "Part one", kind="manual_upload")
     second = insert(client, AT + timedelta(seconds=60), "Part two", kind="manual_upload")

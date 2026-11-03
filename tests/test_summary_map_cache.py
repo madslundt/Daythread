@@ -162,6 +162,46 @@ async def test_map_cache_reuses_only_identical_evidence_language_sources_and_rou
 
 
 @pytest.mark.anyio
+async def test_map_cache_identity_uses_effective_summary_thinking_override(tmp_path):
+    calls = []
+
+    def provider(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        return response("Supported map note")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        inherited = Inference(Settings(
+            data_dir=tmp_path, llm_enable_thinking=False, _env_file=None,
+        ), client)
+        overridden = Inference(Settings(
+            data_dir=tmp_path, llm_enable_thinking=False,
+            llm_summary_enable_thinking=True, _env_file=None,
+        ), client)
+        same_effective = Inference(Settings(
+            data_dir=tmp_path, llm_enable_thinking=True,
+            llm_summary_enable_thinking=True, _env_file=None,
+        ), client)
+        allowed = [{"id": "source-1"}]
+        async with summary_map_cache_scope() as cache:
+            await inherited._summary_notes(
+                "Transcript [source-1]", allowed, {"model_calls": 0}, 5000,
+            )
+            await overridden._summary_notes(
+                "Transcript [source-1]", allowed, {"model_calls": 0}, 5000,
+            )
+            await same_effective._summary_notes(
+                "Transcript [source-1]", allowed, {"model_calls": 0}, 5000,
+            )
+            assert cache.hits == 1
+
+    assert len(calls) == 2
+    assert calls[0]["messages"][0]["content"] == calls[1]["messages"][0]["content"]
+    assert calls[0]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert calls[1]["chat_template_kwargs"] == {"enable_thinking": True}
+
+
+@pytest.mark.anyio
 async def test_map_cache_failure_is_evicted_for_later_retry(tmp_path):
     calls = 0
 

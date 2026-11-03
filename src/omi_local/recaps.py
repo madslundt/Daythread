@@ -219,7 +219,7 @@ class Recaps:
             "boundary": (group.closed_at, group.basis, group.proof),
             "hints": group.hints,
             "model": settings.llm_route("summary").identity,
-            "thinking": settings.llm_enable_thinking,
+            "thinking": settings.effective_summary_thinking,
             "thinking_token_budget": settings.llm_summary_thinking_token_budget,
             "language": settings.summary_language.lower(), "timezone": settings.timezone,
             "prompt": PROMPT_VERSION,
@@ -697,7 +697,7 @@ class Recaps:
                    if any(source.get("reference_type") == "recording_transcription"
                           for source in sources) else {}),
                 "model": memory.settings.llm_route("summary").identity,
-                "thinking": memory.settings.llm_enable_thinking,
+                "thinking": memory.settings.effective_summary_thinking,
                 "thinking_token_budget": memory.settings.llm_summary_thinking_token_budget,
                 "language": memory.settings.summary_language.lower(),
             })

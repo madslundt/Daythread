@@ -3095,3 +3095,6 @@
 "Original part transcripts" = "Ursprüngliche Teiltranskripte";
 "Unknown speaker" = "Unbekannter Redner";
 "Overlapping speech" = "Überlappende Sprache";
+
+"Summary reasoning" = "Zusammenfassungsdenken";
+"Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Überschreibt die gemeinsame Denkeinstellung für Zusammenfassungen. Modellstandard übernimmt die gemeinsame Einstellung; andere LLM-Aufgaben sind nicht betroffen.";

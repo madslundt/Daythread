@@ -3194,5 +3194,7 @@
   "Selected recording transcript changed; retry the request": "Selected recording transcript changed; retry the request",
   "Recording transcript evidence expired; retry the request": "Recording transcript evidence expired; retry the request",
   "Recording transcript membership changed; retry the request": "Recording transcript membership changed; retry the request",
-  "Recording transcript unavailable": "Recording transcript unavailable"
+  "Recording transcript unavailable": "Recording transcript unavailable",
+  "Summary reasoning": "Summary reasoning",
+  "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.": "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected."
 }

@@ -3194,5 +3194,7 @@
   "Selected recording transcript changed; retry the request": "Das ausgewählte Aufnahmetranskript wurde geändert; bitte erneut anfordern",
   "Recording transcript evidence expired; retry the request": "Der Nachweis des Aufnahmetranskripts ist abgelaufen; bitte erneut anfordern",
   "Recording transcript membership changed; retry the request": "Die Bestandteile der Aufnahme wurden geändert; bitte erneut anfordern",
-  "Recording transcript unavailable": "Aufnahmetranskript nicht verfügbar"
+  "Recording transcript unavailable": "Aufnahmetranskript nicht verfügbar",
+  "Summary reasoning": "Zusammenfassungsdenken",
+  "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.": "Überschreibt die gemeinsame Denkeinstellung für Zusammenfassungen. Modellstandard übernimmt die gemeinsame Einstellung; andere LLM-Aufgaben sind nicht betroffen."
 }

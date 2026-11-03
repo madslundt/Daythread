@@ -3194,5 +3194,7 @@
   "Selected recording transcript changed; retry the request": "Den valda inspelningstranskriptionen har ändrats; försök igen",
   "Recording transcript evidence expired; retry the request": "Underlaget för inspelningstranskriptionen har upphört; försök igen",
   "Recording transcript membership changed; retry the request": "Inspelningens delar har ändrats; försök igen",
-  "Recording transcript unavailable": "Inspelningstranskription är inte tillgänglig"
+  "Recording transcript unavailable": "Inspelningstranskription är inte tillgänglig",
+  "Summary reasoning": "Resonemang för sammanfattningar",
+  "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.": "Åsidosätt den delade inställningen för resonemang vid sammanfattningar. Modellstandard ärver den delade inställningen; andra LLM-uppgifter påverkas inte."
 }

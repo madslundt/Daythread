@@ -282,7 +282,10 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
 
     @property
     def llm_template_options(self) -> dict:
-        thinking = self.settings.llm_enable_thinking
+        thinking = (
+            self.settings.effective_summary_thinking
+            if self.task == "summary" else self.settings.llm_enable_thinking
+        )
         return {} if thinking is None else {"chat_template_kwargs": {"enable_thinking": thinking}}
 
     async def _generate(
@@ -306,7 +309,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             budget = generation_tokens(task, evidence, system, budget)
             requested_thinking_budget = self.settings.llm_summary_thinking_token_budget
             thinking_budget = None
-            if (self.task == "summary" and self.settings.llm_enable_thinking is True
+            if (self.task == "summary" and self.settings.effective_summary_thinking is True
                     and requested_thinking_budget is not None):
                 # Reserve at least half the effective output capacity for the
                 # answer, including when the context window reduces max_tokens.
@@ -1043,7 +1046,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         # provider's default or enabled reasoning, retain the established summary
         # capacity so providers that reserve the declared max_tokens still complete.
         output_budget = (
-            OUTPUT_BUDGET if self.settings.llm_enable_thinking is False
+            OUTPUT_BUDGET if self.settings.effective_summary_thinking is False
             else SUMMARY_OUTPUT_TOKENS
         )
         trace = {"status": "applied", "model_calls": 0, "input_tokens_estimate": size}
@@ -1128,7 +1131,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 "max_tokens": output_budget,
                 "thinking_token_budget": (
                     min(self.settings.llm_summary_thinking_token_budget, output_budget // 2)
-                    if self.settings.llm_enable_thinking is True
+                    if self.settings.effective_summary_thinking is True
                     and self.settings.llm_summary_thinking_token_budget is not None
                     else None
                 ),

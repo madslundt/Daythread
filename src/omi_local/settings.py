@@ -199,6 +199,7 @@ class Settings(BaseSettings):
     recording_transcription_timeout_seconds: int = Field(default=1800, ge=1, le=7200)
     llm_model: str = "home"
     llm_enable_thinking: bool | None = None
+    llm_summary_enable_thinking: bool | None = None
     llm_summary_thinking_token_budget: int | None = Field(default=None, ge=1, le=65_536)
     llm_revision: str = Field(default="", max_length=200)
     llm_routes: dict[LLMTask, LLMRouteOverride] = Field(default_factory=dict)
@@ -514,6 +515,13 @@ class Settings(BaseSettings):
         if isinstance(value, bool):
             raise ValueError()
         return value
+
+    @property
+    def effective_summary_thinking(self) -> bool | None:
+        """Summary-only override, falling back to the shared LLM setting."""
+        if self.llm_summary_enable_thinking is not None:
+            return self.llm_summary_enable_thinking
+        return self.llm_enable_thinking
 
     @model_validator(mode="after")
     def recording_transcription_contract(self):

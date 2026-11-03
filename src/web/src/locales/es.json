@@ -3194,5 +3194,7 @@
   "Selected recording transcript changed; retry the request": "La transcripción seleccionada cambió; vuelve a intentarlo",
   "Recording transcript evidence expired; retry the request": "La evidencia de la transcripción expiró; vuelve a intentarlo",
   "Recording transcript membership changed; retry the request": "Las partes de la grabación cambiaron; vuelve a intentarlo",
-  "Recording transcript unavailable": "Transcripción de la grabación no disponible"
+  "Recording transcript unavailable": "Transcripción de la grabación no disponible",
+  "Summary reasoning": "Razonamiento para resúmenes",
+  "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.": "Anula el ajuste compartido de razonamiento al generar resúmenes. La opción predeterminada del modelo hereda el ajuste compartido; las demás tareas de LLM no se ven afectadas."
 }

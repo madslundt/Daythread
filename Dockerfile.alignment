@@ -1,0 +1,29 @@
+FROM python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+
+ENV HF_HUB_OFFLINE=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HOME=/tmp/huggingface \
+    OMI_ALIGNMENT_DA_MODEL_DIR=/models/da \
+    OMI_ALIGNMENT_DEVICE=cpu \
+    OMI_ALIGNMENT_CPU_THREADS=2 \
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    TOKENIZERS_PARALLELISM=false \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home --shell /usr/sbin/nologin aligner
+
+WORKDIR /opt/alignment
+COPY scripts/alignment-requirements.lock ./requirements.lock
+COPY scripts/alignment_server.py ./alignment_server.py
+RUN python -m pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple \
+    -r requirements.lock
+
+USER 10001:10001
+EXPOSE 8791
+CMD ["python", "-m", "uvicorn", "alignment_server:app", "--host", "0.0.0.0", \
+     "--port", "8791", "--workers", "1", "--no-access-log"]

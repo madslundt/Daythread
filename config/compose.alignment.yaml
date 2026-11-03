@@ -1,0 +1,56 @@
+services:
+  alignment:
+    profiles: [alignment]
+    image: omi-local-alignment:whisperx-3.3.1-roest-cpu
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: Dockerfile.alignment
+    container_name: omi-local-alignment
+    environment:
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HOME: /tmp/huggingface
+      OMI_ALIGNMENT_DA_MODEL_DIR: /models/da
+      OMI_ALIGNMENT_DEVICE: cpu
+      OMI_ALIGNMENT_CPU_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - type: bind
+        source: /opt/daythread-alignment/models/roest-da-beb3e790246d6b9dec1df596b0b21d5c42f4d99c
+        target: /models/da
+        read_only: true
+    expose: ["8791"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 5g
+    cpus: 2.0
+    pids_limit: 128
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8791/health'));
+          assert d.get('configured') is True and d.get('model','').startswith('whisperx-3.3.1;')
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      omi-local:
+        aliases: [alignment]
+
+networks:
+  omi-local:
+    external: true
+    name: omi-local_default

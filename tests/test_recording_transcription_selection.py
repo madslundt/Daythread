@@ -312,6 +312,48 @@ def test_unknown_spoken_word_breaks_same_speaker_utterance_coalescing(app_record
     assert [item["attribution"] for item in evidence] == ["attributed", "unknown", "attributed"]
     assert [item["text"] for item in evidence] == ["yes", " maybe ", "later"]
 
+
+def test_partial_unknown_speaker_runs_keep_text_without_half_null_times(app_recording):
+    client, _, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    group = next(group for group in memory.recaps.groups(utc_now())
+                 if {row["id"] for row in group.sources} == set(ids))
+    scope = {"state": "ready", "evidence_version": "speaker-v1", "speakers": [], "turns": []}
+    memory.recaps.speaker_projection = lambda _group, db=None: {
+        source_id: scope for source_id in ids
+    }
+    source_map = [
+        {"source_id": ids[0], "start": 0.0, "end": 1.0},
+        {"source_id": ids[1], "start": 1.0, "end": 2.0},
+    ]
+    cases = [
+        ("timed missing", [{"text": "timed", "start_offset": 0, "end_offset": 5,
+                            "start": 0.1, "end": 0.2}]),
+        ("missing timed", [{"text": "timed", "start_offset": 8, "end_offset": 13,
+                            "start": 0.4, "end": 0.6}]),
+        ("timed, timed", [
+            {"text": "timed", "start_offset": 0, "end_offset": 5,
+             "start": 0.1, "end": 0.2},
+            {"text": "timed", "start_offset": 7, "end_offset": 12,
+             "start": 0.4, "end": 0.6},
+        ]),
+    ]
+    for text, word_segments in cases:
+        evidence, _, state = memory.recaps.recording_speaker_evidence(
+            group, rid, {"text": text, "source_map": source_map, "word_segments": word_segments},
+        )
+        assert state == "ready"
+        assert "".join(item["text"] for item in evidence) == text
+        assert all((item["start"] is None) == (item["end"] is None) for item in evidence)
+        if text != "timed, timed":
+            assert len(evidence) == 1
+            assert evidence[0]["text"] == text
+            assert (evidence[0]["start_offset"], evidence[0]["end_offset"]) == (0, len(text))
+            assert (evidence[0]["start"], evidence[0]["end"]) == (None, None)
+        else:
+            assert len(evidence) == 1
+            assert (evidence[0]["start"], evidence[0]["end"]) == (0.1, 0.6)
+
 def test_compacted_recording_evidence_keeps_exact_window_anchors(app_recording):
     _, _, rid, ids, _, _ = app_recording
     from omi_local.inference import Inference

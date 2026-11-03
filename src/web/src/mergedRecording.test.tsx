@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
 import { RecordingGroups } from "./RecordingGroups";
+import { createRecordingSeekController } from "./useRecordingSeek";
 
 const recording: CombinedRecording = {
   id: "uploaded-file", title: "Launch and garden", started_at: "2026-10-16T09:00:00Z",
@@ -128,6 +129,43 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("Unknown word.");
     expect(html.match(/recording-speaker-label">Unknown speaker/g)).toHaveLength(1);
     expect(html.match(/Hello/g)).toHaveLength(1);
+  });
+  it("seeks timed speaker runs on the global player and leaves untimed words unknown", () => {
+    const canonical = "Hello there. Missing words.";
+    const selected: CombinedRecording = { ...recording,
+      transcript_selection: { state: "selected", selection_version: 4, result_version: "variant-v2",
+        transcript: { text: canonical, speaker_evidence: { state: "ready", utterances: [
+          { text: "Hello there.", start_offset: 0, end_offset: 12, start: 2.5, end: 3.2,
+            attribution: "attributed", speaker_id: "a", speaker_label: "A" },
+          { text: " Missing words.", start_offset: 12, end_offset: canonical.length,
+            start: null, end: null, attribution: "unknown" },
+        ] } },
+      },
+    };
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={selected} />);
+    expect(html).toContain('<button type="button" class="caption recording-speaker-time text-link" aria-label="Playback position 00:02">00:02</button>');
+    expect(html).toContain("Missing words.");
+    expect(html.match(/recording-speaker-time/g)).toHaveLength(1);
+
+    const pause = vi.fn();
+    const audio = { pause, currentTime: 0, readyState: 1 } as unknown as HTMLAudioElement;
+    const playback = createRecordingSeekController();
+    playback.audioRef(audio);
+    playback.seekTo(2.5);
+    expect(audio.currentTime).toBe(2.5);
+    expect(pause).toHaveBeenCalled();
+    playback.seekTo(undefined);
+    expect(audio.currentTime).toBe(2.5);
+
+    playback.audioRef(null);
+    playback.seekTo(4);
+    playback.audioRef(audio);
+    expect(audio.currentTime).toBe(2.5);
+    playback.onReady();
+    expect(audio.currentTime).toBe(4);
+
+    const noAudio = renderToStaticMarkup(<MergedRecordingContent recording={{ ...selected, audio_available: false }} />);
+    expect(noAudio).toContain('aria-label="Playback position 00:02" disabled=""');
   });
   it("falls back to original transcript when the selection is stale", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,

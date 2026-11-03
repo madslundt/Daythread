@@ -166,7 +166,10 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
               ? run.speaker_name || run.speaker_label || t("Unknown speaker")
               : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span> : null}
             {hasSpokenText && run.start !== null && run.start !== undefined
-              ? <span className="caption recording-speaker-time">{playbackTime(run.start)}</span> : null}
+              ? <button type="button" className="caption recording-speaker-time text-link"
+                aria-label={`${t("Playback position")} ${playbackTime(run.start)}`}
+                disabled={!recording.audio_available}
+                onClick={() => playback.seekTo(run.start ?? undefined)}>{playbackTime(run.start)}</button> : null}
             <span>{run.text}</span>
           </span>;
         })}

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import sqlite3
 import unicodedata
 
@@ -56,6 +57,18 @@ def selected_recording_variants(
 
 def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
     """Coalesce anchored words without hiding lexical unknowns or overlap."""
+
+    def lexical(text: str) -> bool:
+        return any(unicodedata.category(char)[0] in {"L", "N"} for char in text)
+
+    def time_pair(item: dict) -> tuple[float, float] | None:
+        start, end = item.get("start"), item.get("end")
+        if (isinstance(start, (int, float)) and not isinstance(start, bool)
+                and isinstance(end, (int, float)) and not isinstance(end, bool)
+                and math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
+            return start, end
+        return None
+
     output = []
     index = 0
     while index < len(items):
@@ -68,6 +81,11 @@ def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
         child_ids = [current["child_source_id"]] if current["child_source_id"] else []
         child_mapping_valid = bool(current["child_source_id"])
         candidate_ids = list(current.get("candidate_source_ids") or [])
+        unknown_run = current.get("attribution") in {"unknown", "overlap"}
+        current_pair = time_pair(current)
+        current_is_lexical = lexical(current["text"])
+        unknown_has_untimed_lexical = unknown_run and current_is_lexical and current_pair is None
+        unknown_has_timed_lexical = unknown_run and current_is_lexical and current_pair is not None
         index += 1
         while index < len(items):
             following = items[index]
@@ -104,7 +122,25 @@ def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
                 continue
             elif (current.get("attribution") in {"unknown", "overlap"}
                     and same_attribution and adjacent):
-                pass
+                if lexical(following["text"]):
+                    following_pair = time_pair(following)
+                    if following_pair is None:
+                        unknown_has_untimed_lexical = True
+                    elif not unknown_has_untimed_lexical:
+                        if unknown_has_timed_lexical:
+                            if current_pair is None or following_pair[0] < current_pair[1]:
+                                unknown_has_untimed_lexical = True
+                            else:
+                                current_pair = (current_pair[0], following_pair[1])
+                        else:
+                            current_pair = following_pair
+                            unknown_has_timed_lexical = True
+                    if unknown_has_untimed_lexical:
+                        current_pair = None
+                    else:
+                        current["start"], current["end"] = current_pair
+                elif unknown_has_untimed_lexical:
+                    current_pair = None
             else:
                 break
 
@@ -116,7 +152,11 @@ def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
             candidate_ids.extend(following.get("candidate_source_ids") or [])
             current["text"] += following["text"]
             current["end_offset"] = following["end_offset"]
-            current["end"] = following.get("end")
+            if unknown_run:
+                if current_pair is None:
+                    current["start"] = current["end"] = None
+            else:
+                current["end"] = following.get("end")
             index += 1
         current["child_source_id"] = (
             child_ids[0] if child_mapping_valid and child_ids
@@ -125,6 +165,9 @@ def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
         if current["child_source_id"] is None and len(set(child_ids)) > 1:
             candidate_ids.extend(child_ids)
         current["candidate_source_ids"] = list(dict.fromkeys(candidate_ids))
+        if unknown_run and (unknown_has_untimed_lexical or not unknown_has_timed_lexical
+                            or time_pair(current) is None):
+            current["start"] = current["end"] = None
         output.append(current)
     return output
 

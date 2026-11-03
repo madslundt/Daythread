@@ -70,6 +70,10 @@
 .redo-processing .button { margin-top: 18px; }
 .redo-progress { padding: 0 4px 22px; }
 .redo-progress progress { width: 100%; accent-color: var(--accent); }
+.live-summary-progress { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.live-summary-progress h4 { margin: 0 0 12px; }
+.live-summary-progress .live-summary-token-count { font-variant-numeric: tabular-nums; }
+.live-summary-progress .caption { overflow-wrap: anywhere; }
 .transcript-export-import fieldset { display: grid; gap: 18px; min-width: 0; }
 .transcript-export-field { display: grid; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; }
 .transcript-export-field input { display: block; width: 100%; min-width: 0; max-width: 100%; font-size: 14px; font-weight: 400; }

@@ -171,6 +171,8 @@ async def test_topic_writer_grounds_action_state_in_scoped_originals_not_driftin
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Edit one completed summary'):
+            return reply(json.loads(payload['evidence'])['completed_draft'])
         if payload['task'].startswith(('Organize useful recorded information',
                                        'Review the complete daily topic plan')):
             return reply(json.dumps({'topics': [
@@ -208,6 +210,8 @@ async def test_topic_writer_keeps_action_updates_in_recording_order(tmp_path):
 
     def provider(request):
         payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        if payload['task'].startswith('Edit one completed summary'):
+            return reply(json.loads(payload['evidence'])['completed_draft'])
         if payload['task'].startswith(('Organize useful recorded information',
                                        'Review the complete daily topic plan')):
             return reply(json.dumps({'topics': [

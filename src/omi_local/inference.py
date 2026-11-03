@@ -475,6 +475,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         self, sources: list[dict], purpose: str, *, original_sources: list[dict] | None = None,
     ) -> tuple[str, dict]:
         from .daily_synthesis import summarize_daily
+        from .summary_coherence import NO_CONTENT as COHERENCE_NO_CONTENT
         # Resolve from original speech before planning on generated notes. All topic
         # writers share this request-local choice, without changing saved preferences.
         originals = original_sources if original_sources is not None else sources
@@ -491,6 +492,21 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 inference, sources, purpose, original_sources=original_sources,
             )
         trace["map_cache_hits"] = map_cache.hits
+        if result == COHERENCE_NO_CONTENT:
+            trace["coherence_review"] = {
+                "status": "skipped", "skip_reason": "no_content", "model_calls": 0,
+            }
+        elif original_sources is None:
+            trace["coherence_review"] = {
+                "status": "skipped", "skip_reason": "original_sources_unavailable",
+                "model_calls": 0,
+            }
+        else:
+            result, review = await inference.cohere_completed_summary(
+                original_sources, result, purpose,
+            )
+            trace["coherence_review"] = review
+            trace["model_calls"] += review["model_calls"]
         return result, trace
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
@@ -762,18 +778,75 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 return NO_CONTENT
         raise InferenceError("Summary reduction exceeded bounded context budget")
 
-    async def _summary_generate(self, task, evidence, sources, *, compact_references):
+    async def _summary_generate(
+        self, task, evidence, sources, *, compact_references, output_tokens=None,
+    ):
         # Long consolidations need not make the model reproduce dozens of 36-character
         # UUIDs. Short per-request keys reduce copying errors and output-token overhead;
         # expand them before any citation validation, persistence or client response.
         task, evidence, originals = _summary_request(
             task, evidence, sources, compact_references=compact_references)
-        answer = await self.for_task("summary").generate(task, evidence)
+        summary_inference = self.for_task("summary")
+        answer = (
+            await summary_inference.generate(task, evidence) if output_tokens is None else
+            await summary_inference._generate(task, evidence, SUMMARY_SYSTEM, output_tokens)
+        )
         if not originals:
             return answer
         # Unknown keys remain visible to validate_citations and fail safely.
         return re.sub(r"\bsrc_(\d+)\b", lambda m: originals.get(int(m[1]), m[0]),
                       answer, flags=re.IGNORECASE)
+
+    async def cohere_completed_summary(
+        self, original_sources: list[dict], draft: str, purpose: str,
+    ) -> tuple[str, dict]:
+        """Reconcile one complete draft against complete originals without silent truncation."""
+        from .summary_coherence import (
+            OUTPUT_BUDGET,
+            CoherenceValidationError,
+            validate_edit,
+        )
+        from .summary_coherence import (
+            request as build_request,
+        )
+
+        empty_trace = {"status": "skipped", "model_calls": 0}
+        if draft == NO_CONTENT:
+            return draft, empty_trace | {"skip_reason": "no_content"}
+        task, evidence, size, skip_reason = build_request(
+            original_sources, draft, purpose, self.settings.summary_language,
+            self._speaker_evidence_window,
+        )
+        if skip_reason:
+            return draft, empty_trace | {
+                "skip_reason": skip_reason, "input_tokens_estimate": size,
+            }
+
+        trace = {"status": "applied", "model_calls": 0, "input_tokens_estimate": size}
+        repair = ""
+        with summary_usage():
+            for attempt in range(2):
+                trace["model_calls"] += 1
+                answer = await self._summary_generate(
+                    task + repair, evidence, original_sources, compact_references=True,
+                    output_tokens=OUTPUT_BUDGET,
+                )
+                try:
+                    edited = validate_edit(answer, original_sources, draft)
+                    trace["output_characters"] = len(edited)
+                    return edited, trace
+                except CoherenceValidationError as exc:
+                    if attempt:
+                        raise InferenceError(
+                            "Completed summary coherence review failed validation"
+                        ) from exc
+                    repair = (
+                        " The previous edit failed validation code " + exc.code + ". Return "
+                        "one complete corrected summary with the required heading style, size, "
+                        "known source UUID citations on every factual paragraph, and no other "
+                        "text. Recheck it against the complete original transcripts."
+                    )
+        raise InferenceError("Completed summary coherence review failed")
 
     async def _summary_notes(
         self, evidence, allowed_sources, trace, maximum, language_instruction=None,

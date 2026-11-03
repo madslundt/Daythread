@@ -384,7 +384,9 @@ async def test_daily_topics_and_writers_use_original_language_instead_of_english
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
         calls.append(payload)
         assert "language with code da" in payload["task"]
-        if payload["task"].startswith(("Organize useful recorded information",
+        if payload["task"].startswith("Edit one completed summary"):
+            answer = json.loads(payload["evidence"])["completed_draft"]
+        elif payload["task"].startswith(("Organize useful recorded information",
                                        "Review the complete daily topic plan")):
             answer = json.dumps({"topics": topics})
         else:
@@ -398,7 +400,7 @@ async def test_daily_topics_and_writers_use_original_language_instead_of_english
             notes, "a daily recap", original_sources=originals,
         )
     assert "## Dagens planer" in result
-    assert len(calls) == 5  # Initial plan, reconciliation, global review and both writers.
+    assert len(calls) == 6  # Plans, writers and the final whole-draft coherence edit.
     assert settings.summary_language == "auto"
 
 

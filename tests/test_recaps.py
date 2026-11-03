@@ -209,6 +209,37 @@ def test_recording_summary_receives_current_speaker_grounded_transcript(client, 
     assert "tentative options tentative" in daily_purpose.lower()
 
 
+def test_completed_conversation_notes_get_one_full_original_coherence_edit(client, monkeypatch):
+    original = (
+        "The proposed workflow is still being evaluated and depends on approval. "
+        "If approved, the next step is to collect owner input by Friday."
+    )
+    key = insert(client, kind="manual_upload", text=original)
+    memory = client.app.state.memory
+    reviews = []
+
+    async def cohere(sources, draft, purpose):
+        reviews.append((sources, draft, purpose))
+        return (
+            f"## Workflow\nThe proposal remains under evaluation, subject to approval [{key}].\n\n"
+            f"If approved, collect owner input by Friday [{key}]",
+            {"status": "applied", "model_calls": 1, "input_tokens_estimate": 800},
+        )
+
+    monkeypatch.setattr(memory.inference, "cohere_completed_summary", cohere, raising=False)
+    result = client.post("/v1/recaps/2026-10-16").json()
+    assert len(reviews) == 1
+    assert reviews[0][0][0]["text"] == original
+    assert key in reviews[0][1]
+    assert "preserve original source UUID citations" in reviews[0][2]
+    assert "If approved, collect owner input by Friday" in result["summary"]
+    review_trace = result["evidence"]["pipeline"]["conversation_coherence"]
+    assert review_trace["model_calls"] == 1
+    assert review_trace["reviews"] == [{
+        "status": "applied", "model_calls": 1, "input_tokens_estimate": 800,
+    }]
+
+
 def test_speaker_evidence_revision_invalidates_notes_and_rejects_stale_generation(
     client, monkeypatch,
 ):

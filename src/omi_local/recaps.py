@@ -29,6 +29,7 @@ from .recording_transcription_selection import (
 )
 from .speaker_projection import project_utterances
 from .speakers import fingerprint as speaker_fingerprint
+from .summary_coherence import VERSION as COHERENCE_VERSION
 from .summary_filter import NO_CONTENT
 from .summary_filter import VERSION as SUMMARY_FILTER_VERSION
 from .summary_templates import VERSION as TEMPLATE_VERSION
@@ -40,8 +41,8 @@ if TYPE_CHECKING:
     from .service import Memory
 
 PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
-                  f"-{SUMMARY_REDUCTION_VERSION}")
-DAY_PROMPT_VERSION = "daily-topics-18-global-relevance-review"
+                  f"-{SUMMARY_REDUCTION_VERSION}-{COHERENCE_VERSION}")
+DAY_PROMPT_VERSION = f"daily-topics-19-global-coherence-{COHERENCE_VERSION}"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
@@ -360,12 +361,14 @@ class Recaps:
 
     async def prepare_group(
         self, group: Conversation, guard: Callable[[sqlite3.Connection], None],
-        *, force: bool = False,
+        *, force: bool = False, coherence_trace: list[dict] | None = None,
     ) -> str:
         memory = self.memory
         key = self.group_key(group)
         cached = None if force else self.group_summary(key)
         if cached is not None:
+            if coherence_trace is not None:
+                coherence_trace.append({"status": "cached", "model_calls": 0})
             return cached
         if not force:
             await self.prepare_topics(group)
@@ -388,6 +391,9 @@ class Recaps:
             ) else []
         if not sources:
             summary = NO_CONTENT
+            if coherence_trace is not None:
+                coherence_trace.append({"status": "skipped", "skip_reason": "no_sources",
+                                        "model_calls": 0})
         else:
             context = (
                 "notes from received audio before interrupted capture. A capture stop is not "
@@ -395,8 +401,7 @@ class Recaps:
                 if group.basis == "capture_stopped" else
                 "notes from a finished upload or a live conversation followed by a long pause. "
             )
-            summary = await memory.inference.summarize(
-                self.note_sources(sources),
+            purpose = (
                 context + "An uploaded file may contain only part of a conversation. " + RELEVANCE +
                 "Current speaker evidence is provided per original source as exact transcript "
                 "character spans with source-local times; a full recording source uses elapsed "
@@ -430,12 +435,29 @@ class Recaps:
                 "when its title is phrased differently. Split at sustained changes of subject, "
                 "never at upload boundaries, timestamps, speaker changes or language switches. "
                 "Do not repeat the same point in different categories or add empty placeholders. "
-                "Otherwise preserve original source UUID citations for every useful point",
+                "Otherwise preserve original source UUID citations for every useful point"
             )
+            summary = await memory.inference.summarize(self.note_sources(sources), purpose)
             summary = validate_citations(summary, sources).strip()
             if summary != NO_CONTENT and not any(s["id"].lower() in summary.lower()
                                                  for s in sources):
                 raise InferenceError("Conversation notes require original source citations")
+            if summary != NO_CONTENT and hasattr(memory.inference, "cohere_completed_summary"):
+                summary, review = await memory.inference.cohere_completed_summary(
+                    sources, summary, purpose,
+                )
+                summary = validate_citations(summary, sources).strip()
+                if summary != NO_CONTENT and not any(s["id"].lower() in summary.lower()
+                                                     for s in sources):
+                    raise InferenceError("Conversation notes require original source citations")
+                if coherence_trace is not None:
+                    coherence_trace.append(review)
+            elif coherence_trace is not None:
+                coherence_trace.append({
+                    "status": "skipped", "skip_reason": (
+                        "no_content" if summary == NO_CONTENT else "editor_unavailable"
+                    ), "model_calls": 0,
+                })
         self.save_group_summary(key, summary, sources, guard)
         return summary
 
@@ -495,7 +517,7 @@ class Recaps:
         start, end = memory.day_window(day)
         ready = [g for g in groups if g.ready]
         blocked = sum(r["state"] == "blocked" for r in result["sources"])
-        sources, inputs, seen, repeated = [], [], set(), []
+        sources, inputs, seen, repeated, coherence_reviews = [], [], set(), [], []
         for group in ready:
             originals = self.sources(group)
             sources.extend(originals)
@@ -508,7 +530,9 @@ class Recaps:
             if exact_repeat and not hinted:
                 repeated.extend(source["id"] for source in originals)
                 continue
-            notes = await self.prepare_group(group, guard, force=force)
+            notes = await self.prepare_group(
+                group, guard, force=force, coherence_trace=coherence_reviews,
+            )
             if notes != NO_CONTENT and originals:
                 inputs.extend(
                     {
@@ -525,7 +549,12 @@ class Recaps:
                       generated_at=stamp(now), no_recap_content=bool(ready) and not inputs,
                       stale=False, summary_template=template.model_dump())
         trace = {"conversation_preparation": "cached_transcribed_recordings",
-                 "conversation_count": len(ready), "exact_repeated_excerpt_ids": repeated}
+                 "conversation_count": len(ready), "exact_repeated_excerpt_ids": repeated,
+                 "conversation_coherence": {
+                     "reviews": coherence_reviews,
+                     "model_calls": sum(review.get("model_calls", 0)
+                                        for review in coherence_reviews),
+                 }}
         if inputs:
             purpose = (
                 f"a readable diary recap for {day.isoformat()} from transcribed recording notes. "

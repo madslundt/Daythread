@@ -192,7 +192,8 @@ def recording_speaker_evidence(
         state = "stale" if any(s.get("state") == "stale" for s in scope_values) else "idle"
         return [], None, state
     evidence_version = hashlib.sha256(
-        json.dumps(versions, sort_keys=True).encode(),
+        json.dumps({"projection": "recording-utterances-2", "diarization": versions},
+                   sort_keys=True).encode(),
     ).hexdigest()
     labels, turns = {}, []
     seen_turns = set()

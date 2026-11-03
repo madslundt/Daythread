@@ -141,6 +141,16 @@ final class RecapPresentationTests: XCTestCase {
         let select = try RecordingTranscriptSelectionRequest(expectedVersion: 9, resultVersion: "result-v4").jsonObject()
         XCTAssertEqual(select["expected_version"] as? Int, 9)
         XCTAssertEqual(select["result_version"] as? String, "result-v4")
+
+        let stale = try JSONDecoder().decode(RecordingTranscriptSelection.self, from: Data(
+            #"{"state":"stale","selection_version":12,"result_version":"old-result","transcript":null}"#.utf8
+        ))
+        XCTAssertEqual(stale.state, .stale)
+        let chooseCurrent = try RecordingTranscriptSelectionRequest(
+            expectedVersion: stale.selectionVersion, resultVersion: "new-current-result",
+        ).jsonObject()
+        XCTAssertEqual(chooseCurrent["expected_version"] as? Int, 12)
+        XCTAssertEqual(chooseCurrent["result_version"] as? String, "new-current-result")
     }
 
     func testSubjectAndDistinctiveWordsSupportUncitedOlderRecaps() {

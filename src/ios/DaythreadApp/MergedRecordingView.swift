@@ -134,6 +134,10 @@ struct MergedRecordingContentView: View {
     private func chooseTranscript(_ resultVersion: String?) {
         guard let selection = transcriptSelection, !selectionBusy else { return }
         let address = model.archiveIdentity
+        let recordingID = recording["id"].text
+        let client: BackendClient
+        do { client = try model.client().snapshot() }
+        catch { selectionError = L10n.error(error); return }
         let request = RecordingTranscriptSelectionRequest(
             expectedVersion: selection.selectionVersion, resultVersion: resultVersion,
         )
@@ -142,8 +146,9 @@ struct MergedRecordingContentView: View {
             defer { selectionBusy = false; selectionOperation = nil }
             do {
                 let body = try request.jsonObject()
-                _ = try await model.client().request(
-                    "v1/recordings/\(recording["id"].text)/transcript-selection",
+                guard !Task.isCancelled, model.archiveIdentity == address else { return }
+                _ = try await client.request(
+                    "v1/recordings/\(recordingID)/transcript-selection",
                     method: "PUT", body: body,
                 )
                 guard !Task.isCancelled, model.archiveIdentity == address else { return }
@@ -187,6 +192,7 @@ struct MergedRecordingContentView: View {
                                         .font(.caption).foregroundStyle(.secondary)
                                     if let start = utterance.start {
                                         Button(playbackTime(start)) { playback.seek(to: start) }
+                                            .disabled(recording["audio_available"] != .bool(true))
                                             .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
                                     }
                                 }
@@ -202,30 +208,31 @@ struct MergedRecordingContentView: View {
                         Text(original).textSelection(.enabled)
                     }
                 }
-            } else if transcriptSelection?.state == .stale {
-                Text(L10n.text("The selected transcript is out of date. Showing the original part transcripts."))
-                    .font(.caption).foregroundStyle(.secondary)
-                if case .string(let text) = recording["text"] { originalTopicsAndTranscript(text) }
-            } else if recording["recording_transcription"]["state"].text == "ready",
-                      !recording["recording_transcription"]["version"].text.isEmpty {
-                HStack {
-                    Text(L10n.text("A full-recording transcript is ready"))
+            } else {
+                if transcriptSelection?.state == .stale {
+                    Text(L10n.text("The selected transcript is out of date. Showing the original part transcripts."))
                         .font(.caption).foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button(L10n.text("Use full-recording transcript")) {
-                        chooseTranscript(recording["recording_transcription"]["version"].text)
-                    }.disabled(selectionBusy)
+                }
+                if recording["recording_transcription"]["state"].text == "ready",
+                   !recording["recording_transcription"]["version"].text.isEmpty {
+                    HStack {
+                        Text(L10n.text("A full-recording transcript is ready"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button(L10n.text("Use full-recording transcript")) {
+                            chooseTranscript(recording["recording_transcription"]["version"].text)
+                        }.disabled(selectionBusy)
+                    }
                 }
                 if selectionBusy { ProgressView() }
                 if let selectionError { ErrorNote(message: selectionError) }
                 if case .string(let text) = recording["text"] { originalTopicsAndTranscript(text) }
-            } else if case .string(let text) = recording["text"] {
-                originalTopicsAndTranscript(text)
-            } else {
-                Text(recording["state"].text == "expired"
-                     ? L10n.text("Transcript expired under your retention policy.")
-                     : L10n.text("Processing audio"))
-                    .font(.caption).foregroundStyle(.secondary)
+                else {
+                    Text(recording["state"].text == "expired"
+                         ? L10n.text("Transcript expired under your retention policy.")
+                         : L10n.text("Processing audio"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             if recording["text"] != .null && recording["state"].text == "processing" {
                 Text(L10n.text("Processing audio")).font(.caption).foregroundStyle(.secondary)

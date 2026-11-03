@@ -828,6 +828,13 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 "skip_reason": skip_reason, "input_tokens_estimate": size,
             }
 
+        # Keep a small completion budget when reasoning is explicitly off. With the
+        # provider's default or enabled reasoning, retain the established summary
+        # capacity so providers that reserve the declared max_tokens still complete.
+        output_budget = (
+            OUTPUT_BUDGET if self.settings.llm_enable_thinking is False
+            else SUMMARY_OUTPUT_TOKENS
+        )
         trace = {"status": "applied", "model_calls": 0, "input_tokens_estimate": size}
         repair = ""
         with summary_usage():
@@ -835,7 +842,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 trace["model_calls"] += 1
                 answer = await self._summary_generate(
                     task + repair, evidence, original_sources, compact_references=True,
-                    output_tokens=OUTPUT_BUDGET,
+                    output_tokens=output_budget,
                     buffered_summary_stream=True,
                 )
                 try:

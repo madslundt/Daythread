@@ -7,7 +7,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from omi_local.inference import Inference, InferenceError
+from omi_local.inference import Inference, InferenceError, InferenceTruncated
 from omi_local.settings import Settings
 from omi_local.summary_coherence import (
     MAX_OUTPUT_CHARACTERS,
@@ -234,7 +234,7 @@ async def test_coherence_uses_bounded_buffered_sse_with_usage_and_progress(tmp_p
                         lambda **event: events.append(event))
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         inference = Inference(Settings(
-            data_dir=tmp_path, summary_language="en", llm_enable_thinking=True, _env_file=None,
+            data_dir=tmp_path, summary_language="en", llm_enable_thinking=False, _env_file=None,
         ), client)
         inference.usage_recorder = usage.append
         result, trace = await inference.cohere_completed_summary(
@@ -246,7 +246,7 @@ async def test_coherence_uses_bounded_buffered_sse_with_usage_and_progress(tmp_p
     assert body["stream"] is True
     assert body["stream_options"] == {"include_usage": True}
     assert body["max_tokens"] == 8000
-    assert body["chat_template_kwargs"]["enable_thinking"] is True
+    assert body["chat_template_kwargs"]["enable_thinking"] is False
     assert result == output and len(result) < 24_000
     assert trace["model_calls"] == 1
     assert usage[-1]["outcome"] == "succeeded"
@@ -255,6 +255,66 @@ async def test_coherence_uses_bounded_buffered_sse_with_usage_and_progress(tmp_p
     assert any(event.get("reasoning_characters") == len("private") for event in events)
     assert events[-1]["finished"] is True
     assert "private" not in result
+
+
+@pytest.mark.parametrize("thinking", [None, True])
+@pytest.mark.anyio
+async def test_coherence_preserves_64k_provider_capacity_unless_thinking_is_explicitly_off(
+    tmp_path, thinking,
+):
+    source_id = str(uuid4())
+    output = f"## Topic\nA supported conclusion [{source_id}]"
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        # A compatibility gateway can ignore stream=True and return ordinary JSON.
+        return response(output)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(Settings(
+            data_dir=tmp_path, summary_language="en", llm_enable_thinking=thinking,
+            _env_file=None,
+        ), client)
+        result, trace = await inference.cohere_completed_summary(
+            [{"id": source_id, "text": "The original supports the conclusion."}],
+            f"## Topic\nA draft [{source_id}]", "A concise recap.",
+        )
+
+    assert result == output and trace["model_calls"] == 1
+    assert requests[0]["max_tokens"] == 65536
+    assert requests[0]["stream"] is True
+    if thinking is None:
+        assert "chat_template_kwargs" not in requests[0]
+    else:
+        assert requests[0]["chat_template_kwargs"]["enable_thinking"] is True
+
+
+@pytest.mark.anyio
+async def test_coherence_explicitly_disabled_thinking_does_not_retry_larger_after_length(tmp_path):
+    source_id = str(uuid4())
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=(
+            _sse({"choices": [{"index": 0, "delta": {"content": "Partial"},
+                               "finish_reason": "length"}]})
+            + "data: [DONE]\n\n"
+        ))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(Settings(
+            data_dir=tmp_path, llm_enable_thinking=False, _env_file=None,
+        ), client)
+        with pytest.raises(InferenceTruncated):
+            await inference.cohere_completed_summary(
+                [{"id": source_id, "text": "Original."}],
+                f"## Topic\nDraft [{source_id}]", "A concise recap.",
+            )
+    assert len(requests) == 1 and requests[0]["max_tokens"] == 8000
 
 
 @pytest.mark.anyio

@@ -261,6 +261,9 @@ def test_real_redo_completes_when_provider_requires_64k_output_capacity(tmp_path
         if "response_format" in body:
             result = json.dumps({"title": "Delivery plan", "continues_previous": False,
                                  "sections": [{"title": "Delivery plan", "start_quote": text}]})
+        elif task.startswith("Edit one completed summary"):
+            result = json.loads(body["messages"][1]["content"])["evidence"]
+            result = json.loads(result)["completed_draft"]
         elif task.startswith(("Organize useful recorded information",
                               "Review the complete daily topic plan")):
             result = json.dumps({"topics": [{"title": "Delivery plan", "scope": "Friday delivery",

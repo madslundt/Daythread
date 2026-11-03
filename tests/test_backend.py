@@ -364,6 +364,10 @@ async def test_complete_audio_to_local_diary_and_chat_flow(store, settings):
         if request.url.path.endswith("/audio/transcriptions"):
             return httpx.Response(200, json={"text": "The kitchen delivery is on Friday"})
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        if payload["task"].startswith("Edit one completed summary"):
+            return httpx.Response(200, json={"choices": [{"message": {
+                "content": json.loads(payload["evidence"])["completed_draft"],
+            }}]})
         if payload["task"].startswith(("Organize useful recorded", "Decide whether ONE proposed",
                                        "Review the complete daily topic plan")):
             data = json.loads(payload["evidence"])

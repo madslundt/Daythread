@@ -80,20 +80,14 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
   const showingSelected = typeof selectedText === "string";
   const speakerEvidence = showingSelected ? selection?.transcript?.speaker_evidence : undefined;
-  const attributedRuns = useMemo(() => {
-    const runs: { text: string; attribution: string; speaker_id?: string | null;
-      speaker_label?: string | null; speaker_name?: string | null; start?: number | null; }[] = [];
-    for (const piece of speakerEvidence?.utterances || []) {
-      const previous = runs.at(-1);
-      const sameOwner = previous && previous.attribution === piece.attribution
-        && previous.speaker_id === piece.speaker_id && previous.speaker_name === piece.speaker_name;
-      if (sameOwner) previous.text += piece.text;
-      else runs.push({ text: piece.text, attribution: piece.attribution,
-        speaker_id: piece.speaker_id, speaker_label: piece.speaker_label,
-        speaker_name: piece.speaker_name, start: piece.start });
-    }
-    return runs;
-  }, [speakerEvidence]);
+  const selectionKey = `${selection?.state || ""}:${selection?.result_version || ""}:${selection?.selection_version ?? ""}`;
+  const [speakerEvidenceViewFor, setSpeakerEvidenceViewFor] = useState<string | null>(null);
+  const showSpeakerEvidence = speakerEvidenceViewFor === selectionKey;
+  const speakerRuns = useMemo(
+    () => compactSpeakerEvidence(speakerEvidence?.utterances || []), [speakerEvidence],
+  );
+  const hasSpeakerEvidence = speakerEvidence?.state === "ready"
+    && speakerRuns.some((run) => run.attribution === "attributed" || run.attribution === "overlap");
   const displayedText = showingSelected ? selectedText : recording.text;
   const text = Array.from(displayedText || "");
   async function chooseTranscript(resultVersion: string | null) {
@@ -112,7 +106,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     {recording.audio_available ? <RecordingAudioPlayer
       src={url("audio")} waveformSrc={url("waveform")}
       label={recording.title || t("Recording")} durationHint={recording.duration_seconds}
-      bookmarks={occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
+      bookmarks={showingSelected ? [] : occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
         label: section.title + (section.occurrenceCount > 1 ? ` · ${t("Recording")} ${section.occurrenceNumber}` : "")
           + (section.start_estimated ? ` ${t("· estimated times")}` : ""),
         seconds: section.start_seconds, onSelect: () => selectTopic(section.id),
@@ -158,22 +152,29 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       <p className="transcript-text" aria-live="polite">{text.slice(topic.start_offset, topic.end_offset).join("")}</p>
     </div> : null}
     {displayedText !== null ? showingSelected ? <>
-      {speakerEvidence?.state === "ready" && attributedRuns.length ? <div className="transcript-text recording-attributed-transcript">
-        {attributedRuns.map((run, index) => {
-          const hasSpokenText = /[\p{L}\p{N}]/u.test(run.text);
-          return <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
-            {hasSpokenText ? <span className="caption recording-speaker-label">{run.attribution === "attributed"
-              ? run.speaker_name || run.speaker_label || t("Unknown speaker")
-              : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span> : null}
-            {hasSpokenText && run.start !== null && run.start !== undefined
-              ? <button type="button" className="caption recording-speaker-time text-link"
-                aria-label={`${t("Playback position")} ${playbackTime(run.start)}`}
-                disabled={!recording.audio_available}
-                onClick={() => playback.seekTo(run.start ?? undefined)}>{playbackTime(run.start)}</button> : null}
-            <span>{run.text}</span>
-          </span>;
-        })}
-      </div> : <p className="transcript-text">{displayedText}</p>}
+      {hasSpeakerEvidence ? <button type="button" className="text-button recording-speaker-view-toggle"
+        aria-expanded={showSpeakerEvidence} aria-controls={`recording-transcript-view-${recording.id}`}
+        onClick={() => setSpeakerEvidenceViewFor(showSpeakerEvidence ? null : selectionKey)}>
+        {t(showSpeakerEvidence ? "Show readable transcript" : "Show speakers and timestamps")}
+      </button> : null}
+      <div id={`recording-transcript-view-${recording.id}`}>
+        {showSpeakerEvidence && hasSpeakerEvidence ? <div className="transcript-text recording-attributed-transcript">
+          {speakerRuns.map((run, index) => {
+            const hasSpokenText = /[\p{L}\p{N}]/u.test(run.text);
+            return <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
+              {hasSpokenText ? <span className="caption recording-speaker-label">{run.attribution === "attributed"
+                ? run.speaker_name || run.speaker_label || t("Unknown speaker")
+                : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span> : null}
+              {hasSpokenText && run.start !== null && run.start !== undefined
+                ? <button type="button" className="caption recording-speaker-time text-link"
+                  aria-label={`${t("Playback position")} ${playbackTime(run.start)}`}
+                  disabled={!recording.audio_available}
+                  onClick={() => playback.seekTo(run.start ?? undefined)}>{playbackTime(run.start)}</button> : null}
+              <span>{run.text}</span>
+            </span>;
+          })}
+        </div> : <p className="transcript-text">{displayedText}</p>}
+      </div>
       {recording.text !== null ? <details className="recording-disclosure">
         <summary>{t("Original part transcripts")}</summary>
         <p className="transcript-text">{recording.text}</p>
@@ -189,4 +190,55 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     {recording.audio_available ? <a className="text-link caption" download
       href={url("audio")}>{t("Download archived audio")}</a> : null}
   </div>;
+}
+
+type SpeakerEvidencePiece = {
+  text: string; start?: number | null; end?: number | null; start_offset: number;
+  end_offset: number; attribution: string; speaker_id?: string | null;
+  speaker_label?: string | null; speaker_name?: string | null;
+};
+
+export function compactSpeakerEvidence(pieces: SpeakerEvidencePiece[]) {
+  const runs: (SpeakerEvidencePiece & { text: string })[] = [];
+  for (let index = 0; index < pieces.length; index += 1) {
+    const piece = pieces[index];
+    const previous = runs.at(-1);
+    const contiguous = previous?.end_offset === piece.start_offset;
+    const sameOwner = previous && previous.attribution === "attributed"
+      && piece.attribution === "attributed"
+      && previous.speaker_id === piece.speaker_id
+      && previous.speaker_name === piece.speaker_name
+      && contiguous;
+    if (sameOwner) {
+      previous.text += piece.text;
+      previous.end_offset = piece.end_offset;
+      continue;
+    }
+    const sameUnknownRun = previous?.attribution === "unknown"
+      && piece.attribution === "unknown" && contiguous;
+    if (sameUnknownRun) {
+      previous.text += piece.text;
+      previous.end_offset = piece.end_offset;
+      previous.end = piece.end;
+      continue;
+    }
+
+    const next = pieces[index + 1];
+    const bridgeableGap = piece.attribution === "unknown"
+      && !/[\p{L}\p{N}]/u.test(piece.text)
+      && next?.attribution === "attributed"
+      && previous?.attribution === "attributed"
+      && previous.speaker_id === next.speaker_id
+      && previous.speaker_name === next.speaker_name
+      && previous.end_offset === piece.start_offset
+      && piece.end_offset === next.start_offset;
+    if (bridgeableGap && next) {
+      previous.text += piece.text + next.text;
+      previous.end_offset = next.end_offset;
+      index += 1;
+      continue;
+    }
+    runs.push({ ...piece, text: piece.text });
+  }
+  return runs;
 }

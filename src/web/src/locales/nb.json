@@ -747,6 +747,8 @@
   "Use full-recording transcript": "Bruk transkripsjon av hele opptaket",
   "The selected transcript is out of date. Showing the original part transcripts.": "Den valgte transkripsjonen er utdatert. Viser de opprinnelige deltranskripsjonene.",
   "Original part transcripts": "Opprinnelige deltranskripsjoner",
+  "Show speakers and timestamps": "Vis talere og tidsstempler",
+  "Show readable transcript": "Vis lesbar transkripsjon",
   "Future weeks cannot be reviewed": "Fremtidige uker kan ikke gjennomgås",
   "GPS is unavailable here. Enter coordinates or open a recording location.": "GPS er ikke tilgjengelig her. Oppgi koordinater eller åpne et opptakssted.",
   "GPS is unavailable here. Search for an address or choose a point on the map.": "GPS er ikke tilgjengelig her. Søk etter en adresse eller velg et punkt på kartet.",

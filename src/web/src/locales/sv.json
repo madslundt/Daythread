@@ -747,6 +747,8 @@
   "Use full-recording transcript": "Använd transkriptionen av hela inspelningen",
   "The selected transcript is out of date. Showing the original part transcripts.": "Den valda transkriptionen är inaktuell. Visar de ursprungliga deltranskriptionerna.",
   "Original part transcripts": "Ursprungliga deltranskriptioner",
+  "Show speakers and timestamps": "Visa talare och tidsstämplar",
+  "Show readable transcript": "Visa läsbar transkription",
   "Future weeks cannot be reviewed": "De kommande veckorna kan inte ses över",
   "GPS is unavailable here. Enter coordinates or open a recording location.": "GPS är inte tillgänglig här. Ange koordinater eller öppna en inspelningsplats.",
   "GPS is unavailable here. Search for an address or choose a point on the map.": "GPS är inte tillgängligt här. Sök efter en adress eller välj en punkt på kartan.",

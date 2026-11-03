@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
+import { compactSpeakerEvidence, MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
 import { RecordingGroups } from "./RecordingGroups";
 import { createRecordingSeekController } from "./useRecordingSeek";
 
@@ -96,9 +96,10 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("Whole selected transcript.");
     expect(html).toContain("Original part transcripts");
     expect(html).toContain("Launch continues across upload parts.");
+    expect(html).not.toContain('class="recording-topic-bookmarks"');
     expect(html).not.toContain("Use full-recording transcript");
   });
-  it("renders selected full-recording speaker evidence while preserving text once", () => {
+  it("shows readable selected text by default and suppresses old part bookmarks", () => {
     const canonical = "Hello there.\nUnknown word.";
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       recording_transcription: { state: "ready", version: "variant-v1", text: canonical },
@@ -120,32 +121,36 @@ describe("combined uploaded recording", () => {
           },
         },
     }}} />);
-    expect(html).toContain("Rae");
-    expect(html).toContain("Unknown speaker");
-    expect(html).toContain("Overlapping speech");
-    expect(html).toContain("Hello</span>");
-    expect(html).toContain("> </span>");
-    expect(html).toContain("there.");
-    expect(html).toContain("Unknown word.");
-    expect(html.match(/recording-speaker-label">Unknown speaker/g)).toHaveLength(1);
-    expect(html.match(/Hello/g)).toHaveLength(1);
+    expect(html).toContain("Show speakers and timestamps");
+    expect(html).toContain(canonical);
+    expect(html.match(/Hello there\./g)).toHaveLength(1);
+    expect(html).not.toContain("Rae");
+    expect(html).not.toContain("recording-speaker-label");
+    expect(html).not.toContain("recording-speaker-time");
+    expect(html).not.toContain('class="recording-topic-bookmarks"');
+    expect(html).toContain("Original part transcripts");
   });
-  it("seeks timed speaker runs on the global player and leaves untimed words unknown", () => {
+  it("coalesces same-speaker whitespace but never absorbs unknown spoken words", () => {
     const canonical = "Hello there. Missing words.";
-    const selected: CombinedRecording = { ...recording,
-      transcript_selection: { state: "selected", selection_version: 4, result_version: "variant-v2",
-        transcript: { text: canonical, speaker_evidence: { state: "ready", utterances: [
-          { text: "Hello there.", start_offset: 0, end_offset: 12, start: 2.5, end: 3.2,
-            attribution: "attributed", speaker_id: "a", speaker_label: "A" },
-          { text: " Missing words.", start_offset: 12, end_offset: canonical.length,
-            start: null, end: null, attribution: "unknown" },
-        ] } },
-      },
-    };
-    const html = renderToStaticMarkup(<MergedRecordingContent recording={selected} />);
-    expect(html).toContain('<button type="button" class="caption recording-speaker-time text-link" aria-label="Playback position 00:02">00:02</button>');
-    expect(html).toContain("Missing words.");
-    expect(html.match(/recording-speaker-time/g)).toHaveLength(1);
+    const pieces = [
+      { text: "Hello", start_offset: 0, end_offset: 5, start: 2.5, end: 2.8,
+        attribution: "attributed", speaker_id: "a", speaker_label: "A" },
+      { text: " ", start_offset: 5, end_offset: 6, attribution: "unknown" },
+      { text: "there.", start_offset: 6, end_offset: 12, start: 2.8, end: 3.2,
+        attribution: "attributed", speaker_id: "a", speaker_label: "A" },
+      { text: " ", start_offset: 12, end_offset: 13, attribution: "unknown" },
+      { text: "Missing", start_offset: 13, end_offset: 20, attribution: "unknown" },
+      { text: " ", start_offset: 20, end_offset: 21, attribution: "unknown" },
+      { text: "words.", start_offset: 21, end_offset: 27, start: 4, end: 4.5,
+        attribution: "attributed", speaker_id: "a", speaker_label: "A" },
+    ];
+    const runs = compactSpeakerEvidence(pieces);
+    expect(runs.map((run) => run.text).join("")).toBe(canonical);
+    expect(runs.map((run) => run.attribution)).toEqual(["attributed", "unknown", "attributed"]);
+    expect(runs[0]).toMatchObject({ text: "Hello there.", start: 2.5, start_offset: 0, end_offset: 12 });
+    expect(runs[1]).toMatchObject({ text: " Missing ", attribution: "unknown",
+      start_offset: 12, end_offset: 21 });
+    expect(runs[2]).toMatchObject({ text: "words.", start: 4, start_offset: 21, end_offset: 27 });
 
     const pause = vi.fn();
     const audio = { pause, currentTime: 0, readyState: 1 } as unknown as HTMLAudioElement;
@@ -163,9 +168,16 @@ describe("combined uploaded recording", () => {
     expect(audio.currentTime).toBe(2.5);
     playback.onReady();
     expect(audio.currentTime).toBe(4);
-
-    const noAudio = renderToStaticMarkup(<MergedRecordingContent recording={{ ...selected, audio_available: false }} />);
-    expect(noAudio).toContain('aria-label="Playback position 00:02" disabled=""');
+  });
+  it("coalesces adjacent unknown speech while keeping the entire run unknown", () => {
+    const runs = compactSpeakerEvidence([
+      { text: "unclear", start_offset: 0, end_offset: 7, attribution: "unknown" },
+      { text: " ", start_offset: 7, end_offset: 8, attribution: "unknown" },
+      { text: "words.", start_offset: 8, end_offset: 14, attribution: "unknown" },
+    ]);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ text: "unclear words.", attribution: "unknown",
+      start_offset: 0, end_offset: 14 });
   });
   it("falls back to original transcript when the selection is stale", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,

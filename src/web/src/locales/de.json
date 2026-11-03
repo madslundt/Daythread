@@ -747,6 +747,8 @@
   "Use full-recording transcript": "Transkript der gesamten Aufnahme verwenden",
   "The selected transcript is out of date. Showing the original part transcripts.": "Das ausgewählte Transkript ist veraltet. Die ursprünglichen Teiltranskripte werden angezeigt.",
   "Original part transcripts": "Ursprüngliche Teiltranskripte",
+  "Show speakers and timestamps": "Sprecher und Zeitstempel anzeigen",
+  "Show readable transcript": "Lesbares Transkript anzeigen",
   "Future weeks cannot be reviewed": "Zukünftige Wochen können nicht überprüft werden",
   "GPS is unavailable here. Enter coordinates or open a recording location.": "GPS ist hier nicht verfügbar. Geben Sie Koordinaten ein oder öffnen Sie einen Aufnahmeort.",
   "GPS is unavailable here. Search for an address or choose a point on the map.": "GPS ist hier nicht verfügbar. Suche nach einer Adresse oder wähle einen Punkt auf der Karte.",

@@ -40,6 +40,7 @@
 .source-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
 .transcript-text { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 13px 0 8px; }
 .recording-attributed-transcript { line-height: 2.2; }
+.recording-speaker-view-toggle { margin-top: 8px; }
 .recording-attributed-run { white-space: pre-wrap; }
 .recording-speaker-label, .recording-speaker-time { font-size: 10px; margin-inline: 3px; vertical-align: super; }
 .translation-tabs { display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }

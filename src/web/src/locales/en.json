@@ -747,6 +747,8 @@
   "Use full-recording transcript": "Use full-recording transcript",
   "The selected transcript is out of date. Showing the original part transcripts.": "The selected transcript is out of date. Showing the original part transcripts.",
   "Original part transcripts": "Original part transcripts",
+  "Show speakers and timestamps": "Show speakers and timestamps",
+  "Show readable transcript": "Show readable transcript",
   "Future weeks cannot be reviewed": "Future weeks cannot be reviewed",
   "GPS is unavailable here. Enter coordinates or open a recording location.": "GPS is unavailable here. Enter coordinates or open a recording location.",
   "GPS is unavailable here. Search for an address or choose a point on the map.": "GPS is unavailable here. Search for an address or choose a point on the map.",

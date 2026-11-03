@@ -34,6 +34,16 @@ def test_full_recording_alignment_setting_defaults_off_and_is_localized(app_reco
         assert json.loads(path.read_text())[field["label"]]
 
 
+def test_alignment_timeout_allows_long_recording_budget_without_changing_default():
+    assert Settings(_env_file=None).alignment_timeout_seconds == 120
+    assert (
+        Settings(_env_file=None, alignment_timeout_seconds=1800).alignment_timeout_seconds
+        == 1800
+    )
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, alignment_timeout_seconds=1801)
+
+
 @pytest.mark.parametrize(
     ("chunk_alignment", "recording_alignment", "expected_calls"),
     [(False, True, 1), (True, False, 0)],

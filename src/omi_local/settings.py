@@ -287,7 +287,7 @@ class Settings(BaseSettings):
     stt_segment_timestamps: bool = False
     alignment_enabled: bool = False
     alignment_base_url: str = "http://127.0.0.1:8791"
-    alignment_timeout_seconds: int = Field(default=120, ge=1, le=600)
+    alignment_timeout_seconds: int = Field(default=120, ge=1, le=1800)
     alignment_language: str = "da"
     diarization_enabled: bool = False
     diarization_base_url: str = "http://127.0.0.1:8790"

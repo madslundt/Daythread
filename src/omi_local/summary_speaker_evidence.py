@@ -176,9 +176,11 @@ def _speech_blocks(
     # Carry separators only when both surrounding lexical spans have matching context.
     merged, index = [], 0
     while index < len(blocks):
-        block = blocks[index]
-        if index + 2 < len(blocks):
-            gap, following = blocks[index + 1], blocks[index + 2]
+        block = dict(blocks[index])
+        following_index = index + 1
+        while following_index + 1 < len(blocks):
+            gap = blocks[following_index]
+            following = blocks[following_index + 1]
             same_context = (
                 block["attribution"] in {"attributed", "overlap"}
                 and block["attribution"] == following["attribution"]
@@ -186,17 +188,13 @@ def _speech_blocks(
                 and gap["attribution"] == "unknown"
                 and _is_nonlexical_gap(gap)
             )
-            if same_context:
-                block = {
-                    **block,
-                    "text": block["text"] + gap["text"] + following["text"],
-                    "end_offset": following["end_offset"],
-                }
-                merged.append(block)
-                index += 3
-                continue
+            if not same_context:
+                break
+            block["text"] += gap["text"] + following["text"]
+            block["end_offset"] = following["end_offset"]
+            following_index += 2
         merged.append(block)
-        index += 1
+        index = following_index
     return merged
 
 

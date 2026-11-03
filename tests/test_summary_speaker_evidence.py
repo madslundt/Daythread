@@ -337,6 +337,52 @@ def test_overlap_blocks_bridge_only_safe_gaps_and_matching_candidate_context():
     ]
 
 
+def test_safe_separator_pass_consumes_full_owner_run_but_stops_at_unknown_word():
+    canonical = "one, two; three— four mystery five, six"
+    speaker = str(uuid4())
+    pieces = [
+        ("one", "attributed", speaker),
+        (", ", "unknown", None),
+        ("two", "attributed", speaker),
+        ("; ", "unknown", None),
+        ("three", "attributed", speaker),
+        ("— ", "unknown", None),
+        ("four", "attributed", speaker),
+        (" ", "unknown", None),
+        ("mystery", "unknown", None),
+        (" ", "unknown", None),
+        ("five", "attributed", speaker),
+        (", ", "unknown", None),
+        ("six", "attributed", speaker),
+    ]
+    rows, cursor = [], 0
+    for text, attribution, speaker_id in pieces:
+        row = {
+            "text": text,
+            "start_offset": cursor,
+            "end_offset": cursor + len(text),
+            "attribution": attribution,
+        }
+        if speaker_id:
+            row.update(speaker_id=speaker_id, speaker_label="A")
+        rows.append(row)
+        cursor += len(text)
+    assert cursor == len(canonical)
+    payload = speech_payload(
+        source_prompt_pieces(
+            source_with_evidence(canonical, rows),
+            Inference._speaker_evidence_window,
+            max_chars=12_000,
+        )[0]
+    )
+    assert payload["speech"] == [
+        {"text": "one, two; three— four", "speaker": "speaker_1"},
+        {"text": " mystery ", "attribution": "unknown"},
+        {"text": "five, six", "speaker": "speaker_1"},
+    ]
+    assert "".join(block["text"] for block in payload["speech"]) == canonical
+
+
 @pytest.mark.anyio
 async def test_ordered_blocks_fit_full_context_and_legacy_sources_keep_raw_format(tmp_path):
     words = [f"café{index:04d}" for index in range(600)]

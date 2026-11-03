@@ -792,6 +792,8 @@
 "Kind and title cannot be cleared" = "El tipo y el título no pueden borrarse";
 "LLM API key" = "Clave API de LLM";
 "LLM enable thinking" = "Habilitar pensamiento de LLM";
+"Summary thinking token budget" = "Presupuesto de razonamiento para resúmenes";
+"Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer." = "Límite opcional de tokens de razonamiento para resúmenes. Solo se envía si el razonamiento está activado; el límite de tokens de salida no cambia. El presupuesto efectivo de razonamiento nunca supera la mitad de la capacidad de salida disponible, para dejar espacio a la respuesta.";
 "LLM endpoint URL" = "URL del punto final de LLM";
 "LLM model" = "Modelo de LLM";
 "LLM output was truncated" = "La salida de LLM fue truncada";

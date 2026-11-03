@@ -158,6 +158,8 @@ class Recaps:
             "boundary": (group.closed_at, group.basis, group.proof),
             "hints": group.hints,
             "model": settings.llm_route("summary").identity,
+            "thinking": settings.llm_enable_thinking,
+            "thinking_token_budget": settings.llm_summary_thinking_token_budget,
             "language": settings.summary_language.lower(), "timezone": settings.timezone,
             "prompt": PROMPT_VERSION,
             "speaker_grounded": SPEAKER_GROUNDED_VERSION,
@@ -499,6 +501,8 @@ class Recaps:
                 "prompt": DAY_PROMPT_VERSION, "purpose": purpose,
                 "preparation_policy": PROMPT_VERSION,
                 "model": memory.settings.llm_route("summary").identity,
+                "thinking": memory.settings.llm_enable_thinking,
+                "thinking_token_budget": memory.settings.llm_summary_thinking_token_budget,
                 "language": memory.settings.summary_language.lower(),
             })
             summary = None if force else memory.store.recap_summary(synthesis_key)

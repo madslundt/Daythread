@@ -923,6 +923,8 @@
   "Known summary credits": "Kända sammanfattningskrediter",
   "LLM API key": "LLM API-nyckel",
   "LLM enable thinking": "LLM aktivera tänkande",
+  "Summary thinking token budget": "Tokengräns för resonemang i sammanfattningar",
+  "Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer.": "Valfri gräns för resonemangstoken i sammanfattningar. Skickas bara när resonemang är aktiverat; gränsen för utdata förblir oförändrad. Den effektiva resonemangsbudgeten överstiger aldrig hälften av tillgänglig utdatakapacitet, så att det finns plats för svaret.",
   "LLM endpoint URL": "LLM slutpunkt URL",
   "LLM model": "LLM modell",
   "LLM output was truncated": "LLMutmatningen avkortades",

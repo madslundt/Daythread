@@ -128,6 +128,7 @@ const advancedKeys = new Set([
   "capture_health_enabled", "capture_health_stall_minutes", "capture_health_cooldown_minutes",
   "capture_health_quiet_start_hour", "capture_health_quiet_end_hour",
   "llm_base_url", "llm_api_key", "llm_model", "llm_revision", "llm_routes", "llm_enable_thinking",
+  "llm_summary_thinking_token_budget",
   "inference_token", "inference_timeout_seconds", "chat_query_expansion", "chat_query_expansion_timeout_seconds",
   "embedding_enabled", "embedding_base_url", "embedding_token", "embedding_model", "embedding_revision",
   "embedding_dimension", "embedding_timeout_seconds", "embedding_min_score",

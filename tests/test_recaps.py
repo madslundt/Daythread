@@ -265,6 +265,17 @@ def test_recap_fingerprint_uses_caller_snapshot_and_timing_only_changes(client, 
         assert original(group, db) != first
 
 
+def test_recap_preparation_fingerprint_tracks_summary_thinking_budget(client):
+    insert(client, kind="manual_upload", text="Atlas continues")
+    memory = client.app.state.memory
+    group = memory.recaps.groups(AT + timedelta(hours=1))[0]
+    before = memory.recaps.group_key(group)
+    memory.settings = memory.settings.model_copy(update={
+        "llm_summary_thinking_token_budget": 8192,
+    })
+    assert memory.recaps.group_key(group) != before
+
+
 def test_speaker_projection_resolves_one_scope_for_all_source_parts(client, monkeypatch):
     first = insert(client, AT, "Part one", kind="manual_upload")
     second = insert(client, AT + timedelta(seconds=60), "Part two", kind="manual_upload")

@@ -92,7 +92,7 @@ def test_incomplete_or_failed_summary_stream_never_returns_partial_content(tmp_p
     assert len(usage) == 2
 
 
-def test_summary_sse_length_retries_once_without_thinking_and_preserves_usage(tmp_path):
+def test_summary_sse_length_preserves_thinking_and_does_not_return_partial_content(tmp_path):
     requests, usage = [], []
 
     def handler(request):
@@ -113,13 +113,15 @@ def test_summary_sse_length_retries_once_without_thinking_and_preserves_usage(tm
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             inference = Inference(settings, client)
             inference.usage_recorder = usage.append
-            assert await inference.generate_json("Task", "Evidence") == "Complete summary"
+            with pytest.raises(InferenceTruncated):
+                await inference.generate_json("Task", "Evidence")
             assert settings.llm_enable_thinking is True
 
     asyncio.run(run())
-    assert [body["max_tokens"] for body in requests] == [65536, 65536]
-    assert [body["chat_template_kwargs"]["enable_thinking"] for body in requests] == [True, False]
-    assert [row["output_tokens"] for row in usage if row["outcome"] == "succeeded"] == [65536, 9]
+    assert [body["max_tokens"] for body in requests] == [65536]
+    assert [body["chat_template_kwargs"]["enable_thinking"] for body in requests] == [True]
+    assert [row["outcome"] for row in usage] == ["pending", "succeeded"]
+    assert usage[-1]["output_tokens"] == 65536
 
 
 def test_explicit_translation_keeps_nonstreaming_transport_and_gateway_headers(tmp_path):

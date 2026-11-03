@@ -286,7 +286,7 @@ def test_failed_redo_preserves_previous_diary(jobs):
     assert jobs.memory.cached_recap(day)["output_id"] == old["output_id"]
 
 
-def test_real_redo_recovers_when_reasoning_exhausts_every_summary_token_budget(jobs):
+def test_real_redo_fails_when_reasoning_exhausts_summary_output_budget(jobs):
     text = "We agreed to send the revised delivery plan on Friday."
     key = recording(jobs, text=text)
     jobs.memory.settings = jobs.memory.settings.model_copy(update={
@@ -330,11 +330,13 @@ def test_real_redo_recovers_when_reasoning_exhausts_every_summary_token_budget(j
 
     asyncio.run(run())
     status = jobs.observation()["job"]
-    assert status["state"] == "completed"
-    assert status["transcript_completed"] == status["summary_completed"] == 1
-    assert notes_requests == [(65536, True), (65536, False)]
+    assert status["state"] == "failed"
+    assert status["transcript_completed"] == 1
+    assert status["summary_completed"] == 0
+    assert notes_requests == [(65536, True)]
     assert jobs.memory.settings.llm_enable_thinking is True
-    assert "delivery plan" in jobs.memory.cached_recap(date(2026, 10, 15))["summary"]
+    summary = (jobs.memory.cached_recap(date(2026, 10, 15)) or {}).get("summary") or ""
+    assert "delivery plan" not in summary.lower()
 
 
 def test_truncated_summary_reports_output_limit_and_keeps_transcript(jobs, caplog):

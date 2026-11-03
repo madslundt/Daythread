@@ -923,6 +923,8 @@
   "Known summary credits": "Kendte opsummeringskreditter",
   "LLM API key": "LLM API-nøgle",
   "LLM enable thinking": "Aktivér ræsonnering i sprogmodellen",
+  "Summary thinking token budget": "Tokenbudget for ræsonnering i opsummeringer",
+  "Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer.": "Valgfrit loft over ræsonneringstokens i opsummeringer. Sendes kun, når ræsonnering er slået til; loftet over outputtokens ændres ikke. Det effektive ræsonneringsbudget overstiger aldrig halvdelen af den tilgængelige outputkapacitet, så der er plads til svaret.",
   "LLM endpoint URL": "URL til LLM-endpointet",
   "LLM model": "LLM-model",
   "LLM output was truncated": "LLM-outputtet blev forkortet.",

@@ -183,6 +183,7 @@ class Settings(BaseSettings):
     stt_routes: dict[str, STTRouteOverride] = Field(default_factory=dict)
     llm_model: str = "home"
     llm_enable_thinking: bool | None = None
+    llm_summary_thinking_token_budget: int | None = Field(default=None, ge=1, le=65_536)
     llm_revision: str = Field(default="", max_length=200)
     llm_routes: dict[LLMTask, LLMRouteOverride] = Field(default_factory=dict)
     embedding_enabled: bool = False
@@ -487,6 +488,13 @@ class Settings(BaseSettings):
         value = value.strip().lower()
         if value not in {"da", "en"}:
             raise ValueError("Alignment language must be da or en")
+        return value
+
+    @field_validator("llm_summary_thinking_token_budget", mode="before")
+    @classmethod
+    def valid_summary_thinking_token_budget(cls, value):
+        if isinstance(value, bool):
+            raise ValueError()
         return value
 
 

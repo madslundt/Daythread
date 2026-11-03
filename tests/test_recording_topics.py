@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omi_local.api import create_app
+from omi_local.recording_topics import topic_fingerprint
 from omi_local.settings import Settings
 
 TEXT = (
@@ -77,6 +78,15 @@ def test_backfill_generates_three_titled_sections_without_changing_original(reco
     assert client.get("/v1/transcripts").json()["items"][0]["title"] == OUTPUT["title"]
     assert not run(memory)
     assert memory.inference.calls == 1
+
+
+def test_topic_fingerprint_tracks_summary_thinking_budget(recording):
+    _client, memory, _key = recording
+    before = topic_fingerprint(memory)
+    memory.settings = memory.settings.model_copy(update={
+        "llm_summary_thinking_token_budget": 8192,
+    })
+    assert topic_fingerprint(memory) != before
 
 
 def test_today_reports_waiting_and_active_topic_work_without_counting_it_twice(recording):

@@ -923,6 +923,8 @@
   "Known summary credits": "Known summary credits",
   "LLM API key": "LLM API key",
   "LLM enable thinking": "LLM enable thinking",
+  "Summary thinking token budget": "Summary thinking token budget",
+  "Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer.": "Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer.",
   "LLM endpoint URL": "LLM endpoint URL",
   "LLM model": "LLM model",
   "LLM output was truncated": "LLM output was truncated",

@@ -83,7 +83,7 @@ def test_other_provider_errors_are_preserved(tmp_path, status, message):
 
 
 @pytest.mark.parametrize("structured", [False, True])
-def test_summary_reasoning_exhaustion_uses_one_request_only_nonthinking_fallback(
+def test_summary_reasoning_exhaustion_preserves_thinking_and_raises(
     tmp_path, structured,
 ):
     requests = []
@@ -103,33 +103,26 @@ def test_summary_reasoning_exhaustion_uses_one_request_only_nonthinking_fallback
                             llm_api_key="test-token", _env_file=None)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             inference = Inference(settings, client, task="summary")
-            if structured:
-                result = await inference.generate_structured_json(
-                    "Write in Danish", "Original evidence", Analysis.model_json_schema(),
-                )
-            else:
-                result = await inference.generate("Write in Danish", "Original evidence")
-            assert result == '{"ok":true}'
+            with pytest.raises(InferenceTruncated):
+                if structured:
+                    await inference.generate_structured_json(
+                        "Write in Danish", "Original evidence", Analysis.model_json_schema(),
+                    )
+                else:
+                    await inference.generate("Write in Danish", "Original evidence")
             assert inference.settings.llm_enable_thinking is True
 
     asyncio.run(run())
     budgets = [body["max_tokens"] for body, _ in requests]
-    assert budgets == [65536, 65536]
+    assert budgets == [65536]
     assert [body["chat_template_kwargs"]["enable_thinking"] for body, _ in requests] == [
-        True, False,
+        True,
     ]
-    # Authentication, response schema, language, task, evidence and model all survive the retry.
-    original, original_auth = requests[0]
-    final, final_auth = requests[-1]
-    assert original_auth == final_auth == "Bearer test-token"
-    assert {key: value for key, value in original.items()
-            if key not in {"max_tokens", "chat_template_kwargs"}} == {
-                key: value for key, value in final.items()
-                if key not in {"max_tokens", "chat_template_kwargs"}}
+    assert requests[0][1] == "Bearer test-token"
 
 
 @pytest.mark.parametrize("task, thinking, expected", [
-    ("summary", True, 2), ("summary", False, 1), ("summary", None, 1), ("chat", True, 3),
+    ("summary", True, 1), ("summary", False, 1), ("summary", None, 1), ("chat", True, 3),
 ])
 def test_truncated_fallback_is_bounded_and_never_returns_partial_content(
     tmp_path, task, thinking, expected,
@@ -173,32 +166,30 @@ def test_successful_summary_preserves_enabled_thinking_without_fallback(tmp_path
     assert requests[0]["chat_template_kwargs"] == {"enable_thinking": True}
 
 
-def test_nonthinking_summary_fallback_preserves_the_effective_context_budget(tmp_path):
+def test_summary_truncation_with_context_limit_does_not_disable_thinking(tmp_path):
     requests = []
 
     def handler(request):
         body = json.loads(request.content)
         requests.append(body)
-        thinking = body["chat_template_kwargs"]["enable_thinking"]
         return httpx.Response(200, json={"choices": [{
-            "finish_reason": "length" if thinking else "stop",
-            "message": {"content": "" if thinking else "Complete answer"},
+            "finish_reason": "length", "message": {"content": "partial"},
         }]})
 
     async def run():
         settings = Settings(data_dir=tmp_path, llm_enable_thinking=True, _env_file=None)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             with bounded_generation(4096):
-                assert await Inference(settings, client, task="summary").generate(
-                    "Task", "Evidence",
-                ) == "Complete answer"
+                with pytest.raises(InferenceTruncated):
+                    await Inference(settings, client, task="summary").generate(
+                        "Task", "Evidence",
+                    )
 
     asyncio.run(run())
     budgets = [body["max_tokens"] for body in requests]
-    assert len(budgets) == 2
+    assert len(budgets) == 1
     assert budgets[0] < 4000
-    assert budgets[-1] == budgets[-2] == budgets[0]
-    assert requests[-1]["chat_template_kwargs"]["enable_thinking"] is False
+    assert requests[0]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 @pytest.mark.parametrize("mode", ["plain", "json", "structured"])

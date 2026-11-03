@@ -7,8 +7,11 @@ import wave
 import httpx
 import pytest
 
-from omi_local.inference import Inference
+from omi_local.chat_context import bounded_generation, request_tokens, safety
+from omi_local.inference import SUMMARY_SYSTEM, Inference
+from omi_local.inference_errors import InferenceTruncated
 from omi_local.settings import Settings
+from omi_local.structured_generation import SUMMARY_OUTPUT_TOKENS
 
 
 @pytest.fixture
@@ -93,3 +96,128 @@ async def test_thinking_control_never_changes_transcription_requests(tmp_path, t
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         assert await Inference(settings, http).transcribe(audio.getvalue()) == "Speech"
+
+
+def _summary_stream(content, finish="stop"):
+    return httpx.Response(
+        200,
+        headers={"content-type": "text/event-stream"},
+        content=(
+            f'data: {{"choices":[{{"delta":{{"content":{json.dumps(content)}}}}}]}}\n\n'
+            f'data: {{"choices":[{{"delta":{{}},"finish_reason":"{finish}"}}]}}\n\n'
+            "data: [DONE]\n\n"
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_summary_thinking_budget_is_opt_in_and_preserves_enabled_thinking(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=True,
+        llm_summary_thinking_token_budget=8192, _env_file=None,
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return _summary_stream("A useful answer")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        assert await Inference(settings, http).generate("Task", "Evidence") == "A useful answer"
+
+    assert len(requests) == 1
+    assert requests[0]["max_tokens"] == SUMMARY_OUTPUT_TOKENS
+    assert requests[0]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert requests[0]["thinking_token_budget"] == 8192
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("thinking,budget", [(None, 8192), (False, 8192), (True, None)])
+async def test_summary_budget_is_not_sent_without_explicit_enabled_budget(
+    tmp_path, thinking, budget,
+):
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=thinking,
+        llm_summary_thinking_token_budget=budget, _env_file=None,
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return _summary_stream("A useful answer")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        assert await Inference(settings, http).generate("Task", "Evidence") == "A useful answer"
+    assert len(requests) == 1
+    assert "thinking_token_budget" not in requests[0]
+
+
+@pytest.mark.anyio
+async def test_thinking_budget_does_not_leak_to_other_llm_tasks(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=True,
+        llm_summary_thinking_token_budget=8192, _env_file=None,
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "answer"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        inference = Inference(settings, http).for_task("chat")
+        assert await inference.generate("Task", "Evidence") == "answer"
+
+    assert len(requests) == 1
+    assert "thinking_token_budget" not in requests[0]
+    assert requests[0]["chat_template_kwargs"] == {"enable_thinking": True}
+
+
+@pytest.mark.anyio
+async def test_summary_truncation_does_not_retry_with_thinking_disabled(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=True,
+        llm_summary_thinking_token_budget=8192, _env_file=None,
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return _summary_stream("incomplete", finish="length")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(InferenceTruncated):
+            await Inference(settings, http).generate("Task", "Evidence")
+
+    assert len(requests) == 1
+    assert requests[0]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert requests[0]["thinking_token_budget"] == 8192
+    assert requests[0]["max_tokens"] == SUMMARY_OUTPUT_TOKENS
+
+
+@pytest.mark.anyio
+async def test_context_limited_summary_reserves_half_for_final_answer(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, llm_enable_thinking=True,
+        llm_summary_thinking_token_budget=8192, _env_file=None,
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return _summary_stream("A useful answer")
+
+    task, evidence = "Task", "Evidence"
+    request_size = request_tokens(task, evidence, SUMMARY_SYSTEM)
+    context_limit = request_size + 8000
+    effective_output = context_limit - safety(context_limit) - request_size
+    assert 0 < effective_output < SUMMARY_OUTPUT_TOKENS
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        inference = Inference(settings, http)
+        with bounded_generation(context_limit):
+            assert await inference.generate(task, evidence) == "A useful answer"
+
+    assert len(requests) == 1
+    assert requests[0]["max_tokens"] == effective_output
+    assert requests[0]["thinking_token_budget"] == min(8192, effective_output // 2)

@@ -277,20 +277,19 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         )
         options = self.llm_template_options
         attempts = [(budget, options) for budget in budgets]
-        if self.task == "summary" and self.settings.llm_enable_thinking is True:
-            # Reasoning can consume every output token before producing an answer.
-            # Try the normal budget first, then disable it for this request only.
-            attempts.append((budgets[-1], {
-                **options, "chat_template_kwargs": {
-                    **options.get("chat_template_kwargs", {}), "enable_thinking": False,
-                },
-            }))
         base_timeout = max(
             self.settings.inference_timeout_seconds,
             4096 if long_summary else 300 if tokens >= 4000 else 0,
         )
         for attempt, (budget, template_options) in enumerate(attempts):
             budget = generation_tokens(task, evidence, system, budget)
+            requested_thinking_budget = self.settings.llm_summary_thinking_token_budget
+            thinking_budget = None
+            if (self.task == "summary" and self.settings.llm_enable_thinking is True
+                    and requested_thinking_budget is not None):
+                # Reserve at least half the effective output capacity for the
+                # answer, including when the context window reduces max_tokens.
+                thinking_budget = min(requested_thinking_budget, budget // 2)
             response = await self.post(
                 "llm",
                 f"{route.base_url}/chat/completions",
@@ -306,6 +305,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 },
                 json={
                     **template_options,
+                    **({"thinking_token_budget": thinking_budget}
+                       if thinking_budget is not None else {}),
                     **({"stream": True, "stream_options": {"include_usage": True}}
                        if long_summary else {}),
                     **({"response_format": response_format} if response_format else {}),

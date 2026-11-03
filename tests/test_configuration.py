@@ -178,6 +178,27 @@ def test_transcription_request_duration_applies_live_and_survives_restart(settin
         assert client.app.state.memory.inference.settings.stt_chunk_seconds == 12
 
 
+def test_summary_thinking_budget_defaults_validates_and_roundtrips(settings):
+    with TestClient(create_app(settings)) as client:
+        view = client.get("/v1/configuration").json()
+        assert view["values"]["llm_summary_thinking_token_budget"] is None
+        field = next(item for item in view["fields"]
+                     if item["key"] == "llm_summary_thinking_token_budget")
+        assert field["minimum"] == 1 and field["maximum"] == 65_536
+        assert "leaving room for the answer" in field["description"].lower()
+        result = save(client, {"llm_summary_thinking_token_budget": 8192})
+        assert result.status_code == 200
+        assert result.json()["values"]["llm_summary_thinking_token_budget"] == 8192
+        assert client.app.state.memory.inference.settings.llm_summary_thinking_token_budget == 8192
+        for invalid in (0, -1, 65_537, 1.5, True):
+            assert save(client, {"llm_summary_thinking_token_budget": invalid}).status_code == 422
+        assert client.app.state.memory.inference.settings.llm_summary_thinking_token_budget == 8192
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/configuration").json()["values"][
+            "llm_summary_thinking_token_budget"
+        ] == 8192
+
+
 def test_route_keys_can_be_replaced_disabled_inherited_and_removed(settings):
     with TestClient(create_app(settings)) as client:
         for token, expected in [

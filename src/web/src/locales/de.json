@@ -923,6 +923,8 @@
   "Known summary credits": "Bekannte Zusammenfassungs-Credits",
   "LLM API key": "LLM-API-Schlüssel",
   "LLM enable thinking": "LLM-Denken aktivieren",
+  "Summary thinking token budget": "Tokenbudget für Zusammenfassungsdenken",
+  "Optional reasoning token cap for summary calls. Sent only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning budget never exceeds half of the available output capacity, leaving room for the answer.": "Optionales Limit für Reasoning-Tokens in Zusammenfassungen. Wird nur gesendet, wenn Reasoning aktiviert ist; das Ausgabelimit bleibt unverändert. Das effektive Reasoning-Budget beträgt höchstens die Hälfte der verfügbaren Ausgabekapazität, damit Platz für die Antwort bleibt.",
   "LLM endpoint URL": "LLM-Endpunkt-URL",
   "LLM model": "LLM-Modell",
   "LLM output was truncated": "LLM-Ausgabe wurde abgeschnitten",

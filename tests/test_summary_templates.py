@@ -171,6 +171,18 @@ def test_full_day_presentation_never_leaks_into_independent_filtered_recaps(memo
     assert all("Distinctive preference." not in purpose for purpose in memory.inference.calls)
 
 
+def test_scoped_recap_snapshot_tracks_summary_thinking_budget(memory):
+    tag = str(uuid4())
+    with memory.store.connect() as db:
+        source = db.execute("SELECT id FROM audio LIMIT 1").fetchone()[0]
+        db.execute("INSERT INTO conversation_tags VALUES(?,?,?)", (tag, "Project", "project"))
+        db.execute("INSERT INTO source_tags VALUES(?,?)", (source, tag))
+    scoped = ScopedRecaps(memory, tag_id=tag)
+    before = scoped.snapshot(DAY, NOW)["key"]
+    memory.settings.llm_summary_thinking_token_budget = 8192
+    assert scoped.snapshot(DAY, NOW)["key"] != before
+
+
 def test_durable_request_freezes_default_choice_and_idempotent_retries(memory):
     jobs = GenerationJobs(memory)
     memory.settings.summary_template = "interview"

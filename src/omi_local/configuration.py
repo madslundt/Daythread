@@ -207,6 +207,9 @@ DESCRIPTIONS = {
     "llm_revision": "Change this when replacing model weights to invalidate derived caches.",
     "llm_enable_thinking": "Default uses the model's setting. Supported gateways can enable or "
     "disable reasoning explicitly.",
+    "llm_summary_thinking_token_budget": "Optional reasoning token cap for summary calls. Sent "
+    "only when thinking is enabled; the output-token cap stays unchanged. The effective reasoning "
+    "budget never exceeds half of the available output capacity, leaving room for the answer.",
     "data_dir": "Archive path on home-core. Changing it selects that archive after restart; "
     "existing recordings are not moved.",
     "web_dir": "Optional custom web asset directory on home-core. Empty uses bundled assets.",
@@ -234,6 +237,13 @@ def descriptors() -> list[dict]:
         if key in DEPLOYMENT_FIELDS | RETIRED_FIELDS:
             continue
         variants = prop.get("anyOf", [prop])
+        constraints = {}
+        for name in ("minimum", "maximum", "minLength", "maxLength"):
+            value = prop.get(name)
+            if value is None:
+                value = next((item[name] for item in variants if name in item), None)
+            if value is not None:
+                constraints[name] = value
         kind = next((item.get("type") for item in variants if item.get("type") != "null"), "string")
         if key in SECRET_FIELDS:
             kind = "secret"
@@ -265,6 +275,7 @@ def descriptors() -> list[dict]:
             "llm_base_url": "Summaries & chat endpoint",
             "llm_api_key": "Summaries & chat API key",
             "llm_model": "Summaries & chat model",
+            "llm_summary_thinking_token_budget": "Summary thinking token budget",
             "voice_recognition_enabled": "Remember speakers",
             "voice_recognition_report": "Speaker recognition evaluation report",
             "diarization_enabled": "Enable speaker detection",
@@ -284,11 +295,7 @@ def descriptors() -> list[dict]:
                 "nullable": any(item.get("type") == "null" for item in variants),
                 "restart_required": key in RESTART_FIELDS,
                 "description": DESCRIPTIONS.get(key, ""),
-                **{
-                    name: prop[name]
-                    for name in ("minimum", "maximum", "minLength", "maxLength")
-                    if name in prop
-                },
+                **constraints,
             }
         )
     return result

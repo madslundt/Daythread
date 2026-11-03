@@ -42,6 +42,26 @@ def _select_nonoverlapping_timing_segments(segments: list[dict], refined: list[d
     ))
 
 
+def _intervals_cover_tokens(text: str, intervals: list[tuple[int, int]]) -> bool:
+    """Return whether sorted character intervals cover every non-whitespace token."""
+    interval_index = 0
+    for token in re.finditer(r"\S+", text):
+        while (interval_index < len(intervals)
+               and intervals[interval_index][1] <= token.start()):
+            interval_index += 1
+        cursor = token.start()
+        probe = interval_index
+        while probe < len(intervals) and cursor < token.end():
+            start, end = intervals[probe]
+            if start > cursor:
+                break
+            cursor = max(cursor, end)
+            probe += 1
+        if cursor < token.end():
+            return False
+    return True
+
+
 class Transcription:
     async def transcribe(self, data: bytes) -> str:
         return (await self.transcribe_result(data))["text"]
@@ -183,7 +203,7 @@ class Transcription:
                     duration = (alignment_source_duration(audio) if native_segments
                                 else wav_duration(audio))
                     jobs = []
-                    native_covered = set()
+                    native_intervals = []
                     previous_native_time = 0.0
                     previous_native_text = 0
                     for native in native_segments:
@@ -206,12 +226,11 @@ class Transcription:
                             overall = "partial"
                             continue
                         jobs.append((crop, text[first:last], first, crop_start))
-                        native_covered.update(range(first, last))
+                        native_intervals.append((first, last))
                         previous_native_time = end
                         previous_native_text = last
                     if native_segments and jobs:
-                        if any(index not in native_covered for match in re.finditer(r"\S+", text)
-                               for index in range(match.start(), match.end())):
+                        if not _intervals_cover_tokens(text, native_intervals):
                             overall = "partial"
                     elif native_segments:
                         # Supplied anchors were present but none could be trusted. In
@@ -253,11 +272,10 @@ class Transcription:
                         previous = 0.0
                         last_character = 0
                         local = []
-                        covered_ranges = set()
+                        covered_ranges = []
                         if (len(aligned_segments) != len(expected)
                                 or payload.get("status") != "aligned"):
                             overall = "partial"
-                        covered_chars = set()
                         request_duration = wav_duration(request_audio)
                         for segment in aligned_segments:
                             if not isinstance(segment, dict):
@@ -274,9 +292,6 @@ class Transcription:
                                     or first < last_character):
                                 overall = "invalid"
                                 continue
-                            if any(index in covered_chars for index in range(first, last)):
-                                overall = "invalid"
-                                continue
                             if (type(start) not in (int, float) or type(end) not in (int, float)
                                     or not math.isfinite(start) or not math.isfinite(end)
                                     or not previous <= start < end <= request_duration):
@@ -284,8 +299,7 @@ class Transcription:
                                 continue
                             previous = end
                             last_character = last
-                            covered_chars.update(range(first, last))
-                            covered_ranges.add((first, last))
+                            covered_ranges.append((first, last))
                             local.append({
                                 "start": start + offset + crop_start,
                                 "end": end + offset + crop_start,
@@ -294,7 +308,7 @@ class Transcription:
                                 "end_offset": last + request_text_offset + text_offset,
                                 "kind": "word",
                             })
-                        if covered_ranges != {(match.start(), match.end()) for match in expected}:
+                        if covered_ranges != [(match.start(), match.end()) for match in expected]:
                             overall = "partial" if overall == "aligned" else overall
                         for fragment in local:
                             if (fragment["start"] < last_output_time_end

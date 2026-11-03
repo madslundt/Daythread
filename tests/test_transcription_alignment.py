@@ -12,6 +12,18 @@ from omi_local.inference import Inference
 from omi_local.settings import Settings
 
 
+def test_interval_coverage_handles_long_text_without_expanding_characters():
+    text = "word " * 400_000
+    assert transcription._intervals_cover_tokens(text, [(0, len(text))])
+    assert not transcription._intervals_cover_tokens(text, [(0, len(text) - 2)])
+
+
+def test_interval_coverage_accepts_adjacent_spans_and_rejects_token_gaps():
+    text = "one two"
+    assert transcription._intervals_cover_tokens(text, [(0, 2), (2, 7)])
+    assert not transcription._intervals_cover_tokens(text, [(0, 2), (3, 7)])
+
+
 def wav(value: int, seconds: int = 1) -> bytes:
     output = io.BytesIO()
     with wave.open(output, "wb") as stream:

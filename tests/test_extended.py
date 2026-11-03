@@ -379,7 +379,10 @@ async def test_stt_auto_language_segments_and_timeout_contract(config):
         inference = Inference(config, http)
         result = await inference.transcribe_result(audio_data())
         assert result["text"] == "Hej"
-        assert result["segments"] == [{"start": 0.1, "end": 0.9, "text": "Hej"}]
+        assert result["segments"] == [{
+            "start": 0.1, "end": 0.9, "text": "Hej",
+            "start_offset": 0, "end_offset": 3, "kind": "segment",
+        }]
         assert inference.health["stt"]["state"] == "ready"
 
 

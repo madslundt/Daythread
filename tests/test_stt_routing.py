@@ -127,7 +127,10 @@ async def test_auto_detection_routes_codes_or_configured_provider_names(tmp_path
         },
     )
     calls = []
-    segments = [{"start": 0.1, "end": 0.9, "text": "Hej"}]
+    segments = [{
+        "start": 0.1, "end": 0.9, "text": "Hej",
+        "start_offset": 0, "end_offset": 3, "kind": "segment",
+    }]
 
     def handler(request):
         calls.append(request)

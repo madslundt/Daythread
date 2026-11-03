@@ -19,6 +19,7 @@ from .recording_transcription_client import (
 from .recording_transcription_store import (
     pipeline_fingerprint,
     recording_source_map,
+    recording_transcription_result_version,
     source_fingerprint,
 )
 from .source_matching import MANUAL_UPLOAD_SQL
@@ -243,13 +244,9 @@ async def process_one(memory) -> bool:
                 status = "timeout" if isinstance(exc, TimeoutError) else "unavailable"
                 words, alignment = [], {"status": status, "model": None}
         source_map = recording_source_map(recording)
-        version_hash = hashlib.sha256()
-        for value in (source, pipeline, text, native, words, provenance):
-            version_hash.update(
-                json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            )
-            version_hash.update(b"\0")
-        version = version_hash.hexdigest()
+        version = recording_transcription_result_version(
+            source, pipeline, text, native, words, provenance,
+        )
         with store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             current = load_recording(store, rid, db)

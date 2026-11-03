@@ -125,6 +125,18 @@ def pipeline_fingerprint(settings) -> str:
     ).hexdigest()
 
 
+def recording_transcription_result_version(
+    source: str, pipeline: str, text: str, native: list[dict], words: list[dict],
+    provenance: dict,
+) -> str:
+    """Hash the exact payload published as a whole-recording READY variant."""
+    digest = hashlib.sha256()
+    for value in (source, pipeline, text, native, words, provenance):
+        digest.update(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def recording_source_map(recording: Recording) -> list[dict]:
     offset = 0
     result = []

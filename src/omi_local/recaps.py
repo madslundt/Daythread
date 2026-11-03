@@ -59,7 +59,7 @@ BOUNDARY_NOTE = (
     "configured pause in recorded speech. Missing uploads do not count as silence. "
     "Conversation boundaries are approximate."
 )
-SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-2"
+SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-3"
 
 
 def digest(value: object) -> str:

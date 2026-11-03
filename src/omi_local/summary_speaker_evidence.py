@@ -1,7 +1,6 @@
 """Bounded, compact speaker-evidence projections for summary prompts."""
 
 import json
-import math
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
@@ -21,29 +20,13 @@ class SummarySourcePiece:
 SpeakerWindow = Callable[[dict, int, int], list[dict]]
 
 
-def _valid_time_pair(item: dict) -> tuple[int | float, int | float] | None:
-    start, end = item.get("start"), item.get("end")
-    if (type(start) not in (int, float) or type(end) not in (int, float)
-            or start < 0 or end <= start):
-        return None
-    try:
-        if not math.isfinite(start) or not math.isfinite(end):
-            return None
-    except OverflowError:
-        return None
-    return start, end
-
-
 def _is_nonlexical_gap(item: dict) -> bool:
     text = item.get("text")
     return (
         item.get("attribution") == "unknown"
         and isinstance(text, str)
         and bool(text)
-        and all(
-            char.isspace() or unicodedata.category(char).startswith("P")
-            for char in text
-        )
+        and all(char.isspace() or unicodedata.category(char).startswith("P") for char in text)
     )
 
 
@@ -80,143 +63,172 @@ def _speaker_aliases(items: list[dict]) -> dict[str, str]:
     return aliases
 
 
-def _overlap_runs(items: list[dict]) -> list[dict]:
-    """Join only consecutive overlap words across punctuation/space separators."""
-    result, index = [], 0
-    while index < len(items):
-        first = items[index]
-        first_time = _valid_time_pair(first)
-        if (first.get("attribution") != "overlap" or not first_time
-                or not _valid_span(first)):
-            result.append(first)
-            index += 1
-            continue
-        candidates = tuple(first.get("candidate_source_ids") or [])
-        run = [first]
-        separators = []
-        cursor = index + 1
-        while cursor < len(items):
-            candidate = items[cursor]
-            candidate_time = _valid_time_pair(candidate)
-            gap = None
-            if _is_nonlexical_gap(candidate) and cursor + 1 < len(items):
-                following = items[cursor + 1]
-                following_time = _valid_time_pair(following)
-                if (following.get("attribution") == "overlap" and following_time
-                        and _valid_span(candidate) and _valid_span(following)
-                        and tuple(following.get("candidate_source_ids") or []) == candidates
-                        and candidate.get("start_offset") == run[-1].get("end_offset")
-                        and candidate.get("end_offset") == following.get("start_offset")):
-                    gap = candidate
-                    candidate = following
-                    candidate_time = following_time
-            if (candidate.get("attribution") != "overlap" or not candidate_time
-                    or not _valid_span(candidate)
-                    or tuple(candidate.get("candidate_source_ids") or []) != candidates
-                    or candidate.get("start_offset") != (
-                        gap.get("end_offset") if gap is not None
-                        else run[-1].get("end_offset")
-                    )):
-                break
-            separators.append(gap)
-            run.append(candidate)
-            cursor += 2 if gap is not None else 1
-
-        if len(run) == 1:
-            result.append(first)
-            index += 1
-            continue
-        text = first["text"]
-        times = [[first["start_offset"], first["end_offset"], *first_time]]
-        for gap, item in zip(separators, run[1:]):
-            text += (gap["text"] if gap is not None else "") + item["text"]
-            pair = _valid_time_pair(item)
-            times.append([item["start_offset"], item["end_offset"], *pair])
-        result.append({
-            "text": text,
-            "start_offset": first["start_offset"],
-            "end_offset": run[-1]["end_offset"],
-            "attribution": "overlap",
-            "candidate_source_ids": list(candidates),
-            "overlap_word_times": times,
-        })
-        index = cursor
-    return result
-
-
-def compact_speaker_evidence(
-    items: list[dict], speaker_aliases: dict[str, str] | None = None,
-) -> dict:
-    """Whitelist evidence fields and put reviewed names in one scoped legend."""
-    items = _overlap_runs(items)
-    aliases = _speaker_aliases(items) if speaker_aliases is None else speaker_aliases
-    spans, names_by_label = [], defaultdict(set)
-    owner_metadata: dict[str, dict[str, set[str]]] = defaultdict(
+def _speaker_legend(items: list[dict], aliases: dict[str, str]) -> dict:
+    observations: dict[str, dict[str, set[str]]] = defaultdict(
         lambda: {"labels": set(), "names": set()},
     )
     for item in items:
         if item.get("attribution") != "attributed":
             continue
-        alias = aliases.get(_speaker_id(item) or "")
-        if alias is None:
+        owner = aliases.get(_speaker_id(item) or "")
+        if owner is None:
             continue
         label, name = item.get("speaker_label"), item.get("speaker_name")
         if isinstance(label, str) and label:
-            owner_metadata[alias]["labels"].add(label)
+            observations[owner]["labels"].add(label)
         if isinstance(name, str) and name:
-            owner_metadata[alias]["names"].add(name)
+            observations[owner]["names"].add(name)
 
+    ids_by_alias = {alias: speaker_id for speaker_id, alias in aliases.items()}
+    result = {}
+    for owner, values in observations.items():
+        entry = {"id": ids_by_alias[owner]}
+        if len(values["labels"]) == 1:
+            entry["label"] = next(iter(values["labels"]))
+        if len(values["names"]) == 1:
+            entry["name"] = next(iter(values["names"]))
+        result[owner] = entry
+    return result
+
+
+def _classification(
+    item: dict,
+    aliases: dict[str, str],
+) -> tuple[str, str | tuple[str, ...] | None]:
+    attribution = item.get("attribution")
+    if attribution == "attributed":
+        owner = aliases.get(_speaker_id(item) or "")
+        return ("attributed", owner) if owner is not None else ("unknown", None)
+    if attribution == "overlap":
+        candidates = item.get("candidate_source_ids") or []
+        if not isinstance(candidates, list) or not all(
+            isinstance(value, str) for value in candidates
+        ):
+            return "unknown", None
+        return "overlap", tuple(sorted(set(candidates)))
+    return "unknown", None
+
+
+def _merge_compatible(left: dict, right: dict) -> bool:
+    if left["end_offset"] != right["start_offset"]:
+        return False
+    if left["attribution"] == right["attribution"] == "unknown":
+        return True
+    return (
+        left["attribution"] in {"attributed", "overlap"}
+        and left["attribution"] == right["attribution"]
+        and left.get("context") == right.get("context")
+    )
+
+
+def _speech_blocks(
+    window_text: str,
+    items: list[dict],
+    window_start: int,
+    aliases: dict[str, str],
+) -> list[dict]:
+    """Build one exact text partition, assigning conflicts and gaps to unknown."""
+    valid = []
     for item in items:
-        text = item.get("text")
-        start, end = item.get("start_offset"), item.get("end_offset")
-        attribution = item.get("attribution")
-        if (not _valid_span(item) or text.isspace()
-                or not isinstance(attribution, str)
-                or attribution not in {"attributed", "overlap", "unknown"}):
+        if not _valid_span(item):
             continue
-        span = {
-            "text": text,
-            "start_offset": start,
-            "end_offset": end,
-            "attribution": attribution,
-        }
-        label = item.get("speaker_label")
-        name = item.get("speaker_name")
-        alias = aliases.get(_speaker_id(item) or "") if attribution == "attributed" else None
-        if alias is not None:
-            span["owner"] = alias
-        elif attribution == "attributed" and isinstance(label, str) and label:
-            span["speaker_label"] = label
-            if isinstance(name, str) and name:
-                names_by_label[label].add(name)
-        if item.get("kind") == "boundary_word":
-            span["kind"] = "boundary_word"
-        if item.get("attribution") == "overlap" and item.get("overlap_word_times"):
-            span["word_times"] = item["overlap_word_times"]
-        pair = _valid_time_pair(item)
-        if pair is not None:
-            span["start"], span["end"] = pair
-        spans.append(span)
+        start = item["start_offset"] - window_start
+        end = item["end_offset"] - window_start
+        if not 0 <= start < end <= len(window_text) or window_text[start:end] != item["text"]:
+            continue
+        attribution, context = _classification(item, aliases)
+        valid.append({"start": start, "end": end, "attribution": attribution, "context": context})
 
-    speaker_names = {
-        label: next(iter(names))
-        for label, names in sorted(names_by_label.items())
-        if len(names) == 1
+    boundaries = {0, len(window_text)}
+    start_events, end_events = defaultdict(list), defaultdict(list)
+    for index, item in enumerate(valid):
+        boundaries.update((item["start"], item["end"]))
+        classification = (item["attribution"], item["context"])
+        start_events[item["start"]].append((index, classification))
+        end_events[item["end"]].append(index)
+    points = sorted(boundaries)
+    active = {}
+    blocks = []
+    for start, end in zip(points, points[1:]):
+        if start == end:
+            continue
+        for index in end_events[start]:
+            active.pop(index, None)
+        active.update(start_events[start])
+        classifications = set(active.values())
+        if len(classifications) != 1:
+            attribution, context = "unknown", None
+        else:
+            attribution, context = next(iter(classifications))
+        block = {
+            "text": window_text[start:end],
+            "start_offset": window_start + start,
+            "end_offset": window_start + end,
+            "attribution": attribution,
+            "context": context,
+        }
+        if blocks and _merge_compatible(blocks[-1], block):
+            blocks[-1]["text"] += block["text"]
+            blocks[-1]["end_offset"] = block["end_offset"]
+        else:
+            blocks.append(block)
+
+    # Carry separators only when both surrounding lexical spans have matching context.
+    merged, index = [], 0
+    while index < len(blocks):
+        block = blocks[index]
+        if index + 2 < len(blocks):
+            gap, following = blocks[index + 1], blocks[index + 2]
+            same_context = (
+                block["attribution"] in {"attributed", "overlap"}
+                and block["attribution"] == following["attribution"]
+                and block.get("context") == following.get("context")
+                and gap["attribution"] == "unknown"
+                and _is_nonlexical_gap(gap)
+            )
+            if same_context:
+                block = {
+                    **block,
+                    "text": block["text"] + gap["text"] + following["text"],
+                    "end_offset": following["end_offset"],
+                }
+                merged.append(block)
+                index += 3
+                continue
+        merged.append(block)
+        index += 1
+    return merged
+
+
+def _render_speech_blocks(
+    source: dict,
+    speaker_window: SpeakerWindow,
+    first: int,
+    last: int,
+    origin: int,
+    aliases: dict[str, str],
+    legend: dict,
+) -> str:
+    window_start, window_end = origin + first, origin + last
+    items = speaker_window(source, window_start, window_end)
+    window_text = (source.get("text") or "")[first:last]
+    blocks = _speech_blocks(window_text, items, window_start, aliases)
+    speakers = {
+        block["context"]: legend[block["context"]]
+        for block in blocks
+        if block["attribution"] == "attributed" and block.get("context") in legend
     }
-    # Conflicting names for one cluster indicate inconsistent/stale evidence. Leave
-    # that cluster anonymous in this prompt instead of choosing a name arbitrarily.
-    speakers = {}
-    for alias, metadata in owner_metadata.items():
-        speaker_id = next(
-            key for key, value in aliases.items() if value == alias
-        )
-        speaker = {"id": speaker_id}
-        if len(metadata["labels"]) == 1:
-            speaker["label"] = next(iter(metadata["labels"]))
-        if len(metadata["names"]) == 1:
-            speaker["name"] = next(iter(metadata["names"]))
-        speakers[alias] = speaker
-    return {"speakers": speakers, "speaker_names": speaker_names, "spans": spans}
+    speech = []
+    for block in blocks:
+        item = {"text": block["text"]}
+        if block["attribution"] == "attributed":
+            item["speaker"] = block["context"]
+        else:
+            item["attribution"] = block["attribution"]
+        speech.append(item)
+    return json.dumps(
+        {"speakers": speakers, "speech": speech}, ensure_ascii=False, separators=(",", ":")
+    )
 
 
 def _source_prefix(source: dict) -> str:
@@ -228,7 +240,8 @@ def _source_prefix(source: dict) -> str:
     )
     if source.get("subject_hint"):
         prefix += (
-            "subject_hint=" + json.dumps(source["subject_hint"], ensure_ascii=False)
+            "subject_hint="
+            + json.dumps(source["subject_hint"], ensure_ascii=False)
             + " (navigation label only) "
         )
     return prefix
@@ -253,12 +266,9 @@ def source_prompt_pieces(
     try:
         origin = source.get("speaker_evidence_origin", 0)
         origin = origin if type(origin) is int and origin >= 0 else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         origin = 0
-    safe_boundaries = {
-        index for index, char in enumerate(text, start=1)
-        if char.isspace()
-    }
+    safe_boundaries = {index for index, char in enumerate(text, start=1) if char.isspace()}
     preferred_boundaries = set()
     for key in ("speaker_evidence", "native_segments", "segments"):
         for item in source.get(key) or []:
@@ -269,27 +279,40 @@ def source_prompt_pieces(
                 if type(offset) is not int:
                     continue
                 local = offset - origin
-                if (0 < local < len(text) and
-                        (text[local - 1].isspace() or text[local].isspace())):
+                if 0 < local < len(text) and (text[local - 1].isspace() or text[local].isspace()):
                     safe_boundaries.add(local)
                     preferred_boundaries.add(local)
-    speaker_aliases = _speaker_aliases(source.get("speaker_evidence", []))
+    full_items = speaker_window(source, origin, origin + len(text)) if actionable else []
+    if actionable:
+        speaker_aliases = _speaker_aliases(full_items)
+        speaker_legend = _speaker_legend(full_items, speaker_aliases)
+    else:
+        speaker_legend = {}
 
     def render(first: int, last: int) -> str:
-        value = prefix + text[first:last]
+        value = prefix
         if actionable:
-            evidence = compact_speaker_evidence(
-                speaker_window(source, origin + first, origin + last), speaker_aliases,
-            )
             value += (
-                "\nSpeaker evidence (JSON; exact transcript character spans; only listed "
-                "attributed spans have an owner; overlap is unresolved; all unlisted text "
-                "remains unknown): "
-                + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+                "\nOrdered speech blocks (join each block's text in order to reconstruct this "
+                "exact transcript window; speaker identifies an owner; unknown and overlap have "
+                "no owner): "
+                + _render_speech_blocks(
+                    source,
+                    speaker_window,
+                    first,
+                    last,
+                    origin,
+                    speaker_aliases,
+                    speaker_legend,
+                )
             )
+        else:
+            value += text[first:last]
         if first == 0 and source.get("diary_summaries"):
             value += "\nDiary recaps: " + json.dumps(
-                source["diary_summaries"], ensure_ascii=False, separators=(",", ":"),
+                source["diary_summaries"],
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         return value
 

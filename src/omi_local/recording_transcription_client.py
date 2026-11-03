@@ -113,7 +113,8 @@ def _validate_response(headers, payload, settings, duration):
         raise ValueError("provenance_mismatch")
     text = payload.get("text") if isinstance(payload, dict) else None
     segments = payload.get("segments") if isinstance(payload, dict) else None
-    if not isinstance(text, str) or len(text) > MAX_RESPONSE_BYTES or not isinstance(segments, list):
+    if (not isinstance(text, str) or len(text) > MAX_RESPONSE_BYTES
+            or not isinstance(segments, list)):
         raise ValueError("invalid_response")
     native, last = [], 0.0
     exact_join = []

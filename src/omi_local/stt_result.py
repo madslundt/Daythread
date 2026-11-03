@@ -124,4 +124,3 @@ def transcription_result(payload: dict, data: bytes) -> dict:
             item.get("kind") == "segment" for item in segments
         ) else "discarded_invalid"
     return result
-

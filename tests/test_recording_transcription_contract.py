@@ -1,7 +1,47 @@
+import asyncio
+from email.parser import BytesParser
+
+import httpx
 import pytest
 from recording_transcription_helpers import pinned_settings
 
-from omi_local.recording_transcription_client import _validate_response
+from omi_local.recording_transcription_client import _request, _validate_response
+
+
+def test_request_uses_cli_equivalent_decoding_without_a_prompt(
+    app_recording, monkeypatch, tmp_path,
+):
+    client, _, _, _, _, _ = app_recording
+    settings = client.app.state.memory.settings
+    settings.recording_transcription_api_key = "synthetic-qualification-token"
+    path = tmp_path / "input.wav"
+    path.write_bytes(b"synthetic WAV payload")
+    captured = {}
+
+    async def respond(request):
+        message = BytesParser().parsebytes(
+            b"Content-Type: " + request.headers["content-type"].encode()
+            + b"\r\nMIME-Version: 1.0\r\n\r\n" + await request.aread()
+        )
+        for part in message.get_payload():
+            name = part.get_param("name", header="content-disposition")
+            captured[name] = part.get_payload(decode=True)
+        assert request.headers["authorization"] == "Bearer synthetic-qualification-token"
+        return httpx.Response(200, json={"text": "Words.", "segments": []})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "omi_local.recording_transcription_client.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    asyncio.run(_request(settings, path))
+    assert captured.pop("file") == b"synthetic WAV payload"
+    assert {key: value.decode() for key, value in captured.items()} == {
+        "model": "whisper", "response_format": "verbose_json", "language": "auto",
+        "max_context": "0", "beam_size": "5", "best_of": "5",
+        "temperature": "0", "temperature_inc": "0.2", "no_timestamps": "false",
+        "carry_initial_prompt": "false", "translate": "false",
+    }
 
 
 def test_response_provenance_is_checked_against_exact_pinned_values(app_recording):

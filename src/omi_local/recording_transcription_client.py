@@ -12,6 +12,12 @@ from .merged_recordings import pcm
 
 SPOOL_DIR = ".recording-transcription-spool"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+DECODING_FIELDS = {
+    "model": "whisper", "response_format": "verbose_json", "language": "auto",
+    "max_context": "0", "beam_size": "5", "best_of": "5",
+    "temperature": "0", "temperature_inc": "0.2",
+    "carry_initial_prompt": "false", "translate": "false", "no_timestamps": "false",
+}
 
 
 def _spool_wav(store, recording, path: Path, maximum_bytes: int, maximum_seconds: int, on_part):
@@ -74,16 +80,7 @@ async def _request(settings, path: Path):
                 "POST",
                 f"{settings.recording_transcription_base_url.rstrip('/')}/audio/transcriptions",
                 headers=headers,
-                data={
-                    "model": "whisper",
-                    "response_format": "verbose_json",
-                    "max_context": "0",
-                    "language": "auto",
-                    "temperature": "0",
-                    "temperature_inc": "0",
-                    "carry_initial_prompt": "false",
-                    "translate": "false",
-                },
+                data=DECODING_FIELDS,
                 files={"file": ("recording.wav", audio, "audio/wav")},
             ) as response:
                 response.raise_for_status()

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from .domain import stamp, utc_now
 from .merged_recordings import Recording
+from .recording_transcription_client import DECODING_FIELDS
 
 if TYPE_CHECKING:
     from .recording_transcription_selection import RecordingTranscriptSelection
@@ -94,16 +95,14 @@ def source_fingerprint(recording: Recording) -> str:
 
 def pipeline_fingerprint(settings) -> str:
     value = {
-        "pipeline": "whisper-cpp-full-recording-v1",
+        "pipeline": "whisper-cpp-full-recording-v2-cli-beam5",
         "endpoint": settings.recording_transcription_base_url,
         "model": "whisper",
         "model_sha256": settings.recording_transcription_expected_model_sha256,
         "model_snapshot": settings.recording_transcription_expected_model_snapshot,
         "runtime_commit": settings.recording_transcription_expected_runtime_commit,
-        "response_format": "verbose_json",
-        "max_context": 0,
+        "decoding": DECODING_FIELDS,
         "prompt": None,
-        "language": "auto",
         "timeout_seconds": settings.recording_transcription_timeout_seconds,
         "max_seconds": settings.recording_transcription_max_seconds,
         "max_bytes": settings.recording_transcription_max_bytes,

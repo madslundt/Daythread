@@ -74,8 +74,11 @@ async def process_one(memory) -> bool:
     with memory.store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT * FROM speaker_jobs WHERE state IN ('queued','error') "
-            "AND (retry_at IS NULL OR retry_at<=?) ORDER BY updated_at LIMIT 1",
+            "SELECT j.* FROM speaker_jobs j WHERE j.state IN ('queued','error') "
+            "AND (j.retry_at IS NULL OR j.retry_at<=?) "
+            "ORDER BY COALESCE((SELECT MAX(a.ended_at) FROM speaker_dependencies d "
+            "JOIN audio a ON a.id=d.audio_id WHERE d.scope_key=j.scope_key),'') DESC, "
+            "j.updated_at,j.scope_key LIMIT 1",
             (stamp(utc_now()),),
         ).fetchone()
         if row is None:

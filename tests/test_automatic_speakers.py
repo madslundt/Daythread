@@ -38,6 +38,22 @@ def client(tmp_path):
         yield client
 
 
+def scheduled_upload(memory, label, start, seed):
+    keys = [str(uuid4()), str(uuid4())]
+    for index, key in enumerate(keys):
+        memory.store.ingest(
+            key,
+            "manual-web",
+            start + timedelta(seconds=index * 2),
+            wav(seed + index),
+            2,
+            source_kind="manual_upload",
+            source_id=f"{label}.wav",
+        )
+        memory.store.complete(key, f"{label} passage {index}")
+    return keys
+
+
 def test_completed_upload_is_automatically_diarized_without_manual_post(client):
     keys, path = recordings(client)
     calls = detector(client)
@@ -158,6 +174,105 @@ def test_automatic_failure_is_visible_and_backed_off(client):
     with memory.store.connect() as db:
         job = db.execute("SELECT attempts FROM speaker_jobs").fetchone()
     assert job["attempts"] == 1
+
+
+def test_claim_order_prefers_capture_time_and_keeps_older_scopes_eligible(client):
+    memory = client.app.state.memory
+    now = utc_now()
+    recordings_by_age = {}
+    # Upload in reverse capture order so receive/update chronology cannot decide priority.
+    for seed, (label, days_ago) in enumerate((
+        ("newest", 1), ("oldest", 3), ("middle", 2),
+    )):
+        keys = scheduled_upload(memory, label, now - timedelta(days=days_ago), seed * 10)
+        recordings_by_age[label] = keys[0]
+
+    assert discover(memory) == 3
+    with memory.store.connect() as db:
+        jobs = db.execute(
+            "SELECT scope_key,updated_at FROM speaker_jobs ORDER BY scope_key"
+        ).fetchall()
+        assert len({row["updated_at"] for row in jobs}) == 1
+        # Make updated_at actively favor the oldest capture, proving it is not the selector.
+        db.execute(
+            "UPDATE speaker_jobs SET updated_at='2020-01-01T00:00:00+00:00' "
+            "WHERE scope_key=?", (f"source:{recordings_by_age['oldest']}",),
+        )
+        db.execute(
+            "UPDATE speaker_jobs SET updated_at='2030-01-01T00:00:00+00:00' "
+            "WHERE scope_key=?", (f"source:{recordings_by_age['newest']}",),
+        )
+
+    detected = []
+
+    async def record_scope(kind, key):
+        detected.append(key)
+
+    memory.speakers.detect = record_scope
+    assert asyncio.run(process_one(memory))
+    assert detected == [recordings_by_age["newest"]]
+    with memory.store.connect() as db:
+        assert db.execute(
+            "SELECT state FROM speaker_jobs WHERE scope_key=?",
+            (f"source:{recordings_by_age['oldest']}",),
+        ).fetchone()["state"] == "queued"
+
+    assert asyncio.run(process_one(memory))
+    assert detected == [recordings_by_age["newest"], recordings_by_age["middle"]]
+    assert asyncio.run(process_one(memory))
+    assert detected == [
+        recordings_by_age["newest"], recordings_by_age["middle"], recordings_by_age["oldest"],
+    ]
+
+
+def test_claim_order_does_not_run_a_future_retry(client):
+    memory = client.app.state.memory
+    now = utc_now()
+    older = scheduled_upload(memory, "eligible", now - timedelta(days=2), 30)
+    newer = scheduled_upload(memory, "retry", now - timedelta(days=1), 40)
+    assert discover(memory) == 2
+    with memory.store.connect() as db:
+        db.execute(
+            "UPDATE speaker_jobs SET state='error',retry_at=? WHERE scope_key=?",
+            ((now + timedelta(hours=1)).isoformat(), f"source:{newer[0]}"),
+        )
+
+    detected = []
+
+    async def record_scope(kind, key):
+        detected.append(key)
+
+    memory.speakers.detect = record_scope
+    assert asyncio.run(process_one(memory))
+    assert detected == [older[0]]
+    assert not asyncio.run(process_one(memory))
+    with memory.store.connect() as db:
+        retry = db.execute(
+            "SELECT state,retry_at FROM speaker_jobs WHERE scope_key=?",
+            (f"source:{newer[0]}",),
+        ).fetchone()
+    assert retry["state"] == "error"
+    assert retry["retry_at"] == (now + timedelta(hours=1)).isoformat()
+
+
+def test_claim_order_has_deterministic_fallback_when_dependencies_are_missing(client):
+    memory = client.app.state.memory
+    now = utc_now()
+    first = scheduled_upload(memory, "fallback-a", now - timedelta(days=2), 50)
+    second = scheduled_upload(memory, "fallback-b", now - timedelta(days=1), 60)
+    assert discover(memory) == 2
+    with memory.store.connect() as db:
+        db.execute("DELETE FROM speaker_dependencies")
+        db.execute("UPDATE speaker_jobs SET updated_at='2026-01-01T00:00:00+00:00'")
+
+    detected = []
+
+    async def record_scope(kind, key):
+        detected.append(key)
+
+    memory.speakers.detect = record_scope
+    assert asyncio.run(process_one(memory))
+    assert detected == [min(first[0], second[0])]
 
 
 def test_disabled_diarization_does_not_discover_automatic_jobs(client):

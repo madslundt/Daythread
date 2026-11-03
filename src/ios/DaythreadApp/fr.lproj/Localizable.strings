@@ -3083,3 +3083,13 @@
 "Transcript selection changed; refresh before retrying" = "La sélection a changé ; actualisez avant de réessayer";
 "Whole-recording transcription needs pinned local model/runtime provenance" = "La transcription de tout l’enregistrement exige une provenance locale et immuable du modèle et du runtime";
 "expected_version must be a non-negative integer" = "expected_version doit être un entier positif ou nul";
+
+/* Full-recording transcript selection */
+"Using selected full-recording transcript" = "Transcription sélectionnée de l’enregistrement complet utilisée";
+"Use original part transcripts" = "Utiliser les transcriptions des parties d’origine";
+"A full-recording transcript is ready" = "Une transcription de l’enregistrement complet est prête";
+"Use full-recording transcript" = "Utiliser la transcription de l’enregistrement complet";
+"The selected transcript is out of date. Showing the original part transcripts." = "La transcription sélectionnée est obsolète. Les transcriptions des parties d’origine sont affichées.";
+"Original part transcripts" = "Transcriptions des parties d’origine";
+"Unknown speaker" = "Locuteur inconnu";
+"Overlapping speech" = "Chevauchement de voix";

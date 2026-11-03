@@ -3085,3 +3085,13 @@
 "Transcript selection changed; refresh before retrying" = "Transcript selection changed; refresh before retrying";
 "Whole-recording transcription needs pinned local model/runtime provenance" = "Whole-recording transcription needs pinned local model/runtime provenance";
 "expected_version must be a non-negative integer" = "expected_version must be a non-negative integer";
+
+/* Full-recording transcript selection */
+"Using selected full-recording transcript" = "Using selected full-recording transcript";
+"Use original part transcripts" = "Use original part transcripts";
+"A full-recording transcript is ready" = "A full-recording transcript is ready";
+"Use full-recording transcript" = "Use full-recording transcript";
+"The selected transcript is out of date. Showing the original part transcripts." = "The selected transcript is out of date. Showing the original part transcripts.";
+"Original part transcripts" = "Original part transcripts";
+"Unknown speaker" = "Unknown speaker";
+"Overlapping speech" = "Overlapping speech";

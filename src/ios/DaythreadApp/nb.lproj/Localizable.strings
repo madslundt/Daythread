@@ -3083,3 +3083,13 @@
 "Transcript selection changed; refresh before retrying" = "Transkripsjonsvalget er endret; oppdater før du prøver igjen";
 "Whole-recording transcription needs pinned local model/runtime provenance" = "Transkripsjon av hele opptaket krever fastlåst lokal modell- og kjøretidsopphav";
 "expected_version must be a non-negative integer" = "expected_version må være et ikke-negativt heltall";
+
+/* Full-recording transcript selection */
+"Using selected full-recording transcript" = "Bruker valgt transkripsjon av hele opptaket";
+"Use original part transcripts" = "Bruk opprinnelige deltranskripsjoner";
+"A full-recording transcript is ready" = "En transkripsjon av hele opptaket er klar";
+"Use full-recording transcript" = "Bruk transkripsjon av hele opptaket";
+"The selected transcript is out of date. Showing the original part transcripts." = "Den valgte transkripsjonen er utdatert. Viser de opprinnelige deltranskripsjonene.";
+"Original part transcripts" = "Opprinnelige deltranskripsjoner";
+"Unknown speaker" = "Ukjent taler";
+"Overlapping speech" = "Overlappende tale";

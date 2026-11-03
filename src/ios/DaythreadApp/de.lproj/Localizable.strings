@@ -3083,3 +3083,13 @@
 "Transcript selection changed; refresh before retrying" = "Die Transkriptionsauswahl wurde geändert; bitte vor dem erneuten Versuch aktualisieren";
 "Whole-recording transcription needs pinned local model/runtime provenance" = "Die Transkription der gesamten Aufnahme benötigt eine festgelegte lokale Modell- und Runtime-Provenienz";
 "expected_version must be a non-negative integer" = "expected_version muss eine nicht negative Ganzzahl sein";
+
+/* Full-recording transcript selection */
+"Using selected full-recording transcript" = "Ausgewähltes Transkript der gesamten Aufnahme wird verwendet";
+"Use original part transcripts" = "Ursprüngliche Teiltranskripte verwenden";
+"A full-recording transcript is ready" = "Ein Transkript der gesamten Aufnahme ist verfügbar";
+"Use full-recording transcript" = "Transkript der gesamten Aufnahme verwenden";
+"The selected transcript is out of date. Showing the original part transcripts." = "Das ausgewählte Transkript ist veraltet. Die ursprünglichen Teiltranskripte werden angezeigt.";
+"Original part transcripts" = "Ursprüngliche Teiltranskripte";
+"Unknown speaker" = "Unbekannter Redner";
+"Overlapping speech" = "Überlappende Sprache";

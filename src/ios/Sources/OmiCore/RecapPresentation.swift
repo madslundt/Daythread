@@ -110,6 +110,115 @@ public struct RecordingTranscriptDocument: Decodable, Equatable, Sendable {
     }
 }
 
+public enum RecordingTranscriptSelectionState: String, Decodable, Sendable {
+    case unselected, selected, stale
+}
+
+public struct RecordingTranscriptSelection: Decodable, Equatable, Sendable {
+    public let state: RecordingTranscriptSelectionState
+    public let selectionVersion: Int
+    public let resultVersion: String?
+    public let transcript: SelectedRecordingTranscript?
+
+    enum CodingKeys: String, CodingKey {
+        case state, transcript
+        case selectionVersion = "selection_version"
+        case resultVersion = "result_version"
+    }
+}
+
+public struct SelectedRecordingTranscript: Decodable, Equatable, Sendable {
+    public let text: String?
+    public let version: String?
+    public let speakerEvidence: RecordingSpeakerEvidence?
+
+    enum CodingKeys: String, CodingKey {
+        case text, version
+        case speakerEvidence = "speaker_evidence"
+    }
+}
+
+public struct RecordingSpeakerEvidence: Decodable, Equatable, Sendable {
+    public let state: String
+    public let version: String?
+    public let utterances: [RecordingSpeakerUtterance]
+
+    public func exactUtterances(for text: String) -> [RecordingSpeakerUtterance]? {
+        guard state == "ready", !utterances.isEmpty else { return nil }
+        var cursor = 0
+        for utterance in utterances {
+            guard utterance.startOffset == cursor,
+                  utterance.endOffset > utterance.startOffset,
+                  utterance.endOffset <= text.unicodeScalars.count,
+                  utterance.text == textSlice(text, start: cursor, end: utterance.endOffset),
+                  utterance.validTiming else { return nil }
+            cursor = utterance.endOffset
+        }
+        return cursor == text.unicodeScalars.count ? utterances : nil
+    }
+
+    private func textSlice(_ text: String, start: Int, end: Int) -> String {
+        let scalars = text.unicodeScalars
+        return String(String.UnicodeScalarView(scalars.dropFirst(start).prefix(end - start)))
+    }
+}
+
+public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
+    public let text: String
+    public let startOffset: Int
+    public let endOffset: Int
+    public let start: Double?
+    public let end: Double?
+    public let attribution: String
+    public let speakerID: String?
+    public let speakerLabel: String?
+    public let speakerName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text, start, end, attribution
+        case startOffset = "start_offset"
+        case endOffset = "end_offset"
+        case speakerID = "speaker_id"
+        case speakerLabel = "speaker_label"
+        case speakerName = "speaker_name"
+    }
+
+    fileprivate var validTiming: Bool {
+        switch (start, end) {
+        case (nil, nil): true
+        case let (.some(start), .some(end)):
+            start.isFinite && end.isFinite && start >= 0 && end > start
+        default: false
+        }
+    }
+}
+
+public struct RecordingTranscriptSelectionRequest: Encodable, Equatable, Sendable {
+    public let expectedVersion: Int
+    public let resultVersion: String?
+
+    enum CodingKeys: String, CodingKey {
+        case expectedVersion = "expected_version"
+        case resultVersion = "result_version"
+    }
+
+    public init(expectedVersion: Int, resultVersion: String?) {
+        self.expectedVersion = expectedVersion
+        self.resultVersion = resultVersion
+    }
+
+    public func jsonObject() throws -> [String: Any] {
+        try JSONSerialization.jsonObject(with: JSONEncoder().encode(self)) as? [String: Any] ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(expectedVersion, forKey: .expectedVersion)
+        if let resultVersion { try values.encode(resultVersion, forKey: .resultVersion) }
+        else { try values.encodeNil(forKey: .resultVersion) }
+    }
+}
+
 /// Presentation and evidence matching mirror the web recap without rewriting saved keys.
 public enum RecapPresentation {
     public struct Part: Equatable {

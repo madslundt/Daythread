@@ -117,6 +117,32 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertFalse(document.canPlayCurrentAudio, "Do not play current audio against stale transcript evidence")
     }
 
+    func testRecordingTranscriptSelectionDecodesExactSpeakerRunsAndRejectsPartialEvidence() throws {
+        let selectedJSON = #"{"state":"selected","selection_version":7,"result_version":"v2","transcript":{"version":"v2","text":"Hej 😊, ja!","speaker_evidence":{"state":"ready","version":"spk3","utterances":[{"text":"Hej 😊, ","start_offset":0,"end_offset":7,"start":1.25,"end":2.5,"attribution":"attributed","speaker_id":"speaker-1","speaker_label":"Speaker 1","speaker_name":"Maja"},{"text":"ja!","start_offset":7,"end_offset":10,"start":2.5,"end":3.1,"attribution":"unknown","speaker_id":null,"speaker_label":null,"speaker_name":null}]}}}"#
+        let selected = try JSONDecoder().decode(RecordingTranscriptSelection.self, from: Data(selectedJSON.utf8))
+        XCTAssertEqual(selected.state, .selected)
+        XCTAssertEqual(selected.selectionVersion, 7)
+        XCTAssertEqual(selected.resultVersion, "v2")
+        let utterances = try XCTUnwrap(selected.transcript?.speakerEvidence?.exactUtterances(for: "Hej 😊, ja!"))
+        XCTAssertEqual(utterances.map(\.text), ["Hej 😊, ", "ja!"])
+        XCTAssertEqual(utterances.first?.speakerName, "Maja")
+        XCTAssertEqual(utterances.last?.attribution, "unknown")
+        XCTAssertNil(selected.transcript?.speakerEvidence?.exactUtterances(for: "Hej 😊, ja?"))
+
+        let partial = RecordingSpeakerEvidence(state: "ready", version: "spk3", utterances: [utterances[0]])
+        XCTAssertNil(partial.exactUtterances(for: "Hej 😊, ja!"), "Partial timing must not hide unknown transcript text")
+    }
+
+    func testTranscriptSelectionCASPayloadIncludesExplicitNullToRestoreOriginal() throws {
+        let clear = try RecordingTranscriptSelectionRequest(expectedVersion: 9, resultVersion: nil).jsonObject()
+        XCTAssertEqual(clear["expected_version"] as? Int, 9)
+        XCTAssertTrue(clear["result_version"] is NSNull)
+
+        let select = try RecordingTranscriptSelectionRequest(expectedVersion: 9, resultVersion: "result-v4").jsonObject()
+        XCTAssertEqual(select["expected_version"] as? Int, 9)
+        XCTAssertEqual(select["result_version"] as? String, "result-v4")
+    }
+
     func testSubjectAndDistinctiveWordsSupportUncitedOlderRecaps() {
         let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "The Gym workout was vigorous."), .init(id: "other", text: "Work prototype moved forward.")]
         XCTAssertEqual(RecapPresentation.sources(for: "**Gym · 07:15** — Exercise", in: sources).ids, [sourceID])

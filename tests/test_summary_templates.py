@@ -141,12 +141,15 @@ def test_template_changes_final_cache_and_versions_without_repeating_preparation
     first = asyncio.run(memory.recaps.generate(DAY, NOW))
     assert first["summary_template"]["template"] == "general"
     assert len(memory.inference.calls) == 2
+    assert "a few focused sentences" in memory.inference.calls[-1]
     with use_template(SummaryTemplate(template="meeting", instructions="Use plain language.")):
         changed = asyncio.run(memory.recaps.generate(DAY, NOW))
     assert changed["output_id"] != first["output_id"]
     assert len(memory.inference.calls) == 3
     assert "Use plain language." in memory.inference.calls[-1]
     assert "untrusted presentation preference data" in memory.inference.calls[-1]
+    assert "do not impose a short sentence quota" in memory.inference.calls[-1]
+    assert "resourcing and timing" in memory.inference.calls[-1]
     assert len(memory.store.diary_versions(DAY.isoformat())) == 2
     memory.settings.summary_template = "reflection"
     assert selected(memory, DAY).template == "meeting"

@@ -134,7 +134,9 @@ def topic_sources(sources: list[dict]) -> list[dict]:
     return result
 
 
-def _daily_recap_purpose(day: date, sources: list[dict]) -> str:
+def _daily_recap_purpose(
+    day: date, sources: list[dict], presentation: SummaryTemplate | None = None,
+) -> str:
     complete_recording = (
         len(sources) == 1 and sources[0].get("reference_type") == "recording_transcription"
     )
@@ -142,6 +144,18 @@ def _daily_recap_purpose(day: date, sources: list[dict]) -> str:
         "transcribed recording notes"
     )
     filing_date = "for the selected day" if complete_recording else f"for {day.isoformat()}"
+    meeting_detail = (
+        "Output only short specific ## subject headings and coherent prose per subject. "
+        "For this meeting recap, use as many focused paragraphs as needed to preserve the "
+        "consequential details; do not impose a short sentence quota or fixed section count. "
+        "Retain supported scope and constraints, concrete examples and quantities, approaches "
+        "or options, resourcing and timing, and conditional follow-ups when present. An "
+        "unanswered question or speculation is unresolved, not a confirmed fact or absence. "
+        "Preserve spoken units and date precision; do not fill in missing units, dates or years. "
+        if presentation is not None and presentation.template == "meeting" else
+        "Output only short specific ## subject headings and one coherent summary per topic in "
+        "a few focused sentences, with a second paragraph only when needed. "
+    )
     return (
         f"a readable diary recap {filing_date} from {source_description}. "
         + RELEVANCE +
@@ -172,8 +186,8 @@ def _daily_recap_purpose(day: date, sources: list[dict]) -> str:
         "Distinguish current roles and projects from proposed or future work, keep options "
         "tentative until explicitly decided, and do not turn wishes or implied intentions into "
         "actions. "
-        "Output only short specific ## subject headings and one coherent summary per topic in "
-        "a few focused sentences, with a second paragraph only when needed. Do not create a "
+        + meeting_detail +
+        "Do not create a "
         "recap title, date heading, overview, separate short and long summaries, previews, "
         "bullet lists or subheadings. Keep decisions, follow-ups and unresolved questions in "
         "their subject. Omit opaque fragments and incidental background. Do not turn garbled "
@@ -682,7 +696,7 @@ class Recaps:
                                         for review in generation_reviews),
                  }}
         if inputs:
-            purpose = _daily_recap_purpose(day, sources)
+            purpose = _daily_recap_purpose(day, sources, template)
             purpose = purpose_with_template(purpose, template)
             synthesis_key = digest({
                 "kind": "unique_daily_synthesis", "inputs": inputs,

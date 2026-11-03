@@ -17,6 +17,7 @@ from omi_local.domain import stamp
 from omi_local.inference import Inference
 from omi_local.recaps import _daily_recap_purpose, topic_sources
 from omi_local.settings import Settings
+from omi_local.summary_templates import SummaryTemplate
 from omi_local.voice_activity import VERSION
 from omi_local.worker import scheduled_recaps
 
@@ -234,6 +235,25 @@ def test_daily_purpose_uses_original_transcript_for_typed_full_recording():
     assert "current role, team context" in purpose
     assert "a project mention alone does not make an independent recap subject" in purpose
     assert "do not turn garbled names or labels into confident subject headings" in purpose
+
+
+def test_meeting_purpose_allows_consequential_detail_without_changing_diary_style():
+    day = AT.date()
+    sources = [{"id": str(uuid4()), "text": "Meeting transcript"}]
+    diary = _daily_recap_purpose(day, sources).lower()
+    meeting = _daily_recap_purpose(
+        day, sources, SummaryTemplate(template="meeting"),
+    ).lower()
+
+    assert "a few focused sentences" in diary
+    assert "do not impose a short sentence quota" not in diary
+    assert "do not impose a short sentence quota or fixed section count" in meeting
+    assert "## subject headings" in diary and "## subject headings" in meeting
+    assert "scope and constraints, concrete examples and quantities" in meeting
+    assert "approaches or options, resourcing and timing" in meeting
+    assert "conditional follow-ups when present" in meeting
+    assert "unanswered question or speculation is unresolved" in meeting
+    assert "do not fill in missing units, dates or years" in meeting
 
 
 def test_completed_conversation_notes_get_one_full_original_coherence_edit(client, monkeypatch):

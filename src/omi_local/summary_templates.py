@@ -10,7 +10,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 TemplateID = Literal["general", "meeting", "interview", "reflection"]
-VERSION = "recap-presentation-1"
+VERSION = "recap-presentation-2"
 PRESENTATION_MARKER = ". Recap presentation: "
 PRESETS = {
     "general": ("General conversation", "Keep the supported subjects and useful details."),

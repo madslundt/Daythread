@@ -72,13 +72,15 @@ def speech_text(item):
 
 
 @pytest.mark.anyio
-async def test_complete_typed_recording_uses_one_full_transcript_writer_when_context_is_verified(
+async def test_complete_typed_recording_drafts_then_reviews_full_original_when_context_is_verified(
     tmp_path,
 ):
     source_id = str(uuid4())
     canonical = "Beginning of the full recording. Final useful detail at the end."
     prepared, source = full_recording(canonical, source_id)
-    requests, output = [], f"## Recorded plan\nA supported next step [{source_id}]"
+    requests = []
+    output = f"## Recorded plan\nA supported next step [{source_id}]"
+    reviewed_output = f"## Recorded plan\nA supported and reviewed next step [{source_id}]"
     settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
 
     def handler(request):
@@ -88,16 +90,25 @@ async def test_complete_typed_recording_uses_one_full_transcript_writer_when_con
             }]})
         body = json.loads(request.content)
         requests.append(body)
-        payload = json.loads(body["messages"][1]["content"])
-        assert "Create a concise diary recap" in payload["task"]
-        assert "language with code en" in payload["task"]
-        speech = speech_blocks(payload["evidence"])
-        assert "".join(speech_text(row) for row in speech) == canonical
-        assert any(speech_owner(row) == "speaker_1" for row in speech)
-        assert any(speech_owner(row) == "unknown" for row in speech)
-        assert "old prepared note" not in payload["evidence"]
         assert body["max_tokens"] == 65536 and body["stream"] is True
-        return completion(output)
+        payload = json.loads(body["messages"][1]["content"])
+        if "completed_draft" not in payload["evidence"]:
+            assert "Create a concise diary recap" in payload["task"]
+            assert "language with code en" in payload["task"]
+            speech = speech_blocks(payload["evidence"])
+            assert "".join(speech_text(row) for row in speech) == canonical
+            assert any(speech_owner(row) == "speaker_1" for row in speech)
+            assert any(speech_owner(row) == "unknown" for row in speech)
+            assert "old prepared note" not in payload["evidence"]
+            return completion(output)
+        edit = json.loads(payload["evidence"])
+        assert edit["completed_draft"] == output
+        blocks = [row["original_transcript_block"] for row in edit["original_sources"]]
+        assert "".join("".join(speech_text(row) for row in speech_blocks(block))
+                       for block in blocks) == canonical
+        assert "preserve stated conditions" in payload["task"].lower()
+        assert body["stream"] is True
+        return completion(reviewed_output)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         inference = Inference(settings, client)
@@ -105,12 +116,15 @@ async def test_complete_typed_recording_uses_one_full_transcript_writer_when_con
             [prepared], "a concise diary recap", original_sources=[source],
         )
 
-    assert result == output
-    assert len(requests) == 1
+    assert result == reviewed_output
+    assert len(requests) == 2
     assert trace["complete_context"]["status"] == "used"
-    assert trace["model_calls"] == 1 and trace["reduction_used"] is False
+    assert trace["model_calls"] == 2 and trace["draft_model_calls"] == 1
+    assert trace["reduction_used"] is False
     assert trace["final_prompt_source_ids"] == [source_id]
-    assert trace["coherence_review"]["skip_reason"] == "complete_context_single_pass"
+    assert trace["complete_context_one_pass"] is True
+    assert trace["coherence_review"]["status"] == "applied"
+    assert trace["coherence_review"]["model_calls"] == 1
 
 
 @pytest.mark.anyio
@@ -130,6 +144,13 @@ async def test_conversation_reduction_uses_complete_recording_fastpath(tmp_path)
         calls.append(request)
         body = json.loads(request.content)
         payload = json.loads(body["messages"][1]["content"])
+        if "completed_draft" in payload["evidence"]:
+            edit = json.loads(payload["evidence"])
+            assert edit["completed_draft"] == output
+            blocks = [row["original_transcript_block"] for row in edit["original_sources"]]
+            assert "".join("".join(speech_text(row) for row in speech_blocks(block))
+                           for block in blocks) == canonical
+            return completion(output)
         assert "\"notes from the complete source\"" not in payload["evidence"]
         assert "Complete notes" not in payload["evidence"]
         speech = speech_blocks(payload["evidence"])
@@ -140,13 +161,16 @@ async def test_conversation_reduction_uses_complete_recording_fastpath(tmp_path)
         inference = Inference(settings, client)
         result, trace = await inference.summarize_traced([source], "notes from the complete source")
 
-    assert result == output and len(calls) == 1
+    assert result == output and len(calls) == 2
     assert trace["complete_context_one_pass"] is True
-    assert trace["model_calls"] == 1 and trace["final_prompt_source_ids"] == [source_id]
+    assert trace["model_calls"] == 2 and trace["draft_model_calls"] == 1
+    assert trace["coherence_review"]["status"] == "applied"
+    assert trace["coherence_review"]["model_calls"] == 1
+    assert trace["final_prompt_source_ids"] == [source_id]
 
 
 @pytest.mark.anyio
-async def test_conversation_preparation_skips_redundant_coherence_after_fastpath(
+async def test_conversation_preparation_records_coherence_review_after_fastpath(
     tmp_path, monkeypatch,
 ):
     source_id = str(uuid4())
@@ -185,7 +209,9 @@ async def test_conversation_preparation_skips_redundant_coherence_after_fastpath
             group, lambda _db: None, coherence_trace=coherence, generation_trace=generation,
         )
     assert result == output and saved[0][1] == output
-    assert coherence[0]["skip_reason"] == "complete_context_single_pass"
+    assert coherence[0]["status"] == "applied" and coherence[0]["model_calls"] == 1
+    assert generation[0]["coherence_review"] == coherence[0]
+    assert generation[0]["draft_model_calls"] == 1
     assert generation[0]["complete_context_one_pass"] is True
 
 
@@ -364,6 +390,8 @@ async def test_noise_only_complete_recording_is_refused_before_generation(tmp_pa
     assert result == NO_CONTENT and requests == []
     assert trace["model_calls"] == 0 and trace["input_filtering"]["omitted_sources"] == 1
     assert trace["complete_context_one_pass"] is False
+    assert trace["draft_model_calls"] == 0
+    assert trace["coherence_review"]["skip_reason"] == "no_content"
 
 
 @pytest.mark.anyio
@@ -380,6 +408,13 @@ async def test_useful_recording_keeps_raw_text_in_anchored_prompt_after_filter_c
                 "id": settings.llm_route("summary").model, "context_window": 262144,
             }]})
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        if "completed_draft" in payload["evidence"]:
+            edit = json.loads(payload["evidence"])
+            assert edit["completed_draft"] == output
+            blocks = [row["original_transcript_block"] for row in edit["original_sources"]]
+            assert "".join("".join(speech_text(row) for row in speech_blocks(block))
+                           for block in blocks) == text
+            return completion(output)
         speech = speech_blocks(payload["evidence"])
         assert "".join(speech_text(row) for row in speech) == text
         assert any("Um," in speech_text(row) for row in speech)
@@ -390,7 +425,9 @@ async def test_useful_recording_keeps_raw_text_in_anchored_prompt_after_filter_c
         result, trace = await inference.summarize_complete_recording_traced(
             source, "a daily recap", require_subject_headings=True,
         )
-    assert result == output and trace["model_calls"] == 1
+    assert result == output and trace["model_calls"] == 2
+    assert trace["coherence_review"]["status"] == "applied"
+    assert trace["draft_model_calls"] == 1
 
 
 @pytest.mark.anyio
@@ -409,6 +446,11 @@ async def test_complete_recording_uses_reversible_short_citation_alias(tmp_path)
         body = json.loads(request.content)
         requests.append(body)
         payload = json.loads(body["messages"][1]["content"])
+        if "completed_draft" in payload["evidence"]:
+            edit = json.loads(payload["evidence"])
+            assert edit["completed_draft"] == output
+            assert edit["original_sources"][0]["source_id"] == source_id
+            return completion(output)
         assert "[src_1]" in payload["task"]
         assert source_id not in payload["task"]
         assert source_id not in body["messages"][1]["content"]
@@ -419,7 +461,8 @@ async def test_complete_recording_uses_reversible_short_citation_alias(tmp_path)
         result, trace = await inference.summarize_complete_recording_traced(
             source, "a daily recap", require_subject_headings=True,
         )
-    assert result == output and trace["model_calls"] == 1
+    assert result == output and trace["model_calls"] == 2
+    assert trace["draft_model_calls"] == 1
     body = requests[0]
     assert trace["complete_context"]["request_characters"] == (
         len(SUMMARY_SYSTEM) + len(body["messages"][1]["content"]) + 128
@@ -448,7 +491,12 @@ async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
             }]})
         body = json.loads(request.content)
         requests.append(body)
-        task = json.loads(body["messages"][1]["content"])["task"]
+        payload = json.loads(body["messages"][1]["content"])
+        if "completed_draft" in payload["evidence"]:
+            edit = json.loads(payload["evidence"])
+            assert edit["completed_draft"] == output
+            return completion(output)
+        task = payload["task"]
         if len(requests) == 1:
             assert "Every factual paragraph and list item must cite the allowed source ID" in task
             return completion(invalid_output)
@@ -462,8 +510,73 @@ async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
         result, trace = await inference.summarize_complete_recording_traced(
             source, "a daily recap", require_subject_headings=True,
         )
-    assert result == output and len(requests) == 2
-    assert trace["model_calls"] == 2 and trace["complete_context_one_pass"] is True
+    assert result == output and len(requests) == 3
+    assert trace["model_calls"] == 3 and trace["draft_model_calls"] == 2
+    assert trace["complete_context_one_pass"] is True
+    assert trace["coherence_review"]["status"] == "applied"
+
+
+@pytest.mark.anyio
+async def test_complete_recording_refuses_unvalidated_coherence_edit_after_repair(tmp_path):
+    source_id = str(uuid4())
+    _, source = full_recording("The original supports one factual note.", source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    requests = []
+    draft = f"## Note\nA supported fact [{source_id}]"
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        body = json.loads(request.content)
+        requests.append(body)
+        payload = json.loads(body["messages"][1]["content"])
+        if "completed_draft" not in payload["evidence"]:
+            return completion(draft)
+        return completion("## Note\nUncited factual statement")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        with pytest.raises(InferenceError, match="coherence review failed validation"):
+            await inference.summarize_complete_recording_traced(source, "conversation notes")
+
+    assert len(requests) == 3  # Draft, editor, then one bounded validation repair.
+
+
+@pytest.mark.anyio
+async def test_direct_path_keeps_cited_draft_when_coherence_budget_refuses_review(
+    tmp_path, monkeypatch,
+):
+    source_id = str(uuid4())
+    _, source = full_recording("The original supports one factual note.", source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    draft = f"## Note\nA supported fact [{source_id}]"
+    calls = []
+
+    def refuse_review(*_args, **_kwargs):
+        return "", "", 123_456, "input_over_budget"
+
+    monkeypatch.setattr("omi_local.summary_coherence.request", refuse_review)
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        calls.append(request)
+        return completion(draft)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_complete_recording_traced(
+            source, "conversation notes",
+        )
+
+    assert result == draft and len(calls) == 1
+    assert trace["model_calls"] == 1 and trace["draft_model_calls"] == 1
+    assert trace["coherence_review"]["status"] == "skipped"
+    assert trace["coherence_review"]["skip_reason"] == "input_over_budget"
 
 
 def test_complete_context_validator_requires_citations_per_paragraph_and_accepts_lists():

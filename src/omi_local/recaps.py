@@ -554,14 +554,10 @@ class Recaps:
             if direct_trace is not None:
                 if generation_trace is not None:
                     generation_trace.append(direct_trace)
-                review = {
-                    "status": "skipped",
-                    "skip_reason": (
-                        "complete_context_single_pass"
-                        if direct_trace.get("complete_context_one_pass") else "no_content"
-                    ),
+                review = direct_trace.get("coherence_review", {
+                    "status": "skipped", "skip_reason": "review_trace_unavailable",
                     "model_calls": 0,
-                }
+                })
                 if coherence_trace is not None:
                     coherence_trace.append(review)
             elif summary != NO_CONTENT and hasattr(memory.inference, "cohere_completed_summary"):

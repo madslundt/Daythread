@@ -42,7 +42,7 @@ from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
-COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v4"
+COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-reviewed-v5"
 COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT = 64_000
 SOURCE_UUID_PATTERN = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 
@@ -508,14 +508,10 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         if fastpath is not None:
             result, trace = fastpath
             trace["map_cache_hits"] = 0
-            trace["coherence_review"] = {
-                "status": "skipped",
-                "skip_reason": (
-                    "complete_context_single_pass" if trace.get("complete_context_one_pass")
-                    else "no_content"
-                ),
+            trace.setdefault("coherence_review", {
+                "status": "skipped", "skip_reason": "review_trace_unavailable",
                 "model_calls": 0,
-            }
+            })
             return result, trace
         async with summary_map_cache_scope() as map_cache:
             result, trace = await summarize_daily(
@@ -646,10 +642,15 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                     "request_tokens_upper_bound": request_size,
                 },
                 "complete_context_one_pass": False,
+                "draft_model_calls": 0,
+                "coherence_review": {
+                    "status": "skipped", "skip_reason": "no_content", "model_calls": 0,
+                },
             }
 
         trace = {
             "model_calls": 0,
+            "draft_model_calls": 0,
             "reduction_used": False,
             "final_prompt_source_ids": [source_id],
             "complete_context": {
@@ -662,17 +663,19 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         }
         with summary_usage(), bounded_generation(limit):
             trace["model_calls"] += 1
+            trace["draft_model_calls"] += 1
             answer = await inference._summary_generate(
                 task, evidence, allowed_sources, compact_references=True,
                 output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
                 compact_single_reference=True,
             )
             try:
-                return self._validate_complete_recording_output(
+                draft = self._validate_complete_recording_output(
                     answer, source_id, require_subject_headings,
-                ), trace
+                )
             except InferenceError:
                 trace["model_calls"] += 1
+                trace["draft_model_calls"] += 1
                 heading_requirement = (
                     " For a daily recap, include a level-two ## heading for each subject and "
                     "useful content beneath every heading."
@@ -688,9 +691,19 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                     output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
                     compact_single_reference=True,
                 )
-                return self._validate_complete_recording_output(
+                draft = self._validate_complete_recording_output(
                     repaired, source_id, require_subject_headings,
-                ), trace
+                )
+
+        reviewed, review = await inference.cohere_completed_summary(
+            [source], draft, purpose,
+        )
+        reviewed = self._validate_complete_recording_output(
+            reviewed, source_id, require_subject_headings,
+        )
+        trace["coherence_review"] = review
+        trace["model_calls"] += review["model_calls"]
+        return reviewed, trace
 
     @staticmethod
     def _validate_complete_recording_output(

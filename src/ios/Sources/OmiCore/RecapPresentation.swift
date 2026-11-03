@@ -1,5 +1,115 @@
 import Foundation
 
+/// Exact immutable whole-recording citation data embedded in a recap source.
+public struct RecordingTranscriptCitation: Decodable, Equatable, Sendable {
+    public let id: String
+    public let referenceType: String
+    public let recordingID: String
+    public let resultVersion: String
+    public let inputFingerprint: String
+    public let pipelineFingerprint: String
+    public let sourceIDs: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case referenceType = "reference_type"
+        case recordingID = "recording_id"
+        case resultVersion = "result_version"
+        case inputFingerprint = "input_fingerprint"
+        case pipelineFingerprint = "pipeline_fingerprint"
+        case sourceIDs = "source_ids"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        referenceType = try values.decode(String.self, forKey: .referenceType)
+        recordingID = try values.decode(String.self, forKey: .recordingID)
+        resultVersion = try values.decode(String.self, forKey: .resultVersion)
+        inputFingerprint = try values.decode(String.self, forKey: .inputFingerprint)
+        pipelineFingerprint = try values.decode(String.self, forKey: .pipelineFingerprint)
+        sourceIDs = try values.decode([String].self, forKey: .sourceIDs)
+        guard referenceType == "recording_transcription", id == recordingID,
+              UUID(uuidString: recordingID) != nil,
+              Self.isDigest(resultVersion), Self.isDigest(inputFingerprint),
+              Self.isDigest(pipelineFingerprint), !sourceIDs.isEmpty,
+              sourceIDs.allSatisfy({ UUID(uuidString: $0) != nil }) else {
+            throw DecodingError.dataCorruptedError(forKey: .referenceType, in: values,
+                debugDescription: "Invalid whole-recording transcript citation")
+        }
+    }
+
+    public var transcriptPath: String {
+        "v1/recordings/\(recordingID)/transcriptions/\(resultVersion)"
+    }
+
+    public var audioPath: String { "v1/recordings/\(recordingID)/audio" }
+
+    public func matches(_ document: RecordingTranscriptDocument) -> Bool {
+        document.referenceType == referenceType && document.recordingID == recordingID &&
+            document.resultVersion == resultVersion && document.inputFingerprint == inputFingerprint &&
+            document.pipelineFingerprint == pipelineFingerprint && document.sourceIDs == sourceIDs
+    }
+
+    private static func isDigest(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy { $0.isHexDigit }
+    }
+}
+
+/// The exact-version read response; raw upload versions are intentionally absent.
+public struct RecordingTranscriptDocument: Decodable, Equatable, Sendable {
+    public let referenceType: String
+    public let recordingID: String
+    public let resultVersion: String
+    public let inputFingerprint: String
+    public let pipelineFingerprint: String
+    public let sourceIDs: [String]
+    public let text: String
+    public let state: String
+    public let stale: Bool
+    public let audioAvailable: Bool
+    public let durationSeconds: Double
+    public let startedAt: String
+    public let endedAt: String
+    public let title: String
+
+    enum CodingKeys: String, CodingKey {
+        case referenceType = "reference_type"
+        case recordingID = "recording_id"
+        case resultVersion = "result_version"
+        case inputFingerprint = "input_fingerprint"
+        case pipelineFingerprint = "pipeline_fingerprint"
+        case sourceIDs = "source_ids"
+        case text, state, stale, title
+        case audioAvailable = "audio_available"
+        case durationSeconds = "duration_seconds"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        referenceType = try values.decode(String.self, forKey: .referenceType)
+        recordingID = try values.decode(String.self, forKey: .recordingID)
+        resultVersion = try values.decode(String.self, forKey: .resultVersion)
+        inputFingerprint = try values.decode(String.self, forKey: .inputFingerprint)
+        pipelineFingerprint = try values.decode(String.self, forKey: .pipelineFingerprint)
+        sourceIDs = try values.decode([String].self, forKey: .sourceIDs)
+        text = try values.decode(String.self, forKey: .text)
+        state = try values.decode(String.self, forKey: .state)
+        stale = try values.decodeIfPresent(Bool.self, forKey: .stale) ?? true
+        audioAvailable = try values.decodeIfPresent(Bool.self, forKey: .audioAvailable) ?? false
+        durationSeconds = try values.decodeIfPresent(Double.self, forKey: .durationSeconds) ?? 0
+        startedAt = try values.decodeIfPresent(String.self, forKey: .startedAt) ?? ""
+        endedAt = try values.decodeIfPresent(String.self, forKey: .endedAt) ?? ""
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? ""
+    }
+
+    public var canPlayCurrentAudio: Bool {
+        state == "ready" && !stale && audioAvailable && durationSeconds.isFinite && durationSeconds > 0
+    }
+}
+
 /// Presentation and evidence matching mirror the web recap without rewriting saved keys.
 public enum RecapPresentation {
     public struct Part: Equatable {

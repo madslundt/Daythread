@@ -110,8 +110,12 @@ struct RecapTopicRow: View {
                     sections: source["sections"].array.map { .init(title: $0["title"].text, start: $0["start_offset"].integer, end: $0["end_offset"].integer) })
                     .map { InboxTopicPassage(sourceID: source["id"].text, start: $0.start, end: $0.end) }
             }
+            let rawSourceVersions = Dictionary(uniqueKeysWithValues: incoming.compactMap { source -> (String, String)? in
+                guard source["reference_type"].text != "recording_transcription" else { return nil }
+                return (source["id"].text, source["source_version"].text)
+            })
             onFocus(.init(id: topic.id, title: title, sourceIDs: Set(incoming.map { $0["id"].text }), passages: passages,
-                          versions: Dictionary(uniqueKeysWithValues: incoming.map { ($0["id"].text, $0["source_version"].text) })))
+                          versions: rawSourceVersions))
         } catch { if !Task.isCancelled, expanded, key == requested { self.error = L10n.error(error) } }
     }
 }
@@ -133,13 +137,33 @@ private struct RecapEvidenceView: View {
         RecapPresentation.sections(for: point, topic: topic, text: evidence["text"].text,
             sections: evidence["sections"].array.map { .init(title: $0["title"].text, start: $0["start_offset"].integer, end: $0["end_offset"].integer) })
     }
-    private var identity: String { [model.archiveIdentity, model.archiveRevision, source["id"].text, source["source_version"].text, refresh.uuidString].joined(separator: "|") }
+    private var recordingCitation: RecordingTranscriptCitation? {
+        guard let data = try? JSONEncoder().encode(source) else { return nil }
+        return try? JSONDecoder().decode(RecordingTranscriptCitation.self, from: data)
+    }
+    private var identity: String {
+        [model.archiveIdentity, model.archiveRevision, source["id"].text,
+         source["source_version"].text, recordingCitation?.resultVersion ?? "", refresh.uuidString]
+            .joined(separator: "|")
+    }
     private var time: String {
         guard let date = AppModel.date(evidence["started_at"].text) else { return evidence["started_at"].text }
         return DiaryCalendar(timeZone: TimeZone(identifier: model.serverTimeZoneIdentifier ?? "") ?? .current).label(date, template: "d MMM HHmm")
     }
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        if source["reference_type"].text == "recording_transcription" {
+            if let recordingCitation {
+                RecordingTranscriptCitationEvidence(citation: recordingCitation, retry: refresh)
+            } else {
+                ErrorNote(message: L10n.text("Recording transcript unavailable"))
+            }
+        } else {
+            sourceEvidence
+        }
+    }
+
+    @ViewBuilder private var sourceEvidence: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             Text(time).font(.caption).foregroundStyle(.secondary)
@@ -186,6 +210,74 @@ private struct RecapEvidenceView: View {
                     if (error as? BackendFailure)?.status == 404 { fresh = .null }
                 }
             }
+    }
+}
+
+private struct RecordingTranscriptCitationEvidence: View {
+    let citation: RecordingTranscriptCitation
+    let retry: UUID
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var phase
+    @State private var document: RecordingTranscriptDocument?
+    @State private var audio = RecordingPlayback()
+    @State private var loading = false
+    @State private var error: String?
+    @State private var audioRetry = UUID()
+
+    private var identity: String {
+        [model.archiveIdentity, model.archiveRevision, citation.recordingID,
+         citation.resultVersion, citation.inputFingerprint, citation.pipelineFingerprint,
+         retry.uuidString, audioRetry.uuidString, String(describing: phase)].joined(separator: "|")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if loading { ProgressView(L10n.text("Checking original evidence…")) }
+            ErrorNote(message: error)
+            if error != nil {
+                Button(L10n.text("Retry original evidence")) { audioRetry = UUID() }
+            }
+            if let document, citation.matches(document) {
+                Text(document.title.isEmpty ? L10n.text("Recording") : document.title)
+                    .font(.headline)
+                if document.canPlayCurrentAudio {
+                    RecordingAudioPlayer(playback: audio, retry: { audioRetry = UUID() })
+                } else if document.stale {
+                    Text(L10n.text("Historical version · may no longer reflect current evidence"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text(document.text).textSelection(.enabled)
+            }
+        }
+        .task(id: identity) { await loadExactVersion() }
+        .onDisappear { audio.close() }
+    }
+
+    @MainActor private func loadExactVersion() async {
+        guard phase == .active else { document = nil; audio.close(); return }
+        let requested = identity
+        let archive = model.archiveIdentity
+        loading = true; error = nil; document = nil; audio.close()
+        defer { if identity == requested { loading = false } }
+        do {
+            let value = try await model.client().request(citation.transcriptPath)
+            let data = try JSONEncoder().encode(value)
+            let exact = try JSONDecoder().decode(RecordingTranscriptDocument.self, from: data)
+            guard !Task.isCancelled, identity == requested, model.archiveIdentity == archive,
+                  citation.matches(exact) else {
+                if !Task.isCancelled, identity == requested { error = L10n.text("Recording transcript unavailable") }
+                return
+            }
+            document = exact
+            if exact.canPlayCurrentAudio {
+                await audio.load(sourceID: citation.recordingID, durationHint: exact.durationSeconds,
+                                 model: model, audioPath: citation.audioPath)
+            }
+        } catch {
+            guard !Task.isCancelled, identity == requested, model.archiveIdentity == archive else { return }
+            self.error = (error as? BackendFailure)?.status == 404
+                ? L10n.text("Recording transcript unavailable") : L10n.error(error)
+        }
     }
 }
 

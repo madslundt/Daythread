@@ -61,6 +61,62 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertTrue(RecapPresentation.sources(for: "09:30 recording", in: sources).ids.isEmpty)
     }
 
+    func testWholeRecordingCitationBuildsExactProfileScopedReadPathsAndMatchesExactDocument() throws {
+        let recordingID = "44444444-4444-4444-8444-444444444444"
+        let sourceID = "55555555-5555-4555-8555-555555555555"
+        let resultVersion = String(repeating: "a", count: 64)
+        let inputFingerprint = String(repeating: "b", count: 64)
+        let pipelineFingerprint = String(repeating: "c", count: 64)
+        let citationJSON = """
+        {"id":"\(recordingID)","reference_type":"recording_transcription",
+         "recording_id":"\(recordingID)","result_version":"\(resultVersion)",
+         "input_fingerprint":"\(inputFingerprint)","pipeline_fingerprint":"\(pipelineFingerprint)",
+         "source_ids":["\(sourceID)"]}
+        """
+        let citation = try JSONDecoder().decode(RecordingTranscriptCitation.self, from: Data(citationJSON.utf8))
+        XCTAssertEqual(citation.transcriptPath,
+            "v1/recordings/\(recordingID)/transcriptions/\(resultVersion)")
+        XCTAssertEqual(citation.audioPath, "v1/recordings/\(recordingID)/audio")
+
+        // Exact recording reads do not require fabricated raw-source version fields.
+        let documentJSON = """
+        {"reference_type":"recording_transcription","recording_id":"\(recordingID)",
+         "result_version":"\(resultVersion)","input_fingerprint":"\(inputFingerprint)",
+         "pipeline_fingerprint":"\(pipelineFingerprint)","source_ids":["\(sourceID)"],
+         "text":"Original full recording text","state":"ready","stale":false,
+         "audio_available":true,"duration_seconds":42.5}
+        """
+        let document = try JSONDecoder().decode(RecordingTranscriptDocument.self, from: Data(documentJSON.utf8))
+        XCTAssertTrue(citation.matches(document))
+        XCTAssertTrue(document.canPlayCurrentAudio)
+
+        let newerDocumentJSON = documentJSON.replacingOccurrences(of: resultVersion, with: String(repeating: "d", count: 64))
+        let newer = try JSONDecoder().decode(RecordingTranscriptDocument.self, from: Data(newerDocumentJSON.utf8))
+        XCTAssertFalse(citation.matches(newer), "A historical citation must never resolve to a newer transcript")
+    }
+
+    func testWholeRecordingCitationRejectsMalformedIdentityAndHistoricalAudioIsUnavailable() throws {
+        let invalid = """
+        {"id":"not-a-recording","reference_type":"recording_transcription",
+         "recording_id":"not-a-recording","result_version":"\(String(repeating: "a", count: 64))",
+         "input_fingerprint":"\(String(repeating: "b", count: 64))",
+         "pipeline_fingerprint":"\(String(repeating: "c", count: 64))","source_ids":[]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(RecordingTranscriptCitation.self, from: Data(invalid.utf8)))
+
+        let recordingID = "44444444-4444-4444-8444-444444444444"
+        let historical = """
+        {"reference_type":"recording_transcription","recording_id":"\(recordingID)",
+         "result_version":"\(String(repeating: "a", count: 64))",
+         "input_fingerprint":"\(String(repeating: "b", count: 64))",
+         "pipeline_fingerprint":"\(String(repeating: "c", count: 64))","source_ids":[],
+         "text":"Historical text","state":"stale","stale":true,"audio_available":true,
+         "duration_seconds":42.5}
+        """
+        let document = try JSONDecoder().decode(RecordingTranscriptDocument.self, from: Data(historical.utf8))
+        XCTAssertFalse(document.canPlayCurrentAudio, "Do not play current audio against stale transcript evidence")
+    }
+
     func testSubjectAndDistinctiveWordsSupportUncitedOlderRecaps() {
         let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "The Gym workout was vigorous."), .init(id: "other", text: "Work prototype moved forward.")]
         XCTAssertEqual(RecapPresentation.sources(for: "**Gym · 07:15** — Exercise", in: sources).ids, [sourceID])

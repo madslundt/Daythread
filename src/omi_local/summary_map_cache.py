@@ -13,16 +13,31 @@ class SummaryMapCache:
         self._tasks: dict[str, asyncio.Task[str]] = {}
         self.hits = 0
 
+    @staticmethod
+    def _retrieve_task_exception(task: asyncio.Task[str]) -> None:
+        if not task.cancelled():
+            task.exception()
+
     async def get_or_create(self, key: str, factory: Callable[[], Awaitable[str]]) -> str:
         task = self._tasks.get(key)
+        if task is not None and task.done():
+            failed = task.cancelled()
+            if not failed:
+                failed = task.exception() is not None
+            if failed:
+                self._tasks.pop(key, None)
+                task = None
         if task is None:
             task = asyncio.create_task(factory())
+            task.add_done_callback(self._retrieve_task_exception)
             self._tasks[key] = task
         else:
             self.hits += 1
         try:
             # A canceled writer must not cancel a map reduction another writer awaits.
-            return await asyncio.shield(task)
+            protected = asyncio.shield(task)
+            protected.add_done_callback(self._retrieve_task_exception)
+            return await protected
         except asyncio.CancelledError:
             if task.cancelled() and self._tasks.get(key) is task:
                 self._tasks.pop(key, None)

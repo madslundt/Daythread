@@ -217,6 +217,36 @@ async def test_canceled_waiter_does_not_cancel_other_waiter_or_shared_map_task()
         assert calls == 1 and cache.hits == 1
 
 
+def test_canceled_sole_waiter_followed_by_failed_factory_can_retry_in_same_scope():
+    async def scenario():
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        async def factory():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                started.set()
+                await release.wait()
+                raise ValueError("failed map")
+            return "retried map"
+
+        async with summary_map_cache_scope() as cache:
+            waiter = asyncio.create_task(cache.get_or_create("same", factory))
+            await started.wait()
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+            shared_task = cache._tasks["same"]
+            release.set()
+            done, _ = await asyncio.wait([shared_task], timeout=1)
+            assert shared_task in done
+            assert await cache.get_or_create("same", factory) == "retried map"
+            assert calls == 2 and cache.hits == 0
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.anyio
 async def test_request_scope_cancels_unfinished_map_tasks_and_resets_cache():
     started = asyncio.Event()

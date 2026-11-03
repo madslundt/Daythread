@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from omi_local import inference as inference_module
 from omi_local.inference import Inference
 from omi_local.recaps import Recaps
 from omi_local.settings import Settings
@@ -290,14 +291,186 @@ async def test_fastpath_requires_exactly_one_matching_typed_source(tmp_path, mon
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("invalid_field", ["canonical_text", "speaker_evidence"])
+async def test_prepared_typed_notes_without_original_sources_cannot_use_original_fastpath(
+    tmp_path, monkeypatch,
+):
+    _, source = full_recording("Original canonical transcript.")
+    prepared = {
+        **source, "text": "Prepared notes are not the original transcript.",
+        "citation_source_ids": [source["id"]],
+    }
+    settings = Settings(data_dir=tmp_path, _env_file=None)
+    generic_calls = []
+
+    def handler(_request):
+        pytest.fail("No original transcript was supplied; do not probe or call the model")
+
+    async def generic(_inference, sources, _purpose, *, original_sources=None):
+        generic_calls.append((sources, original_sources))
+        return NO_CONTENT, {"model_calls": 0, "reduction_used": False}
+
+    monkeypatch.setattr("omi_local.daily_synthesis.summarize_daily", generic)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, _ = await inference.summarize_daily_traced([prepared], "a recap")
+    assert result == NO_CONTENT and len(generic_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_prepared_source_citation_metadata_disqualifies_complete_original_fastpath(
+    tmp_path, monkeypatch,
+):
+    prepared, source = full_recording("Original canonical transcript.")
+    source["citation_source_ids"] = [source["id"]]
+    settings = Settings(data_dir=tmp_path, _env_file=None)
+    generic_calls = []
+
+    def handler(_request):
+        pytest.fail("Prepared evidence cannot be presented as original speech")
+
+    async def generic(_inference, sources, _purpose, *, original_sources=None):
+        generic_calls.append((sources, original_sources))
+        return NO_CONTENT, {"model_calls": 0, "reduction_used": False}
+
+    monkeypatch.setattr("omi_local.daily_synthesis.summarize_daily", generic)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, _ = await inference.summarize_daily_traced(
+            [prepared], "a recap", original_sources=[source],
+        )
+    assert result == NO_CONTENT and len(generic_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_noise_only_complete_recording_is_refused_before_generation(tmp_path):
+    source_id = str(uuid4())
+    _, source = full_recording("um uh", source_id)
+    requests = []
+    settings = Settings(data_dir=tmp_path, _env_file=None)
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        requests.append(request)
+        return completion(f"## Topic\nInvented substance [{source_id}]")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_complete_recording_traced(
+            source, "a daily recap", require_subject_headings=True,
+        )
+    assert result == NO_CONTENT and requests == []
+    assert trace["model_calls"] == 0 and trace["input_filtering"]["omitted_sources"] == 1
+    assert trace["complete_context_one_pass"] is False
+
+
+@pytest.mark.anyio
+async def test_useful_recording_keeps_raw_text_in_anchored_prompt_after_filter_check(tmp_path):
+    source_id = str(uuid4())
+    text = "We agreed. Um, the plan is ready."
+    _, source = full_recording(text, source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    output = f"## Plan\nThe plan is ready [{source_id}]"
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        speech = speech_blocks(payload["evidence"])
+        assert "".join(speech_text(row) for row in speech) == text
+        assert any("Um," in speech_text(row) for row in speech)
+        return completion(output)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_complete_recording_traced(
+            source, "a daily recap", require_subject_headings=True,
+        )
+    assert result == output and trace["model_calls"] == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("invalid_output", ["## Topic\nNo citation", "No heading here"])
+async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
+    tmp_path, invalid_output,
+):
+    source_id = str(uuid4())
+    _, source = full_recording("The daily topic has useful content.", source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    requests = []
+    output = f"## Daily topic\nThe useful content remains cited [{source_id}]"
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        body = json.loads(request.content)
+        requests.append(body)
+        task = json.loads(body["messages"][1]["content"])["task"]
+        if len(requests) == 1:
+            return completion(invalid_output)
+        assert "previous draft" in task
+        return completion(output)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_complete_recording_traced(
+            source, "a daily recap", require_subject_headings=True,
+        )
+    assert result == output and len(requests) == 2
+    assert trace["model_calls"] == 2 and trace["complete_context_one_pass"] is True
+
+
+@pytest.mark.anyio
+async def test_context_fallback_filters_source_once_in_existing_reducer(tmp_path, monkeypatch):
+    source_id = str(uuid4())
+    _, source = full_recording("A meaningful original sentence.", source_id)
+    settings = Settings(data_dir=tmp_path, _env_file=None)
+    requests = []
+    filter_calls = []
+    original_filter = inference_module.filter_summary_sources
+
+    def counting_filter(sources):
+        filter_calls.append(len(sources))
+        return original_filter(sources)
+
+    monkeypatch.setattr("omi_local.inference.filter_summary_sources", counting_filter)
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 65536,
+            }]})
+        requests.append(request)
+        return completion(f"## Topic\nA useful fact [{source_id}]")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(settings, client)
+        result, trace = await inference.summarize_traced([source], "conversation notes")
+    assert "A useful fact" in result
+    assert len(requests) == 1 and filter_calls == [1]
+    assert "complete_context_one_pass" not in trace
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "invalid_field", ["canonical_text", "speaker_evidence", "speaker_evidence_member"],
+)
 async def test_excerpt_or_malformed_complete_variant_never_uses_single_pass(
     tmp_path, monkeypatch, invalid_field,
 ):
     prepared, source = full_recording("Complete original transcript.")
-    source[invalid_field] = (
-        "A different full transcript" if invalid_field == "canonical_text" else None
-    )
+    if invalid_field == "canonical_text":
+        source[invalid_field] = "A different full transcript"
+    elif invalid_field == "speaker_evidence_member":
+        source["speaker_evidence"] = [None]
+    else:
+        source[invalid_field] = None
     settings = Settings(data_dir=tmp_path, _env_file=None)
     generic_calls = []
 

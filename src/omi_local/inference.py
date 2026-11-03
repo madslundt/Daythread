@@ -492,18 +492,22 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             inference = copy(self)
             inference.settings = self.settings.model_copy(update={"summary_language": language})
         fastpath = None
-        if (len(sources) == 1 and len(originals) == 1
+        if (original_sources is not None and len(sources) == 1 and len(originals) == 1
                 and isinstance(sources[0], dict)
                 and sources[0].get("id") == originals[0].get("id")
                 and sources[0].get("citation_source_ids") == [originals[0].get("id")]):
             fastpath = await inference.summarize_complete_recording_traced(
-                originals[0], purpose,
+                originals[0], purpose, require_subject_headings=True,
             )
         if fastpath is not None:
             result, trace = fastpath
             trace["map_cache_hits"] = 0
             trace["coherence_review"] = {
-                "status": "skipped", "skip_reason": "complete_context_single_pass",
+                "status": "skipped",
+                "skip_reason": (
+                    "complete_context_single_pass" if trace.get("complete_context_one_pass")
+                    else "no_content"
+                ),
                 "model_calls": 0,
             }
             return result, trace
@@ -530,7 +534,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         return result, trace
 
     async def summarize_complete_recording_traced(
-        self, source: dict, purpose: str,
+        self, source: dict, purpose: str, *, require_subject_headings: bool = False,
     ) -> tuple[str, dict] | None:
         """Write one verified whole-recording source directly when its complete request fits."""
         if not isinstance(source, dict):
@@ -557,6 +561,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             or not all(isinstance(item, dict) and item.get("source_id") == source_id_item
                        for item, source_id_item in zip(source_map, source_ids, strict=True))
             or not isinstance(source.get("speaker_evidence"), list)
+            or not all(isinstance(item, dict) for item in source["speaker_evidence"])
+            or bool(source.get("citation_source_ids"))
             or not isinstance(source.get("text"), str) or not source["text"].strip()
             or source.get("speaker_evidence_origin", 0) != 0
             or (source.get("canonical_text") is not None
@@ -609,6 +615,23 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         if limit_source != "provider" or required > limit:
             return None
 
+        # Refuse filler/noise-only recordings without a generation call, but keep the
+        # exact original text for the anchor-aware renderer when useful speech remains.
+        retained, filtering = filter_summary_sources([source])
+        if not retained:
+            return NO_CONTENT, {
+                "model_calls": 0,
+                "reduction_used": False,
+                "final_prompt_source_ids": [],
+                "input_filtering": filtering,
+                "complete_context": {
+                    "status": "no_useful_content", "context_window": limit,
+                    "request_characters": request_characters,
+                    "request_tokens_upper_bound": request_size,
+                },
+                "complete_context_one_pass": False,
+            }
+
         allowed_sources = [{"id": source_id}]
         trace = {
             "model_calls": 0,
@@ -620,6 +643,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 "request_tokens_upper_bound": request_size,
             },
             "complete_context_one_pass": True,
+            "input_filtering": filtering,
         }
         with summary_usage(), bounded_generation(limit):
             trace["model_calls"] += 1
@@ -628,17 +652,53 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
             )
             try:
-                return validate_citations(answer, allowed_sources), trace
+                return self._validate_complete_recording_output(
+                    answer, source_id, require_subject_headings,
+                ), trace
             except InferenceError:
                 trace["model_calls"] += 1
+                heading_requirement = (
+                    " For a daily recap, include a level-two ## heading for each subject and "
+                    "useful content beneath every heading."
+                    if require_subject_headings else ""
+                )
                 repaired = await inference._summary_generate(
-                    task + " The previous draft contained an invalid source citation. Recreate "
-                    "the summary from the complete evidence, copying the one allowed source "
-                    "UUID exactly. Omit any unsupported claim.",
+                    task + " The previous draft failed citation or required-format validation. "
+                    "Recreate the summary from the complete evidence, copying the one allowed "
+                    "source UUID exactly. Omit any unsupported claim." + heading_requirement,
                     evidence, allowed_sources, compact_references=False,
                     output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
                 )
-                return validate_citations(repaired, allowed_sources), trace
+                return self._validate_complete_recording_output(
+                    repaired, source_id, require_subject_headings,
+                ), trace
+
+    @staticmethod
+    def _validate_complete_recording_output(
+        answer: str, source_id: str, require_subject_headings: bool,
+    ) -> str:
+        validated = validate_citations(answer, [{"id": source_id}]).strip()
+        if validated == NO_CONTENT:
+            return validated
+        if not re.search(rf"\[\s*{re.escape(source_id)}\s*\]", validated, re.IGNORECASE):
+            raise InferenceError("Complete recording summary requires a source citation")
+        if require_subject_headings:
+            lines = validated.splitlines()
+            headings = [
+                index for index, line in enumerate(lines)
+                if re.match(r"^#{1,6}\s+\S", line)
+            ]
+            first_content = next(
+                (index for index, line in enumerate(lines) if line.strip()), -1,
+            )
+            if (not headings or first_content != headings[0]
+                    or any(not re.match(r"^##\s+\S", lines[index]) for index in headings)):
+                raise InferenceError("Daily recording summary requires level-two subject headings")
+            for position, index in enumerate(headings):
+                end = headings[position + 1] if position + 1 < len(headings) else len(lines)
+                if not any(line.strip() for line in lines[index + 1:end]):
+                    raise InferenceError("Daily recording summary has an empty subject heading")
+        return validated
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}

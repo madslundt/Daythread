@@ -3,8 +3,10 @@
 import asyncio
 import math
 import re
+import wave
 from uuid import uuid4
 
+from .alignment_audio import alignment_source_duration, crop_native_envelope
 from .audio import amplify_quiet_audio, contains_speech_energy, transcription_chunks
 from .domain import stamp, utc_now, wav_duration
 from .inference_errors import InferenceError
@@ -13,6 +15,7 @@ from .processing_progress import ProgressCallback
 from .settings import Settings, STTRoute
 from .speech_processing import enhance_audio
 from .stt_languages import language_code
+from .stt_result import transcription_result
 from .transcription_filter import FILTER_VERSION, filter_transcription_audio
 from .transcription_vocabulary import vocabulary_fields
 
@@ -72,9 +75,15 @@ class Transcription:
                     )
                     if result["text"]:
                         text_offset = sum(map(len, texts)) + len(texts)
-                        alignment_inputs.append((offset, chunk, result["text"],
+                        native_segments = [
+                            item for item in result["segments"]
+                            if item.get("kind") == "segment"
+                            and "start_offset" in item and "end_offset" in item
+                        ]
+                        alignment_inputs.append((offset, prepared, result["text"],
                                                  result.get("recognition", {}).get(
-                                                     "detected_language"), text_offset))
+                                                     "detected_language"), text_offset,
+                                                 native_segments))
                         texts.append(result["text"])
                     for segment in result["segments"]:
                         shifted = {
@@ -116,7 +125,10 @@ class Transcription:
                 alignment_inputs, settings, alignment_budget,
             )
             if aligned:
-                segments = aligned
+                segments.extend(aligned)
+                segments.sort(key=lambda item: (
+                    item["start"], item["end"], item.get("start_offset", -1),
+                ))
             remaining = deadline.when() - asyncio.get_running_loop().time()
         budget = min(settings.stt_enhancement_timeout_seconds, remaining)
         await self._enhancement_candidates(chunks, originals, settings, budget, on_progress)
@@ -140,79 +152,140 @@ class Transcription:
         model = None
         overall = "aligned"
         languages = set()
+        last_output_time_end = -1.0
+        last_output_text_end = -1
         try:
             async with asyncio.timeout(budget):
-                for offset, audio, text, language, text_offset in parts:
+                for part in parts:
+                    offset, audio, text, language, text_offset = part[:5]
+                    native_segments = part[5] if len(part) > 5 else []
                     language = language or settings.alignment_language
                     languages.add(language)
-                    response = await self.client.post(
-                        f"{settings.alignment_base_url}/align",
-                        files={"file": ("chunk.wav", audio, "audio/wav")},
-                        data={"text": text, "language": language},
-                        timeout=settings.alignment_timeout_seconds,
-                        follow_redirects=False,
-                    )
-                    response.raise_for_status()
-                    payload = response.json()
-                    if not isinstance(payload, dict):
-                        raise ValueError
-                    model = payload.get("model")
-                    if not isinstance(model, str):
-                        return output or None, {"status": "invalid", "model": None,
-                                                "languages": sorted(languages)}
-                    if payload.get("language") != language:
-                        overall = "invalid"
-                        continue
-                    segments = payload.get("segments")
-                    expected = list(re.finditer(r"\S+", text))
-                    if not isinstance(segments, list):
-                        overall = "partial"
-                        continue
-                    duration = wav_duration(audio)
-                    previous = 0.0
-                    last_character = 0
-                    local = []
-                    covered_ranges = set()
-                    if len(segments) != len(expected) or payload.get("status") != "aligned":
-                        overall = "partial"
-                    covered_chars = set()
-                    for segment in segments:
-                        if not isinstance(segment, dict):
-                            overall = "invalid"
-                            continue
-                        first, last = segment.get("start_offset"), segment.get("end_offset")
-                        start, end = segment.get("start"), segment.get("end")
-                        if (isinstance(first, bool) or isinstance(last, bool)
-                                or not isinstance(first, int) or not isinstance(last, int)
+                    duration = (alignment_source_duration(audio) if native_segments
+                                else wav_duration(audio))
+                    jobs = []
+                    native_covered = set()
+                    previous_native_time = 0.0
+                    previous_native_text = 0
+                    for native in native_segments:
+                        first, last = native.get("start_offset"), native.get("end_offset")
+                        start, end = native.get("start"), native.get("end")
+                        if (native.get("kind") != "segment"
+                                or type(first) is not int or type(last) is not int
                                 or not 0 <= first < last <= len(text)
-                                or text[first:last] != segment.get("text")
-                                or any(first < match.end() and last > match.start()
-                                       for match in expected
-                                       if match.start() != first or match.end() != last)
-                                or first < last_character):
-                            overall = "invalid"
-                            continue
-                        if any(index in covered_chars for index in range(first, last)):
-                            overall = "invalid"
-                            continue
-                        if (isinstance(start, bool) or isinstance(end, bool)
-                                or not isinstance(start, (int, float))
-                                or not isinstance(end, (int, float))
+                                or native.get("text") != text[first:last]
+                                or type(start) not in (int, float)
+                                or type(end) not in (int, float)
                                 or not math.isfinite(start) or not math.isfinite(end)
-                                or not previous <= start < end <= duration):
+                                or not previous_native_time <= start < end <= duration
+                                or first < previous_native_text):
+                            overall = "partial"
+                            continue
+                        try:
+                            crop, crop_start = crop_native_envelope(audio, start, end)
+                        except (ValueError, wave.Error):
+                            overall = "partial"
+                            continue
+                        jobs.append((crop, text[first:last], first, crop_start))
+                        native_covered.update(range(first, last))
+                        previous_native_time = end
+                        previous_native_text = last
+                    if native_segments and jobs:
+                        if any(index not in native_covered for match in re.finditer(r"\S+", text)
+                               for index in range(match.start(), match.end())):
+                            overall = "partial"
+                    elif native_segments:
+                        # Supplied anchors were present but none could be trusted. In
+                        # whole-recording input, never fall through to an unbounded
+                        # full-audio request. Small legacy chunks retain their prior
+                        # whole-chunk fallback behavior.
+                        overall = "partial"
+                        if duration > 30:
+                            continue
+                        jobs = [(audio, text, 0, 0.0)]
+                    else:
+                        # Providers without usable native spans retain whole-chunk behavior.
+                        jobs = [(audio, text, 0, 0.0)]
+
+                    for request_audio, request_text, request_text_offset, crop_start in jobs:
+                        response = await self.client.post(
+                            f"{settings.alignment_base_url}/align",
+                            files={"file": ("chunk.wav", request_audio, "audio/wav")},
+                            data={"text": request_text, "language": language},
+                            timeout=settings.alignment_timeout_seconds,
+                            follow_redirects=False,
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
+                        if not isinstance(payload, dict):
+                            raise ValueError
+                        model = payload.get("model")
+                        if not isinstance(model, str):
+                            return output or None, {"status": "invalid", "model": None,
+                                                    "languages": sorted(languages)}
+                        if payload.get("language") != language:
                             overall = "invalid"
                             continue
-                        previous = end
-                        last_character = last
-                        covered_chars.update(range(first, last))
-                        covered_ranges.add((first, last))
-                        local.append({"start": start + offset, "end": end + offset,
-                                      "text": text[first:last],
-                                      "start_offset": first + text_offset,
-                                      "end_offset": last + text_offset, "kind": "word"})
-                    if covered_ranges != {(match.start(), match.end()) for match in expected}:
-                        overall = "partial" if overall == "aligned" else overall
-                    output.extend(local)
+                        aligned_segments = payload.get("segments")
+                        expected = list(re.finditer(r"\S+", request_text))
+                        if not isinstance(aligned_segments, list):
+                            overall = "partial"
+                            continue
+                        previous = 0.0
+                        last_character = 0
+                        local = []
+                        covered_ranges = set()
+                        if (len(aligned_segments) != len(expected)
+                                or payload.get("status") != "aligned"):
+                            overall = "partial"
+                        covered_chars = set()
+                        request_duration = wav_duration(request_audio)
+                        for segment in aligned_segments:
+                            if not isinstance(segment, dict):
+                                overall = "invalid"
+                                continue
+                            first, last = segment.get("start_offset"), segment.get("end_offset")
+                            start, end = segment.get("start"), segment.get("end")
+                            if (type(first) is not int or type(last) is not int
+                                    or not 0 <= first < last <= len(request_text)
+                                    or request_text[first:last] != segment.get("text")
+                                    or any(first < match.end() and last > match.start()
+                                           for match in expected
+                                           if match.start() != first or match.end() != last)
+                                    or first < last_character):
+                                overall = "invalid"
+                                continue
+                            if any(index in covered_chars for index in range(first, last)):
+                                overall = "invalid"
+                                continue
+                            if (type(start) not in (int, float) or type(end) not in (int, float)
+                                    or not math.isfinite(start) or not math.isfinite(end)
+                                    or not previous <= start < end <= request_duration):
+                                overall = "invalid"
+                                continue
+                            previous = end
+                            last_character = last
+                            covered_chars.update(range(first, last))
+                            covered_ranges.add((first, last))
+                            local.append({
+                                "start": start + offset + crop_start,
+                                "end": end + offset + crop_start,
+                                "text": request_text[first:last],
+                                "start_offset": first + request_text_offset + text_offset,
+                                "end_offset": last + request_text_offset + text_offset,
+                                "kind": "word",
+                            })
+                        if covered_ranges != {(match.start(), match.end()) for match in expected}:
+                            overall = "partial" if overall == "aligned" else overall
+                        for fragment in local:
+                            if (fragment["start"] < last_output_time_end
+                                    or fragment["end"] < last_output_time_end
+                                    or fragment["start_offset"] < last_output_text_end):
+                                overall = "partial"
+                                continue
+                            output.append(fragment)
+                            last_output_time_end = fragment["end"]
+                            last_output_text_end = fragment["end_offset"]
         except TimeoutError:
             return output or None, {"status": "timeout", "model": model,
                                     "languages": sorted(languages)}
@@ -327,79 +400,4 @@ class Transcription:
             raise InferenceError("Invalid STT response")
         return payload
 
-    @staticmethod
-    def _transcription_result(payload: dict, data: bytes) -> dict:
-        text = payload.get("text")
-        if not isinstance(text, str) or len(text) > 20000:
-            raise InferenceError("Invalid STT response")
-        canonical_text = text.strip()
-        leading_trim = len(text) - len(text.lstrip())
-        trailing_end = len(text.rstrip())
-        duration = wav_duration(data)
-        raw_segments = payload.get("segments", [])
-        if not isinstance(raw_segments, list):
-            return {"text": canonical_text, "segments": [],
-                    "timestamp_status": "discarded_invalid"}
-
-        explicit_anchors = any(
-            isinstance(segment, dict)
-            and any(field in segment for field in ("start_offset", "end_offset", "kind"))
-            for segment in raw_segments
-        )
-        if explicit_anchors:
-            segments = []
-            invalid = False
-            previous_text_end, previous_time_end = 0, 0.0
-            for segment in raw_segments:
-                try:
-                    start, end = segment["start"], segment["end"]
-                    left, right = segment["start_offset"], segment["end_offset"]
-                    segment_text = segment["text"]
-                    valid_numbers = (
-                        type(start) in (int, float) and type(end) in (int, float)
-                        and math.isfinite(start) and math.isfinite(end)
-                    )
-                    if (
-                        not valid_numbers or type(left) is not int or type(right) is not int
-                        or not isinstance(segment_text, str)
-                        or not 0 <= leading_trim <= left < right <= trailing_end
-                        or text[left:right] != segment_text
-                        or not 0 <= start < min(end, duration) or end > duration + 0.5
-                        or left < previous_text_end or start < previous_time_end
-                    ):
-                        raise ValueError
-                    item = {
-                        "start": float(start), "end": min(float(end), duration),
-                        "text": segment_text,
-                        "start_offset": left - leading_trim,
-                        "end_offset": right - leading_trim,
-                    }
-                    if segment.get("kind") in {"word", "segment", "token"}:
-                        item["kind"] = segment["kind"]
-                    segments.append(item)
-                    previous_text_end, previous_time_end = right, end
-                except (KeyError, TypeError, ValueError, OverflowError):
-                    invalid = True
-            result = {"text": canonical_text, "segments": segments}
-            if invalid:
-                result["timestamp_status"] = "partial" if segments else "discarded_invalid"
-            return result
-
-        segments = []
-        for segment in raw_segments:
-            try:
-                start, end = float(segment["start"]), float(segment["end"])
-                segment_text = segment["text"]
-                if (not 0 <= start < min(end, duration) or not end <= duration + 0.5
-                        or not isinstance(segment_text, str)):
-                    raise ValueError
-                segments.append(
-                    {"start": start, "end": min(end, duration), "text": segment_text[:20000]}
-                )
-            except (KeyError, TypeError, ValueError, OverflowError):
-                # Timing is optional. Do not invent alignment or repeat a successful
-                # recognition request because the provider's timing is unusable.
-                return {"text": canonical_text, "segments": [],
-                        "timestamp_status": "discarded_invalid"}
-        return {"text": canonical_text, "segments": segments}
-
+    _transcription_result = staticmethod(transcription_result)

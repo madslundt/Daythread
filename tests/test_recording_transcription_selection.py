@@ -34,7 +34,27 @@ def test_versioned_selection_is_explicit_and_invalidates_after_correction(app_re
     assert exact.json()["reference_type"] == "recording_transcription"
     assert exact.json()["state"] == "stale"
     assert exact.json()["text"] == "Full selected text."
+    assert exact.json()["audio_available"] is False
     assert [store.get_audio(source_id)["text"] for source_id in ids] != before
+
+
+def test_exact_historical_transcript_withholds_current_audio_after_pipeline_change(app_recording):
+    client, store, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    _, version = make_ready_variant(store, memory, rid, ids, "Historical selected text.")
+
+    current = client.get(f"/v1/recordings/{rid}/transcriptions/{version}")
+    assert current.status_code == 200
+    assert current.json()["state"] == "ready"
+    assert current.json()["audio_available"] is True
+
+    memory.settings.alignment_enabled = True
+    stale = client.get(f"/v1/recordings/{rid}/transcriptions/{version}")
+    assert stale.status_code == 200
+    assert stale.json()["state"] == "stale"
+    assert stale.json()["text"] == "Historical selected text."
+    assert stale.json()["audio_available"] is False
 
 def test_selection_uses_compare_and_set_and_retention_purges_typed_history(app_recording):
     client, store, rid, ids, _, _ = app_recording

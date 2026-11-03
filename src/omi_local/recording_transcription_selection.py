@@ -190,6 +190,10 @@ def exact_recording_transcription(
         "started_at", "ended_at", "duration_seconds", "audio_available",
         "audio_availability", "title",
     )})
+    if not current:
+        # The transcript is retained for historical citations, but the current
+        # recording may no longer contain the audio that produced this version.
+        value["audio_available"] = False
     value["source_ids"] = [part["source_id"] for part in json.loads(row["source_map"] or "[]")]
     value["sections"] = [{
         "title": "Full recording transcript",

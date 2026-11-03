@@ -113,7 +113,7 @@ def _validate_response(headers, payload, settings, duration):
         raise ValueError("provenance_mismatch")
     text = payload.get("text") if isinstance(payload, dict) else None
     segments = payload.get("segments") if isinstance(payload, dict) else None
-    if not isinstance(text, str) or not isinstance(segments, list):
+    if not isinstance(text, str) or len(text) > MAX_RESPONSE_BYTES or not isinstance(segments, list):
         raise ValueError("invalid_response")
     native, last = [], 0.0
     exact_join = []
@@ -139,14 +139,50 @@ def _validate_response(headers, payload, settings, duration):
         last = end
         exact_join.append(part_text)
         native.append({"start": start, "end": end, "text": part_text, "kind": "segment"})
-    joined = "".join(exact_join)
-    if joined == text:
-        cursor = 0
+
+    # The local CPP adapter may publish exact character anchors for its canonical
+    # newline-joined serialization. Trust only those anchors when each exact slice
+    # matches. Never search segment phrases in the full text: repeated phrases make
+    # text matching ambiguous. For older compatible adapters without anchors, use
+    # only a whole-response serialization that exactly reproduces the full text.
+    anchored = True
+    any_anchor_fields = any(
+        "start_offset" in source_segment or "end_offset" in source_segment
+        for source_segment in segments
+    )
+    prior_end = 0
+    for source_segment, item in zip(segments, native, strict=True):
+        left, right = source_segment.get("start_offset"), source_segment.get("end_offset")
+        if left is None and right is None:
+            anchored = False
+            break
+        if (
+            type(left) is not int
+            or type(right) is not int
+            or not 0 <= left < right <= len(text)
+            or left < prior_end
+            or text[left:right] != item["text"]
+        ):
+            anchored = False
+            break
+        item["start_offset"], item["end_offset"] = left, right
+        prior_end = right
+    if not anchored:
         for item in native:
-            item["start_offset"] = cursor
-            cursor += len(item["text"])
-            item["end_offset"] = cursor
-    else:
-        for item in native:
+            item.pop("start_offset", None)
+            item.pop("end_offset", None)
+        joined = "".join(exact_join)
+        separator = None if any_anchor_fields else (
+            "" if joined == text else "\n" if "\n".join(exact_join) == text else None
+        )
+        if separator is not None:
+            cursor = 0
+            for item in native:
+                item["start_offset"] = cursor
+                cursor += len(item["text"])
+                item["end_offset"] = cursor
+                cursor += len(separator)
+    for item in native:
+        if "start_offset" not in item:
             item["start_offset"] = item["end_offset"] = None
     return text, native, provenance

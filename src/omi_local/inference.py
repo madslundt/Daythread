@@ -42,6 +42,8 @@ from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
+COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-v1"
+COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT = 64_000
 
 
 SYSTEM = (
@@ -489,6 +491,22 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         if language != self.settings.summary_language:
             inference = copy(self)
             inference.settings = self.settings.model_copy(update={"summary_language": language})
+        fastpath = None
+        if (len(sources) == 1 and len(originals) == 1
+                and isinstance(sources[0], dict)
+                and sources[0].get("id") == originals[0].get("id")
+                and sources[0].get("citation_source_ids") == [originals[0].get("id")]):
+            fastpath = await inference.summarize_complete_recording_traced(
+                originals[0], purpose,
+            )
+        if fastpath is not None:
+            result, trace = fastpath
+            trace["map_cache_hits"] = 0
+            trace["coherence_review"] = {
+                "status": "skipped", "skip_reason": "complete_context_single_pass",
+                "model_calls": 0,
+            }
+            return result, trace
         async with summary_map_cache_scope() as map_cache:
             result, trace = await summarize_daily(
                 inference, sources, purpose, original_sources=original_sources,
@@ -510,6 +528,117 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             trace["coherence_review"] = review
             trace["model_calls"] += review["model_calls"]
         return result, trace
+
+    async def summarize_complete_recording_traced(
+        self, source: dict, purpose: str,
+    ) -> tuple[str, dict] | None:
+        """Write one verified whole-recording source directly when its complete request fits."""
+        if not isinstance(source, dict):
+            return None
+        source_id = source.get("id")
+        source_ids = source.get("source_ids")
+        source_map = source.get("source_map")
+        if (
+            source.get("reference_type") != "recording_transcription"
+            or not isinstance(source_id, str) or not source_id
+            or source.get("recording_id") != source_id
+            or not isinstance(source.get("result_version"), str)
+            or not source.get("result_version")
+            or not isinstance(source.get("input_fingerprint"), str)
+            or not source.get("input_fingerprint")
+            or not isinstance(source.get("pipeline_fingerprint"), str)
+            or not source.get("pipeline_fingerprint")
+            or type(source.get("selection_version")) is not int
+            or source.get("selection_version", 0) < 1
+            or not isinstance(source_ids, list) or not source_ids
+            or not all(isinstance(source_id_item, str) and source_id_item
+                       for source_id_item in source_ids)
+            or not isinstance(source_map, list) or len(source_map) != len(source_ids)
+            or not all(isinstance(item, dict) and item.get("source_id") == source_id_item
+                       for item, source_id_item in zip(source_map, source_ids, strict=True))
+            or not isinstance(source.get("speaker_evidence"), list)
+            or not isinstance(source.get("text"), str) or not source["text"].strip()
+            or source.get("speaker_evidence_origin", 0) != 0
+            or (source.get("canonical_text") is not None
+                and source.get("canonical_text") != source.get("text"))
+        ):
+            return None
+
+        language = resolve_summary_language(
+            self.settings.summary_language, source["text"],
+        )
+        inference = self
+        if language != self.settings.summary_language:
+            inference = copy(self)
+            inference.settings = self.settings.model_copy(update={"summary_language": language})
+
+        # The helper renders exact transcript windows and speaker proof together. A
+        # large window avoids artificial splits in a selected whole recording.
+        from .summary_speaker_evidence import source_prompt_pieces
+
+        pieces = source_prompt_pieces(
+            source, self._speaker_evidence_window,
+            max_chars=COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT,
+            max_text_chars=COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT,
+        )
+        if not pieces:
+            return None
+        evidence = "\n".join(piece.content for piece in pieces)
+        task = (
+            f"Create {purpose}. Preserve useful supported details and source UUID citations. "
+            "Use concise Markdown. Follow the requested organization. "
+            "Do not force category sections; omit empty sections and statements that "
+            "nothing was recorded for a category. "
+            + summary_language_instruction(inference.settings.summary_language)
+            + " Cite only original source UUIDs copied exactly from this allowed list; do not "
+            "invent or cite any other UUID: " + source_id + "."
+        )
+        request_size = request_tokens(task, evidence, SUMMARY_SYSTEM)
+        request_characters = (
+            len(SUMMARY_SYSTEM)
+            + len(json.dumps({"task": task, "evidence": evidence}, ensure_ascii=False))
+            + 128
+        )
+        if request_characters > COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT:
+            return None
+
+        # Unknown and fallback context sizes are not enough to justify skipping the
+        # established map/reduce pipeline. Require provider metadata plus answer room.
+        limit, limit_source = await context_limit(inference, "summary")
+        required = request_size + SUMMARY_OUTPUT_TOKENS + safety(limit)
+        if limit_source != "provider" or required > limit:
+            return None
+
+        allowed_sources = [{"id": source_id}]
+        trace = {
+            "model_calls": 0,
+            "reduction_used": False,
+            "final_prompt_source_ids": [source_id],
+            "complete_context": {
+                "status": "used", "context_window": limit,
+                "request_characters": request_characters,
+                "request_tokens_upper_bound": request_size,
+            },
+            "complete_context_one_pass": True,
+        }
+        with summary_usage(), bounded_generation(limit):
+            trace["model_calls"] += 1
+            answer = await inference._summary_generate(
+                task, evidence, allowed_sources, compact_references=False,
+                output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
+            )
+            try:
+                return validate_citations(answer, allowed_sources), trace
+            except InferenceError:
+                trace["model_calls"] += 1
+                repaired = await inference._summary_generate(
+                    task + " The previous draft contained an invalid source citation. Recreate "
+                    "the summary from the complete evidence, copying the one allowed source "
+                    "UUID exactly. Omit any unsupported claim.",
+                    evidence, allowed_sources, compact_references=False,
+                    output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,
+                )
+                return validate_citations(repaired, allowed_sources), trace
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}
@@ -644,6 +773,13 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
     ) -> str:
         # Map/reduce keeps a full day's evidence in scope without silently truncating its tail.
         original_sources = sources
+        if answer_task is None and self.task == "summary" and len(sources) == 1:
+            fastpath = await self.summarize_complete_recording_traced(sources[0], purpose)
+            if fastpath is not None:
+                answer, fast_trace = fastpath
+                if trace is not None:
+                    trace.update(fast_trace)
+                return answer
         language_instruction = ""
         if answer_task is None:
             original_text = "\n".join(source.get("text") or "" for source in original_sources)

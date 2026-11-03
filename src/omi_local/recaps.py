@@ -21,7 +21,12 @@ from .conversation_state import (
 )
 from .domain import EvidenceChanged, stamp, utc_now
 from .embedding_chunking import topic_regions
-from .inference import SUMMARY_REDUCTION_VERSION, InferenceError, validate_citations
+from .inference import (
+    COMPLETE_RECORDING_SUMMARY_VERSION,
+    SUMMARY_REDUCTION_VERSION,
+    InferenceError,
+    validate_citations,
+)
 from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
 from .recording_transcription_selection import (
@@ -236,6 +241,7 @@ class Recaps:
                     "result_version": selected["variant"]["version"],
                     "input_fingerprint": selected["input_fingerprint"],
                     "pipeline_fingerprint": selected["pipeline_fingerprint"],
+                    "summary_strategy": COMPLETE_RECORDING_SUMMARY_VERSION,
                     "speaker_evidence": self.recording_speaker_evidence(
                         group, recording_id, selected["variant"], db,
                     )[1:],
@@ -396,6 +402,7 @@ class Recaps:
     async def prepare_group(
         self, group: Conversation, guard: Callable[[sqlite3.Connection], None],
         *, force: bool = False, coherence_trace: list[dict] | None = None,
+        generation_trace: list[dict] | None = None,
     ) -> str:
         memory = self.memory
         key = self.group_key(group)
@@ -404,11 +411,16 @@ class Recaps:
             if coherence_trace is not None:
                 coherence_trace.append({"status": "cached", "model_calls": 0})
             return cached
-        if not force:
-            await self.prepare_topics(group)
         # Forced summaries use original transcripts directly. Navigation labels are
         # optional hints; their independent worker must not hold up an explicit redo.
         sources = self.sources(group)
+        single_recording_candidate = (
+            len(sources) == 1
+            and sources[0].get("reference_type") == "recording_transcription"
+        )
+        if not force and not single_recording_candidate:
+            await self.prepare_topics(group)
+            sources = self.sources(group)
         projections = self.speaker_projection(group)
         for source in sources:
             if source.get("reference_type") == "recording_transcription":
@@ -472,12 +484,34 @@ class Recaps:
                 "Do not repeat the same point in different categories or add empty placeholders. "
                 "Otherwise preserve original source UUID citations for every useful point"
             )
-            summary = await memory.inference.summarize(self.note_sources(sources), purpose)
+            direct_trace = None
+            if single_recording_candidate:
+                method = getattr(memory.inference, "summarize_complete_recording_traced", None)
+                if method is not None:
+                    direct = await method(sources[0], purpose)
+                    if direct is not None:
+                        summary, direct_trace = direct
+            if direct_trace is None:
+                if not force and single_recording_candidate:
+                    # The original 12k reduction remains the fallback when the direct
+                    # full-recording prompt cannot safely fit the provider context.
+                    await self.prepare_topics(group)
+                    sources = self.sources(group)
+                summary = await memory.inference.summarize(self.note_sources(sources), purpose)
             summary = validate_citations(summary, sources).strip()
             if summary != NO_CONTENT and not any(s["id"].lower() in summary.lower()
                                                  for s in sources):
                 raise InferenceError("Conversation notes require original source citations")
-            if summary != NO_CONTENT and hasattr(memory.inference, "cohere_completed_summary"):
+            if direct_trace is not None:
+                if generation_trace is not None:
+                    generation_trace.append(direct_trace)
+                review = {
+                    "status": "skipped", "skip_reason": "complete_context_single_pass",
+                    "model_calls": 0,
+                }
+                if coherence_trace is not None:
+                    coherence_trace.append(review)
+            elif summary != NO_CONTENT and hasattr(memory.inference, "cohere_completed_summary"):
                 summary, review = await memory.inference.cohere_completed_summary(
                     sources, summary, purpose,
                 )
@@ -552,7 +586,9 @@ class Recaps:
         start, end = memory.day_window(day)
         ready = [g for g in groups if g.ready]
         blocked = sum(r["state"] == "blocked" for r in result["sources"])
-        sources, inputs, seen, repeated, coherence_reviews = [], [], set(), [], []
+        sources, inputs, seen, repeated, coherence_reviews, generation_reviews = (
+            [], [], set(), [], [], [],
+        )
         for group in ready:
             originals = self.sources(group)
             sources.extend(originals)
@@ -567,6 +603,7 @@ class Recaps:
                 continue
             notes = await self.prepare_group(
                 group, guard, force=force, coherence_trace=coherence_reviews,
+                generation_trace=generation_reviews,
             )
             if notes != NO_CONTENT and originals:
                 inputs.extend(
@@ -589,6 +626,11 @@ class Recaps:
                      "reviews": coherence_reviews,
                      "model_calls": sum(review.get("model_calls", 0)
                                         for review in coherence_reviews),
+                 },
+                 "conversation_summary_generation": {
+                     "reviews": generation_reviews,
+                     "model_calls": sum(review.get("model_calls", 0)
+                                        for review in generation_reviews),
                  }}
         if inputs:
             purpose = (
@@ -647,6 +689,9 @@ class Recaps:
                 "kind": "unique_daily_synthesis", "inputs": inputs,
                 "prompt": DAY_PROMPT_VERSION, "purpose": purpose,
                 "preparation_policy": PROMPT_VERSION,
+                **({"complete_recording_summary_strategy": COMPLETE_RECORDING_SUMMARY_VERSION}
+                   if any(source.get("reference_type") == "recording_transcription"
+                          for source in sources) else {}),
                 "model": memory.settings.llm_route("summary").identity,
                 "thinking": memory.settings.llm_enable_thinking,
                 "thinking_token_budget": memory.settings.llm_summary_thinking_token_budget,

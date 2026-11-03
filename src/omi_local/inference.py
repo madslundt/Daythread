@@ -282,19 +282,20 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
 
     async def _generate(
         self, task: str, evidence: str, system: str, tokens: int, *, usage_task: str | None = None,
-        response_format: dict | None = None,
+        response_format: dict | None = None, buffered_summary_stream: bool = False,
     ) -> str:
         route = self.settings.llm_route(self.task)
         token = route.token.get_secret_value()
         long_summary = self.task == "summary" and tokens == SUMMARY_OUTPUT_TOKENS
-        budgets = (tokens,) if long_summary else (
+        buffered_summary = self.task == "summary" and (long_summary or buffered_summary_stream)
+        budgets = (tokens,) if buffered_summary else (
             tokens, min(tokens * 2, 8000), min(tokens * 4, 16000),
         )
         options = self.llm_template_options
         attempts = [(budget, options) for budget in budgets]
         base_timeout = max(
             self.settings.inference_timeout_seconds,
-            4096 if long_summary else 300 if tokens >= 4000 else 0,
+            4096 if buffered_summary else 300 if tokens >= 4000 else 0,
         )
         for attempt, (budget, template_options) in enumerate(attempts):
             budget = generation_tokens(task, evidence, system, budget)
@@ -311,21 +312,22 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                     "llm",
                     f"{route.base_url}/chat/completions",
                     _usage_task=usage_task,
-                    _buffered_stream=long_summary,
-                    _timeout_seconds=base_timeout if long_summary else max(
+                    _buffered_stream=buffered_summary,
+                    _timeout_seconds=base_timeout if buffered_summary else max(
                         base_timeout, min(base_timeout * (2 ** attempt), 900),
                     ),
                     headers={
                         **({"Authorization": f"Bearer {token}"} if token else {}),
                         **({"x-litellm-timeout": str(base_timeout),
-                            "x-litellm-stream-timeout": str(base_timeout)} if long_summary else {}),
+                            "x-litellm-stream-timeout": str(base_timeout)}
+                        if buffered_summary else {}),
                     },
                     json={
                         **template_options,
                         **({"thinking_token_budget": thinking_budget}
                            if thinking_budget is not None else {}),
                         **({"stream": True, "stream_options": {"include_usage": True}}
-                           if long_summary else {}),
+                           if buffered_summary else {}),
                         **({"response_format": response_format} if response_format else {}),
                         "model": route.model,
                         "temperature": 0.1,
@@ -353,7 +355,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 break
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise InferenceError("Invalid LLM response") from exc
-        maximum_characters = MAX_SUMMARY_CHARACTERS if long_summary else 60000
+        maximum_characters = MAX_SUMMARY_CHARACTERS if buffered_summary else 60000
         if not isinstance(text, str) or not text.strip() or len(text) > maximum_characters:
             raise InferenceError("Invalid LLM response")
         return text.strip()
@@ -780,6 +782,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
 
     async def _summary_generate(
         self, task, evidence, sources, *, compact_references, output_tokens=None,
+        buffered_summary_stream=False,
     ):
         # Long consolidations need not make the model reproduce dozens of 36-character
         # UUIDs. Short per-request keys reduce copying errors and output-token overhead;
@@ -789,7 +792,10 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         summary_inference = self.for_task("summary")
         answer = (
             await summary_inference.generate(task, evidence) if output_tokens is None else
-            await summary_inference._generate(task, evidence, SUMMARY_SYSTEM, output_tokens)
+            await summary_inference._generate(
+                task, evidence, SUMMARY_SYSTEM, output_tokens,
+                buffered_summary_stream=buffered_summary_stream,
+            )
         )
         if not originals:
             return answer
@@ -830,6 +836,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 answer = await self._summary_generate(
                     task + repair, evidence, original_sources, compact_references=True,
                     output_tokens=OUTPUT_BUDGET,
+                    buffered_summary_stream=True,
                 )
                 try:
                     edited = validate_edit(answer, original_sources, draft)

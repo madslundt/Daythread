@@ -1,6 +1,7 @@
 """Whole-draft coherence edits remain bounded and cite complete original speech."""
 
 import json
+import re
 from uuid import uuid4
 
 import httpx
@@ -18,6 +19,7 @@ from omi_local.summary_coherence import (
 from omi_local.summary_coherence import (
     request as build_request,
 )
+from omi_local.summary_speaker_evidence import source_prompt_pieces
 
 
 @pytest.fixture
@@ -55,11 +57,17 @@ def test_complete_request_includes_full_originals_draft_speaker_evidence_and_pre
     )
     payload = json.loads(evidence)
     assert reason is None and size < MAX_RENDERED_CHARACTERS
-    original_block = payload["original_sources"][0]["original_transcript_block"]
-    assert original_block.startswith(f"[{source_id}]")
-    assert source["text"] in original_block
-    assert '"owner":"speaker_1"' in original_block
-    assert '"attribution":"unknown"' in original_block
+    original_blocks = [row["original_transcript_block"]
+                       for row in payload["original_sources"]]
+    assert all(block.startswith(f"[{source_id}]") for block in original_blocks)
+    speech = []
+    for block in original_blocks:
+        rendered = re.search(r'(\{"speakers".*\})$', block, re.DOTALL)
+        assert rendered
+        speech.extend(json.loads(rendered.group(1))["speech"])
+    assert "".join(block["text"] for block in speech) == source["text"]
+    assert any(block.get("speaker") == "speaker_1" for block in speech)
+    assert any(block.get("attribution") == "unknown" for block in speech)
     assert payload["completed_draft"] == draft
     assert "metadata-is-not-fed-to-the-model" not in evidence
     assert "chosen template" in task
@@ -103,23 +111,37 @@ def test_no_content_and_oversized_complete_evidence_have_explicit_skip_reasons()
 
 
 def test_full_speaker_rendering_counts_against_character_bound_without_truncation():
-    source_id, speaker_id = str(uuid4()), str(uuid4())
-    text = "word " * 17_000
+    source_id = str(uuid4())
+    owners = [str(uuid4()), str(uuid4())]
+    words = 3000
+    text = "word " * words
+    evidence = []
+    for index in range(words):
+        start = index * 5
+        evidence.append({
+            "source_id": source_id,
+            "text": "word",
+            "start_offset": start,
+            "end_offset": start + 4,
+            "attribution": "attributed",
+            "speaker_id": owners[index % 2],
+            "speaker_label": "A" if index % 2 == 0 else "B",
+        })
     source = {
         "id": source_id,
         "text": text,
-        "speaker_evidence": [{
-            "source_id": source_id,
-            "text": text,
-            "start_offset": 0,
-            "end_offset": len(text),
-            "attribution": "attributed",
-            "speaker_id": speaker_id,
-            "speaker_label": "A",
-        }],
+        "speaker_evidence": evidence,
     }
     draft = f"## Topic\nA supported draft [{source_id}]"
     task, evidence, size, reason = build_request([source], draft, "A recap", "en")
+    raw_block = source_prompt_pieces(
+        {"id": source_id, "text": text, "speaker_evidence": source["speaker_evidence"]},
+        Inference._speaker_evidence_window, max_chars=MAX_RENDERED_CHARACTERS,
+    )
+    raw_characters = len(text) + len(draft)
+    rendered_characters = sum(len(piece.content) for piece in raw_block)
+    assert raw_characters < MAX_RENDERED_CHARACTERS
+    assert rendered_characters > MAX_RENDERED_CHARACTERS
     assert reason == "input_over_budget" and size > 0
     assert task == evidence == ""  # Rendered owner blocks count; no source text is clipped.
 
@@ -183,6 +205,77 @@ async def test_invalid_repair_fails_closed_instead_of_publishing_bad_edit(tmp_pa
                 f"## Topic\nDraft [{source_id}]", "A concise recap.",
             )
     assert len(calls) == 2
+
+
+def _sse(value):
+    return "data: " + json.dumps(value) + "\n\n"
+
+
+@pytest.mark.anyio
+async def test_coherence_uses_bounded_buffered_sse_with_usage_and_progress(tmp_path, monkeypatch):
+    source_id = str(uuid4())
+    output = f"## Topic\nA supported conclusion [{source_id}]"
+    requests, events, usage = [], [], []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=(
+            _sse({"choices": [{"index": 0, "delta": {"reasoning_content": "private"},
+                               "finish_reason": None}]})
+            + _sse({"choices": [{"index": 0, "delta": {"content": output},
+                               "finish_reason": "stop"}]})
+            + _sse({"choices": [], "usage": {"prompt_tokens": 91,
+                                                "completion_tokens": 17}})
+            + "data: [DONE]\n\n"
+        ))
+
+    monkeypatch.setattr("omi_local.completion_stream.generation_event",
+                        lambda **event: events.append(event))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(Settings(
+            data_dir=tmp_path, summary_language="en", llm_enable_thinking=True, _env_file=None,
+        ), client)
+        inference.usage_recorder = usage.append
+        result, trace = await inference.cohere_completed_summary(
+            [{"id": source_id, "text": "The original supports the conclusion."}],
+            f"## Topic\nA draft [{source_id}]", "A concise recap.",
+        )
+
+    body = requests[0]
+    assert body["stream"] is True
+    assert body["stream_options"] == {"include_usage": True}
+    assert body["max_tokens"] == 8000
+    assert body["chat_template_kwargs"]["enable_thinking"] is True
+    assert result == output and len(result) < 24_000
+    assert trace["model_calls"] == 1
+    assert usage[-1]["outcome"] == "succeeded"
+    assert usage[-1]["input_tokens"] == 91 and usage[-1]["output_tokens"] == 17
+    assert any(event.get("content_characters") == len(output) for event in events)
+    assert any(event.get("reasoning_characters") == len("private") for event in events)
+    assert events[-1]["finished"] is True
+    assert "private" not in result
+
+
+@pytest.mark.anyio
+async def test_malformed_coherence_sse_fails_closed_after_partial_content(tmp_path):
+    source_id = str(uuid4())
+
+    def handler(_request):
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=(
+            _sse({"choices": [{"index": 0, "delta": {"content": "Partial"},
+                               "finish_reason": None}]})
+            + _sse({"error": {"message": "provider stopped"}})
+            + "data: [DONE]\n\n"
+        ))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
+        with pytest.raises(InferenceError, match="Invalid LLM response"):
+            await inference.cohere_completed_summary(
+                [{"id": source_id, "text": "Original."}],
+                f"## Topic\nDraft [{source_id}]", "A concise recap.",
+            )
 
 
 @pytest.mark.anyio

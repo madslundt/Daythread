@@ -83,6 +83,32 @@ def test_untimed_canonical_word_stays_in_match_sequence_and_unknown_count():
     assert result["compared_word_count"] == 5
 
 
+def test_one_exact_fragment_spanning_multiple_lexical_tokens_is_untimed():
+    text = "alpha beta-gamma delta epsilon zeta"
+    matches = list(TOKEN.finditer(text))
+    word_anchors = [
+        {"start": index * 0.5, "end": index * 0.5 + 0.4,
+         "start_offset": token.start(),
+         "end_offset": token.end(), "text": token.group(), "kind": "word"}
+        for index, token in enumerate(matches) if index not in {1, 2}
+    ]
+    word_anchors.insert(1, {
+        "start": 0.5, "end": 1.4, "start_offset": matches[1].start(),
+        "end_offset": matches[2].end(), "text": "beta-gamma", "kind": "word",
+    })
+    result = evaluate_word_speakers(
+        text, word_anchors, [{"start": 0, "end": 6, "speaker": "A"}],
+        [utterance(0, 6, "R1", text)],
+        duration_seconds=6, reference_time_unit="seconds",
+    )
+    assert result["canonical_word_count"] == 6
+    assert result["unsupported_multiword_anchor_count"] == 1
+    assert result["unsupported_multiword_word_count"] == 2
+    assert result["untimed_word_count"] == 2
+    assert result["matched_reference_token_count"] == 6
+    assert result["compared_word_count"] == 4
+
+
 def test_overlapping_turns_make_word_unknown_instead_of_choosing_one():
     text = "alpha beta gamma delta epsilon zeta"
     result = evaluate_word_speakers(
@@ -145,6 +171,7 @@ def test_cli_requires_explicit_units_and_emits_no_transcript_text(tmp_path, monk
         "turns": [{"start": 0, "end": 6, "speaker": "A"}],
         "reference_utterances": [utterance(0, 6, "R1", text)],
         "duration_seconds": 6,
+        "provenance": {"source_revision": "fixture-revision"},
     }
     input_path, output_path = tmp_path / "input.json", tmp_path / "out.json"
     input_path.write_text(json.dumps(payload))
@@ -154,7 +181,9 @@ def test_cli_requires_explicit_units_and_emits_no_transcript_text(tmp_path, monk
     assert main() == 0
     rendered = output_path.read_text()
     assert text not in rendered
-    assert json.loads(rendered)["compared_word_count"] == 6
+    output = json.loads(rendered)
+    assert output["compared_word_count"] == 6
+    assert output["provenance"] == payload["provenance"]
 
 
 @pytest.mark.parametrize("bad_anchor", [

@@ -99,7 +99,7 @@ def test_recording_worker_uses_only_its_own_alignment_switch(
         assert json.loads(row["word_segments"]) == []
 
 
-def test_recording_fingerprint_preserves_previous_effective_alignment_identity():
+def test_recording_fingerprint_v3_uses_independent_alignment_switches():
     settings = Settings(
         recording_transcription_expected_model_sha256="a" * 64,
         recording_transcription_expected_model_snapshot="model-r1",
@@ -109,7 +109,7 @@ def test_recording_fingerprint_preserves_previous_effective_alignment_identity()
         _env_file=None,
     )
     legacy_values = {
-        "pipeline": "whisper-cpp-full-recording-v2-cli-beam5",
+        "pipeline": "whisper-cpp-full-recording-v3-cli-beam5-maxlen-unlimited",
         "endpoint": settings.recording_transcription_base_url,
         "model": "whisper",
         "model_sha256": settings.recording_transcription_expected_model_sha256,
@@ -117,7 +117,8 @@ def test_recording_fingerprint_preserves_previous_effective_alignment_identity()
         "runtime_commit": settings.recording_transcription_expected_runtime_commit,
         "decoding": {
             "model": "whisper", "response_format": "verbose_json", "language": "auto",
-            "max_context": "0", "beam_size": "5", "best_of": "5", "temperature": "0",
+            "max_context": "0", "max_len": "-1", "beam_size": "5", "best_of": "5",
+            "temperature": "0",
             "temperature_inc": "0.2", "carry_initial_prompt": "false", "translate": "false",
             "no_timestamps": "false",
         },
@@ -135,7 +136,8 @@ def test_recording_fingerprint_preserves_previous_effective_alignment_identity()
     ).hexdigest()
     assert pipeline_fingerprint(settings) == old_effective_fingerprint
 
-    settings.recording_transcription_alignment_enabled = False
-    disabled_fingerprint = pipeline_fingerprint(settings)
+    enabled_fingerprint = pipeline_fingerprint(settings)
     settings.alignment_enabled = True
-    assert pipeline_fingerprint(settings) == disabled_fingerprint
+    assert pipeline_fingerprint(settings) == enabled_fingerprint
+    settings.recording_transcription_alignment_enabled = False
+    assert pipeline_fingerprint(settings) != enabled_fingerprint

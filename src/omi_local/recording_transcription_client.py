@@ -15,7 +15,7 @@ SPOOL_DIR = ".recording-transcription-spool"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 DECODING_FIELDS = {
     "model": "whisper", "response_format": "verbose_json", "language": "auto",
-    "max_context": "0", "beam_size": "5", "best_of": "5",
+    "max_context": "0", "max_len": "-1", "beam_size": "5", "best_of": "5",
     "temperature": "0", "temperature_inc": "0.2",
     "carry_initial_prompt": "false", "translate": "false", "no_timestamps": "false",
 }
@@ -138,7 +138,7 @@ def _validate_response(headers, payload, settings, duration):
             or not math.isfinite(start)
             or not math.isfinite(end)
             or start < last
-            or end <= start
+            or end < start
             or start < 0
             or end > duration
             or not isinstance(part_text, str)
@@ -146,7 +146,14 @@ def _validate_response(headers, payload, settings, duration):
             raise ValueError("invalid_segments")
         last = end
         exact_join.append(part_text)
-        native.append({"start": start, "end": end, "text": part_text, "kind": "segment"})
+        segment = {"start": start, "end": end, "text": part_text, "kind": "segment"}
+        if end == start:
+            # Keep exact words and character anchors, but do not invent a usable
+            # time interval for a zero-duration native envelope.
+            segment.update(
+                start=None, end=None, timing_status="unknown_zero_duration",
+            )
+        native.append(segment)
 
     # The local CPP adapter may publish exact character anchors for its canonical
     # newline-joined serialization. Trust only those anchors when each exact slice

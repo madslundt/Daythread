@@ -95,7 +95,7 @@ def source_fingerprint(recording: Recording) -> str:
 
 def pipeline_fingerprint(settings) -> str:
     value = {
-        "pipeline": "whisper-cpp-full-recording-v2-cli-beam5",
+        "pipeline": "whisper-cpp-full-recording-v3-cli-beam5-maxlen-unlimited",
         "endpoint": settings.recording_transcription_base_url,
         "model": "whisper",
         "model_sha256": settings.recording_transcription_expected_model_sha256,

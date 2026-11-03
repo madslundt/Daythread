@@ -38,7 +38,7 @@ def test_request_uses_cli_equivalent_decoding_without_a_prompt(
     assert captured.pop("file") == b"synthetic WAV payload"
     assert {key: value.decode() for key, value in captured.items()} == {
         "model": "whisper", "response_format": "verbose_json", "language": "auto",
-        "max_context": "0", "beam_size": "5", "best_of": "5",
+        "max_context": "0", "max_len": "-1", "beam_size": "5", "best_of": "5",
         "temperature": "0", "temperature_inc": "0.2", "no_timestamps": "false",
         "carry_initial_prompt": "false", "translate": "false",
     }

@@ -3,6 +3,7 @@ import { errorMessage, post } from "./api";
 import { t } from "./i18n";
 import { ErrorState, Loading } from "./UI";
 import { useResource } from "./useResource";
+import { LiveSummaryProgress, type SummaryGenerationProgress } from "./LiveSummaryProgress";
 
 export type RedoKind = "transcripts" | "summaries";
 export type RedoBounds = { start: string | null; end: string | null; count: number };
@@ -11,6 +12,7 @@ export type RedoJob = {
   state: "queued" | "transcribing" | "summarizing" | "completed" | "failed";
   transcript_total: number; transcript_completed: number;
   summary_total: number; summary_completed: number; error: string | null;
+  progress?: SummaryGenerationProgress | null;
 };
 export type RedoAvailability = Record<RedoKind, RedoBounds> & { job: RedoJob | null };
 type RedoRequest = { kind: RedoKind; start?: string; end?: string };
@@ -43,6 +45,7 @@ export function RedoProgress({ job }: { job: RedoJob }) {
     <p className="caption">{t("{completed} of {total} days summarized", {
       completed: job.summary_completed, total: job.summary_total,
     })}</p>
+    {running(job) && job.progress ? <LiveSummaryProgress progress={job.progress} /> : null}
     {job.error ? <ErrorState message={job.error} /> : null}
   </div>;
 }
@@ -120,7 +123,7 @@ export function RedoForm({ availability, onStart }: {
 }
 
 export function RedoProcessing({ profileSelected }: { profileSelected: boolean }) {
-  const resource = useResource<RedoAvailability>(profileSelected ? "/v1/reprocessing" : null, 5000);
+  const resource = useResource<RedoAvailability>(profileSelected ? "/v1/reprocessing" : null, 2000);
   return <section aria-label={t("Redo transcripts & summaries")}>
     {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Profiles first.")}</p> : null}
     {resource.data ? <RedoForm availability={resource.data} onStart={async (body) => {

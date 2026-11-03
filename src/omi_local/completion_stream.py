@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from .generation_progress import generation_event
 from .inference_errors import InferenceError
 from .inference_usage import reported_tokens
 
@@ -66,6 +67,18 @@ async def buffered_completion(response: httpx.Response, token_usage: dict) -> ht
                     raise InferenceError("Model stream exceeds response budget")
             payload = json.loads(body)
             token_usage.update(reported_tokens(payload))
+            if isinstance(payload, dict):
+                message = (payload.get("choices") or [{}])[0].get("message", {})
+                content = message.get("content")
+                reasoning = message.get("reasoning_content", message.get("reasoning"))
+                generation_event(
+                    content_characters=len(content) if isinstance(content, str) else 0,
+                    content_bytes=len(content.encode("utf-8")) if isinstance(content, str) else 0,
+                    reasoning_characters=len(reasoning) if isinstance(reasoning, str) else 0,
+                    reasoning_bytes=len(reasoning.encode("utf-8"))
+                    if isinstance(reasoning, str) else 0,
+                    output_tokens=token_usage.get("output_tokens"), finished=True,
+                )
             return completion_response(response, payload)
         pieces, size, finished = [], 0, None
         async for raw in stream_data(
@@ -75,16 +88,19 @@ async def buffered_completion(response: httpx.Response, token_usage: dict) -> ht
             if raw == "[DONE]":
                 break
             event = json.loads(raw)
-            token_usage.update(reported_tokens(event))
+            reported = reported_tokens(event)
+            token_usage.update(reported)
             if not isinstance(event, dict) or "error" in event:
                 raise ValueError("Provider stream error")
             choices = event.get("choices", [])
             if not isinstance(choices, list):
                 raise ValueError("Invalid LLM response")
+            content_characters = reasoning_characters = content_bytes = reasoning_bytes = 0
             for choice in choices:
                 if choice.get("index", 0) != 0:
                     continue
-                delta = choice.get("delta", {}).get("content")
+                update = choice.get("delta", {})
+                delta = update.get("content")
                 if delta is not None:
                     if not isinstance(delta, str) or finished is not None:
                         raise ValueError("Invalid stream delta")
@@ -92,11 +108,22 @@ async def buffered_completion(response: httpx.Response, token_usage: dict) -> ht
                     if size > MAX_SUMMARY_CHARACTERS:
                         raise InferenceError("Invalid LLM response")
                     pieces.append(delta)
+                    content_characters += len(delta)
+                    content_bytes += len(delta.encode("utf-8"))
+                reasoning = update.get("reasoning_content", update.get("reasoning"))
+                if isinstance(reasoning, str):
+                    reasoning_characters += len(reasoning)
+                    reasoning_bytes += len(reasoning.encode("utf-8"))
                 reason = choice.get("finish_reason")
                 if reason is not None:
                     if finished is not None or reason not in {"stop", "length"}:
                         raise ValueError("Invalid LLM response")
                     finished = reason
+            generation_event(content_characters=content_characters, content_bytes=content_bytes,
+                             reasoning_characters=reasoning_characters,
+                             reasoning_bytes=reasoning_bytes,
+                             output_tokens=reported.get("output_tokens"),
+                             finished=finished is not None)
         if finished is None:
             raise ValueError("Incomplete model stream")
         # A length finish can contain only reasoning; _generate owns its bounded retry.

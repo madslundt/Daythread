@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from .blob_storage import audio_is_present
 from .domain import EvidenceChanged, stamp, utc_now
+from .generation_progress import GenerationProgress, Stage, generation_phase
 from .inference_errors import InferenceTruncated
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,7 @@ class RedoRequest(BaseModel):
 class Reprocessing:
     def __init__(self, memory):
         self.memory, self.store = memory, memory.store
+        self._progress: tuple[str, GenerationProgress] | None = None
         with self.store.connect() as db:
             db.executescript(SCHEMA)
 
@@ -76,6 +79,7 @@ class Reprocessing:
     def public_job(self, db, row):
         if row is None:
             return None
+        progress = self._progress
         sources = db.execute(
             "SELECT a.state FROM reprocessing_sources r LEFT JOIN audio a ON a.id=r.source_id "
             "WHERE r.job_id=?", (row["id"],),
@@ -86,7 +90,21 @@ class Reprocessing:
             "transcript_completed": sum(source["state"] == "done" for source in sources),
             "summary_total": len(json.loads(row["days"])),
             "summary_completed": len(json.loads(row["completed_days"])),
+            "progress": progress[1].snapshot() if progress
+            and progress[0] == row["id"]
+            and row["state"] in {"queued", "transcribing", "summarizing"} else None,
         }
+
+    @contextmanager
+    def _track_progress(self, job_id: str, stage: Stage, day: str):
+        progress = GenerationProgress(stage, day)
+        self._progress = (job_id, progress)
+        try:
+            with generation_phase(progress):
+                yield
+        finally:
+            if self._progress and self._progress[1] is progress:
+                self._progress = None
 
     def observation(self):
         with self.store.connect() as db:
@@ -197,17 +215,22 @@ class Reprocessing:
                 if any(not group.ready and any(source["text"] for source in group.sources)
                        for group in groups):
                     return False  # Wait for complete conversation evidence before inference.
-                await self.memory.recap(day, force=True)
+                with self._track_progress(row["id"], "daily_summary", target):
+                    await self.memory.recap(day, force=True)
                 if pending[0] in json.loads(row["overview_days"]):
                     from .day_overview import DayOverview
                     stage = "day overview"
-                    await DayOverview(self.memory).generate(day, force=True)
+                    with self._track_progress(row["id"], "day_overview", target):
+                        await DayOverview(self.memory).generate(day, force=True)
                 completed.append(pending[0])
             if len(pending) <= 1:
                 from .weekly_overview import WeekOverview
                 for week in json.loads(row["overview_weeks"]):
                     stage, target = "week overview", week
-                    await WeekOverview(self.memory).generate(date.fromisoformat(week), force=True)
+                    with self._track_progress(row["id"], "week_overview", target):
+                        await WeekOverview(self.memory).generate(
+                            date.fromisoformat(week), force=True,
+                        )
             with self.store.connect() as db:
                 db.execute(
                     "UPDATE reprocessing_jobs SET state=?,completed_days=?,error=NULL WHERE id=?",

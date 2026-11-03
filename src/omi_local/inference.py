@@ -18,6 +18,7 @@ from .chat_context import (
 )
 from .completion_stream import MAX_SUMMARY_CHARACTERS, buffered_completion, stream_data
 from .domain import stamp, utc_now, wav_duration
+from .generation_progress import generation_request
 from .inference_errors import (
     InferenceDisabled,
     InferenceError,
@@ -291,38 +292,40 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         )
         for attempt, (budget, template_options) in enumerate(attempts):
             budget = generation_tokens(task, evidence, system, budget)
-            response = await self.post(
-                "llm",
-                f"{route.base_url}/chat/completions",
-                _usage_task=usage_task,
-                _buffered_stream=long_summary,
-                _timeout_seconds=base_timeout if long_summary else max(
-                    base_timeout, min(base_timeout * (2 ** attempt), 900),
-                ),
-                headers={
-                    **({"Authorization": f"Bearer {token}"} if token else {}),
-                    **({"x-litellm-timeout": str(base_timeout),
-                        "x-litellm-stream-timeout": str(base_timeout)} if long_summary else {}),
-                },
-                json={
-                    **template_options,
-                    **({"stream": True, "stream_options": {"include_usage": True}}
-                       if long_summary else {}),
-                    **({"response_format": response_format} if response_format else {}),
-                    "model": route.model,
-                    "temperature": 0.1,
-                    "max_tokens": budget,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {
-                            "role": "user",
-                            "content": json.dumps(
-                                {"task": task, "evidence": evidence}, ensure_ascii=False
-                            ),
-                        },
-                    ],
-                },
-            )
+            thinking = template_options.get("chat_template_kwargs", {}).get("enable_thinking")
+            with generation_request(budget, thinking):
+                response = await self.post(
+                    "llm",
+                    f"{route.base_url}/chat/completions",
+                    _usage_task=usage_task,
+                    _buffered_stream=long_summary,
+                    _timeout_seconds=base_timeout if long_summary else max(
+                        base_timeout, min(base_timeout * (2 ** attempt), 900),
+                    ),
+                    headers={
+                        **({"Authorization": f"Bearer {token}"} if token else {}),
+                        **({"x-litellm-timeout": str(base_timeout),
+                            "x-litellm-stream-timeout": str(base_timeout)} if long_summary else {}),
+                    },
+                    json={
+                        **template_options,
+                        **({"stream": True, "stream_options": {"include_usage": True}}
+                           if long_summary else {}),
+                        **({"response_format": response_format} if response_format else {}),
+                        "model": route.model,
+                        "temperature": 0.1,
+                        "max_tokens": budget,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {
+                                "role": "user",
+                                "content": json.dumps(
+                                    {"task": task, "evidence": evidence}, ensure_ascii=False
+                                ),
+                            },
+                        ],
+                    },
+                )
             try:
                 choice = response.json()["choices"][0]
                 if choice.get("finish_reason") == "length":

@@ -42,7 +42,7 @@ from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
-COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v3"
+COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v4"
 COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT = 64_000
 SOURCE_UUID_PATTERN = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 
@@ -600,6 +600,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         task = (
             f"Create {purpose}. Preserve useful supported details and source UUID citations. "
             "Use concise Markdown. Follow the requested organization. "
+            "Every factual paragraph and list item must cite the allowed UUID in square "
+            "brackets; headings need no citation. "
             "Do not force category sections; omit empty sections and statements that "
             "nothing was recorded for a category. "
             + summary_language_instruction(inference.settings.summary_language)
@@ -679,7 +681,8 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 repaired = await inference._summary_generate(
                     task + " The previous draft failed citation or required-format validation. "
                     "Recreate the summary from the complete evidence, copying the one allowed "
-                    "source UUID exactly in square brackets. Omit any unsupported claim."
+                    "source UUID exactly in square brackets in every factual paragraph and list "
+                    "item. Headings need no citation. Omit any unsupported claim."
                     + heading_requirement,
                     evidence, allowed_sources, compact_references=True,
                     output_tokens=SUMMARY_OUTPUT_TOKENS, buffered_summary_stream=True,

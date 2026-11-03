@@ -450,9 +450,11 @@ async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
         requests.append(body)
         task = json.loads(body["messages"][1]["content"])["task"]
         if len(requests) == 1:
+            assert "Every factual paragraph and list item must cite the allowed source ID" in task
             return completion(invalid_output)
         assert "previous draft" in task
         assert "[src_1]" in task
+        assert "Every factual paragraph and list item must cite the allowed source ID" in task
         return completion(output.replace(source_id, "src_1"))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:

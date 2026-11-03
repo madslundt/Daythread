@@ -16,7 +16,9 @@ from .summary_filter import NO_CONTENT
 from .summary_speaker_evidence import source_prompt_pieces
 
 VERSION = "whole-original-coherence-v1"
-INPUT_BUDGET = 80_000
+MAX_RENDERED_CHARACTERS = 100_000
+# request_tokens is a conservative UTF-8 byte-level upper bound, not a tokenizer receipt.
+MAX_INPUT_TOKEN_ESTIMATE = 120_000
 OUTPUT_BUDGET = 8_000
 MAX_OUTPUT_CHARACTERS = 24_000
 
@@ -71,7 +73,7 @@ def request(
             pieces = source_prompt_pieces(
                 safe_source,
                 speaker_window or Inference._speaker_evidence_window,
-                max_chars=INPUT_BUDGET,
+                max_chars=MAX_RENDERED_CHARACTERS,
             )
         except (TypeError, ValueError):
             return "", "", 0, "source_evidence_unrenderable"
@@ -101,7 +103,11 @@ def request(
         {"original_sources": rows, "completed_draft": draft}, ensure_ascii=False,
     )
     size = request_tokens(task, payload, SUMMARY_SYSTEM)
-    if size > INPUT_BUDGET:
+    # Character and token budgets are separate: the first prevents unexpectedly large
+    # rendered payloads, while the second estimates model context use. Never truncate either.
+    rendered_characters = len(task) + len(payload) + len(SUMMARY_SYSTEM)
+    if (rendered_characters > MAX_RENDERED_CHARACTERS
+            or size > MAX_INPUT_TOKEN_ESTIMATE):
         return "", "", size, "input_over_budget"
     return task, payload, size, None
 

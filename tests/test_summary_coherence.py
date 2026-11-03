@@ -9,8 +9,8 @@ import pytest
 from omi_local.inference import Inference, InferenceError
 from omi_local.settings import Settings
 from omi_local.summary_coherence import (
-    INPUT_BUDGET,
     MAX_OUTPUT_CHARACTERS,
+    MAX_RENDERED_CHARACTERS,
     NO_CONTENT,
     CoherenceValidationError,
     validate_edit,
@@ -54,7 +54,7 @@ def test_complete_request_includes_full_originals_draft_speaker_evidence_and_pre
         [source], draft, "A short diary recap using the chosen template.", "en",
     )
     payload = json.loads(evidence)
-    assert reason is None and size < INPUT_BUDGET
+    assert reason is None and size < MAX_RENDERED_CHARACTERS
     original_block = payload["original_sources"][0]["original_transcript_block"]
     assert original_block.startswith(f"[{source_id}]")
     assert source["text"] in original_block
@@ -95,11 +95,33 @@ def test_no_content_and_oversized_complete_evidence_have_explicit_skip_reasons()
     assert validate_edit(NO_CONTENT, [{"id": source_id, "text": "Original"}],
                          f"## Topic\nDraft [{source_id}]") == NO_CONTENT
     task, evidence, size, reason = build_request(
-        [{"id": source_id, "text": "x" * INPUT_BUDGET}],
+        [{"id": source_id, "text": "x" * MAX_RENDERED_CHARACTERS}],
         f"## Topic\nDraft [{source_id}]", "A recap", "en",
     )
-    assert reason == "input_over_budget" and size > INPUT_BUDGET
+    assert reason == "input_over_budget" and size > 0
     assert task == evidence == ""  # Oversized originals were refused, not clipped.
+
+
+def test_full_speaker_rendering_counts_against_character_bound_without_truncation():
+    source_id, speaker_id = str(uuid4()), str(uuid4())
+    text = "word " * 17_000
+    source = {
+        "id": source_id,
+        "text": text,
+        "speaker_evidence": [{
+            "source_id": source_id,
+            "text": text,
+            "start_offset": 0,
+            "end_offset": len(text),
+            "attribution": "attributed",
+            "speaker_id": speaker_id,
+            "speaker_label": "A",
+        }],
+    }
+    draft = f"## Topic\nA supported draft [{source_id}]"
+    task, evidence, size, reason = build_request([source], draft, "A recap", "en")
+    assert reason == "input_over_budget" and size > 0
+    assert task == evidence == ""  # Rendered owner blocks count; no source text is clipped.
 
 
 @pytest.mark.anyio
@@ -175,7 +197,7 @@ async def test_large_evidence_and_no_content_skip_without_calling_model(tmp_path
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         inference = Inference(Settings(data_dir=tmp_path, _env_file=None), client)
         draft = f"## Topic\nSupported fact [{source_id}]"
-        large = [{"id": source_id, "text": "complete " * INPUT_BUDGET}]
+        large = [{"id": source_id, "text": "complete " * MAX_RENDERED_CHARACTERS}]
         retained, trace = await inference.cohere_completed_summary(large, draft, "A recap")
         empty, empty_trace = await inference.cohere_completed_summary([], draft, "A recap")
         sentinel, sentinel_trace = await inference.cohere_completed_summary(

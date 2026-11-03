@@ -151,6 +151,8 @@ DESCRIPTIONS = {
     "HTTPS endpoints are supported. Hosted providers receive the audio sent for transcription.",
     "recording_transcription_enabled": "Run an optional exact whole-file pass for complete manual "
     "uploads. It leaves canonical per-source transcripts, search and summaries unchanged.",
+    "recording_transcription_alignment_enabled": "Add optional word timings to the whole-recording "
+        "transcript using native segment envelopes. Independent from normal chunk alignment.",
     "recording_transcription_base_url": "Private local Whisper.cpp endpoint including /v1.",
     "recording_transcription_api_key": "Private sidecar credential. Empty inherits the configured "
     "STT route credential.",
@@ -297,6 +299,7 @@ def descriptors() -> list[dict]:
             "diarization_base_url": "Speaker service address",
             "diarization_timeout_seconds": "Speaker detection timeout (seconds)",
             "alignment_enabled": "Enable word timings",
+            "recording_transcription_alignment_enabled": "Align whole-recording transcript",
             "alignment_base_url": "Alignment service address",
             "alignment_timeout_seconds": "Word alignment timeout (seconds)",
             "alignment_language": "Word alignment language",

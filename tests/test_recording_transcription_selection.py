@@ -49,7 +49,7 @@ def test_exact_historical_transcript_withholds_current_audio_after_pipeline_chan
     assert current.json()["state"] == "ready"
     assert current.json()["audio_available"] is True
 
-    memory.settings.alignment_enabled = True
+    memory.settings.recording_transcription_alignment_enabled = True
     stale = client.get(f"/v1/recordings/{rid}/transcriptions/{version}")
     assert stale.status_code == 200
     assert stale.json()["state"] == "stale"

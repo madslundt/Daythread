@@ -38,6 +38,7 @@
 "A nonempty calibration/test manifest is required" = "A nonempty calibration/test manifest is required";
 "A profile with this name already exists" = "A profile with this name already exists";
 "A receipt confirms that chunk arrived. It does not prove continuous capture or a connected pendant." = "A receipt confirms that chunk arrived. It does not prove continuous capture or a connected pendant.";
+"Add optional word timings to the whole-recording transcript using native segment envelopes. Independent from normal chunk alignment." = "Add optional word timings to the whole-recording transcript using native segment envelopes. Independent from normal chunk alignment.";
 "A recorded statement must contain text" = "A recorded statement must contain text";
 "A revised choice cannot change its historical state" = "A revised choice cannot change its historical state";
 "A revision must follow its predecessor in capture time" = "A revision must follow its predecessor in capture time";
@@ -3047,6 +3048,7 @@
 "Enable the audio worker before redoing transcripts" = "Enable the audio worker before redoing transcripts";
 "Summary generation failed; check model settings and redo again" = "Summary generation failed; check model settings and redo again";
 "Alignment service address" = "Alignment service address";
+"Align whole-recording transcript" = "Align whole-recording transcript";
 "Enable word timings" = "Enable word timings";
 "Word alignment language" = "Word alignment language";
 "Word alignment timeout (seconds)" = "Word alignment timeout (seconds)";

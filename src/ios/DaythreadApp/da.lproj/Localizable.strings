@@ -38,6 +38,7 @@
 "A nonempty calibration/test manifest is required" = "En ikke-tom kalibrerings-/testliste er påkrævet.";
 "A profile with this name already exists" = "Der findes allerede en profil med dette navn.";
 "A receipt confirms that chunk arrived. It does not prove continuous capture or a connected pendant." = "En kvittering bekræfter, at stykket ankom. Det beviser ikke kontinuerlig optagelse eller et forbundet vedhæng.";
+"Add optional word timings to the whole-recording transcript using native segment envelopes. Independent from normal chunk alignment." = "Tilføj valgfri ordtiming til transskriptionen af hele optagelsen ved hjælp af de oprindelige segmenter. Uafhængigt af almindelig justering af lyddele.";
 "A recorded statement must contain text" = "En optaget erklæring skal indeholde tekst.";
 "A revised choice cannot change its historical state" = "Et revideret valg kan ikke ændre dets historiske tilstand.";
 "A revision must follow its predecessor in capture time" = "En revisions optagetidspunkt skal ligge efter forgængerens.";
@@ -3047,6 +3048,7 @@
 "Enable the audio worker before redoing transcripts" = "Aktivér lydbearbejdning, før du genererer transskriptioner igen";
 "Summary generation failed; check model settings and redo again" = "Generering af resuméer mislykkedes; kontrollér modelindstillingerne, og prøv igen";
 "Alignment service address" = "Adresse til justeringstjeneste";
+"Align whole-recording transcript" = "Justér transskriptionen af hele optagelsen";
 "Enable word timings" = "Aktivér ordtidspunkter";
 "Word alignment language" = "Sprog til ordjustering";
 "Word alignment timeout (seconds)" = "Timeout for ordjustering (sekunder)";

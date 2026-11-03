@@ -38,6 +38,7 @@
 "A nonempty calibration/test manifest is required" = "Un manifeste de calibration/test non vide est requis";
 "A profile with this name already exists" = "Un profil avec ce nom existe déjà";
 "A receipt confirms that chunk arrived. It does not prove continuous capture or a connected pendant." = "Un reçu confirme que le morceau est arrivé. Il ne prouve pas la capture continue ou un pendentif connecté.";
+"Add optional word timings to the whole-recording transcript using native segment envelopes. Independent from normal chunk alignment." = "Ajoute des horodatages de mots facultatifs à la transcription complète à partir des segments natifs. Indépendant de l’alignement des segments STT habituels.";
 "A recorded statement must contain text" = "Une déclaration enregistrée doit contenir du texte";
 "A revised choice cannot change its historical state" = "Un choix révisé ne peut pas changer son état historique";
 "A revision must follow its predecessor in capture time" = "Une révision doit suivre son prédécesseur dans le temps de capture";
@@ -3045,6 +3046,7 @@
 "Enable the audio worker before redoing transcripts" = "Activez le service de traitement audio avant de régénérer les transcriptions";
 "Summary generation failed; check model settings and redo again" = "La génération des résumés a échoué ; vérifiez les paramètres du modèle et réessayez";
 "Alignment service address" = "Adresse du service d’alignement";
+"Align whole-recording transcript" = "Aligner la transcription de l’enregistrement complet";
 "Enable word timings" = "Activer les horaires des mots";
 "Word alignment language" = "Langue d’alignement des mots";
 "Word alignment timeout (seconds)" = "Délai d’alignement des mots (secondes)";

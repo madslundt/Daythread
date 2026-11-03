@@ -106,11 +106,18 @@ def pipeline_fingerprint(settings) -> str:
         "timeout_seconds": settings.recording_transcription_timeout_seconds,
         "max_seconds": settings.recording_transcription_max_seconds,
         "max_bytes": settings.recording_transcription_max_bytes,
-        "alignment_enabled": settings.alignment_enabled,
-        "alignment_base_url": settings.alignment_base_url if settings.alignment_enabled else None,
-        "alignment_language": settings.alignment_language if settings.alignment_enabled else None,
+        "alignment_enabled": settings.recording_transcription_alignment_enabled,
+        "alignment_base_url": (
+            settings.alignment_base_url
+            if settings.recording_transcription_alignment_enabled else None
+        ),
+        "alignment_language": (
+            settings.alignment_language
+            if settings.recording_transcription_alignment_enabled else None
+        ),
         "alignment_timeout_seconds": (
-            settings.alignment_timeout_seconds if settings.alignment_enabled else None
+            settings.alignment_timeout_seconds
+            if settings.recording_transcription_alignment_enabled else None
         ),
     }
     return hashlib.sha256(

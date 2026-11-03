@@ -182,6 +182,7 @@ class Settings(BaseSettings):
     stt_enhancement_timeout_seconds: float = Field(default=15, gt=0, le=60)
     stt_routes: dict[str, STTRouteOverride] = Field(default_factory=dict)
     recording_transcription_enabled: bool = False
+    recording_transcription_alignment_enabled: bool = False
     recording_transcription_base_url: str = "http://127.0.0.1:8793/v1"
     recording_transcription_api_key: SecretStr | None = None
     recording_transcription_expected_model_sha256: str = Field(

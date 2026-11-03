@@ -228,7 +228,7 @@ async def process_one(memory) -> bool:
         headers, payload = await _request(settings, path)
         text, native, provenance = _validate_response(headers, payload, settings, frames / 16000)
         words, alignment = [], {"status": "disabled", "model": None}
-        if settings.alignment_enabled and native:
+        if settings.recording_transcription_alignment_enabled and native:
             _set_state(store, rid, source, pipeline, "processing", phase="aligning")
             audio_bytes = path.read_bytes()
             try:

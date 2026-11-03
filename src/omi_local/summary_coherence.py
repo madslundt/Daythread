@@ -15,7 +15,7 @@ from .inference import (
 from .summary_filter import NO_CONTENT
 from .summary_speaker_evidence import source_prompt_pieces
 
-VERSION = "whole-original-coherence-v1"
+VERSION = "whole-original-coherence-v2-source-local-alias-clarity"
 MAX_RENDERED_CHARACTERS = 100_000
 # request_tokens is a conservative UTF-8 byte-level upper bound, not a tokenizer receipt.
 MAX_INPUT_TOKEN_ESTIMATE = 120_000
@@ -33,11 +33,17 @@ EDITOR = (
     "phrases. Preserve stated conditions, quantities and units, dates as spoken, action objects, "
     "scope, uncertainty, negation, and whether work is current, proposed, planned, underway or "
     "complete. Keep current roles/projects distinct from possible future roles/projects. Keep "
-    "anonymous speaker labels anonymous and do not assign an action from first-person wording or "
-    "a nearby turn when the original speaker evidence is unknown or overlapping. Preserve "
+    "speaker aliases source-local. Use a personal name only when the evidence includes a "
+    "reviewed speaker name; otherwise keep the alias anonymous. Do not assign an action from "
+    "first-person wording or a nearby turn when the original speaker evidence is unknown or "
+    "overlapping. Preserve "
     "independent projects and explicit personal plans. Merge repeated facts and related details "
-    "that belong together; remove uninterpretable fragments and incidental remarks without a "
-    "supported later use. There is no target topic count. Do not make claims broader than the "
+    "that belong together. Express clearly supported meaning in plain language. Do not repeat "
+    "unintelligible names, acronyms or phonetic fragments as confirmed concepts, and do not "
+    "invent replacements. Omit an unclear term when it is not consequential; if it matters, "
+    "qualify that it is unclear. Remove other uninterpretable fragments and incidental remarks "
+    "without a supported later use. There is no target topic count. Do not make claims broader "
+    "than the "
     "original, and do not omit a distinct consequential fact merely to shorten the result. "
     "Every factual paragraph must cite one or more original source UUIDs exactly as supplied. "
     "The completed draft and any of its citations are never evidence. Return only the complete "
@@ -65,7 +71,7 @@ def request(
         safe_source = {"id": key, "text": text}
         for field in (
             "reference_type", "recording_id", "speaker_evidence",
-            "speaker_evidence_origin", "canonical_text",
+            "speaker_evidence_origin", "speaker_alias_order", "canonical_text",
         ):
             if field in source:
                 safe_source[field] = source[field]

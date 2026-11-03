@@ -54,8 +54,15 @@ def _speaker_id(item: dict) -> str | None:
         return None
 
 
-def _speaker_aliases(items: list[dict]) -> dict[str, str]:
+def _speaker_aliases(items: list[dict], ordered_ids: list[str] | None = None) -> dict[str, str]:
     aliases = {}
+    for value in ordered_ids or []:
+        try:
+            speaker_id = str(UUID(value))
+        except (ValueError, TypeError):
+            continue
+        if speaker_id not in aliases:
+            aliases[speaker_id] = f"speaker_{len(aliases) + 1}"
     for item in items:
         speaker_id = _speaker_id(item)
         if speaker_id is not None and speaker_id not in aliases:
@@ -64,29 +71,24 @@ def _speaker_aliases(items: list[dict]) -> dict[str, str]:
 
 
 def _speaker_legend(items: list[dict], aliases: dict[str, str]) -> dict:
-    observations: dict[str, dict[str, set[str]]] = defaultdict(
-        lambda: {"labels": set(), "names": set()},
-    )
+    observations: dict[str, set[str]] = defaultdict(set)
     for item in items:
         if item.get("attribution") != "attributed":
             continue
         owner = aliases.get(_speaker_id(item) or "")
         if owner is None:
             continue
-        label, name = item.get("speaker_label"), item.get("speaker_name")
-        if isinstance(label, str) and label:
-            observations[owner]["labels"].add(label)
+        name = item.get("speaker_name")
+        names = observations[owner]
         if isinstance(name, str) and name:
-            observations[owner]["names"].add(name)
+            names.add(name)
 
     ids_by_alias = {alias: speaker_id for speaker_id, alias in aliases.items()}
     result = {}
-    for owner, values in observations.items():
+    for owner, names in observations.items():
         entry = {"id": ids_by_alias[owner]}
-        if len(values["labels"]) == 1:
-            entry["label"] = next(iter(values["labels"]))
-        if len(values["names"]) == 1:
-            entry["name"] = next(iter(values["names"]))
+        if len(names) == 1:
+            entry["name"] = next(iter(names))
         result[owner] = entry
     return result
 
@@ -218,12 +220,11 @@ def _render_speech_blocks(
     }
     speech = []
     for block in blocks:
-        item = {"text": block["text"]}
         if block["attribution"] == "attributed":
-            item["speaker"] = block["context"]
+            owner = block["context"]
         else:
-            item["attribution"] = block["attribution"]
-        speech.append(item)
+            owner = block["attribution"]
+        speech.append([owner, block["text"]])
     return json.dumps(
         {"speakers": speakers, "speech": speech}, ensure_ascii=False, separators=(",", ":")
     )
@@ -282,7 +283,9 @@ def source_prompt_pieces(
                     preferred_boundaries.add(local)
     full_items = speaker_window(source, origin, origin + len(text)) if actionable else []
     if actionable:
-        speaker_aliases = _speaker_aliases(full_items)
+        speaker_aliases = _speaker_aliases(
+            full_items, source.get("speaker_alias_order"),
+        )
         speaker_legend = _speaker_legend(full_items, speaker_aliases)
     else:
         speaker_legend = {}
@@ -291,9 +294,12 @@ def source_prompt_pieces(
         value = prefix
         if actionable:
             value += (
-                "\nOrdered speech blocks (join each block's text in order to reconstruct this "
-                "exact transcript window; speaker identifies an owner; unknown and overlap have "
-                "no owner): "
+                "\nOrdered speech pairs [owner, exact_text] (join the text values in order to "
+                "reconstruct this exact transcript window. The JSON speaker legend maps each "
+                "alias to its source-local speaker UUID reference and any reviewed name. The "
+                "alias and UUID do not establish a person's identity or carry across recordings. "
+                "`unknown` and "
+                "`overlap` have no single owner): "
                 + _render_speech_blocks(
                     source,
                     speaker_window,

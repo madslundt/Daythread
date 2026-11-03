@@ -22,8 +22,10 @@ from omi_local.worker import scheduled_recaps
 
 AT = datetime(2026, 10, 16, 12, tzinfo=UTC)
 ORDERED_SPEECH_MARKER = (
-    "Ordered speech blocks (join each block's text in order to reconstruct this exact transcript "
-    "window; speaker identifies an owner; unknown and overlap have no owner): "
+    "Ordered speech pairs [owner, exact_text] (join the text values in order to reconstruct "
+    "this exact transcript window. The JSON speaker legend maps each alias to its source-local "
+    "speaker UUID reference and any reviewed name. The alias and UUID do not establish a "
+    "person's identity or carry across recordings. `unknown` and `overlap` have no single owner): "
 )
 
 
@@ -200,7 +202,8 @@ def test_recording_summary_receives_current_speaker_grounded_transcript(client, 
     client.post("/v1/recaps/2026-10-16")
     prepared_sources, purpose = memory.inference.calls[0]
     assert prepared_sources[0].get("speaker_evidence") == projection["utterances"]
-    assert "anonymous machine cluster" in purpose.lower()
+    assert "aliases such as speaker_1 are anonymous clusters local to one source" in purpose.lower()
+    assert "do not repeat unintelligible names" in purpose.lower()
     assert "proposed" in purpose.lower() and "current project" in purpose.lower()
     assert "preserve names and roles mentioned in speech as third parties" in purpose.lower()
     assert "map them to an anonymous voice" in purpose.lower()
@@ -427,11 +430,11 @@ async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp
             payload for evidence in calls for payload in ordered_speech_payloads(evidence)
         ]
         alpha = next(payload for payload in topic_payloads
-                     if "".join(item["text"] for item in payload["speech"]) == left)
+                     if "".join(item[1] for item in payload["speech"]) == left)
         beta = next(payload for payload in topic_payloads
-                    if "".join(item["text"] for item in payload["speech"]) == right)
-        assert alpha["speakers"]["speaker_1"]["label"] == "A"
-        assert beta["speakers"]["speaker_1"]["label"] == "B"
+                    if "".join(item[1] for item in payload["speech"]) == right)
+        assert alpha["speakers"]["speaker_1"]["id"] == speaker_a
+        assert beta["speakers"]["speaker_2"]["id"] == speaker_b
         calls.clear()
         await inference.summarize([long_source], "faithful notes")
     assert calls
@@ -439,16 +442,16 @@ async def test_summary_transport_clips_speaker_spans_to_topic_and_8k_windows(tmp
         payload for evidence in calls for payload in ordered_speech_payloads(evidence)
     ]
     assert "".join(
-        block["text"] for payload in long_payloads for block in payload["speech"]
+        block[1] for payload in long_payloads for block in payload["speech"]
     ) == long_text
     legends = [speaker for payload in long_payloads for speaker in payload["speakers"].values()]
-    assert any(speaker["label"] == "B" for speaker in legends)
-    assert all(speaker["label"] != "A" for speaker in legends)
-    assert any(block.get("attribution") == "unknown"
+    assert {speaker["id"] for speaker in legends} == {long_speaker_b}
+    assert all("label" not in speaker for speaker in legends)
+    assert any(block[0] == "unknown"
                for payload in long_payloads for block in payload["speech"])
     assert all("start_offset" not in evidence and '"start"' not in evidence
                for evidence in calls)
-    assert any("Ordered speech blocks" in evidence for evidence in calls)
+    assert any("Ordered speech pairs" in evidence for evidence in calls)
 
 
 @pytest.mark.anyio
@@ -478,7 +481,7 @@ async def test_unknown_speaker_spans_keep_summary_filtering_and_avoid_duplicate_
     assert captured
     assert "um," not in captured[0]
     assert "we booked the ticket for Friday." in captured[0]
-    assert "Ordered speech blocks" not in captured[0]
+    assert "Ordered speech pairs" not in captured[0]
 
 
 def test_later_context_resynthesizes_all_earlier_topics_without_reusing_the_old_recap(client):

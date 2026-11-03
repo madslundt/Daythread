@@ -11,8 +11,10 @@ from omi_local.settings import Settings
 from omi_local.summary_speaker_evidence import source_prompt_pieces
 
 MARKER = (
-    "Ordered speech blocks (join each block's text in order to reconstruct this exact transcript "
-    "window; speaker identifies an owner; unknown and overlap have no owner): "
+    "Ordered speech pairs [owner, exact_text] (join the text values in order to reconstruct "
+    "this exact transcript window. The JSON speaker legend maps each alias to its source-local "
+    "speaker UUID reference and any reviewed name. The alias and UUID do not establish a "
+    "person's identity or carry across recordings. `unknown` and `overlap` have no single owner): "
 )
 
 
@@ -87,19 +89,21 @@ def test_speech_blocks_partition_exact_text_and_keep_valid_owner_identity():
 
     payload = speech_payload(pieces[0])
     speech = payload["speech"]
-    assert "".join(item["text"] for item in speech) == canonical
-    assert [(item["text"], item.get("speaker"), item.get("attribution")) for item in speech] == [
-        ("same same", "speaker_1", None),
-        (" ??? ", None, "unknown"),
-        ("same", "speaker_2", None),
-        ("🙂", None, "unknown"),
+    assert "".join(item[1] for item in speech) == canonical
+    assert speech == [
+        ["speaker_1", "same same"],
+        ["unknown", " ??? "],
+        ["speaker_2", "same"],
+        ["unknown", "🙂"],
     ]
     assert payload["speakers"] == {
-        "speaker_1": {"id": speaker_a, "label": "A", "name": "Reviewed Alice"},
-        "speaker_2": {"id": speaker_b, "label": "A", "name": "Reviewed Bob"},
+        "speaker_1": {"id": speaker_a, "name": "Reviewed Alice"},
+        "speaker_2": {"id": speaker_b, "name": "Reviewed Bob"},
     }
     assert pieces[0].content.count(speaker_a) == 1
     assert pieces[0].content.count(speaker_b) == 1
+    assert '"label"' not in pieces[0].content
+    assert "do not establish a person's identity or carry across recordings" in pieces[0].content
     assert "start_offset" not in pieces[0].content and '"start"' not in pieces[0].content
     assert source["speaker_evidence"] == original_rows
 
@@ -142,13 +146,13 @@ def test_unanchored_stale_and_wrong_source_text_stays_unknown():
     )
     pieces = source_prompt_pieces(source, Inference._speaker_evidence_window, max_chars=12_000)
     payload = speech_payload(pieces[0])
-    assert "".join(item["text"] for item in payload["speech"]) == canonical
+    assert "".join(item[1] for item in payload["speech"]) == canonical
     assert payload["speech"] == [
-        {"text": "repeat", "speaker": "speaker_1"},
-        {"text": " repeat", "attribution": "unknown"},
+        ["speaker_1", "repeat"],
+        ["unknown", " repeat"],
     ]
     assert payload["speakers"] == {
-        "speaker_1": {"id": source["speaker_evidence"][0]["speaker_id"], "label": "A"},
+        "speaker_1": {"id": source["speaker_evidence"][0]["speaker_id"]},
     }
 
 
@@ -182,7 +186,7 @@ def test_conflicting_overlap_anchors_fail_closed_and_unknown_words_break_owner_r
             max_chars=12_000,
         )[0]
     )
-    assert conflict["speech"] == [{"text": "same", "attribution": "unknown"}]
+    assert conflict["speech"] == [["unknown", "same"]]
     assert conflict["speakers"] == {}
 
     canonical = "left mystery right"
@@ -215,13 +219,10 @@ def test_conflicting_overlap_anchors_fail_closed_and_unknown_words_break_owner_r
             max_chars=12_000,
         )[0]
     )
-    assert [
-        (block["text"], block.get("speaker"), block.get("attribution"))
-        for block in payload["speech"]
-    ] == [
-        ("left", "speaker_1", None),
-        (" mystery ", None, "unknown"),
-        ("right", "speaker_1", None),
+    assert payload["speech"] == [
+        ["speaker_1", "left"],
+        ["unknown", " mystery "],
+        ["speaker_1", "right"],
     ]
 
     same_owner = str(uuid4())
@@ -256,7 +257,7 @@ def test_conflicting_overlap_anchors_fail_closed_and_unknown_words_break_owner_r
             max_chars=12_000,
         )[0]
     )
-    assert conflict_payload["speech"] == [{"text": "left right", "speaker": "speaker_1"}]
+    assert conflict_payload["speech"] == [["speaker_1", "left right"]]
     assert conflict_payload["speakers"] == {"speaker_1": {"id": same_owner}}
 
 
@@ -297,11 +298,11 @@ def test_overlap_blocks_bridge_only_safe_gaps_and_matching_candidate_context():
         )[0]
     )
     assert payload["speech"] == [
-        {"text": "left, right", "attribution": "overlap"},
-        {"text": " unknown ", "attribution": "unknown"},
-        {"text": "final", "attribution": "overlap"},
+        ["overlap", "left, right"],
+        ["unknown", " unknown "],
+        ["overlap", "final"],
     ]
-    assert "".join(item["text"] for item in payload["speech"]) == canonical
+    assert "".join(item[1] for item in payload["speech"]) == canonical
 
     changed_candidates = source_with_evidence(
         "left, right",
@@ -331,9 +332,9 @@ def test_overlap_blocks_bridge_only_safe_gaps_and_matching_candidate_context():
         )[0]
     )
     assert changed["speech"] == [
-        {"text": "left", "attribution": "overlap"},
-        {"text": ", ", "attribution": "unknown"},
-        {"text": "right", "attribution": "overlap"},
+        ["overlap", "left"],
+        ["unknown", ", "],
+        ["overlap", "right"],
     ]
 
 
@@ -376,11 +377,11 @@ def test_safe_separator_pass_consumes_full_owner_run_but_stops_at_unknown_word()
         )[0]
     )
     assert payload["speech"] == [
-        {"text": "one, two; three— four", "speaker": "speaker_1"},
-        {"text": " mystery ", "attribution": "unknown"},
-        {"text": "five, six", "speaker": "speaker_1"},
+        ["speaker_1", "one, two; three— four"],
+        ["unknown", " mystery "],
+        ["speaker_1", "five, six"],
     ]
-    assert "".join(block["text"] for block in payload["speech"]) == canonical
+    assert "".join(block[1] for block in payload["speech"]) == canonical
 
 
 @pytest.mark.anyio
@@ -441,17 +442,17 @@ async def test_ordered_blocks_fit_full_context_and_legacy_sources_keep_raw_forma
     observed_owners = {}
     for piece in pieces:
         payload = speech_payload(piece)
-        block_text = "".join(block["text"] for block in payload["speech"])
+        block_text = "".join(block[1] for block in payload["speech"])
         assert block_text == canonical[piece.start_offset : piece.end_offset]
         reconstructed.append(block_text)
         cursor = piece.start_offset
-        for block in payload["speech"]:
-            end = cursor + len(block["text"])
-            if block.get("speaker"):
+        for owner, block_text in payload["speech"]:
+            end = cursor + len(block_text)
+            if owner.startswith("speaker_"):
                 for word in words:
-                    local = block["text"].find(word)
+                    local = block_text.find(word)
                     if local >= 0:
-                        observed_owners[word] = block["speaker"]
+                        observed_owners[word] = owner
             cursor = end
     assert "".join(reconstructed) == canonical
     assert observed_owners == expected_owners
@@ -494,8 +495,8 @@ def test_recording_excerpt_uses_absolute_canonical_anchors():
     pieces = source_prompt_pieces(source, Inference._speaker_evidence_window, max_chars=12_000)
     assert len(pieces) == 1
     payload = speech_payload(pieces[0])
-    assert "".join(item["text"] for item in payload["speech"]) == excerpt
-    assert payload["speech"] == [{"text": excerpt, "speaker": "speaker_1"}]
+    assert "".join(item[1] for item in payload["speech"]) == excerpt
+    assert payload["speech"] == [["speaker_1", excerpt]]
 
 
 @pytest.mark.anyio
@@ -543,6 +544,6 @@ async def test_reduce_sends_one_canonical_text_representation(tmp_path):
     assert len(requests) == 1
     evidence = requests[0]["evidence"]
     payload = json.loads(evidence.partition(MARKER)[2])
-    assert "".join(block["text"] for block in payload["speech"]) == canonical
+    assert "".join(block[1] for block in payload["speech"]) == canonical
     assert evidence.count(canonical) == 1
     assert source_id in evidence and speaker in evidence and "Reviewed Alice" in evidence

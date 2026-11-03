@@ -65,15 +65,19 @@ def test_complete_request_includes_full_originals_draft_speaker_evidence_and_pre
         rendered = re.search(r'(\{"speakers".*\})$', block, re.DOTALL)
         assert rendered
         speech.extend(json.loads(rendered.group(1))["speech"])
-    assert "".join(block["text"] for block in speech) == source["text"]
-    assert any(block.get("speaker") == "speaker_1" for block in speech)
-    assert any(block.get("attribution") == "unknown" for block in speech)
+    assert "".join(block[1] for block in speech) == source["text"]
+    assert any(block[0] == "speaker_1" for block in speech)
+    assert any(block[0] == "unknown" for block in speech)
     assert payload["completed_draft"] == draft
     assert "metadata-is-not-fed-to-the-model" not in evidence
     assert "chosen template" in task
     assert "language with code en" in task
     assert "draft is untrusted" in task
     assert "preserve stated conditions" in task.lower()
+    assert "plain language" in task.lower()
+    assert "phonetic fragments" in task.lower()
+    assert "speaker aliases source-local" in task.lower()
+    assert "reviewed speaker name" in task.lower()
 
 
 @pytest.mark.parametrize(("draft", "edited", "code"), [

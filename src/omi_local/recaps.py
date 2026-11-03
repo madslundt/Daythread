@@ -7,7 +7,7 @@ import sqlite3
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .completion_events import publish_recap
 from .conversation_state import (
@@ -53,18 +53,50 @@ RELEVANCE = (
     "a concrete later use or meaningful personal significance. Length, repetition, speaker labels "
     "and nearby importance markers alone do not establish relevance. Never invent stakes, "
     "obligations or a connection to the owner. Do not fill a quota or create a section for every "
-    "subject hint. A short recap is better than padding. "
+    "subject hint. A short recap is better than padding. State clearly supported meaning in "
+    "plain language. Do not repeat unintelligible names, acronyms or phonetic fragments as "
+    "confirmed concepts, and do not invent replacements. Omit an unclear term when it is not "
+    "consequential; if it matters, say that it is unclear. "
 )
 BOUNDARY_NOTE = (
     "Uploaded recordings are included after transcription. Live conversations wait for the "
     "configured pause in recorded speech. Missing uploads do not count as silence. "
     "Conversation boundaries are approximate."
 )
-SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-3"
+SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-source-local-alias-4"
 
 
 def digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _speaker_alias_order(source: dict) -> list[str]:
+    """Keep numbered aliases stable when one source is split into topic excerpts."""
+    text = source.get("text")
+    if not isinstance(text, str):
+        return []
+    recording_id = source.get("recording_id")
+    ordered, seen = [], set()
+    for item in source.get("speaker_evidence", []):
+        if not isinstance(item, dict) or item.get("attribution") != "attributed":
+            continue
+        owner_matches = item.get("source_id") == source.get("id") or (
+            source.get("reference_type") == "recording_transcription"
+            and item.get("recording_id") == recording_id
+        )
+        start, end = item.get("start_offset"), item.get("end_offset")
+        if (not owner_matches or type(start) is not int or type(end) is not int
+                or not 0 <= start < end <= len(text)
+                or text[start:end] != item.get("text")):
+            continue
+        try:
+            speaker_id = str(UUID(item.get("speaker_id")))
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if speaker_id not in seen:
+            ordered.append(speaker_id)
+            seen.add(speaker_id)
+    return ordered
 
 
 def topic_sources(sources: list[dict]) -> list[dict]:
@@ -72,6 +104,7 @@ def topic_sources(sources: list[dict]) -> list[dict]:
     result = []
     for source in sources:
         text, sections = source["text"] or "", source.get("sections") or []
+        alias_order = _speaker_alias_order(source)
         for start, end, index in topic_regions(text, sections):
             subject = sections[index]["title"] if index is not None else ""
             evidence = []
@@ -90,6 +123,7 @@ def topic_sources(sources: list[dict]) -> list[dict]:
             result.append({
                 **source, "text": text[start:end], "subject_hint": subject,
                 "speaker_evidence": evidence, "speaker_evidence_origin": start,
+                "speaker_alias_order": alias_order,
                 "canonical_text": text,
             })
     return result
@@ -408,8 +442,9 @@ class Recaps:
                 "concatenated-file times. Use it only to attribute words within "
                 "those exact spans. `attribution=unknown` or `overlap` has no known owner; text "
                 "not listed in the speaker spans is also unknown. Never fill those gaps from "
-                "nearby turns or first-person wording. A label such as "
-                "Speaker A is an anonymous machine cluster, not a verified human identity. "
+                "nearby turns or first-person wording. Aliases such as speaker_1 are anonymous "
+                "clusters local to one source; they do not verify human identity or carry across "
+                "recordings. "
                 "Use a personal name to identify a speaker only when the evidence explicitly "
                 "supplies a reviewed speaker_name. Preserve names and roles mentioned in speech "
                 "as third parties; do not map them to an anonymous voice or assign them its "
@@ -583,7 +618,8 @@ class Recaps:
                 "completion or cancellation. Preserve useful unique details, original citations, "
                 "conditions, changed plans and conflicts through regrouping. "
                 "State each fact or decision only once, even when recordings repeat it. "
-                "Keep machine speaker labels anonymous; a label or first-person statement does "
+                "Keep machine speaker aliases anonymous and source-local; they do not identify "
+                "the same person across recordings. A label or first-person statement does "
                 "not establish a person's identity or ownership outside the words attributed to "
                 "that speaker. Use personal names only when they appear as reviewed speaker "
                 "names in the prepared evidence. Distinguish a person's current role and current "

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -36,6 +37,7 @@ from .recent_questions import RecentAnswer, generate_recent_answer
 from .settings import LLMTask, Settings
 from .structured_generation import JSON_SYSTEM, SUMMARY_OUTPUT_TOKENS, StructuredGeneration
 from .summary_filter import NO_CONTENT, filter_summary_sources
+from .summary_map_cache import current_summary_map_cache, summary_map_cache_scope
 from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
@@ -484,7 +486,12 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         if language != self.settings.summary_language:
             inference = copy(self)
             inference.settings = self.settings.model_copy(update={"summary_language": language})
-        return await summarize_daily(inference, sources, purpose, original_sources=original_sources)
+        async with summary_map_cache_scope() as map_cache:
+            result, trace = await summarize_daily(
+                inference, sources, purpose, original_sources=original_sources,
+            )
+        trace["map_cache_hits"] = map_cache.hits
+        return result, trace
 
     async def summarize_traced(self, sources: list[dict], purpose: str) -> tuple[str, dict]:
         trace = {"reduction_used": False, "model_calls": 0}
@@ -771,6 +778,73 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
     async def _summary_notes(
         self, evidence, allowed_sources, trace, maximum, language_instruction=None,
     ):
+        cache = current_summary_map_cache()
+        if cache is None:
+            return await self._summary_notes_uncached(
+                evidence, allowed_sources, trace, maximum, language_instruction,
+            )
+        budget = min(maximum, max(1000, len(evidence) * 2 // 3))
+        batch_sources = [source for source in allowed_sources if source["id"] in evidence]
+        batch_ids = ", ".join(source["id"] for source in batch_sources)
+        compact = self._summary_notes_prompt(budget, batch_ids, language_instruction)
+        key = self._summary_notes_cache_key(
+            compact, evidence, batch_sources, maximum, budget,
+        )
+        return await cache.get_or_create(
+            key,
+            lambda: self._summary_notes_uncached(
+                evidence, allowed_sources, trace, maximum, language_instruction,
+            ),
+        )
+
+    def _summary_notes_cache_key(self, task, evidence, sources, maximum, budget) -> str:
+        # Hash the effective rendered request identity; never retain prompts or
+        # credentials in cache keys or traces.
+        rendered_task, rendered_evidence, _ = _summary_request(
+            task, evidence, sources, compact_references=True,
+        )
+        output_budget = generation_tokens(
+            rendered_task, rendered_evidence, SUMMARY_SYSTEM, SUMMARY_OUTPUT_TOKENS,
+        )
+        route = self.settings.llm_route("summary")
+        identity = {
+            "prompt_policy": SUMMARY_REDUCTION_VERSION,
+            "system": SUMMARY_SYSTEM,
+            "task": rendered_task,
+            "evidence": rendered_evidence,
+            "allowed_source_ids": [source["id"] for source in sources],
+            "maximum": maximum,
+            "intermediate_budget": budget,
+            "route": {
+                "base_url": route.base_url,
+                "model": route.model,
+                "revision": route.revision,
+                "token_sha256": hashlib.sha256(
+                    route.token.get_secret_value().encode("utf-8")
+                ).hexdigest(),
+            },
+            "options": {
+                "enabled": self.settings.llm_enabled,
+                "template": self.llm_template_options,
+                "temperature": 0.1,
+                "max_tokens": output_budget,
+                "thinking_token_budget": (
+                    min(self.settings.llm_summary_thinking_token_budget, output_budget // 2)
+                    if self.settings.llm_enable_thinking is True
+                    and self.settings.llm_summary_thinking_token_budget is not None
+                    else None
+                ),
+                "stream": True,
+                "include_usage": True,
+                "timeout_seconds": max(self.settings.inference_timeout_seconds, 4096),
+            },
+        }
+        encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    async def _summary_notes_uncached(
+        self, evidence, allowed_sources, trace, maximum, language_instruction=None,
+    ):
         # Asking for the full final recap at every level can reproduce two notes
         # indefinitely: each fits one batch, but together they never fit the final call.
         # Two maximum-sized notes plus their newlines must fit the next
@@ -778,30 +852,7 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         budget = min(maximum, max(1000, len(evidence) * 2 // 3))
         batch_sources = [source for source in allowed_sources if source["id"] in evidence]
         batch_ids = ", ".join(source["id"] for source in batch_sources)
-        compact = (
-            "This is an intermediate reduction pass. Produce compact intermediate "
-            "evidence notes, not the final recap or its full presentation. "
-            "Do not force category sections; omit empty sections. "
-            f"Use at most {budget // 18} words and {budget} characters including citations; "
-            "aim for "
-            f"{budget * 2 // 3} characters to leave a safety margin. "
-            "Use terse factual sentences, without headings, bold text or repeated introductions. "
-            "Omit fillers, unintelligible fragments and unsupported guesses about garbled names "
-            "or abbreviations. Retain meaningful outcomes, plans, follow-ups, unresolved concerns "
-            "and useful durable information. Consolidate repeated context while preserving "
-            "distinct useful "
-            "details, dates, conditions, uncertainty and original UUID citations for each point. "
-            "Retain the short original phrases that establish whether work is proposed, "
-            "planned, underway or reported completed. Do not compress away 'looking into', "
-            "'maybe', 'in the process of', 'not yet' or the scope of a completed subtask. "
-            "Keep useful material from the beginning and end of this batch. Do not impose a "
-            "topic quota or discard a subject merely because it occurs late. The final synthesis "
-            "will organize all batches together. Cite only original source UUIDs copied exactly "
-            "from this batch; do not invent or cite any other UUID. UUIDs present in this "
-            "batch, copied exactly without shortening or changing them: " + batch_ids + "."
-            + (language_instruction if language_instruction is not None
-               else summary_language_instruction(self.settings.summary_language))
-        )
+        compact = self._summary_notes_prompt(budget, batch_ids, language_instruction)
         for attempt in range(2):
             if trace is not None:
                 trace["model_calls"] += 1
@@ -827,6 +878,32 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                         "retaining useful evidence and citations. Group related facts and "
                         "share citations where appropriate; do not repeat context.")
         raise InferenceError("The summary could not be shortened safely. Try again.")
+
+    def _summary_notes_prompt(self, budget, batch_ids, language_instruction=None):
+        return (
+            "This is an intermediate reduction pass. Produce compact intermediate "
+            "evidence notes, not the final recap or its full presentation. "
+            "Do not force category sections; omit empty sections. "
+            f"Use at most {budget // 18} words and {budget} characters including citations; "
+            "aim for "
+            f"{budget * 2 // 3} characters to leave a safety margin. "
+            "Use terse factual sentences, without headings, bold text or repeated introductions. "
+            "Omit fillers, unintelligible fragments and unsupported guesses about garbled names "
+            "or abbreviations. Retain meaningful outcomes, plans, follow-ups, unresolved concerns "
+            "and useful durable information. Consolidate repeated context while preserving "
+            "distinct useful "
+            "details, dates, conditions, uncertainty and original UUID citations for each point. "
+            "Retain the short original phrases that establish whether work is proposed, "
+            "planned, underway or reported completed. Do not compress away 'looking into', "
+            "'maybe', 'in the process of', 'not yet' or the scope of a completed subtask. "
+            "Keep useful material from the beginning and end of this batch. Do not impose a "
+            "topic quota or discard a subject merely because it occurs late. The final synthesis "
+            "will organize all batches together. Cite only original source UUIDs copied exactly "
+            "from this batch; do not invent or cite any other UUID. UUIDs present in this "
+            "batch, copied exactly without shortening or changing them: " + batch_ids + "."
+            + (language_instruction if language_instruction is not None
+               else summary_language_instruction(self.settings.summary_language))
+        )
 
     async def chat(
         self,

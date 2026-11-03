@@ -192,7 +192,7 @@ def recording_speaker_evidence(
         state = "stale" if any(s.get("state") == "stale" for s in scope_values) else "idle"
         return [], None, state
     evidence_version = hashlib.sha256(
-        json.dumps({"projection": "recording-utterances-2", "diarization": versions},
+        json.dumps({"projection": "recording-utterances-3", "diarization": versions},
                    sort_keys=True).encode(),
     ).hexdigest()
     labels, turns = {}, []
@@ -249,7 +249,16 @@ def recording_speaker_evidence(
             ]
             speaker_ids = {turn["speaker_id"] for turn in overlapping if turn["speaker_id"]}
             if len(speaker_ids) > 1:
-                evidence["attribution"] = "overlap"
+                concurrent = any(
+                    left_turn["speaker_id"] != right_turn["speaker_id"]
+                    and max(start, left_turn["start"], right_turn["start"])
+                    < min(end, left_turn["end"], right_turn["end"])
+                    for index, left_turn in enumerate(overlapping)
+                    for right_turn in overlapping[index + 1:]
+                    if left_turn["speaker_id"] and right_turn["speaker_id"]
+                )
+                if concurrent:
+                    evidence["attribution"] = "overlap"
             elif len(speaker_ids) == 1:
                 speaker_id = next(iter(speaker_ids))
                 spans = sorted((max(start, turn["start"]), min(end, turn["end"]))

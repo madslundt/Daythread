@@ -206,6 +206,127 @@ def test_recording_speaker_projection_bridges_only_same_speaker_at_part_boundary
     assert evidence[2]["attribution"] == "overlap"
     assert evidence[3]["text"] == " unknown" and evidence[3]["attribution"] == "unknown"
 
+def _project_synthetic_speaker_words(client, recording_id, ids, turns, text, word_segments):
+    memory = client.app.state.memory
+    group = next(
+        group for group in memory.recaps.groups(utc_now())
+        if {row["id"] for row in group.sources} == set(ids)
+    )
+    scope = {
+        "state": "ready",
+        "evidence_version": "synthetic-speaker-turns-v1",
+        "speakers": [
+            {"id": "a", "label": "A", "name": None},
+            {"id": "b", "label": "B", "name": None},
+        ],
+        "turns": turns,
+    }
+    memory.recaps.speaker_projection = lambda _group, db=None: {
+        source_id: scope for source_id in ids
+    }
+    variant = {
+        "text": text,
+        "source_map": [
+            {"source_id": ids[0], "start": 0.0, "end": 1.0},
+            {"source_id": ids[1], "start": 1.0, "end": 2.0},
+        ],
+        "word_segments": word_segments,
+    }
+    return memory.recaps.recording_speaker_evidence(group, recording_id, variant)
+
+
+def test_sequential_turn_transition_word_stays_unknown_and_text_provenance_is_exact(
+    app_recording,
+):
+    client, _, recording_id, ids, _, _ = app_recording
+    turns = [
+        {"source_id": ids[0], "start": 0.0, "end": 0.5, "speaker_id": "a"},
+        {"source_id": ids[0], "start": 0.5, "end": 1.0, "speaker_id": "b"},
+    ]
+    text = "before crossing after"
+    evidence, evidence_version, state = _project_synthetic_speaker_words(
+        client, recording_id, ids, turns, text,
+        [
+            {"text": "before", "start_offset": 0, "end_offset": 6,
+             "start": 0.2, "end": 0.4},
+            {"text": "crossing", "start_offset": 7, "end_offset": 15,
+             "start": 0.4, "end": 0.6},
+            {"text": "after", "start_offset": 16, "end_offset": 21,
+             "start": 0.6, "end": 0.8},
+        ],
+    )
+
+    assert state == "ready" and evidence_version
+    assert "".join(item["text"] for item in evidence) == text
+    assert [item["attribution"] for item in evidence] == [
+        "attributed", "unknown", "attributed",
+    ]
+    before, crossing, after = evidence
+    assert before["speaker_id"] == "a" and before["speaker_label"] == "A"
+    assert crossing["text"] == " crossing "
+    assert crossing["speaker_id"] is None and crossing["speaker_label"] is None
+    assert (crossing["start"], crossing["end"]) == (0.4, 0.6)
+    assert after["speaker_id"] == "b" and after["speaker_label"] == "B"
+    assert {item["source_id"] for item in evidence} == {recording_id}
+    assert before["child_source_id"] == ids[0]
+    assert crossing["child_source_id"] is None
+    assert after["child_source_id"] == ids[0]
+    assert all(item["recording_id"] == recording_id for item in evidence)
+
+
+def test_half_open_turn_boundaries_do_not_create_overlap(app_recording):
+    client, _, recording_id, ids, _, _ = app_recording
+    turns = [
+        {"source_id": ids[0], "start": 0.0, "end": 0.5, "speaker_id": "a"},
+        {"source_id": ids[0], "start": 0.5, "end": 1.0, "speaker_id": "b"},
+    ]
+    text = "left right"
+    evidence, _, state = _project_synthetic_speaker_words(
+        client, recording_id, ids, turns, text,
+        [
+            {"text": "left", "start_offset": 0, "end_offset": 4,
+             "start": 0.3, "end": 0.5},
+            {"text": "right", "start_offset": 5, "end_offset": 10,
+             "start": 0.5, "end": 0.7},
+        ],
+    )
+
+    assert state == "ready"
+    assert "".join(item["text"] for item in evidence) == text
+    assert [item["attribution"] for item in evidence] == [
+        "attributed", "unknown", "attributed",
+    ]
+    assert [item["speaker_id"] for item in evidence] == ["a", None, "b"]
+    assert [(item["start"], item["end"]) for item in evidence] == [
+        (0.3, 0.5), (None, None), (0.5, 0.7),
+    ]
+    assert [item["child_source_id"] for item in evidence] == [ids[0], None, ids[0]]
+
+
+def test_concurrent_distinct_speaker_intervals_mark_timed_word_overlap(app_recording):
+    client, _, recording_id, ids, _, _ = app_recording
+    turns = [
+        {"source_id": ids[0], "start": 0.0, "end": 0.55, "speaker_id": "a"},
+        {"source_id": ids[0], "start": 0.45, "end": 1.0, "speaker_id": "b"},
+    ]
+    text = "crossing"
+    evidence, _, state = _project_synthetic_speaker_words(
+        client, recording_id, ids, turns, text,
+        [{"text": text, "start_offset": 0, "end_offset": len(text),
+          "start": 0.4, "end": 0.6}],
+    )
+
+    assert state == "ready"
+    assert len(evidence) == 1
+    assert evidence[0]["text"] == text
+    assert evidence[0]["attribution"] == "overlap"
+    assert evidence[0]["speaker_id"] is None
+    assert (evidence[0]["start"], evidence[0]["end"]) == (0.4, 0.6)
+    assert evidence[0]["source_id"] == recording_id
+    assert evidence[0]["child_source_id"] == ids[0]
+    assert evidence[0]["recording_id"] == recording_id
+
+
 def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recording):
     client, store, rid, ids, _, _ = app_recording
     memory = client.app.state.memory

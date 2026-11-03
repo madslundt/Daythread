@@ -6,21 +6,18 @@ profile receives one READY variant without changing child audio, transcripts or 
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import math
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
-
-import httpx
 
 from .domain import stamp
 from .merged_recordings import Recording, load_recording
@@ -116,7 +113,7 @@ def validate_variant(
         raise ImportRefused("source map differs from current recording members")
     if variant.total_parts != len(recording.rows):
         raise ImportRefused("source part count differs")
-    _validate_provenance(variant, expectations)
+    _validate_provenance(variant, expectations, settings)
     _validate_segments(variant, sum(recording.frames) / 16000)
     if recording_transcription_result_version(
         current_source, current_pipeline, variant.transcript, variant.native_segments,
@@ -125,7 +122,9 @@ def validate_variant(
         raise ImportRefused("result version does not match stored content")
 
 
-def _validate_provenance(variant: QualifiedVariant, expected: ImportExpectations) -> None:
+def _validate_provenance(
+    variant: QualifiedVariant, expected: ImportExpectations, settings: Settings,
+) -> None:
     provenance = variant.provenance
     if not isinstance(provenance, dict):
         raise ImportRefused("qualified provenance is malformed")
@@ -140,6 +139,14 @@ def _validate_provenance(variant: QualifiedVariant, expected: ImportExpectations
     if any(not expected_value or provenance.get(key) != expected_value
            for key, expected_value in checks.items()):
         raise ImportRefused("qualified service provenance mismatch")
+    if (
+        expected.model_sha256 != settings.recording_transcription_expected_model_sha256
+        or expected.model_snapshot != settings.recording_transcription_expected_model_snapshot
+        or expected.runtime_commit != settings.recording_transcription_expected_runtime_commit
+    ):
+        raise ImportRefused("expected model/runtime pins differ from active settings")
+    if not settings.recording_transcription_alignment_enabled:
+        raise ImportRefused("whole-recording alignment is not enabled in active settings")
     if (not isinstance(variant.alignment_status, str)
             or variant.alignment_status not in {"aligned", "partial"}):
         raise ImportRefused("qualified variant has no usable alignment")
@@ -158,22 +165,32 @@ def _validate_segments(variant: QualifiedVariant, duration: float) -> None:
         raise ImportRefused("timing segments are malformed")
     prior_end = 0.0
     prior_native_right = 0
+    unknown_native_ranges = []
     for item in variant.native_segments:
         if (not isinstance(item, dict) or item.get("kind") != "segment"
                 or not isinstance(item.get("text"), str)):
             raise ImportRefused("native timing segment is malformed")
         start, end = item.get("start"), item.get("end")
-        if (not _number(start) or not _number(end) or start < prior_end
-                or end <= start or end > duration):
-            raise ImportRefused("native timing bounds are invalid")
-        prior_end = end
+        if start is None and end is None:
+            if item.get("timing_status") != "unknown_zero_duration":
+                raise ImportRefused("untimed native segment lacks its explicit reason")
+        else:
+            if (item.get("timing_status") == "unknown_zero_duration"
+                    or not _number(start) or not _number(end) or start < prior_end
+                    or end <= start or end > duration):
+                raise ImportRefused("native timing bounds are invalid")
+            prior_end = end
         left, right = item.get("start_offset"), item.get("end_offset")
         if left is None and right is None:
+            if start is None:
+                raise ImportRefused("untimed native segment requires exact text anchors")
             continue
         if (type(left) is not int or type(right) is not int or not 0 <= left < right
                 or left < prior_native_right or right > len(variant.transcript)
                 or variant.transcript[left:right] != item["text"]):
             raise ImportRefused("native segment text anchors are invalid")
+        if start is None:
+            unknown_native_ranges.append((left, right))
         prior_native_right = right
 
     prior_end = 0.0
@@ -187,10 +204,16 @@ def _validate_segments(variant: QualifiedVariant, duration: float) -> None:
                 or right > len(variant.transcript) or not isinstance(text, str) or not text
                 or variant.transcript[left:right] != text or left < prior_right):
             raise ImportRefused("word text anchors are invalid")
+        if any(left < native_right and right > native_left
+               for native_left, native_right in unknown_native_ranges):
+            raise ImportRefused("a word was timed inside an unknown native envelope")
         if (not _number(start) or not _number(end) or start < prior_end
                 or end <= start or end > duration):
             raise ImportRefused("word timing bounds are invalid")
         prior_right, prior_end = right, end
+    if not any(any(char.isalnum() for char in word["text"])
+               for word in variant.word_segments):
+        raise ImportRefused("qualified variant has no genuinely timed word")
 
 
 def read_qualified_variant(source_db: Path, expected: ImportExpectations) -> QualifiedVariant:
@@ -198,7 +221,7 @@ def read_qualified_variant(source_db: Path, expected: ImportExpectations) -> Qua
         raise ImportRefused("source archive database is unavailable")
     uri = source_db.resolve().as_uri() + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True) as db:
+        with closing(sqlite3.connect(uri, uri=True)) as db:
             db.row_factory = sqlite3.Row
             row = db.execute(
                 "SELECT * FROM recording_transcription_jobs WHERE recording_id=? "
@@ -271,18 +294,10 @@ def publish_variant(
         wav_sha, wav_bytes = verify_original_audio(
             target_db, recording, target_audio_dir, settings, expectations.original_wav_sha256,
         )
-        existing = target_db.execute(
-            "SELECT * FROM recording_transcription_jobs WHERE recording_id=? "
-            "AND input_fingerprint=? AND pipeline_fingerprint=?",
-            (variant.recording_id, variant.input_fingerprint, variant.pipeline_fingerprint),
-        ).fetchone()
-        if existing and existing["result_version"]:
-            if not _same_variant(dict(existing), variant):
-                raise ImportRefused("target already contains a different result version")
+        disposition, existing = target_variant_disposition(target_db, variant)
+        if disposition == "already_present":
             target_db.rollback()
             return _receipt("already_present", variant, wav_sha, wav_bytes)
-        if existing and existing["state"] == "processing":
-            raise ImportRefused("target variant is currently processing")
         now = stamp(datetime.now(UTC))
         if existing:
             if existing["state"] not in {"queued", "error", "stale", "blocked"}:
@@ -331,6 +346,28 @@ def _write_values(variant: QualifiedVariant, now: str) -> tuple:
     )
 
 
+def target_variant_disposition(
+    db: sqlite3.Connection, variant: QualifiedVariant,
+) -> tuple[str, sqlite3.Row | None]:
+    """Check whether a target key is new, safely replaceable, or already imported."""
+    existing = db.execute(
+        "SELECT * FROM recording_transcription_jobs WHERE recording_id=? "
+        "AND input_fingerprint=? AND pipeline_fingerprint=?",
+        (variant.recording_id, variant.input_fingerprint, variant.pipeline_fingerprint),
+    ).fetchone()
+    if existing is None:
+        return "new", None
+    if existing["result_version"]:
+        if not _same_variant(dict(existing), variant):
+            raise ImportRefused("target already contains a different result version")
+        return "already_present", existing
+    if existing["state"] == "processing":
+        raise ImportRefused("target variant is currently processing")
+    if existing["state"] not in {"queued", "error", "stale", "blocked"}:
+        raise ImportRefused("target has a conflicting in-progress state")
+    return "replace_pending", existing
+
+
 def _same_variant(row: dict, variant: QualifiedVariant) -> bool:
     try:
         return (
@@ -367,116 +404,7 @@ def _receipt(action: str, variant: QualifiedVariant, wav_sha: str, wav_bytes: in
     }
 
 
-def _loopback_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        raise ImportRefused("configuration URL must use local loopback HTTP")
-    return value.rstrip("/")
-
-
-def profile_directory(data_dir: Path, profile_id: str, known_profiles: set[str]) -> Path:
-    if profile_id != "default":
-        try:
-            profile_id = str(UUID(profile_id))
-        except ValueError as exc:
-            raise ImportRefused("profile ID must be default or a known UUID") from exc
-    if profile_id not in known_profiles:
-        raise ImportRefused("target profile does not exist")
-    return data_dir if profile_id == "default" else data_dir / "profiles" / profile_id
-
-
-def _load_active_configuration(api_url: str) -> tuple[Settings, Path, set[str]]:
-    api_url = _loopback_url(api_url)
-    try:
-        with httpx.Client(timeout=5, follow_redirects=False) as client:
-            config_response = client.get(f"{api_url}/v1/configuration")
-            config_response.raise_for_status()
-            config = config_response.json()
-            profiles_response = client.get(f"{api_url}/v1/profiles")
-            profiles_response.raise_for_status()
-            profiles = profiles_response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ImportRefused("local active configuration could not be read") from exc
-    if config.get("pending_restart"):
-        raise ImportRefused("active configuration has pending restart changes")
-    values = config.get("values")
-    if not isinstance(values, dict):
-        raise ImportRefused("active configuration response is malformed")
-    try:
-        settings = Settings.model_validate(values)
-        data_dir = Path(values["data_dir"]).resolve(strict=True)
-        bootstrap = Settings()
-        bootstrap_dir = bootstrap.data_dir.resolve(strict=True)
-    except Exception as exc:
-        raise ImportRefused("active local archive path or settings are unavailable") from exc
-    if bootstrap_dir != data_dir:
-        raise ImportRefused("local process archive path differs from active configuration")
-    if bootstrap.database_url is not None or bootstrap.storage_bucket:
-        raise ImportRefused("importer supports only the active local SQLite and audio store")
-    profile_ids = {item.get("id") for item in profiles.get("profiles", [])
-                   if isinstance(item, dict)}
-    return settings, data_dir, profile_ids
-
-
-def _connect_target(db_path: Path) -> sqlite3.Connection:
-    if not db_path.is_file():
-        raise ImportRefused("target profile archive database is unavailable")
-    connection = sqlite3.connect(db_path, timeout=30)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-db", type=Path, required=True, help="private archive copy DB")
-    parser.add_argument("--recording-id", required=True)
-    parser.add_argument("--result-version", required=True)
-    parser.add_argument("--expected-wav-sha256", required=True)
-    parser.add_argument("--expected-service-image-id", required=True)
-    parser.add_argument("--expected-homecompute-source-sha", required=True)
-    parser.add_argument("--expected-model-sha256", required=True)
-    parser.add_argument("--expected-model-snapshot", required=True)
-    parser.add_argument("--expected-runtime", required=True)
-    parser.add_argument("--expected-runtime-commit", required=True)
-    parser.add_argument("--expected-alignment-model", required=True)
-    parser.add_argument("--profile-id", required=True, help="default or an existing profile UUID")
-    parser.add_argument("--api-url", default="http://127.0.0.1:8787")
-    parser.add_argument(
-        "--apply", action="store_true", help="publish after full guarded validation",
-    )
-    args = parser.parse_args(argv)
-    try:
-        settings, data_dir, profiles = _load_active_configuration(args.api_url)
-        profile_root = profile_directory(data_dir, args.profile_id, profiles)
-        target_db_path = profile_root / "omi.sqlite3"
-        audio_dir = profile_root / "audio"
-        if target_db_path.resolve() == args.source_db.resolve():
-            raise ImportRefused("source archive copy must differ from target profile")
-        expected = ImportExpectations(
-            args.recording_id, args.result_version, args.expected_wav_sha256,
-            args.expected_service_image_id, args.expected_homecompute_source_sha,
-            args.expected_model_sha256, args.expected_model_snapshot, args.expected_runtime,
-            args.expected_runtime_commit, args.expected_alignment_model,
-        )
-        variant = read_qualified_variant(args.source_db, expected)
-        with _connect_target(target_db_path) as db:
-            recording = load_recording(_LocalAudioReader(audio_dir), expected.recording_id, db)
-            validate_variant(variant, recording, settings, expected)
-            wav_sha, wav_bytes = verify_original_audio(
-                db, recording, audio_dir, settings, expected.original_wav_sha256,
-            )
-            if not args.apply:
-                print(json.dumps(_receipt("dry_run_validated", variant, wav_sha, wav_bytes),
-                                 sort_keys=True))
-                return 0
-        with _connect_target(target_db_path) as db:
-            receipt = publish_variant(db, audio_dir, variant, settings, expected)
-        print(json.dumps(receipt, sort_keys=True))
-        return 0
-    except ImportRefused as exc:
-        parser.error(str(exc))
-    return 2
-
-
 if __name__ == "__main__":
+    from .recording_transcription_import_cli import main
+
     raise SystemExit(main())

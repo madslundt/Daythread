@@ -12,11 +12,12 @@ from omi_local.recording_transcription_import import (
     ImportExpectations,
     ImportRefused,
     QualifiedVariant,
-    profile_directory,
     publish_variant,
     read_qualified_variant,
+    target_variant_disposition,
     validate_variant,
 )
+from omi_local.recording_transcription_import_cli import profile_directory
 from omi_local.recording_transcription_store import (
     SCHEMA,
     pipeline_fingerprint,
@@ -32,6 +33,7 @@ def _fixture_variant(app_recording, tmp_path):
     memory.settings.recording_transcription_expected_model_sha256 = "a" * 64
     memory.settings.recording_transcription_expected_model_snapshot = "model-snapshot-r1"
     memory.settings.recording_transcription_expected_runtime_commit = "1234567890ab"
+    memory.settings.recording_transcription_alignment_enabled = True
     recording = load_recording(store, rid)
     source = source_fingerprint(recording)
     pipeline = pipeline_fingerprint(memory.settings)
@@ -132,7 +134,7 @@ def test_read_validates_ready_variant_and_import_is_idempotent(app_recording, tm
 
 @pytest.mark.parametrize(
     "case", ["wrong_recording", "wrong_result_version", "wrong_pipeline", "provenance",
-             "bad_anchor"],
+             "active_pin_mismatch", "bad_anchor", "no_timed_words"],
 )
 def test_variant_validation_rejects_changed_identity_pipeline_and_timing(
     app_recording, tmp_path, case,
@@ -152,6 +154,16 @@ def test_variant_validation_rejects_changed_identity_pipeline_and_timing(
             variant,
             provenance=variant.provenance | {"image-id": "sha256:" + "0" * 64},
         )
+    elif case == "active_pin_mismatch":
+        provenance = variant.provenance | {"model-sha256": "d" * 64}
+        version = recording_transcription_result_version(
+            variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
+            variant.native_segments, variant.word_segments, provenance,
+        )
+        candidate = replace(variant, result_version=version, provenance=provenance)
+        expected = replace(expected, result_version=version, model_sha256="d" * 64)
+    elif case == "no_timed_words":
+        candidate = replace(variant, word_segments=[])
     else:
         words = [dict(word) for word in variant.word_segments]
         words[1]["start_offset"] = 1
@@ -198,6 +210,8 @@ def test_existing_different_result_version_is_never_replaced(app_recording, tmp_
         )
     with store.connect() as db:
         with pytest.raises(ImportRefused, match="different result version"):
+            target_variant_disposition(db, variant)
+        with pytest.raises(ImportRefused, match="different result version"):
             publish_variant(db, store.audio_dir, variant, settings, expected)
         row = db.execute(
             "SELECT result_version,transcript FROM recording_transcription_jobs "
@@ -216,4 +230,58 @@ def test_profile_path_requires_explicit_known_scope(tmp_path):
         profile_directory(tmp_path, profile_id, {"default"})
     with pytest.raises(ImportRefused, match="UUID"):
         profile_directory(tmp_path, "../default", {"default"})
+
+
+def test_unknown_zero_duration_native_keeps_text_but_no_word_times(app_recording, tmp_path):
+    _client, store, rid, _ids, settings, variant, expected, _source_db = (
+        _fixture_variant(app_recording, tmp_path)
+    )
+    native = [dict(segment) for segment in variant.native_segments]
+    native[0].update(start=None, end=None, timing_status="unknown_zero_duration")
+    words = [dict(word) for word in variant.word_segments if word["start_offset"] >= 12]
+    version = recording_transcription_result_version(
+        variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
+        native, words, variant.provenance,
+    )
+    candidate = replace(variant, result_version=version, native_segments=native,
+                        word_segments=words)
+    expected = replace(expected, result_version=version)
+    validate_variant(candidate, load_recording(store, rid), settings, expected)
+    assert candidate.transcript == "Hej verden.\nIgen."
+    assert [word["text"] for word in candidate.word_segments] == ["Igen"]
+
+
+def test_word_timing_is_rejected_inside_unknown_native_envelope(app_recording, tmp_path):
+    _client, store, rid, _ids, settings, variant, expected, _source_db = (
+        _fixture_variant(app_recording, tmp_path)
+    )
+    native = [dict(segment) for segment in variant.native_segments]
+    native[0].update(start=None, end=None, timing_status="unknown_zero_duration")
+    version = recording_transcription_result_version(
+        variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
+        native, variant.word_segments, variant.provenance,
+    )
+    candidate = replace(variant, result_version=version, native_segments=native)
+    expected = replace(expected, result_version=version)
+    with pytest.raises(ImportRefused, match="unknown native envelope"):
+        validate_variant(candidate, load_recording(store, rid), settings, expected)
+
+
+@pytest.mark.parametrize("marker", [None, "other"])
+def test_null_native_times_require_explicit_zero_duration_marker(app_recording, tmp_path, marker):
+    _client, store, rid, _ids, settings, variant, expected, _source_db = (
+        _fixture_variant(app_recording, tmp_path)
+    )
+    native = [dict(segment) for segment in variant.native_segments]
+    native[0]["start"] = native[0]["end"] = None
+    if marker is not None:
+        native[0]["timing_status"] = marker
+    version = recording_transcription_result_version(
+        variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
+        native, variant.word_segments, variant.provenance,
+    )
+    candidate = replace(variant, result_version=version, native_segments=native)
+    expected = replace(expected, result_version=version)
+    with pytest.raises(ImportRefused):
+        validate_variant(candidate, load_recording(store, rid), settings, expected)
 

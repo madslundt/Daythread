@@ -110,6 +110,10 @@ export function audioUrl(id: string): string {
   return profileResourceUrl(`/v1/audio/${encodeURIComponent(id)}`);
 }
 
+export function recordingAudioUrl(id: string): string {
+  return profileResourceUrl(`/v1/recordings/${encodeURIComponent(id)}/audio`);
+}
+
 export function rewindAudioUrl(minutes: number, end: string): string {
   return profileResourceUrl(`/v1/rewind/audio?${new URLSearchParams({ minutes: String(minutes), end })}`);
 }

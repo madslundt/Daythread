@@ -7,12 +7,10 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
+from recording_transcription_helpers import pinned_settings
 
-from omi_local.api import create_app
 from omi_local.domain import stamp, utc_now
 from omi_local.merged_recordings import load_recording
-from omi_local.recording_transcription_client import _validate_response
 from omi_local.recording_transcription_store import (
     pipeline_fingerprint,
     project_words,
@@ -23,43 +21,6 @@ from omi_local.settings import Settings
 
 
 @pytest.fixture
-def app_recording(tmp_path):
-    settings = Settings(data_dir=tmp_path, worker_enabled=False, timezone="UTC", _env_file=None)
-    with TestClient(create_app(settings)) as client:
-        store = client.app.state.memory.store
-        rid, at = str(uuid4()), datetime(2026, 10, 20, 12, tzinfo=UTC)
-        ids, texts, pcm_parts = [], [], []
-        for index, text in enumerate(("First part.", "Second part.")):
-            source_id = str(uuid4())
-            pcm = bytes((index + 1, 0)) * 32000
-            audio = io.BytesIO()
-            with wave.open(audio, "wb") as wav:
-                wav.setparams((1, 2, 16000, 0, "NONE", "PCM"))
-                wav.writeframes(pcm)
-            store.ingest(
-                source_id,
-                "manual-web",
-                at + timedelta(seconds=index * 2),
-                audio.getvalue(),
-                2,
-                source_kind="manual_upload",
-                source_id="recording.wav",
-                source_metadata={"recording_id": rid, "part_index": index, "part_count": 2},
-            )
-            store.complete(source_id, text)
-            ids.append(source_id)
-            texts.append(text)
-            pcm_parts.append(pcm)
-        yield client, store, rid, ids, texts, b"".join(pcm_parts)
-
-
-def pinned_settings(memory):
-    memory.settings.recording_transcription_expected_model_sha256 = "a" * 64
-    memory.settings.recording_transcription_expected_model_snapshot = "model-r1"
-    memory.settings.recording_transcription_expected_runtime_commit = "1234567890ab"
-    memory.settings.recording_transcription_enabled = True
-
-
 def test_feature_is_opt_in_and_requires_pinned_local_sidecar():
     assert not Settings(_env_file=None).recording_transcription_enabled
     with pytest.raises(ValueError, match="pinned local model/runtime provenance"):
@@ -73,88 +34,6 @@ def test_feature_is_opt_in_and_requires_pinned_local_sidecar():
             recording_transcription_expected_runtime_commit="1234567890ab",
             _env_file=None,
         )
-
-
-def test_response_provenance_is_checked_against_exact_pinned_values(app_recording):
-    client, _, _, _, _, _ = app_recording
-    settings = client.app.state.memory.settings
-    pinned_settings(client.app.state.memory)
-    headers = {
-        "x-homecompute-stt-model-sha256": "a" * 64,
-        "x-homecompute-stt-model-snapshot": "model-r1",
-        "x-homecompute-stt-runtime-commit": "1234567890ab",
-        "x-homecompute-stt-runtime": "whisper.cpp-r1",
-    }
-    text = "Words."
-    result = _validate_response(
-        headers,
-        {"text": text, "segments": [{"start": 0, "end": 1, "text": text}]},
-        settings,
-        1,
-    )
-    assert result[0] == text and result[1][0]["start_offset"] == 0
-    with pytest.raises(ValueError, match="provenance_mismatch"):
-        _validate_response(
-            headers | {"x-homecompute-stt-model-sha256": "b" * 64},
-            {"text": text, "segments": []},
-            settings,
-            1,
-        )
-
-
-def test_response_uses_authoritative_newline_segment_anchors_without_text_search(app_recording):
-    client, _, _, _, _, _ = app_recording
-    memory = client.app.state.memory
-    pinned_settings(memory)
-    headers = {
-        "x-homecompute-stt-model-sha256": "a" * 64,
-        "x-homecompute-stt-model-snapshot": "model-r1",
-        "x-homecompute-stt-runtime-commit": "1234567890ab",
-        "x-homecompute-stt-runtime": "whisper.cpp-r1",
-    }
-    text = "  same word\n\nsame word  "
-    segments = [
-        {"start": 0.1, "end": 0.8, "text": "  same word", "start_offset": 0,
-         "end_offset": 11},
-        {"start": 1.0, "end": 1.8, "text": "same word  ", "start_offset": 13,
-         "end_offset": 24},
-    ]
-    result_text, native, _ = _validate_response(
-        headers, {"text": text, "segments": segments}, memory.settings, 2,
-    )
-    assert result_text == text
-    assert [(item["start_offset"], item["end_offset"]) for item in native] == [
-        (0, 11), (13, 24),
-    ]
-    assert all(text[item["start_offset"]:item["end_offset"]] == item["text"]
-               for item in native)
-
-
-def test_response_anchor_mismatch_keeps_canonical_text_but_disables_native_anchors(app_recording):
-    client, _, _, _, _, _ = app_recording
-    memory = client.app.state.memory
-    pinned_settings(memory)
-    headers = {
-        "x-homecompute-stt-model-sha256": "a" * 64,
-        "x-homecompute-stt-model-snapshot": "model-r1",
-        "x-homecompute-stt-runtime-commit": "1234567890ab",
-        "x-homecompute-stt-runtime": "whisper.cpp-r1",
-    }
-    text = " repeat\nrepeat "
-    _, native, _ = _validate_response(
-        headers,
-        {"text": text, "segments": [
-            {"start": 0, "end": 0.3, "text": " repeat", "start_offset": 1,
-             "end_offset": 8},
-            {"start": 0.4, "end": 0.8, "text": "repeat ", "start_offset": 9,
-             "end_offset": 16},
-        ]},
-        memory.settings,
-        1,
-    )
-    assert [(item["start_offset"], item["end_offset"]) for item in native] == [
-        (None, None), (None, None),
-    ]
 
 
 def test_projection_keeps_unknown_and_boundary_words_exactly_once():

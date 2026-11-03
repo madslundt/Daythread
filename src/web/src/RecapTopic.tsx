@@ -32,7 +32,8 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   const reportFocus = useCallback((focus?: RecapFocus) => onFocus?.(focus ? { ...focus, displayTitle: displayHeading } : undefined), [onFocus, displayHeading]);
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
   const evidence = related.sources.length ? related.sources.map((source) => (
-    <CurrentTopicEvidence key={source.id} id={source.id} point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
+    <CurrentTopicEvidence key={`${source.reference_type || "source"}:${source.id}`} source={source}
+      point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
   const body = <>
     {displayText ? inline ? <div className="recap-topic-summary"><RichText text={displayText} /></div> : <RecapSummary text={displayText} /> : null}
@@ -116,15 +117,22 @@ function OriginalTopicEvidence({ title, passages, timezone, onCorrect, onFocus, 
   useEffect(() => {
     const controller = new AbortController();
     setResults(undefined); onFocus?.({ title, basis: "original", passages: [] });
-    const ids = [...new Set(passages.map((passage) => passage.source_id))];
-    void Promise.allSettled(ids.map((id) => request<Source>(`/v1/transcripts/${encodeURIComponent(id)}`, { signal: controller.signal })))
+    const fetchPassage = (passage: OriginalRecapPassage) => passage.reference_type === "recording_transcription"
+      ? request<Source>(`/v1/recordings/${encodeURIComponent(passage.source_id)}/transcriptions/${encodeURIComponent(passage.result_version || "")}`, { signal: controller.signal })
+      : request<Source>(`/v1/transcripts/${encodeURIComponent(passage.source_id)}`, { signal: controller.signal });
+    void Promise.allSettled(passages.map(fetchPassage))
       .then((responses) => {
         if (controller.signal.aborted) return;
-        const fetched = new Map(ids.map((id, index) => [id, responses[index]]));
         const checked = passages.map((passage): OriginalEvidenceResult => {
-          const response = fetched.get(passage.source_id)!;
+          const index = passages.indexOf(passage);
+          const response = responses[index];
           if (response.status === "rejected") return { passage, error: errorMessage(response.reason) };
-          const source = currentRecapPassage(passage, response.value);
+          const payload = response.value;
+          const candidate: Source = passage.reference_type === "recording_transcription" ? {
+            ...payload, id: passage.source_id, device_id: "recording", state: payload.state,
+            text: payload.text, source_version: undefined, transcript_version: undefined,
+          } : payload;
+          const source = currentRecapPassage(passage, candidate);
           return source ? { passage, source } : { passage, error: t("Evidence changed — review required") };
         });
         setResults(checked);
@@ -144,10 +152,13 @@ function OriginalTopicEvidence({ title, passages, timezone, onCorrect, onFocus, 
   </div>)}</>;
 }
 
-function CurrentTopicEvidence({ id, point, topic, timezone, onCorrect }: {
-  id: string; point: string; topic: string; timezone: string; onCorrect: () => void;
+function CurrentTopicEvidence({ source, point, topic, timezone, onCorrect }: {
+  source: Source; point: string; topic: string; timezone: string; onCorrect: () => void;
 }) {
-  const resource = useResource<Source>(`/v1/transcripts/${encodeURIComponent(id)}`);
+  const path = source.reference_type === "recording_transcription"
+    ? `/v1/recordings/${encodeURIComponent(source.recording_id || source.id)}/transcriptions/${encodeURIComponent(source.result_version || "")}`
+    : `/v1/transcripts/${encodeURIComponent(source.id)}`;
+  const resource = useResource<Source>(path);
   if (resource.error) return <ErrorState message={resource.error} retry={resource.refresh} />;
   if (!resource.data) return <Loading>{t("Loading recordings…")}</Loading>;
   return <RecapEvidence source={resource.data} point={point} topic={topic} timezone={timezone} onCorrect={() => { resource.refresh(); onCorrect(); }} />;

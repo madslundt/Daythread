@@ -346,4 +346,22 @@ describe("day recap interactions", () => {
     expect(html).not.toContain("Later.");
     expect(html).toContain("#t=2,4");
   });
+
+  it("resolves exact retained recording variants without accepting a replacement", () => {
+    const source: Source = {
+      ...sources[0], id: "33333333-3333-4333-8333-333333333333", state: "done",
+      reference_type: "recording_transcription", recording_id: "33333333-3333-4333-8333-333333333333",
+      result_version: "result-1", input_fingerprint: "input-1", pipeline_fingerprint: "pipeline-1",
+      text: "Whole recording text.", sections: [{ title: "Full recording transcript", start_offset: 0,
+        end_offset: 21, chapter_id: "variant-1" }],
+    };
+    const passage = recapBrowserTopics([], [source])[0].originalPassages![0];
+    expect(passage.reference_type).toBe("recording_transcription");
+    expect(currentRecapPassage(passage, source)?.sections).toEqual(source.sections);
+    expect(currentRecapPassage(passage, { ...source, result_version: "result-2" })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, input_fingerprint: "input-2" })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, pipeline_fingerprint: "pipeline-2" })).toBeUndefined();
+    expect(currentRecapPassage(passage, { ...source, text: "Replaced text.", state: "stale" })).toBeUndefined();
+    expect(originalRecapText([passage], [{ ...source, state: "stale" }])).toBe("Whole recording text.");
+  });
 });

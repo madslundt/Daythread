@@ -24,6 +24,9 @@ from .embedding_chunking import topic_regions
 from .inference import SUMMARY_REDUCTION_VERSION, InferenceError, validate_citations
 from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
+from .recording_transcription_selection import (
+    RecordingTranscriptReference,
+)
 from .speaker_projection import project_utterances
 from .speakers import fingerprint as speaker_fingerprint
 from .summary_filter import NO_CONTENT
@@ -73,7 +76,12 @@ def topic_sources(sources: list[dict]) -> list[dict]:
             evidence = []
             for item in source.get("speaker_evidence", []):
                 left, right = item.get("start_offset"), item.get("end_offset")
-                if (item.get("source_id") == source["id"] and type(left) is int
+                correct_owner = (
+                    item.get("source_id") == source["id"]
+                    or source.get("reference_type") == "recording_transcription"
+                    and item.get("recording_id") == source.get("recording_id")
+                )
+                if (correct_owner and type(left) is int
                         and type(right) is int and 0 <= left < right <= len(text)
                         and text[left:right] == item.get("text")
                         and max(start, left) < min(end, right)):
@@ -143,12 +151,25 @@ class Recaps:
                     "state": "ready" if ready else "stale" if saved else "idle",
                     "version": saved["version"] if saved else None,
                     "evidence_version": saved["version"] if ready else None,
+                    "turns": payload["turns"] if ready else [],
+                    "speakers": payload["speakers"] if ready else [],
                     "utterances": project_utterances(
                         payload["turns"], scope["rows"], ready, payload["speakers"],
                     ),
                 }
             projections[source_id] = projected_scopes[scope_key]
         return projections
+
+    def selected_recording_variants(self, group: Conversation, db=None) -> dict[str, dict]:
+        from .recording_transcription_recap import selected_recording_variants
+
+        return selected_recording_variants(self, group, db)
+
+    def recording_speaker_evidence(self, group: Conversation, recording_id: str,
+                                   variant: dict, db=None):
+        from .recording_transcription_recap import recording_speaker_evidence
+
+        return recording_speaker_evidence(self, group, recording_id, variant, db)
 
     def group_key(self, group: Conversation, db=None) -> str:
         settings = self.memory.settings
@@ -173,6 +194,18 @@ class Recaps:
                     ],
                 }
                 for source_id, projection in self.speaker_projection(group, db).items()
+            },
+            "recording_transcripts": {
+                recording_id: {
+                    "selection_version": selected["selection_version"],
+                    "result_version": selected["variant"]["version"],
+                    "input_fingerprint": selected["input_fingerprint"],
+                    "pipeline_fingerprint": selected["pipeline_fingerprint"],
+                    "speaker_evidence": self.recording_speaker_evidence(
+                        group, recording_id, selected["variant"], db,
+                    )[1:],
+                }
+                for recording_id, selected in self.selected_recording_variants(group, db).items()
             },
         })
 
@@ -263,8 +296,11 @@ class Recaps:
         from .service import public_source
 
         hints = group.hints
+        selected = self.selected_recording_variants(group)
+        replaced = {source_id for value in selected.values() for source_id in value["source_ids"]}
         rows = self.memory.store.get_audio_many([
             r["id"] for r in group.sources if r["state"] == "done" and r["text"]
+            and r["id"] not in replaced
         ])
         sources = [public_source(rows[r["id"]]) for r in group.sources if r["id"] in rows]
         for source in sources:
@@ -278,6 +314,48 @@ class Recaps:
                 if source["started_at"] < meeting["context_end"]
                 and source["ended_at"] > meeting["context_start"]
             ]
+        for recording_id, value in selected.items():
+            recording, variant = value["recording"], value["variant"]
+            snapshot = recording.snapshot()
+            evidence, speaker_version, speaker_state = self.recording_speaker_evidence(
+                group, recording_id, variant,
+            )
+            reference: RecordingTranscriptReference = {
+                "id": recording_id,
+                "reference_type": "recording_transcription",
+                "recording_id": recording_id,
+                "result_version": variant["version"],
+                "input_fingerprint": value["input_fingerprint"],
+                "pipeline_fingerprint": value["pipeline_fingerprint"],
+                "selection_version": value["selection_version"],
+                "source_ids": value["source_ids"],
+                "text": variant["text"],
+            }
+            sources.append({
+                **reference,
+                "device_id": "recording",
+                "state": "done",
+                "kind": "recording_transcription",
+                "started_at": snapshot["started_at"],
+                "ended_at": snapshot["ended_at"],
+                "duration_seconds": snapshot["duration_seconds"],
+                "audio_available": snapshot["audio_available"],
+                "audio_availability": snapshot["audio_availability"],
+                "title": snapshot["title"],
+                "sections": [{
+                    "title": "Full recording transcript",
+                    "chapter_id": f"{recording_id}:transcript:{variant['version']}",
+                    "start_offset": 0,
+                    "end_offset": len(variant["text"]),
+                }],
+                "source_map": variant["source_map"],
+                "projection": variant["projection"],
+                "provenance": variant["provenance"],
+                "speaker_evidence": evidence,
+                "speaker_evidence_version": speaker_version,
+                "speaker_evidence_state": speaker_state,
+            })
+        sources.sort(key=lambda source: (source.get("started_at", ""), source["id"]))
         return sources
 
     async def prepare_group(
@@ -296,6 +374,8 @@ class Recaps:
         sources = self.sources(group)
         projections = self.speaker_projection(group)
         for source in sources:
+            if source.get("reference_type") == "recording_transcription":
+                continue
             projection = projections.get(source["id"], {})
             source["speaker_evidence_version"] = projection.get("evidence_version")
             source["speaker_evidence_state"] = projection.get("state", "idle")
@@ -319,7 +399,8 @@ class Recaps:
                 self.note_sources(sources),
                 context + "An uploaded file may contain only part of a conversation. " + RELEVANCE +
                 "Current speaker evidence is provided per original source as exact transcript "
-                "character spans and source-local times. Use it only to attribute words within "
+                "character spans with source-local times; a full recording source uses elapsed "
+                "concatenated-file times. Use it only to attribute words within "
                 "those exact spans. `attribution=unknown` or `overlap` has no known owner; never "
                 "fill those gaps from nearby turns or first-person wording. A label such as "
                 "Speaker A is an anonymous machine cluster, not a verified human identity. "

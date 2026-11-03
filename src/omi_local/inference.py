@@ -501,7 +501,12 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         text = source.get("canonical_text", source.get("text", "")) or ""
         for item in source.get("speaker_evidence", []):
             left, right = item.get("start_offset"), item.get("end_offset")
-            if (item.get("source_id") != source_id or type(left) is not int
+            owner_matches = (
+                item.get("source_id") == source_id
+                or source.get("reference_type") == "recording_transcription"
+                and item.get("recording_id") == source.get("recording_id", source_id)
+            )
+            if (not owner_matches or type(left) is not int
                     or type(right) is not int or not 0 <= left < right <= len(text)
                     or text[left:right] != item.get("text")):
                 continue

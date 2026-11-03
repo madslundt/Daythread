@@ -1,6 +1,7 @@
 import type { Source } from "./types";
 import type { DisplayTranslationInput } from "./displayTranslations";
 import { topicTitleKey } from "./topicOccurrences";
+import { t } from "./i18n";
 
 export type RecapPart =
   | { kind: "text"; text: string }
@@ -16,6 +17,8 @@ export type RecapFocus = {
 export type RecapTopicGroup = { title: string; parts: RecapPart[] };
 export type OriginalRecapPassage = {
   source_id: string; source_version?: string; transcript_version?: string;
+  reference_type?: "recording_transcription"; result_version?: string;
+  input_fingerprint?: string; pipeline_fingerprint?: string;
   section: NonNullable<Source["sections"]>[number]; text: string;
 };
 export type RecapBrowserTopic = RecapTopicGroup & { id: string; originalPassages?: OriginalRecapPassage[]; evidencePassages?: OriginalRecapPassage[] };
@@ -84,11 +87,15 @@ export function recapBrowserTopics(topics: RecapTopicGroup[], sources: Source[])
     for (const section of source.sections || []) {
       if (!section.title.trim() || !Number.isInteger(section.start_offset) || !Number.isInteger(section.end_offset)
         || section.start_offset < 0 || section.end_offset <= section.start_offset || section.end_offset > characters.length) continue;
-      const identity = `${source.id}:${source.source_version || ""}:${source.transcript_version || ""}:${section.start_offset}:${section.end_offset}`;
+      const identity = `${source.reference_type || "source"}:${source.id}:${source.source_version || ""}:${source.transcript_version || source.result_version || ""}:${section.start_offset}:${section.end_offset}`;
       if (seen.has(identity)) continue;
       seen.add(identity);
+      const displaySection = source.reference_type === "recording_transcription"
+        ? { ...section, title: t("Full recording transcript") } : section;
       const passage: OriginalRecapPassage = { source_id: source.id, source_version: source.source_version,
-        transcript_version: source.transcript_version, section,
+        transcript_version: source.transcript_version, reference_type: source.reference_type,
+        result_version: source.result_version, input_fingerprint: source.input_fingerprint,
+        pipeline_fingerprint: source.pipeline_fingerprint, section: displaySection,
         text: characters.slice(section.start_offset, section.end_offset).join("") };
       const synthesized = represented.find(({ passages }) => passages.some((span) => span.source_id === source.id
         && span.start <= section.start_offset && span.end >= section.end_offset))?.topic
@@ -106,6 +113,17 @@ export function recapBrowserTopics(topics: RecapTopicGroup[], sources: Source[])
 }
 
 export function currentRecapPassage(passage: OriginalRecapPassage, source: Source): Source | undefined {
+  if (passage.reference_type === "recording_transcription") {
+    if (source.reference_type !== "recording_transcription" || source.id !== passage.source_id
+      || source.result_version !== passage.result_version
+      || source.input_fingerprint !== passage.input_fingerprint
+      || source.pipeline_fingerprint !== passage.pipeline_fingerprint
+      || !source.text) return;
+    const section = source.sections?.find((candidate) => candidate.start_offset === passage.section.start_offset
+      && candidate.end_offset === passage.section.end_offset
+      && Array.from(source.text || "").slice(candidate.start_offset, candidate.end_offset).join("") === passage.text);
+    return section ? { ...source, sections: [section] } : undefined;
+  }
   if (source.id !== passage.source_id || source.state !== "done"
     || (passage.source_version && source.source_version !== passage.source_version)
     || (passage.transcript_version && source.transcript_version !== passage.transcript_version)) return;

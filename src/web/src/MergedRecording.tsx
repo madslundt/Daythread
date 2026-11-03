@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { errorMessage, request } from "./api";
 import { displayLocale, t } from "./i18n";
 import { profileResourceUrl } from "./profiles";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
@@ -16,6 +17,13 @@ export type CombinedRecording = {
   audio_version?: string;
   interruptions?: { position_seconds: number; gap_seconds: number; previous_end: string; next_start: string }[];
   text: string | null; transcript_version: string;
+  recording_transcription?: { state: string; version?: string | null; text?: string | null };
+  transcript_selection?: {
+    state: "unselected" | "selected" | "stale";
+    selection_version: number;
+    result_version?: string | null;
+    transcript?: { text?: string | null; version?: string | null } | null;
+  };
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
     start_seconds?: number; end_seconds?: number; start_estimated?: boolean }[];
 };
@@ -25,12 +33,14 @@ export function MergedRecording({ recordingID }: { recordingID: string }) {
   return <>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {!resource.data && resource.loading ? <Loading>{t("Loading recordings…")}</Loading> : null}
-    {resource.data ? <MergedRecordingContent key={recordingID} recording={resource.data} /> : null}
+    {resource.data ? <MergedRecordingContent key={recordingID} recording={resource.data}
+      refresh={resource.refresh} /> : null}
   </>;
 }
 
-export function MergedRecordingContent({ recording, resourceBase, resourceQuery = "", timezone = "UTC" }: {
+export function MergedRecordingContent({ recording, resourceBase, resourceQuery = "", timezone = "UTC", refresh }: {
   recording: CombinedRecording; resourceBase?: string; resourceQuery?: string; timezone?: string;
+  refresh?: () => void;
 }) {
   const playback = useRecordingSeek();
   const topics = useMemo(() => groupTopicRuns(recording.sections, (section) => section.title,
@@ -41,6 +51,8 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     occurrenceNumber: index + 1, occurrenceCount: topic.occurrences.length,
   }))), [topics]);
   const [selectedTopic, setSelectedTopic] = useState("");
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const topic = occurrences.find((section) => section.id === selectedTopic) || occurrences[0];
   const followPosition = useCallback((seconds: number) => {
     // Untimed topics remain readable without inventing a seek position.
@@ -59,7 +71,23 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const base = resourceBase || `/v1/recordings/${encodeURIComponent(recording.id)}`;
   const url = (suffix: string) => profileResourceUrl(`${base}/${suffix}${resourceQuery}`);
   const boundaryTime = (value: string) => new Date(value).toLocaleTimeString(displayLocale(), { timeZone: timezone, hour12: false });
-  const text = Array.from(recording.text || "");
+  const selection = recording.transcript_selection;
+  const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
+  const showingSelected = typeof selectedText === "string";
+  const displayedText = showingSelected ? selectedText : recording.text;
+  const text = Array.from(displayedText || "");
+  async function chooseTranscript(resultVersion: string | null) {
+    if (!selection || selectionBusy) return;
+    setSelectionBusy(true); setSelectionError(null);
+    try {
+      await request(`/v1/recordings/${encodeURIComponent(recording.id)}/transcript-selection`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expected_version: selection.selection_version, result_version: resultVersion }),
+      });
+      refresh?.();
+    } catch (error) { setSelectionError(errorMessage(error)); }
+    finally { setSelectionBusy(false); }
+  }
   return <div className="merged-recording">
     {recording.audio_available ? <RecordingAudioPlayer
       src={url("audio")} waveformSrc={url("waveform")}
@@ -85,7 +113,23 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
         ? t("The archive expects audio, but the file is missing.")
         : t("Audio was removed by your retention policy. The transcript remains available.")}
     </p> : null}
-    {topic ? <div className="recording-sections">
+    {showingSelected ? <div className="caption recording-transcript-choice">
+      <span>{t("Using selected full-recording transcript")}</span>
+      <button className="text-button" disabled={selectionBusy}
+        onClick={() => void chooseTranscript(null)}>{t("Use original part transcripts")}</button>
+    </div> : recording.recording_transcription?.state === "ready"
+      && recording.recording_transcription.version ? <div className="caption recording-transcript-choice">
+        <span>{t("A full-recording transcript is ready")}</span>
+        <button className="text-button" disabled={selectionBusy}
+          onClick={() => void chooseTranscript(recording.recording_transcription!.version!)}>
+          {t("Use full-recording transcript")}
+        </button>
+      </div> : null}
+    {selection?.state === "stale" ? <p className="caption" role="status">
+      {t("The selected transcript is out of date. Showing the original part transcripts.")}
+    </p> : null}
+    {selectionError ? <p className="caption" role="alert">{selectionError}</p> : null}
+    {topic && !showingSelected ? <div className="recording-sections">
       <h3>{t("Topics")}</h3>
       <RecordingTopicList topics={topics.map((group) => ({ key: group.key, title: group.title,
         occurrences: group.occurrences.map(([section]) => ({ id: `${section.chapter_id}:${section.start_offset}`,
@@ -93,7 +137,13 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
         selected={topic.id} onSelect={selectTopic} />
       <p className="transcript-text" aria-live="polite">{text.slice(topic.start_offset, topic.end_offset).join("")}</p>
     </div> : null}
-    {recording.text !== null ? recording.sections.length ? <details className="recording-disclosure">
+    {displayedText !== null ? showingSelected ? <>
+      <p className="transcript-text">{displayedText}</p>
+      {recording.text !== null ? <details className="recording-disclosure">
+        <summary>{t("Original part transcripts")}</summary>
+        <p className="transcript-text">{recording.text}</p>
+      </details> : null}
+    </> : recording.sections.length ? <details className="recording-disclosure">
       <summary>{t("Full transcript")}</summary>
       <p className="transcript-text">{recording.text}</p>
     </details> : <p className="transcript-text">{recording.text}</p>

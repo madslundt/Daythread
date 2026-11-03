@@ -85,4 +85,24 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("Launch continues");
   });
+  it("shows the selected full transcript and preserves the original transcript access", () => {
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
+      recording_transcription: { state: "ready", version: "variant-v1", text: "Whole selected transcript." },
+      transcript_selection: { state: "selected", selection_version: 3, result_version: "variant-v1",
+        transcript: { text: "Whole selected transcript.", version: "variant-v1" } },
+    }} />);
+    expect(html).toContain("Using selected full-recording transcript");
+    expect(html).toContain("Whole selected transcript.");
+    expect(html).toContain("Original part transcripts");
+    expect(html).toContain("Launch continues across upload parts.");
+    expect(html).not.toContain("Use full-recording transcript");
+  });
+  it("falls back to original transcript when the selection is stale", () => {
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
+      transcript_selection: { state: "stale", selection_version: 2, result_version: "old" },
+    }} />);
+    expect(html).toContain("The selected transcript is out of date.");
+    expect(html).toContain(recording.text!);
+    expect(html).not.toContain("old transcript text");
+  });
 });

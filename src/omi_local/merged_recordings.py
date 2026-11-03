@@ -253,7 +253,48 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
             value["recording_transcription"] = app.store.recording_transcription_view(
                 current, app.settings, db,
             )
+            value["transcript_selection"] = app.store.selected_recording_transcription(
+                current, app.settings, db,
+            )
             return value
+
+    @router.put("/{recording_id}/transcript-selection")
+    async def select_transcript(recording_id: UUID, request: Request) -> dict:
+        app = memory()
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid transcript selection") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Invalid transcript selection")
+        expected_version, result_version = body.get("expected_version"), body.get("result_version")
+        if (type(expected_version) is not int or expected_version < 0
+                or (result_version is not None and not isinstance(result_version, str))):
+            raise HTTPException(422, "Invalid transcript selection")
+        try:
+            current = load_recording(app.store, str(recording_id))
+            return app.store.select_recording_transcription(
+                current, app.settings, expected_version, result_version,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @router.get("/{recording_id}/transcriptions/{result_version}")
+    def exact_transcript(recording_id: UUID, result_version: str, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        app = memory()
+        with app.store.connect() as db:
+            db.execute("BEGIN")
+            try:
+                load_recording(app.store, str(recording_id), db)
+            except HTTPException as exc:
+                raise HTTPException(404, "Recording transcript unavailable") from exc
+            result = app.store.exact_recording_transcription(
+                str(recording_id), result_version, app.settings, db,
+            )
+            if result is None:
+                raise HTTPException(404, "Recording transcript unavailable")
+            return result
 
     @router.api_route("/{recording_id}/audio", methods=["GET", "HEAD"])
     def audio(recording_id: UUID, request: Request) -> Response:

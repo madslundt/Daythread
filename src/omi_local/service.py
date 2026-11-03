@@ -249,7 +249,16 @@ class Memory:
             "scope": {"start": stamp(start), "end": stamp(end)} if start and end else None,
             **counts,
             "selected": [
-                {
+                ({
+                    "id": r["id"],
+                    "reference_type": "recording_transcription",
+                    "recording_id": r["recording_id"],
+                    "result_version": r["result_version"],
+                    "input_fingerprint": r["input_fingerprint"],
+                    "pipeline_fingerprint": r["pipeline_fingerprint"],
+                    "selection_version": r["selection_version"],
+                    "source_ids": r["source_ids"],
+                } if r.get("reference_type") == "recording_transcription" else {
                     "id": r["id"],
                     "revision": revision(r),
                     "source_version": r.get("source_version"),
@@ -258,7 +267,7 @@ class Memory:
                         {"start_offset": m["start_offset"], "end_offset": m["end_offset"]}
                         for m in r.get("matches", [])
                     ],
-                }
+                })
                 for r in sources
             ],
             "cited_ids": [r["id"] for r in sources if r["id"].lower() in text.lower()],

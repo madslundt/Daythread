@@ -59,9 +59,11 @@ CREATE TABLE IF NOT EXISTS capture_gaps (
 class ArchiveStore:
     """SQLite helpers mixed into Store; paths remain controlled by the archive."""
 
-    @staticmethod
-    def verify_sources(db: sqlite3.Connection, sources: list[dict]) -> None:
+    def verify_sources(self, db: sqlite3.Connection, sources: list[dict]) -> None:
         for source in sources:
+            if source.get("reference_type") == "recording_transcription":
+                self._verify_recording_transcription_source(db, source)
+                continue
             current = db.execute(
                 "SELECT text,transcript_version,source_version FROM audio WHERE id=?",
                 (source["id"],),
@@ -81,6 +83,53 @@ class ArchiveStore:
                 )
             ):
                 raise EvidenceChanged("Recorded evidence changed; retry the request")
+
+    def _verify_recording_transcription_source(
+        self, db: sqlite3.Connection, source: dict,
+    ) -> None:
+        from fastapi import HTTPException
+
+        from .merged_recordings import load_recording
+        from .recording_transcription_store import source_fingerprint
+
+        recording_id = source.get("recording_id")
+        try:
+            recording = load_recording(self, recording_id, db)
+        except HTTPException as exc:
+            raise EvidenceChanged(
+                "Recording transcript evidence expired; retry the request"
+            ) from exc
+        member_ids = [row["id"] for row in recording.rows]
+        if (
+            source.get("id") != recording_id
+            or source.get("source_ids") != member_ids
+            or source.get("text") is None
+        ):
+            raise EvidenceChanged("Recording transcript membership changed; retry the request")
+        fingerprint = source_fingerprint(recording)
+        selection = db.execute(
+            "SELECT * FROM recording_transcription_selections WHERE recording_id=?",
+            (recording_id,),
+        ).fetchone()
+        variant = db.execute(
+            "SELECT transcript FROM recording_transcription_jobs WHERE recording_id=? "
+            "AND result_version=? AND input_fingerprint=? AND pipeline_fingerprint=? "
+            "AND state='ready'",
+            (recording_id, source.get("result_version"), source.get("input_fingerprint"),
+             source.get("pipeline_fingerprint")),
+        ).fetchone()
+        if (
+            not recording.complete
+            or not selection
+            or selection["selection_version"] != source.get("selection_version")
+            or selection["result_version"] != source.get("result_version")
+            or selection["input_fingerprint"] != fingerprint
+            or source.get("input_fingerprint") != fingerprint
+            or selection["pipeline_fingerprint"] != source.get("pipeline_fingerprint")
+            or not variant
+            or variant["transcript"] != source["text"]
+        ):
+            raise EvidenceChanged("Selected recording transcript changed; retry the request")
 
     def runtime_settings(self) -> dict:
         with self.connect() as db:

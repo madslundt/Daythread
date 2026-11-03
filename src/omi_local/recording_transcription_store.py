@@ -1,12 +1,18 @@
 """Versioned whole-recording transcription jobs, output and lifecycle cleanup."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import math
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from .domain import stamp, utc_now
 from .merged_recordings import Recording
+
+if TYPE_CHECKING:
+    from .recording_transcription_selection import RecordingTranscriptSelection
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS recording_transcription_jobs (
@@ -37,6 +43,14 @@ CREATE INDEX IF NOT EXISTS recording_transcription_due
  ON recording_transcription_jobs(state,retry_at,updated_at);
 CREATE INDEX IF NOT EXISTS recording_transcription_recording
  ON recording_transcription_jobs(recording_id,updated_at);
+CREATE TABLE IF NOT EXISTS recording_transcription_selections (
+ recording_id TEXT PRIMARY KEY,
+ selection_version INTEGER NOT NULL,
+ result_version TEXT,
+ input_fingerprint TEXT,
+ pipeline_fingerprint TEXT,
+ updated_at TEXT NOT NULL
+);
 """
 
 STATES = {"queued", "processing", "error", "blocked", "stale", "ready"}
@@ -245,6 +259,10 @@ class RecordingTranscriptionStore:
                 "DELETE FROM recording_transcription_jobs WHERE recording_id=?",
                 (recording_id,),
             )
+            db.execute(
+                "DELETE FROM recording_transcription_selections WHERE recording_id=?",
+                (recording_id,),
+            )
 
     def recording_transcription_view(self, recording: Recording, settings, db=None) -> dict:
         current_fingerprint = source_fingerprint(recording)
@@ -298,6 +316,30 @@ class RecordingTranscriptionStore:
         ):
             return {"state": "not_scheduled", "version": None}
         return {"state": "queued", "version": None}
+
+    def selected_recording_transcription(
+        self, recording: Recording, settings, db=None,
+    ) -> RecordingTranscriptSelection:
+        from .recording_transcription_selection import selected_recording_transcription
+
+        return selected_recording_transcription(self, recording, settings, db)
+
+    def select_recording_transcription(
+        self, recording: Recording, settings, expected_version: int,
+        result_version: str | None,
+    ) -> RecordingTranscriptSelection:
+        from .recording_transcription_selection import select_recording_transcription
+
+        return select_recording_transcription(
+            self, recording, settings, expected_version, result_version,
+        )
+
+    def exact_recording_transcription(
+        self, recording_id: str, result_version: str, settings, db=None,
+    ):
+        from .recording_transcription_selection import exact_recording_transcription
+
+        return exact_recording_transcription(self, recording_id, result_version, settings, db)
 
     def _public_variant(self, row: dict, recording: Recording, *, stale=False) -> dict:
         if row["result_version"]:

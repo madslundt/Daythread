@@ -1,4 +1,11 @@
 export type Source = {
+  reference_type?: "recording_transcription";
+  recording_id?: string;
+  result_version?: string;
+  input_fingerprint?: string;
+  pipeline_fingerprint?: string;
+  selection_version?: number;
+  source_ids?: string[];
   manual_location?: { label: string; latitude: number; longitude: number; zone_id?: string; location_id?: string; zone_name?: string };
   tags?: { id: string; name: string }[];
   alternate_sources?: Source[];

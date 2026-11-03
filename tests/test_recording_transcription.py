@@ -272,7 +272,7 @@ def test_audio_only_expiry_keeps_variant_but_transcript_expiry_purges_it(
 
 
 def test_claim_prefers_newest_capture_but_skips_future_retry_and_then_claims_older(
-    app_recording,
+    app_recording, monkeypatch,
 ):
     client, store, older_id, _, _, _ = app_recording
     memory = client.app.state.memory
@@ -312,6 +312,7 @@ def test_claim_prefers_newest_capture_but_skips_future_retry_and_then_claims_old
             "UPDATE recording_transcription_jobs SET state='error',retry_at=? WHERE recording_id=?",
             (stamp(now + timedelta(hours=1)), retry_id),
         )
+    monkeypatch.setattr("omi_local.recording_transcription_worker.utc_now", lambda: now)
     first = _claim(store)
     assert first["recording_id"] == newer_id
     with store.connect() as db:

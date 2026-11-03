@@ -1,6 +1,7 @@
 """Optional word timings preserve recognized text and source-local offsets."""
 
 import io
+import json
 import wave
 
 import httpx
@@ -268,7 +269,7 @@ async def test_invalid_whole_recording_anchor_never_falls_back_to_full_audio():
 
 
 @pytest.mark.anyio
-async def test_pipeline_preserves_native_segments_and_aligns_prepared_audio_only(monkeypatch):
+async def test_pipeline_prefers_refined_words_and_aligns_prepared_audio_only(monkeypatch):
     from omi_local import transcription
     from omi_local.alignment_audio import crop_native_envelope
 
@@ -314,12 +315,69 @@ async def test_pipeline_preserves_native_segments_and_aligns_prepared_audio_only
     assert result["text"] == "hi world"
     assert result["processing"]["alignment"]["status"] == "aligned"
     assert result["segments"] == [
-        {"start": 0.5, "end": 1.5, "text": "hi world", "start_offset": 0,
-         "end_offset": 8, "kind": "segment"},
         {"start": crop_start + 0.3, "end": crop_start + 0.5, "text": "hi",
          "start_offset": 0, "end_offset": 2, "kind": "word"},
         {"start": crop_start + 0.6, "end": crop_start + 0.9, "text": "world",
          "start_offset": 3, "end_offset": 8, "kind": "word"},
+    ]
+
+
+@pytest.mark.anyio
+async def test_transcribe_result_projection_keeps_partial_words_and_unknown_gaps(monkeypatch):
+    from omi_local import transcription
+    from omi_local.speaker_projection import project_utterances
+
+    audio = wav(2500, 2)
+    text = "prefix alpha beta gamma delta epsilon"
+    native_text = text[6:]
+    monkeypatch.setattr(transcription, "filter_transcription_audio", lambda *_a, **_k: {
+        "spans": [(0.0, audio)], "status": "disabled", "version": 1,
+        "original_seconds": 2, "retained_seconds": 2, "detected_speech_seconds": None,
+    })
+
+    class Client:
+        async def post(self, _url, *, data, **_kwargs):
+            assert data["text"] == native_text
+            return httpx.Response(200, request=httpx.Request("POST", "http://test/align"), json={
+                "status": "partial", "language": "da", "model": "fixture@1",
+                "segments": [
+                    {"start": 0.2, "end": 0.4, "start_offset": 1, "end_offset": 6,
+                     "text": "alpha"},
+                ],
+            })
+
+    inference = Inference(Settings(
+        alignment_enabled=True, stt_enhancement_mode="off", _env_file=None,
+    ), Client())
+
+    async def recognize(_data, *_args, **_kwargs):
+        return Inference._transcription_result({
+            "text": text, "segments": [{
+                "start": 0.1, "end": 1.8, "start_offset": 6,
+                "end_offset": len(text), "text": native_text, "kind": "segment",
+            }],
+        }, audio)
+
+    inference._transcribe_chunk = recognize
+    result = await inference.transcribe_result(audio, recording_id="fixture")
+    assert result["text"] == text
+    row = {
+        "id": "fixture", "text": result["text"],
+        "segments": json.dumps(result["segments"]),
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "ended_at": "2026-01-01T00:00:02+00:00",
+    }
+    turns = [{"source_id": "fixture", "start": 0, "end": 2, "speaker_id": "speaker"}]
+    pieces = project_utterances(
+        turns, [row], True, [{"id": "speaker", "label": "A", "name": None}],
+    )
+    assert "".join(piece["text"] for piece in pieces) == text
+    assert [(piece["text"], piece["attribution"]) for piece in pieces] == [
+        ("prefix ", "unknown"), ("alpha", "attributed"),
+        (" beta gamma delta epsilon", "unknown"),
+    ]
+    assert [(piece["start"], piece["end"]) for piece in pieces] == [
+        (None, None), (0.2, 0.4), (None, None),
     ]
 
 

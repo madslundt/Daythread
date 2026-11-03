@@ -20,6 +20,28 @@ from .transcription_filter import FILTER_VERSION, filter_transcription_audio
 from .transcription_vocabulary import vocabulary_fields
 
 
+def _select_nonoverlapping_timing_segments(segments: list[dict], refined: list[dict]) -> list[dict]:
+    """Prefer refined word anchors over coarse spans covering the same text."""
+    refined_ranges = [
+        (item.get("start_offset"), item.get("end_offset"))
+        for item in refined if item.get("kind") == "word"
+        and type(item.get("start_offset")) is int and type(item.get("end_offset")) is int
+    ]
+    retained = []
+    for segment in segments:
+        left, right = segment.get("start_offset"), segment.get("end_offset")
+        if (type(left) is int and type(right) is int
+                and any(left < word_right and right > word_left
+                        for word_left, word_right in refined_ranges)):
+            continue
+        retained.append(segment)
+    result = [*retained, *refined]
+    return sorted(result, key=lambda item: (
+        item.get("start", float("inf")), item.get("end", float("inf")),
+        item.get("start_offset", -1),
+    ))
+
+
 class Transcription:
     async def transcribe(self, data: bytes) -> str:
         return (await self.transcribe_result(data))["text"]
@@ -125,10 +147,7 @@ class Transcription:
                 alignment_inputs, settings, alignment_budget,
             )
             if aligned:
-                segments.extend(aligned)
-                segments.sort(key=lambda item: (
-                    item["start"], item["end"], item.get("start_offset", -1),
-                ))
+                segments = _select_nonoverlapping_timing_segments(segments, aligned)
             remaining = deadline.when() - asyncio.get_running_loop().time()
         budget = min(settings.stt_enhancement_timeout_seconds, remaining)
         await self._enhancement_candidates(chunks, originals, settings, budget, on_progress)

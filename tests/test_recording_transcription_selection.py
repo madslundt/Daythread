@@ -30,6 +30,8 @@ def test_versioned_selection_is_explicit_and_invalidates_after_correction(app_re
     assert stale["transcript_selection"]["transcript"] is None
     exact = client.get(f"/v1/recordings/{rid}/transcriptions/{version}")
     assert exact.status_code == 200
+    assert exact.json()["id"] == rid
+    assert exact.json()["reference_type"] == "recording_transcription"
     assert exact.json()["state"] == "stale"
     assert exact.json()["text"] == "Full selected text."
     assert [store.get_audio(source_id)["text"] for source_id in ids] != before
@@ -182,3 +184,62 @@ def test_recording_speaker_projection_bridges_only_same_speaker_at_part_boundary
     assert evidence[1]["text"] == " " and evidence[1]["attribution"] == "unknown"
     assert evidence[2]["attribution"] == "overlap"
     assert evidence[3]["text"] == " unknown" and evidence[3]["attribution"] == "unknown"
+
+def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recording):
+    client, store, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    _, version = make_ready_variant(store, memory, rid, ids, "hello world")
+    with store.connect() as db:
+        db.execute(
+            "UPDATE recording_transcription_jobs SET word_segments=? WHERE result_version=?",
+            ('[{"text":"hello","start_offset":0,"end_offset":5,"start":0.1,"end":0.4},'
+             '{"text":"world","start_offset":6,"end_offset":11,"start":0.5,"end":0.9}]',
+             version),
+        )
+    assert client.put(
+        f"/v1/recordings/{rid}/transcript-selection",
+        json={"expected_version": 0, "result_version": version},
+    ).status_code == 200
+    scope = {
+        "state": "ready", "evidence_version": "speaker-v1",
+        "speakers": [{"id": "a", "label": "A", "name": "Reviewed name"}],
+        "turns": [{"source_id": ids[0], "start": 0.0, "end": 1.0, "speaker_id": "a"}],
+    }
+    memory.recaps.speaker_projection = lambda _group, db=None: {
+        source_id: scope for source_id in ids
+    }
+    response = client.get(f"/v1/recordings/{rid}")
+    assert response.status_code == 200
+    transcript = response.json()["transcript_selection"]["transcript"]
+    assert transcript["speaker_evidence"]["state"] == "ready"
+    pieces = transcript["speaker_evidence"]["utterances"]
+    assert "".join(piece["text"] for piece in pieces) == "hello world"
+    assert [piece["speaker_name"] for piece in pieces if piece["attribution"] == "attributed"] == [
+        "Reviewed name", "Reviewed name",
+    ]
+
+def test_recap_publication_rejects_pipeline_change_during_generation(app_recording):
+    client, store, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    _, version = make_ready_variant(store, memory, rid, ids, "Selected exact text.")
+    assert client.put(
+        f"/v1/recordings/{rid}/transcript-selection",
+        json={"expected_version": 0, "result_version": version},
+    ).status_code == 200
+    now = utc_now()
+    group = next(group for group in memory.recaps.groups(now)
+                 if {row["id"] for row in group.sources} == set(ids))
+    key = memory.recaps.group_key(group)
+    sources = memory.recaps.sources(group)
+
+    def production_group_guard(db):
+        current = memory.recaps.groups(now, db)
+        if not any(candidate.ready and memory.recaps.group_key(candidate, db) == key
+                   for candidate in current):
+            raise EvidenceChanged("Conversation changed during preparation")
+
+    memory.settings.recording_transcription_timeout_seconds += 1
+    with pytest.raises(EvidenceChanged):
+        store.save_recap_summary(key, "[source] summary", sources, production_group_guard)

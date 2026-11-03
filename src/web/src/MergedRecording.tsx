@@ -22,7 +22,12 @@ export type CombinedRecording = {
     state: "unselected" | "selected" | "stale";
     selection_version: number;
     result_version?: string | null;
-    transcript?: { text?: string | null; version?: string | null } | null;
+    transcript?: { text?: string | null; version?: string | null;
+      speaker_evidence?: { state: string; version?: string | null; utterances: {
+        text: string; start?: number | null; end?: number | null; start_offset: number;
+        end_offset: number; attribution: string; speaker_id?: string | null;
+        speaker_label?: string | null; speaker_name?: string | null;
+      }[] } } | null;
   };
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
     start_seconds?: number; end_seconds?: number; start_estimated?: boolean }[];
@@ -74,6 +79,21 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const selection = recording.transcript_selection;
   const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
   const showingSelected = typeof selectedText === "string";
+  const speakerEvidence = showingSelected ? selection?.transcript?.speaker_evidence : undefined;
+  const attributedRuns = useMemo(() => {
+    const runs: { text: string; attribution: string; speaker_id?: string | null;
+      speaker_label?: string | null; speaker_name?: string | null; start?: number | null; }[] = [];
+    for (const piece of speakerEvidence?.utterances || []) {
+      const previous = runs.at(-1);
+      const sameOwner = previous && previous.attribution === piece.attribution
+        && previous.speaker_id === piece.speaker_id && previous.speaker_name === piece.speaker_name;
+      if (sameOwner) previous.text += piece.text;
+      else runs.push({ text: piece.text, attribution: piece.attribution,
+        speaker_id: piece.speaker_id, speaker_label: piece.speaker_label,
+        speaker_name: piece.speaker_name, start: piece.start });
+    }
+    return runs;
+  }, [speakerEvidence]);
   const displayedText = showingSelected ? selectedText : recording.text;
   const text = Array.from(displayedText || "");
   async function chooseTranscript(resultVersion: string | null) {
@@ -138,7 +158,15 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       <p className="transcript-text" aria-live="polite">{text.slice(topic.start_offset, topic.end_offset).join("")}</p>
     </div> : null}
     {displayedText !== null ? showingSelected ? <>
-      <p className="transcript-text">{displayedText}</p>
+      {speakerEvidence?.state === "ready" && attributedRuns.length ? <div className="transcript-text recording-attributed-transcript">
+        {attributedRuns.map((run, index) => <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
+          <span className="caption recording-speaker-label">{run.attribution === "attributed"
+            ? run.speaker_name || run.speaker_label || t("Unknown speaker")
+            : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span>
+          {run.start !== null && run.start !== undefined ? <span className="caption recording-speaker-time">{playbackTime(run.start)}</span> : null}
+          <span>{run.text}</span>
+        </span>)}
+      </div> : <p className="transcript-text">{displayedText}</p>}
       {recording.text !== null ? <details className="recording-disclosure">
         <summary>{t("Original part transcripts")}</summary>
         <p className="transcript-text">{recording.text}</p>

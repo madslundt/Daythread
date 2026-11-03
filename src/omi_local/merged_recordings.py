@@ -256,6 +256,21 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
             value["transcript_selection"] = app.store.selected_recording_transcription(
                 current, app.settings, db,
             )
+            selection = value["transcript_selection"]
+            if selection.get("state") == "selected" and selection.get("transcript"):
+                from .conversation_state import Conversation
+
+                group = Conversation(current.rows, current.rows[-1]["ended_at"], "recording")
+                evidence, evidence_version, evidence_state = (
+                    app.recaps.recording_speaker_evidence(
+                        group, current.id, selection["transcript"], db,
+                    )
+                )
+                selection["transcript"]["speaker_evidence"] = {
+                    "state": evidence_state,
+                    "version": evidence_version,
+                    "utterances": evidence,
+                }
             return value
 
     @router.put("/{recording_id}/transcript-selection")

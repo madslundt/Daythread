@@ -97,6 +97,34 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("Launch continues across upload parts.");
     expect(html).not.toContain("Use full-recording transcript");
   });
+  it("renders selected full-recording speaker evidence while preserving text once", () => {
+    const canonical = "Hello there.\nUnknown word.";
+    const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
+      recording_transcription: { state: "ready", version: "variant-v1", text: canonical },
+      transcript_selection: { state: "selected", selection_version: 3, result_version: "variant-v1",
+        transcript: {
+          text: canonical, version: "variant-v1",
+          speaker_evidence: {
+            state: "ready",
+            utterances: [
+            { text: "Hello", start_offset: 0, end_offset: 5, start: 0, end: 0.4,
+              attribution: "attributed", speaker_id: "a", speaker_label: "A", speaker_name: "Rae" },
+            { text: " there.", start_offset: 5, end_offset: 12,
+              start: 0.4, end: 0.8, attribution: "overlap" },
+            { text: "\nUnknown word.", start_offset: 12, end_offset: canonical.length,
+              start: null, end: null, attribution: "unknown" },
+            ],
+          },
+        },
+    }}} />);
+    expect(html).toContain("Rae");
+    expect(html).toContain("Unknown speaker");
+    expect(html).toContain("Overlapping speech");
+    expect(html).toContain("Hello</span>");
+    expect(html).toContain(" there.");
+    expect(html).toContain("Unknown word.");
+    expect(html.match(/Hello/g)).toHaveLength(1);
+  });
   it("falls back to original transcript when the selection is stale", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       transcript_selection: { state: "stale", selection_version: 2, result_version: "old" },

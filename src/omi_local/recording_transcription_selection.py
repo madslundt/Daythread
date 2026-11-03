@@ -180,6 +180,7 @@ def exact_recording_transcription(
     )
     value = store._public_variant(dict(row), recording, stale=not current)
     value.update({
+        "id": recording_id,
         "reference_type": "recording_transcription",
         "recording_id": recording_id,
         "result_version": value["version"],

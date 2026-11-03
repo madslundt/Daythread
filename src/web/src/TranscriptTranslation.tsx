@@ -12,6 +12,12 @@ export function TranscriptPassage({ source, section }: {
   source: Source; section: { start_offset: number; end_offset: number };
 }) {
   const original = Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("");
+  // Recording variants have no raw-source translation or correction endpoint.
+  // Keep the cited exact passage readable without sending a logical recording ID
+  // to source-scoped transcript actions.
+  if (source.reference_type === "recording_transcription") {
+    return <p className="transcript-text">{original}</p>;
+  }
   // Without a source version there is no safe way to translate saved offsets.
   if (!source.transcript_version) return <p className="transcript-text">{original}</p>;
   return <TranscriptTranslation key={`${source.id}:${source.transcript_version}:${section.start_offset}:${section.end_offset}`}

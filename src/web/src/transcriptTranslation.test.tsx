@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TranscriptTranslationView } from "./TranscriptTranslation";
+import { TranscriptPassage, TranscriptTranslationView } from "./TranscriptTranslation";
 import { TranscriptTranslationRequests, preferredTranslationLanguage, rememberTranslationLanguage, type TranscriptTranslationData } from "./transcriptTranslationRequests";
 import { selectProfile } from "./profiles";
 
@@ -17,6 +17,15 @@ const view = { original, translated: false, loading: false, generating: false, e
 afterEach(() => { selectProfile("default"); vi.unstubAllGlobals(); });
 
 describe("transcript translation requests", () => {
+  it("renders a typed recording passage without raw-source translation actions", () => {
+    const html = renderToStaticMarkup(<TranscriptPassage source={{
+      id: "recording-id", recording_id: "recording-id", reference_type: "recording_transcription",
+      device_id: "recording", started_at: "2026-10-16T12:00:00Z", ended_at: "2026-10-16T12:01:00Z",
+      state: "ready", text: "Exact full-file text", transcript_version: "variant-v1",
+    }} section={{ start_offset: 0, end_offset: 20 }} />);
+    expect(html).toContain("Exact full-file text");
+    expect(html).not.toContain("Translate");
+  });
   it("uses the saved output and selected language for summary translation", async () => {
     const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(data)));
     vi.stubGlobal("fetch", fetch);

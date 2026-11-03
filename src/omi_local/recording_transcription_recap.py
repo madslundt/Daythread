@@ -76,9 +76,15 @@ def recording_speaker_evidence(
         json.dumps(versions, sort_keys=True).encode(),
     ).hexdigest()
     labels, turns = {}, []
+    seen_turns = set()
     for scope in scope_values:
         labels.update({speaker["id"]: speaker for speaker in scope.get("speakers", [])})
-        turns.extend(scope.get("turns", []))
+        for turn in scope.get("turns", []):
+            identity = (turn.get("source_id"), turn.get("start"), turn.get("end"),
+                        turn.get("speaker_id"))
+            if identity not in seen_turns:
+                seen_turns.add(identity)
+                turns.append(turn)
     source_map = variant.get("source_map") or []
     by_source = {part["source_id"]: part for part in source_map}
     timeline = []

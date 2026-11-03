@@ -159,13 +159,17 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     </div> : null}
     {displayedText !== null ? showingSelected ? <>
       {speakerEvidence?.state === "ready" && attributedRuns.length ? <div className="transcript-text recording-attributed-transcript">
-        {attributedRuns.map((run, index) => <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
-          <span className="caption recording-speaker-label">{run.attribution === "attributed"
-            ? run.speaker_name || run.speaker_label || t("Unknown speaker")
-            : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span>
-          {run.start !== null && run.start !== undefined ? <span className="caption recording-speaker-time">{playbackTime(run.start)}</span> : null}
-          <span>{run.text}</span>
-        </span>)}
+        {attributedRuns.map((run, index) => {
+          const hasSpokenText = /[\p{L}\p{N}]/u.test(run.text);
+          return <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
+            {hasSpokenText ? <span className="caption recording-speaker-label">{run.attribution === "attributed"
+              ? run.speaker_name || run.speaker_label || t("Unknown speaker")
+              : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span> : null}
+            {hasSpokenText && run.start !== null && run.start !== undefined
+              ? <span className="caption recording-speaker-time">{playbackTime(run.start)}</span> : null}
+            <span>{run.text}</span>
+          </span>;
+        })}
       </div> : <p className="transcript-text">{displayedText}</p>}
       {recording.text !== null ? <details className="recording-disclosure">
         <summary>{t("Original part transcripts")}</summary>

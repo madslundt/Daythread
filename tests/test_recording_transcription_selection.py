@@ -180,7 +180,8 @@ def test_recording_speaker_projection_bridges_only_same_speaker_at_part_boundary
     assert "".join(item["text"] for item in evidence) == text
     assert evidence[0]["attribution"] == "attributed"
     assert evidence[0]["speaker_label"] == "A"
-    assert evidence[0]["source_id"] is None
+    assert evidence[0]["source_id"] == rid
+    assert evidence[0]["child_source_id"] is None
     assert evidence[1]["text"] == " " and evidence[1]["attribution"] == "unknown"
     assert evidence[2]["attribution"] == "overlap"
     assert evidence[3]["text"] == " unknown" and evidence[3]["attribution"] == "unknown"
@@ -215,9 +216,106 @@ def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recor
     assert transcript["speaker_evidence"]["state"] == "ready"
     pieces = transcript["speaker_evidence"]["utterances"]
     assert "".join(piece["text"] for piece in pieces) == "hello world"
-    assert [piece["speaker_name"] for piece in pieces if piece["attribution"] == "attributed"] == [
-        "Reviewed name", "Reviewed name",
-    ]
+    assert len(pieces) == 1
+    assert pieces[0]["text"] == "hello world"
+    assert pieces[0]["start_offset"] == 0 and pieces[0]["end_offset"] == 11
+    assert pieces[0]["speaker_name"] == "Reviewed name"
+    assert pieces[0]["child_source_id"] == ids[0]
+
+def test_same_speaker_words_coalesce_across_parts_without_false_child_owner(app_recording):
+    client, _, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    group = next(group for group in memory.recaps.groups(utc_now())
+                 if {row["id"] for row in group.sources} == set(ids))
+    scope = {
+        "state": "ready", "evidence_version": "speaker-v1",
+        "speakers": [{"id": "a", "label": "A", "name": None}],
+        "turns": [
+            {"source_id": ids[0], "start": 0.0, "end": 1.0, "speaker_id": "a"},
+            {"source_id": ids[1], "start": 0.0, "end": 1.0, "speaker_id": "a"},
+        ],
+    }
+    memory.recaps.speaker_projection = lambda _group, db=None: {
+        source_id: scope for source_id in ids
+    }
+    text = "first,\nsecond"
+    variant = {
+        "text": text,
+        "source_map": [
+            {"source_id": ids[0], "start": 0.0, "end": 1.0},
+            {"source_id": ids[1], "start": 1.0, "end": 2.0},
+        ],
+        "word_segments": [
+            {"text": "first", "start_offset": 0, "end_offset": 5, "start": 0.7, "end": 0.9},
+            {"text": "second", "start_offset": 7, "end_offset": 13, "start": 1.1, "end": 1.3},
+        ],
+    }
+    evidence, _, _ = memory.recaps.recording_speaker_evidence(group, rid, variant)
+    assert len(evidence) == 1
+    assert evidence[0]["text"] == text
+    assert (evidence[0]["start_offset"], evidence[0]["end_offset"]) == (0, len(text))
+    assert evidence[0]["source_id"] == rid
+    assert evidence[0]["child_source_id"] is None
+    assert evidence[0]["candidate_source_ids"] == ids
+
+def test_unknown_spoken_word_breaks_same_speaker_utterance_coalescing(app_recording):
+    client, _, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    group = next(group for group in memory.recaps.groups(utc_now())
+                 if {row["id"] for row in group.sources} == set(ids))
+    scope = {
+        "state": "ready", "evidence_version": "speaker-v1",
+        "speakers": [{"id": "a", "label": "A", "name": None}],
+        "turns": [
+            {"source_id": ids[0], "start": 0.0, "end": 0.25, "speaker_id": "a"},
+            {"source_id": ids[0], "start": 0.45, "end": 0.8, "speaker_id": "a"},
+        ],
+    }
+    memory.recaps.speaker_projection = lambda _group, db=None: {
+        source_id: scope for source_id in ids
+    }
+    text = "yes maybe later"
+    variant = {
+        "text": text,
+        "source_map": [
+            {"source_id": ids[0], "start": 0.0, "end": 1.0},
+            {"source_id": ids[1], "start": 1.0, "end": 2.0},
+        ],
+        "word_segments": [
+            {"text": "yes", "start_offset": 0, "end_offset": 3, "start": 0.1, "end": 0.2},
+            {"text": "maybe", "start_offset": 4, "end_offset": 9, "start": 0.3, "end": 0.4},
+            {"text": "later", "start_offset": 10, "end_offset": 15, "start": 0.5, "end": 0.6},
+        ],
+    }
+    evidence, _, _ = memory.recaps.recording_speaker_evidence(group, rid, variant)
+    assert "".join(item["text"] for item in evidence) == text
+    assert [item["attribution"] for item in evidence] == ["attributed", "unknown", "attributed"]
+    assert [item["text"] for item in evidence] == ["yes", " maybe ", "later"]
+
+def test_compacted_recording_evidence_keeps_exact_window_anchors(app_recording):
+    _, _, rid, ids, _, _ = app_recording
+    from omi_local.inference import Inference
+
+    canonical = "first\nsecond"
+    utterance = {
+        "recording_id": rid, "source_id": rid, "child_source_id": None,
+        "text": canonical, "start_offset": 0, "end_offset": len(canonical),
+        "start": 0.7, "end": 1.3, "speaker_id": "a", "speaker_label": "A",
+        "attribution": "attributed", "candidate_source_ids": ids,
+    }
+    source = {
+        "id": rid, "recording_id": rid, "reference_type": "recording_transcription",
+        "canonical_text": canonical, "speaker_evidence": [utterance],
+    }
+    evidence = Inference._speaker_evidence_window(source, 0, len(canonical))
+    assert evidence == [utterance]
+    cropped = Inference._speaker_evidence_window(source, 6, len(canonical))
+    assert cropped == [{
+        "source_id": rid, "text": "second", "start_offset": 6,
+        "end_offset": len(canonical), "start": None, "end": None,
+        "speaker_id": None, "speaker_label": None, "speaker_name": None,
+        "attribution": "unknown",
+    }]
 
 def test_recap_publication_rejects_pipeline_change_during_generation(app_recording):
     client, store, rid, ids, _, _ = app_recording

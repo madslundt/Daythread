@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import unicodedata
 
 from .conversation_state import Conversation
 from .merged_recordings import load_recording
@@ -51,6 +52,81 @@ def selected_recording_variants(
             "source_ids": member_ids,
         }
     return selected
+
+
+def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
+    """Coalesce anchored words without hiding lexical unknowns or overlap."""
+    output = []
+    index = 0
+    while index < len(items):
+        current = dict(items[index])
+        current["recording_id"] = recording_id
+        current["child_source_id"] = current.pop("source_id", None)
+        current.pop("source_start", None)
+        current.pop("source_end", None)
+        current["source_id"] = recording_id
+        child_ids = [current["child_source_id"]] if current["child_source_id"] else []
+        child_mapping_valid = bool(current["child_source_id"])
+        candidate_ids = list(current.get("candidate_source_ids") or [])
+        index += 1
+        while index < len(items):
+            following = items[index]
+            same_attribution = following.get("attribution") == current.get("attribution")
+            same_speaker = following.get("speaker_id") == current.get("speaker_id")
+            adjacent = current.get("end_offset") == following.get("start_offset")
+            if (current.get("attribution") == "attributed" and same_attribution
+                    and same_speaker and adjacent):
+                pass
+            elif current.get("attribution") == "attributed" and index + 1 < len(items):
+                gap = following
+                next_word = items[index + 1]
+                can_bridge = (
+                    gap.get("attribution") == "unknown"
+                    and all(char.isspace() or unicodedata.category(char).startswith("P")
+                            for char in gap.get("text", ""))
+                    and current.get("speaker_id") == next_word.get("speaker_id")
+                    and next_word.get("attribution") == "attributed"
+                    and gap.get("start_offset") == current.get("end_offset")
+                    and gap.get("end_offset") == next_word.get("start_offset")
+                )
+                if not can_bridge:
+                    break
+                next_child = next_word.get("source_id")
+                if next_child:
+                    child_ids.append(next_child)
+                else:
+                    child_mapping_valid = False
+                candidate_ids.extend(next_word.get("candidate_source_ids") or [])
+                current["text"] += gap["text"] + next_word["text"]
+                current["end_offset"] = next_word["end_offset"]
+                current["end"] = next_word.get("end")
+                index += 2
+                continue
+            elif (current.get("attribution") in {"unknown", "overlap"}
+                    and same_attribution and adjacent):
+                pass
+            else:
+                break
+
+            next_child = following.get("source_id")
+            if next_child:
+                child_ids.append(next_child)
+            elif current.get("attribution") == "attributed":
+                child_mapping_valid = False
+            candidate_ids.extend(following.get("candidate_source_ids") or [])
+            current["text"] += following["text"]
+            current["end_offset"] = following["end_offset"]
+            current["end"] = following.get("end")
+            index += 1
+        current["child_source_id"] = (
+            child_ids[0] if child_mapping_valid and child_ids
+            and len(set(child_ids)) == 1 else None
+        )
+        if current["child_source_id"] is None and len(set(child_ids)) > 1:
+            candidate_ids.extend(child_ids)
+        current["candidate_source_ids"] = list(dict.fromkeys(candidate_ids))
+        output.append(current)
+    return output
 
 
 def recording_speaker_evidence(
@@ -145,4 +221,4 @@ def recording_speaker_evidence(
                                     speaker_label=speaker.get("label"),
                                     speaker_name=speaker.get("name"))
         output.append(evidence)
-    return output, evidence_version, "ready"
+    return _recording_utterances(output, recording_id), evidence_version, "ready"

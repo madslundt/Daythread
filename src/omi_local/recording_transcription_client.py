@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import struct
 from pathlib import Path
 
@@ -108,6 +109,15 @@ def _validate_response(headers, payload, settings, duration):
         not value or headers.get(key) != value for key, value in expected.items()
     ):
         raise ValueError("provenance_mismatch")
+    for name, pattern in (
+        ("homecompute-revision", r"[0-9a-f]{40}"),
+        ("image-id", r"sha256:[0-9a-f]{64}"),
+    ):
+        value = headers.get(f"x-homecompute-stt-{name}")
+        if value is not None:
+            if not re.fullmatch(pattern, value):
+                raise ValueError("provenance_mismatch")
+            provenance[name] = value
     text = payload.get("text") if isinstance(payload, dict) else None
     segments = payload.get("segments") if isinstance(payload, dict) else None
     if (not isinstance(text, str) or len(text) > MAX_RESPONSE_BYTES

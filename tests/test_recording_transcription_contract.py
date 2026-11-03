@@ -53,6 +53,8 @@ def test_response_provenance_is_checked_against_exact_pinned_values(app_recordin
         "x-homecompute-stt-model-snapshot": "model-r1",
         "x-homecompute-stt-runtime-commit": "1234567890ab",
         "x-homecompute-stt-runtime": "whisper.cpp-r1",
+        "x-homecompute-stt-homecompute-revision": "c" * 40,
+        "x-homecompute-stt-image-id": "sha256:" + "d" * 64,
     }
     text = "Words."
     result = _validate_response(
@@ -62,6 +64,13 @@ def test_response_provenance_is_checked_against_exact_pinned_values(app_recordin
         1,
     )
     assert result[0] == text and result[1][0]["start_offset"] == 0
+    assert result[2]["homecompute-revision"] == "c" * 40
+    assert result[2]["image-id"] == "sha256:" + "d" * 64
+    with pytest.raises(ValueError, match="provenance_mismatch"):
+        _validate_response(
+            headers | {"x-homecompute-stt-image-id": "unverified"},
+            {"text": text, "segments": []}, settings, 1,
+        )
     with pytest.raises(ValueError, match="provenance_mismatch"):
         _validate_response(
             headers | {"x-homecompute-stt-model-sha256": "b" * 64},

@@ -7,7 +7,15 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from omi_local.daily_synthesis import batches, note_items, parse_plan, parse_review
+from omi_local.daily_synthesis import (
+    CHECK,
+    PLAN,
+    REVIEW,
+    batches,
+    note_items,
+    parse_plan,
+    parse_review,
+)
 from omi_local.inference import Inference, InferenceError
 from omi_local.settings import Settings
 
@@ -15,6 +23,13 @@ from omi_local.settings import Settings
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
+
+
+def test_daily_grouping_prompts_require_source_supported_connections():
+    assert "the source connects them" in PLAN
+    assert "a project mention alone does not make an independent topic" in PLAN
+    assert "same project or workflow" in CHECK
+    assert "source connects them" in REVIEW
 
 
 def reply(text):
@@ -111,9 +126,10 @@ def test_long_note_paragraphs_and_planning_batches_keep_the_tail_and_source_prov
 @pytest.mark.parametrize('mixed', [False, True])
 async def test_local_coherence_splits_unrelated_projects_and_keeps_one_workflow(tmp_path, mixed):
     ids = [str(uuid4()) for _ in range(3)]
-    labels = ['Hiring', 'Catalog launch', 'Beta feedback'] if mixed else [
-        'File latency', 'Locked files', 'Synchronization',
-    ]
+    labels = (
+        ['Independent effort A', 'Independent effort B', 'Personal arrangement']
+        if mixed else ['Queue delay', 'Retry behavior', 'Backlog visibility']
+    )
     notes = '\n'.join(f'* **{label}**: Review the issue on Friday. [{key}]'
                       for label, key in zip(labels, ids, strict=True))
     sources = [{'id': ids[0], 'started_at': '2026-10-20T10:00:00Z',

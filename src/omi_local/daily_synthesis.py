@@ -13,11 +13,11 @@ PLAN = (
     "Organize useful recorded information into coherent daily topics. This is ONLY a topic "
     "planning task, not summary writing. Supplied context labels are provisional; read the "
     "individual facts and regroup them. Use a project, plan, goal or workflow as the topic, "
-    "not one topic per technical detail. Latency, file locks, fetching, synchronization and "
-    "scaling in the same ingestion workflow belong together. Separate substantive independent "
-    "projects, hiring, a catalog launch and a different application's beta feedback. Never "
-    "attach other projects to a named project's heading. Smaller related updates may share a "
-    "useful general topic. Shared vocabulary or being in the same recording is not enough. "
+    "not one topic per technical detail. Group details only when the source connects them to "
+    "the same project or workflow. Keep current role, team context and earlier project "
+    "background with the subject they explain; a project mention alone does not make an "
+    "independent topic. Keep substantial independent subjects separately findable. Shared "
+    "vocabulary or being in the same recording is not enough to establish a connection. "
     "Select lasting useful outcomes, changes, follow-ups, plans, unresolved concerns and "
     "durable information; include explicit requests to remember ordinary errands and personal "
     "plans. Omit chatter, opaque fragments and incidental background. "
@@ -34,9 +34,7 @@ CHECK = (
     "Decide whether ONE proposed topic mixes genuinely independent subjects. First make a "
     "binary decision: split_required is true ONLY for unrelated projects or independent "
     "personal arrangements. It is false for different problems, owners or technical details "
-    "of the SAME project or workflow. Latency, locked files, fetching, synchronization and "
-    "scaling in one ingestion workflow must stay together. Recruitment, a catalog launch "
-    "and a different application's beta feedback are independent subjects. The suggested "
+    "of the same project or workflow. The suggested "
     "scope is only a hypothesis; use the facts to decide, not inherited parent labels. "
     "Preserve EVERY supplied item ID. There is no numeric topic target. Return only JSON: "
     "{\"split_required\":false,\"topics\":[{\"title\":\"specific subject\","
@@ -48,10 +46,9 @@ CHECK = (
 REVIEW = (
     "Review the complete daily topic plan for relevance and fragmentation AFTER local split "
     "checks. Make the final organization global across recordings and speakers. Merge "
-    "overlapping discussions of the same subject, goal or workflow, including recurring "
-    "conference themes such as AI adoption, governance and agent autonomy when their facts "
-    "belong together. Different speakers, sessions, tools and technical aspects do not by "
-    "themselves justify separate daily topics. Keep genuinely independent projects and "
+    "overlapping discussions of the same subject, goal or workflow when the source connects "
+    "them. Different speakers, settings, tools and technical aspects do not by themselves "
+    "justify separate daily topics. Keep genuinely independent projects and "
     "personal arrangements separately findable; shared vocabulary alone is insufficient. "
     "Keep consequential differences, qualifications and unique useful details inside their "
     "subject. Do not preserve the draft topic count or impose a numeric limit. "
@@ -225,8 +222,8 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
                 payload = reviewed
             if not single_topic and not final_review:
                 task += (' Audit the proposed grouping, not just its wording. Merge separate '
-                     'latency, locked-file, fetching-status, synchronization and scaling '
-                     'topics when the facts establish the same workflow. Keep genuinely '
+                     'topics when source facts establish the same project or workflow. '
+                     'Keep genuinely '
                      'independent projects findable. Do not preserve a draft topic count.')
         allow_omissions = isinstance(payload, dict) and 'supporting_items' in payload
         if final_review and not allow_omissions:

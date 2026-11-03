@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from omi_local import inference as inference_module
-from omi_local.inference import SUMMARY_SYSTEM, Inference
+from omi_local.inference import SUMMARY_SYSTEM, Inference, InferenceError
 from omi_local.recaps import Recaps
 from omi_local.settings import Settings
 from omi_local.summary_filter import NO_CONTENT
@@ -427,7 +427,11 @@ async def test_complete_recording_uses_reversible_short_citation_alias(tmp_path)
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("invalid_output", ["## Topic\nNo citation", "No heading here"])
+@pytest.mark.parametrize("invalid_output", [
+    "## Topic\nNo citation",
+    "## Topic\nAttributed fact [src_1]\n\nUncited factual paragraph.",
+    "No heading here",
+])
 async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
     tmp_path, invalid_output,
 ):
@@ -458,6 +462,22 @@ async def test_daily_fastpath_repairs_missing_citation_or_subject_heading(
         )
     assert result == output and len(requests) == 2
     assert trace["model_calls"] == 2 and trace["complete_context_one_pass"] is True
+
+
+def test_complete_context_validator_requires_citations_per_paragraph_and_accepts_lists():
+    source_id = str(uuid4())
+    invalid = (
+        f"## Plan\nSupported fact [{source_id}]\n\n"
+        "A second factual paragraph without a citation."
+    )
+    with pytest.raises(InferenceError):
+        Inference._validate_complete_recording_output(invalid, source_id, True)
+
+    valid_list = (
+        f"## Plan\n- First supported fact [{source_id}]\n"
+        f"- Second supported fact [{source_id}]"
+    )
+    assert Inference._validate_complete_recording_output(valid_list, source_id, True) == valid_list
 
 
 @pytest.mark.anyio

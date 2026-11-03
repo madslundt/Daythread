@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from omi_local.api import create_app
 from omi_local.domain import stamp
 from omi_local.inference import Inference
-from omi_local.recaps import topic_sources
+from omi_local.recaps import _daily_recap_purpose, topic_sources
 from omi_local.settings import Settings
 from omi_local.voice_activity import VERSION
 from omi_local.worker import scheduled_recaps
@@ -208,8 +208,32 @@ def test_recording_summary_receives_current_speaker_grounded_transcript(client, 
     assert "preserve names and roles mentioned in speech as third parties" in purpose.lower()
     assert "map them to an anonymous voice" in purpose.lower()
     daily_purpose = memory.inference.calls[1][1]
-    assert "first-person statement does not establish" in daily_purpose.lower()
-    assert "tentative options tentative" in daily_purpose.lower()
+    assert (
+        "do not infer a speaker's identity or broader ownership from a label or first-person "
+        "wording" in daily_purpose.lower()
+    )
+    assert "keep options tentative until explicitly decided" in daily_purpose.lower()
+    assert "from transcribed recording notes" in daily_purpose.lower()
+    assert "use a reviewed speaker name only to identify that speaker" in daily_purpose.lower()
+    assert "preserve names and roles mentioned in speech as third parties" in daily_purpose.lower()
+    assert (
+        "source connects them to the same project, plan, goal or workflow"
+        in daily_purpose.lower()
+    )
+
+
+def test_daily_purpose_uses_original_transcript_for_typed_full_recording():
+    day = AT.date()
+    purpose = _daily_recap_purpose(day, [{
+        "id": str(uuid4()), "reference_type": "recording_transcription",
+    }]).lower()
+    assert "from the complete original transcript" in purpose
+    assert "from transcribed recording notes" not in purpose
+    assert "2026-10-16" not in purpose
+    assert "do not infer or repair a spoken date or year" in purpose
+    assert "current role, team context" in purpose
+    assert "a project mention alone does not make an independent recap subject" in purpose
+    assert "do not turn garbled names or labels into confident subject headings" in purpose
 
 
 def test_completed_conversation_notes_get_one_full_original_coherence_edit(client, monkeypatch):
@@ -792,7 +816,7 @@ def test_late_historical_transcript_updates_only_its_recap(client, monkeypatch):
     asyncio.run(scheduled_recaps(memory))
     assert len(memory.inference.calls) == calls
     assert client.get("/v1/recaps/2026-10-13").json()["output_id"] == updated["output_id"]
-    assert "State each fact or decision only once" in memory.inference.calls[-1][1]
+    assert "Preserve useful details once" in memory.inference.calls[-1][1]
 
 
 @pytest.mark.parametrize("version,expected_calls", [
@@ -821,13 +845,9 @@ def test_prompt_upgrade_refreshes_saved_recap(client, monkeypatch, version, expe
     purpose = memory.inference.calls[-1][1]
     assert "no target, minimum or maximum number of topics" in purpose
     assert "one coherent summary per topic" in purpose
-    assert "Do not create separate short and long summaries" in purpose
-    assert "do not mix in unrelated subjects" in purpose
-    assert "without a recap title, date heading" in purpose
-    assert "do not create separate decisions/commitments or open-questions sections" in purpose
-    assert "Rewrite, rename, merge or reorganize" in purpose
-    assert "Reconsider relationships among all earlier discussions" in purpose
-    assert "Split a substantial growing subject out of a broad topic" in purpose
+    assert "group details only when the source connects them" in purpose.lower()
+    assert "a project mention alone does not make an independent recap subject" in purpose.lower()
+    assert "use a reviewed speaker name only to identify that speaker" in purpose.lower()
     asyncio.run(scheduled_recaps(memory))
     assert len(memory.inference.calls) == expected_calls
 

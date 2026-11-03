@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
                   f"-{SUMMARY_REDUCTION_VERSION}-{COHERENCE_VERSION}")
-DAY_PROMPT_VERSION = f"daily-topics-19-global-coherence-{COHERENCE_VERSION}"
+DAY_PROMPT_VERSION = f"daily-topics-20-source-connected-{COHERENCE_VERSION}"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
@@ -68,7 +68,7 @@ BOUNDARY_NOTE = (
     "configured pause in recorded speech. Missing uploads do not count as silence. "
     "Conversation boundaries are approximate."
 )
-SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-source-local-alias-4"
+SPEAKER_GROUNDED_VERSION = "speaker-grounded-preparation-source-local-alias-5"
 
 
 def digest(value: object) -> str:
@@ -132,6 +132,55 @@ def topic_sources(sources: list[dict]) -> list[dict]:
                 "canonical_text": text,
             })
     return result
+
+
+def _daily_recap_purpose(day: date, sources: list[dict]) -> str:
+    complete_recording = (
+        len(sources) == 1 and sources[0].get("reference_type") == "recording_transcription"
+    )
+    source_description = "the complete original transcript" if complete_recording else (
+        "transcribed recording notes"
+    )
+    filing_date = "for the selected day" if complete_recording else f"for {day.isoformat()}"
+    return (
+        f"a readable diary recap {filing_date} from {source_description}. "
+        + RELEVANCE +
+        "Include only topics with useful supported substance. "
+        f"If none qualify, return exactly {NO_CONTENT} and nothing else. "
+        + (
+            "The selected recap day and capture metadata are filing context only. Do not infer "
+            "or repair a spoken date or year from them; state dates only when supported by the "
+            "transcript. "
+            if complete_recording else ""
+        ) +
+        "Group details only when the source connects them to the same project, plan, goal or "
+        "workflow. Keep current role, team context and earlier project background with the "
+        "subject they explain; a project mention alone does not make an independent recap "
+        "subject. Keep substantial independent projects and personal arrangements separately "
+        "findable. Shared vocabulary or appearing in one recording does not establish a "
+        "connection. There is no target, minimum or maximum number of topics; do not preserve "
+        "fragmented headings just because they already exist. Preserve useful details once and "
+        "keep conflicting readings qualified. "
+        "Prepared headings are provisional; do not copy their structure. Reconsider earlier "
+        "discussions when later source evidence connects them, but later mentions alone do not "
+        "prove agreement, completion or cancellation. Preserve changed plans, conditions and "
+        "unique consequential details while removing repetition. "
+        "Keep machine speaker aliases anonymous and source-local. Use a reviewed speaker name "
+        "only to identify that speaker. Preserve names and roles mentioned in speech as third "
+        "parties; do not map them to an anonymous voice or assign them its actions. Do not "
+        "infer a speaker's identity or broader ownership from a label or first-person wording. "
+        "Distinguish current roles and projects from proposed or future work, keep options "
+        "tentative until explicitly decided, and do not turn wishes or implied intentions into "
+        "actions. "
+        "Output only short specific ## subject headings and one coherent summary per topic in "
+        "a few focused sentences, with a second paragraph only when needed. Do not create a "
+        "recap title, date heading, overview, separate short and long summaries, previews, "
+        "bullet lists or subheadings. Keep decisions, follow-ups and unresolved questions in "
+        "their subject. Omit opaque fragments and incidental background. Do not turn garbled "
+        "names or labels into confident subject headings; use a plain description only when "
+        "supported, otherwise qualify or omit the unclear label. Do not create empty sections "
+        "or placeholders, mix unrelated subjects, or claim the day is complete."
+    )
 
 
 class Recaps:
@@ -637,57 +686,7 @@ class Recaps:
                                         for review in generation_reviews),
                  }}
         if inputs:
-            purpose = (
-                f"a readable diary recap for {day.isoformat()} from transcribed recording notes. "
-                + RELEVANCE +
-                "Include only topics with useful supported substance. "
-                f"If none qualify, return exactly {NO_CONTENT} and nothing else. "
-                "First identify the coherent projects, plans, goals and workflows across ALL "
-                "note bodies, then write the recap. Prepared headings are provisional; do not "
-                "copy their structure. Organize at the project or useful everyday-subject level, "
-                "not one heading per technical issue. For example, latency, locked files, "
-                "fetching status, synchronization and scaling in the SAME ingestion workflow "
-                "belong in one coherent topic. Preserve consequential details within that topic. "
-                "Different projects stay separate even if they share vocabulary. A named project "
-                "must not absorb other projects, hiring or a separate beta program. "
-                "There is no target, minimum or maximum number of topics. Do not fill a quota, "
-                "drop a useful independent subject to reduce a count, or preserve fragmented "
-                "headings just because the recording notes contain them. Smaller RELATED updates "
-                "can share a general topic such as Home and errands; do not make an Other bucket, "
-                "a language-based topic, or an unrelated Project status catch-all. "
-                "Reconsider relationships among all earlier discussions as well as new material. "
-                "Rewrite, rename, merge or reorganize earlier topics when their substance "
-                "connects; "
-                "do not merely append new headings. Split a substantial growing subject out of a "
-                "broad topic and remove its details there so they appear once. Later context can "
-                "connect earlier subjects, but later mentions alone do not prove agreement, "
-                "completion or cancellation. Preserve useful unique details, original citations, "
-                "conditions, changed plans and conflicts through regrouping. "
-                "State each fact or decision only once, even when recordings repeat it. "
-                "Keep machine speaker aliases anonymous and source-local; they do not identify "
-                "the same person across recordings. A label or first-person statement does "
-                "not establish a person's identity or ownership outside the words attributed to "
-                "that speaker. Use personal names only when they appear as reviewed speaker "
-                "names in the prepared evidence. Distinguish a person's current role and current "
-                "project from proposed or future work, keep tentative options tentative until "
-                "explicitly decided, and do not turn wishes or implied intentions into actions. "
-                "Output only short specific ## subject headings and one coherent summary per topic "
-                "in a few focused sentences, with a second paragraph only when needed. "
-                "Do not create separate short and long summaries, previews, bullet lists or "
-                "subheadings; do not mix in unrelated subjects. Start directly with useful content "
-                "without a recap title, date heading or overview. Keep decisions, follow-ups and "
-                "unresolved questions in their subject; do not create separate "
-                "decisions/commitments "
-                "or open-questions sections. Omit opaque fragments, incidental technical "
-                "background, "
-                "empty sections and placeholders. Keep proposals and unclear names/relationships "
-                "qualified. Before finishing, merge technical subtopics of the same workflow, "
-                "and split headings that mix independent substantial subjects. Never combine a "
-                "named project with other projects in its heading. Recruitment, a catalog launch "
-                "and a different application's beta feedback must be individually findable when "
-                "each has useful substance. Do not describe pending conversations or claim "
-                "the day is complete"
-            )
+            purpose = _daily_recap_purpose(day, sources)
             purpose = purpose_with_template(purpose, template)
             synthesis_key = digest({
                 "kind": "unique_daily_synthesis", "inputs": inputs,

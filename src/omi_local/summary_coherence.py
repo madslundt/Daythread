@@ -15,7 +15,7 @@ from .inference import (
 from .summary_filter import NO_CONTENT
 from .summary_speaker_evidence import source_prompt_pieces
 
-VERSION = "whole-original-coherence-v2-source-local-alias-clarity"
+VERSION = "whole-original-coherence-v3-third-party-names-paragraph-citations"
 MAX_RENDERED_CHARACTERS = 100_000
 # request_tokens is a conservative UTF-8 byte-level upper bound, not a tokenizer receipt.
 MAX_INPUT_TOKEN_ESTIMATE = 120_000
@@ -33,8 +33,9 @@ EDITOR = (
     "phrases. Preserve stated conditions, quantities and units, dates as spoken, action objects, "
     "scope, uncertainty, negation, and whether work is current, proposed, planned, underway or "
     "complete. Keep current roles/projects distinct from possible future roles/projects. Keep "
-    "speaker aliases source-local. Use a personal name only when the evidence includes a "
-    "reviewed speaker name; otherwise keep the alias anonymous. Do not assign an action from "
+    "speaker aliases source-local. Use a reviewed speaker name only to identify that speaker. "
+    "Preserve names and roles mentioned in speech as third parties; do not map them to an "
+    "anonymous voice or assign them its actions. Do not assign an action from "
     "first-person wording or a nearby turn when the original speaker evidence is unknown or "
     "overlapping. Preserve "
     "independent projects and explicit personal plans. Merge repeated facts and related details "
@@ -126,6 +127,24 @@ def heading_level(text: str) -> int | None | str:
     return next(iter(levels)) if len(levels) == 1 else "mixed"
 
 
+def validate_paragraph_citations(text: str, sources: list[dict]) -> None:
+    """Require each factual paragraph or list item to cite a supplied source UUID."""
+    allowed = {source["id"].lower() for source in sources}
+    for paragraph in re.split(r"\n\s*\n", text):
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        content_lines = [line for line in lines if not re.match(r"^#{1,6}\s+", line)]
+        if not content_lines:
+            continue
+        units = content_lines if any(re.match(r"^\s*(?:[-*•]|\d+\.)\s+", line)
+                                     for line in content_lines) else [" ".join(content_lines)]
+        for unit in units:
+            groups = re.findall(r"\[([^\[\]]+)\]", unit)
+            if not any(key in allowed for group in groups for key in (
+                part.strip().lower() for part in group.split(",")
+            )):
+                raise CoherenceValidationError("paragraph_uncited")
+
+
 def validate_edit(text: str, sources: list[dict], draft: str) -> str:
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_OUTPUT_CHARACTERS:
         raise CoherenceValidationError("output_bounds")
@@ -157,18 +176,5 @@ def validate_edit(text: str, sources: list[dict], draft: str) -> str:
             if not any(line.strip() for line in lines[line_index + 1:end]):
                 raise CoherenceValidationError("empty_heading")
 
-    allowed = {source["id"].lower() for source in sources}
-    for paragraph in re.split(r"\n\s*\n", text):
-        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
-        content_lines = [line for line in lines if not re.match(r"^#{1,6}\s+", line)]
-        if not content_lines:
-            continue
-        units = content_lines if any(re.match(r"^\s*(?:[-*•]|\d+\.)\s+", line)
-                                     for line in content_lines) else [" ".join(content_lines)]
-        for unit in units:
-            groups = re.findall(r"\[([^\[\]]+)\]", unit)
-            if not any(key in allowed for group in groups for key in (
-                part.strip().lower() for part in group.split(",")
-            )):
-                raise CoherenceValidationError("paragraph_uncited")
+    validate_paragraph_citations(text, sources)
     return text

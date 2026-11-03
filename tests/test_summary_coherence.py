@@ -78,6 +78,8 @@ def test_complete_request_includes_full_originals_draft_speaker_evidence_and_pre
     assert "phonetic fragments" in task.lower()
     assert "speaker aliases source-local" in task.lower()
     assert "reviewed speaker name" in task.lower()
+    assert "only to identify that speaker" in task.lower()
+    assert "preserve names and roles mentioned in speech as third parties" in task.lower()
 
 
 @pytest.mark.parametrize(("draft", "edited", "code"), [

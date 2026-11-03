@@ -294,6 +294,9 @@ def source_prompt_pieces(
         value = prefix
         if actionable:
             value += (
+                "\nUnknown or overlapping ownership means the speaker is unavailable; it does "
+                "not make clearly transcribed words uncertain. Preserve transcription "
+                "uncertainty separately."
                 "\nOrdered speech pairs [owner, exact_text] (join the text values in order to "
                 "reconstruct this exact transcript window. The JSON speaker legend maps each "
                 "alias to its source-local speaker UUID reference and any reviewed name. The "

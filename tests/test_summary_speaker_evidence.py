@@ -104,6 +104,11 @@ def test_speech_blocks_partition_exact_text_and_keep_valid_owner_identity():
     assert pieces[0].content.count(speaker_b) == 1
     assert '"label"' not in pieces[0].content
     assert "do not establish a person's identity or carry across recordings" in pieces[0].content
+    assert (
+        "unknown or overlapping ownership means the speaker is unavailable"
+        in pieces[0].content.lower()
+    )
+    assert "does not make clearly transcribed words uncertain" in pieces[0].content
     assert "start_offset" not in pieces[0].content and '"start"' not in pieces[0].content
     assert source["speaker_evidence"] == original_rows
 

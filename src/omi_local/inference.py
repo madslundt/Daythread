@@ -42,7 +42,7 @@ from .transcription import Transcription
 
 Delta = Callable[[str], Awaitable[None]]
 SUMMARY_REDUCTION_VERSION = "compact-evidence-10-source-language"
-COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v2"
+COMPLETE_RECORDING_SUMMARY_VERSION = "selected-recording-complete-context-citation-alias-v3"
 COMPLETE_RECORDING_FASTPATH_CHAR_LIMIT = 64_000
 SOURCE_UUID_PATTERN = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 
@@ -696,6 +696,9 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
         validated = validate_citations(answer, [{"id": source_id}]).strip()
         if validated == NO_CONTENT:
             return validated
+        from .summary_coherence import validate_paragraph_citations
+
+        validate_paragraph_citations(validated, [{"id": source_id}])
         if not re.search(rf"\[\s*{re.escape(source_id)}\s*\]", validated, re.IGNORECASE):
             raise InferenceError("Complete recording summary requires a source citation")
         if require_subject_headings:

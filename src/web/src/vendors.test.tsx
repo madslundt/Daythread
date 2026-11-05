@@ -64,6 +64,18 @@ describe("vendor capabilities and provenance", () => {
     expect(render({ ...pocket, configured: false }, true)).toContain("Configure Pocket connection");
     expect(render({ ...pocket, configured: false }, true)).toContain('class="button" disabled="">Import latest conversations');
   });
+  it("shows signed Parrot setup and a profile-specific webhook address", () => {
+    const parrot: Vendor = { ...plaud, id: "parrot", label: "Parrot", enabled: true,
+      configured: true, capabilities: ["file_upload", "transcript_webhook"] };
+    const render = (selected: boolean) => renderToStaticMarkup(<VendorConnection vendor={parrot}
+      expanded profileSelected={selected} onSaved={vi.fn()} onConfigure={vi.fn()} />);
+    expect(render(true)).toContain("/v1/integrations/parrot/webhook?profile_id=");
+    expect(render(true)).toContain("Include the full transcript");
+    expect(render(true)).toContain("signing secret");
+    expect(render(true)).toContain("Audio is not included");
+    expect(render(true)).not.toContain("Import latest conversations");
+    expect(render(false)).not.toContain("/v1/integrations/parrot/webhook");
+  });
   it("keeps catalog discovery global while import writes remain profile scoped", () => {
     expect(globalEndpoint("/v1/vendors")).toBe(true);
     expect(globalEndpoint("/v1/vendors/pocket")).toBe(true);

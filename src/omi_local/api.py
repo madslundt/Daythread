@@ -58,6 +58,7 @@ from .merged_recordings import merged_recording_routes
 from .model_connections import model_connection_routes
 from .notification_api import notification_routes
 from .omi_api import ImportRequest, OmiAPIError
+from .parrot_webhooks import parrot_routes
 from .prep_models import PrepGenerate, PrepResult, PrepSearch, PrepSearchResult, PrepValidate
 from .profiles import DEFAULT_PROFILE, NewProfile, Profiles, selected_profile
 from .recap_api import recap_routes
@@ -217,6 +218,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(recording_location_routes(memory))
     app.include_router(conversation_tag_routes(memory))
     app.include_router(vendor_routes(lambda: config, runtime))
+    app.include_router(parrot_routes(lambda: config, runtime))
 
     @app.exception_handler(OmiAPIError)
     async def omi_error(request: Request, exc: OmiAPIError) -> Response:

@@ -49,6 +49,8 @@ def public_source(row: dict) -> dict:
     if row.get("tags"):
         result["tags"] = row["tags"]
     result["source_metadata"] = public_metadata(row, json.loads(row.get("source_metadata", "{}")))
+    if result["source_kind"] == "parrot_export":
+        result["timestamp_basis"] = "provider_meeting_date"
     if row.get("manual_location"):
         result["manual_location"] = row["manual_location"]
     vendor_id = result["source_metadata"].get("vendor_id")

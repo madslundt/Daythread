@@ -3098,3 +3098,24 @@
 
 "Summary reasoning" = "Resonemang för sammanfattningar";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Åsidosätt den delade inställningen för resonemang vid sammanfattningar. Modellstandard ärver den delade inställningen; andra LLM-uppgifter påverkas inte.";
+
+/* Parrot meeting webhooks */
+"Parrot" = "Parrot";
+"Enable Include the full transcript in Parrot's webhook settings" = "Aktivera Ta med hela transkriptionen i Parrots webhookinställningar";
+"Invalid Content-Length" = "Ogiltig Content-Length";
+"Invalid Parrot meeting payload or recording bounds" = "Ogiltiga mötesdata eller tidsgränser för inspelningen från Parrot";
+"Invalid Parrot transcript turn" = "Ogiltig talartur i Parrot-transkriptionen";
+"Invalid Parrot webhook signature" = "Ogiltig signatur för Parrot-webhook";
+"Missing meeting" = "Möte saknas";
+"Parrot meeting could not be saved; retry later" = "Mötet från Parrot kunde inte sparas; försök igen senare";
+"Parrot webhook body timed out" = "Tidsgränsen överskreds vid mottagning av Parrot-webhookens innehåll";
+"Parrot webhook enabled" = "Parrot-webhook aktiverad";
+"Parrot webhook exceeds 16 MB" = "Parrot-webhooken överskrider 16 MB";
+"Parrot webhook receiver is busy; retry later" = "Mottagaren för Parrot-webhooks är upptagen; försök igen senare";
+"Parrot webhook receiver is disabled" = "Mottagaren för Parrot-webhooks är avstängd";
+"Parrot webhook secret" = "Signeringshemlighet för Parrot-webhook";
+"Receive signed Parrot meeting transcripts after each call." = "Ta emot signerade mötestranskriptioner från Parrot efter varje samtal.";
+"Save a Parrot webhook secret in server settings" = "Spara en signeringshemlighet för Parrot-webhook i serverinställningarna";
+"Send signed meeting webhooks from Parrot with Include the full transcript enabled." = "Skicka signerade möteswebhooks från Parrot med Ta med hela transkriptionen aktiverat.";
+"Send uncompressed application/json" = "Skicka okomprimerad application/json";
+"Use the same signing secret in Parrot's webhook settings. Enable Include the full transcript in Parrot." = "Använd samma signeringshemlighet i Parrots webhookinställningar. Aktivera Ta med hela transkriptionen i Parrot.";

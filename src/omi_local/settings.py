@@ -165,6 +165,8 @@ class Settings(BaseSettings):
     audio_forwarding_token: SecretStr = SecretStr("")
     omi_api_key: SecretStr = SecretStr("")
     pocket_api_key: SecretStr = SecretStr("")
+    parrot_webhook_enabled: bool = False
+    parrot_webhook_secret: SecretStr = Field(default=SecretStr(""), max_length=4096)
     apns_team_id: str = Field(default="", max_length=10, pattern=r"^(?:[A-Z0-9]{10})?$")
     apns_key_id: str = Field(default="", max_length=10, pattern=r"^(?:[A-Z0-9]{10})?$")
     apns_private_key: SecretStr = SecretStr("")

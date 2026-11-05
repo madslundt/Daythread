@@ -77,6 +77,7 @@ class VendorRecording(BaseModel):
     ended_at: AwareDatetime
     text: str = Field(min_length=1, max_length=200000)
     segments: list[TranscriptSegment] = Field(default_factory=list, max_length=10000)
+    metadata: dict[str, str] = Field(default_factory=dict, max_length=10)
 
     @model_validator(mode="after")
     def valid_recording(self):
@@ -246,7 +247,7 @@ class TranscriptArchive:
                         json.dumps([s.model_dump() for s in source.segments]),
                         source_kind,
                         source.source_id,
-                        json.dumps({"vendor_id": self.vendor_id}),
+                        json.dumps(source.metadata | {"vendor_id": self.vendor_id}),
                     ),
                 )
                 db.execute("INSERT INTO transcript_search VALUES(?,?)", (key, source.text))

@@ -163,6 +163,107 @@ Import the latest 25 conversations, then use **Load next 25** to continue. Each 
 
 This API supplies **transcripts only**. Imported sources have no original audio and do not offer playback. Source labels distinguish these from local recordings whose audio expired. Hosted import needs internet access and an Omi key; direct BLE capture and local inference remain independent of Omi's hosted service. The published multi-user Integration App API uses different credentials and is not this connector.
 
+### Parrot meeting webhooks and audio options
+
+In web **Settings → Recording & devices → Parrot**, open **Configure Parrot connection**,
+enable **Parrot webhook enabled**, and save a **Parrot webhook secret**. Copy the selected
+profile's receiver address into Parrot's webhook settings, using an HTTPS origin reachable
+from the Mac running Parrot. The route is `POST /v1/integrations/parrot/webhook`; its
+`profile_id` query parameter chooses the destination archive. Server settings and the secret
+are shared across profiles. Keep the archive private; Parrot can reach a private HTTPS
+server over your LAN or VPN. Do not expose the entire unauthenticated archive for a webhook.
+
+In Parrot, enable **Send after every call** and **Include the full transcript**, enter the
+same signing secret and save it, then use **Send Test**. The receiver requires
+`X-Parrot-Signature: sha256=<hex HMAC-SHA256>` over the exact request body. A signed `test`
+event returns success without creating a recording. Signed `meeting.finished` events import
+original speech, speaker labels, original meeting date and duration; summaries, coaching,
+next steps, calendar attendees, notes and bookmarks are not transcript evidence. Missing or
+empty transcripts return HTTP 422 with setup guidance. The JSON body is bounded to 16 MB,
+10,000 turns and 200,000 transcript characters; no inference runs in the request. Stable
+meeting IDs deduplicate retries and preserve corrections, deletion and retention decisions.
+Parrot's minute/second offsets preserve start points only; no segment end times are inferred.
+One second of tolerance accommodates Parrot's rounded duration. The API labels dates as
+`timestamp_basis=provider_meeting_date` and retains the supplied date/duration in provenance.
+Live calls use their start date, but Parrot uses the file modification date for imported
+audio. That date is not verified capture timing; a date that implies a future recording end
+is rejected. Upload imported audio directly to Daythread with its original recording time
+when Parrot's file date is unsuitable.
+[Parrot's imported-file date logic](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Services/RecordingManager.swift#L657).
+Imports use `source_kind=parrot_export` and have no playable audio. The receiver is disabled
+by default; equivalent initial environment settings are `OMI_PARROT_WEBHOOK_ENABLED` and
+`OMI_PARROT_WEBHOOK_SECRET`. Secrets remain in private server configuration and are excluded
+from archive exports. [Parrot's official connections guide](https://openparrot.app/help/connections.html)
+and [the verified 0.29.10 sender contract](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Services/Integrations.swift).
+
+Parrot 0.29.10 does not attach audio, an audio URL or a local path to its webhook. It can
+automatically save Markdown reports to a folder and expose past transcripts through its
+local MCP server, but neither includes audio. **Show Audio File in Finder** makes manual
+audio import possible; choose **Parrot** in Daythread's audio upload picker. Live calls
+save separate system and microphone CAF files, and the Finder action reveals only the
+system track. Combine both tracks to retain your voice as well as the other participants.
+[Audio storage](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Services/AudioCaptureManager.swift)
+and [Finder action](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Views/AppCommands.swift).
+
+For automatic audio import, download just [import_recordings.py](../scripts/import_recordings.py)
+to the laptop running Parrot. It is a standalone Python 3.10+ script: no Daythread checkout,
+backend installation, virtual environment or pip dependencies are required on that laptop.
+Install Python and FFmpeg if needed (`brew install python ffmpeg` on macOS), then run:
+
+```bash
+# Keep watching Parrot for newly finished recordings. Ctrl+C stops it.
+python3 import_recordings.py --server https://YOUR_DAYTHREAD_SERVER --parrot --watch
+
+# Import currently available Parrot recordings once, then exit.
+python3 import_recordings.py --server https://YOUR_DAYTHREAD_SERVER --parrot --once
+
+# Another folder; file modification time is used as the recording end.
+python3 import_recordings.py --server https://YOUR_DAYTHREAD_SERVER --folder ~/Recordings --once
+
+# Optional: install this single file as ~/.local/bin/daythread-import.
+python3 import_recordings.py --install
+```
+
+Both modes use the existing remote Daythread server. Add `--profile UUID` for another
+profile, `--dry-run` to preview without uploads, or `--recursive` for nested folders.
+Watch mode imports new or changed files; add `--include-existing` to include old files on
+its first run. Once mode includes existing files automatically, waits through the settling
+period and processes closed files. It exits with status 1 if files are still changing/open
+or an import fails, allowing a later retry. `--mtime-is-start` changes generic folder timing
+when modification time represents capture start instead. These file dates are supplied
+timing estimates; use the web/native importer when you need to enter an exact recording time.
+
+The script polls every five seconds, requires 30 seconds without file changes and uses
+`lsof` to wait for capture writers to close. Parrot mode pairs the exact UTC timestamp in
+`system_*.caf` and `mic_*.caf`, mixes both tracks from their shared start, and handles calls
+that have only one track. Debug audio and `import_*` files are ignored. It uses the capture
+timestamp from the filename, converts locally to 16 kHz mono PCM16, and uploads resumable
+two-minute parts as a Parrot recording. It does not wait for Parrot's report generation.
+
+A local SQLite index remembers acknowledged file versions **and content hashes** across
+restarts, including renamed files. Daythread's duplicate check and stable upload plans also
+prevent repeated uploads and resume missing parts after interruptions. Completion is recorded
+only after server acknowledgement; failed files remain eligible for retry. Local state is
+stored under `~/Library/Application Support/Daythread Folder Import/`. File versions and
+the first-run baseline are tracked per watched folder; acknowledged content hashes are
+shared across folders for the same server/profile, including after a folder move or timing
+option change. `--state /path/to/index.sqlite3` overrides the folder ledger; reusing it for
+another destination/folder is rejected. Only one importer can run for a server/profile at
+a time, preventing overlapping watch/once runs from transferring the same file concurrently.
+Keep both ledgers to avoid restoring a recording
+that you subsequently delete or expire on the server. Original audio is never changed or
+deleted, temporary conversion data is removed, and no recording content is stored in the index.
+If your server/proxy requires a Bearer token, set `DAYTHREAD_IMPORT_TOKEN` in the environment;
+the script does not write it to disk. HTTPS certificate verification stays enabled and
+HTTP redirects are refused.
+
+Folder watching is independent of Parrot's webhook privacy filter: it **also imports
+on-device-only recordings**, because that flag is absent from the audio files. To choose
+which recordings leave the laptop, use a dedicated folder instead. This helper does not
+read Parrot's database, change Parrot settings, or associate audio with a webhook meeting
+UUID. Enabling both input paths can create a separate transcript import and audio recording;
+use the audio watcher alone when you want Daythread to transcribe the original audio.
+
 Foreground iPhone discovery accepts Omi name advertisements as well as the audio service, then validates required GATT capabilities. Reconnection uses the saved peripheral identifier. Unsupported/custom firmware still requires its own verified protocol. Pendant storage downloads and direct Wi-Fi capture are not implemented; official CV1 documentation says Wi-Fi is disabled in current firmware. Source comparisons with the official project, omibutfree, Boswell Phone, omi-whisperx and Omi Offline are in [device research](device-research.md).
 
 ## Gesture and hint rules

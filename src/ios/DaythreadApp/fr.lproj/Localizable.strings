@@ -3098,3 +3098,24 @@
 
 "Summary reasoning" = "Raisonnement des résumés";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Remplace le réglage partagé du raisonnement pour la génération des résumés. La valeur par défaut du modèle hérite du réglage partagé ; les autres tâches LLM ne sont pas affectées.";
+
+/* Parrot meeting webhooks */
+"Parrot" = "Parrot";
+"Enable Include the full transcript in Parrot's webhook settings" = "Activez Inclure la transcription complète dans les réglages des webhooks de Parrot";
+"Invalid Content-Length" = "En-tête Content-Length non valide";
+"Invalid Parrot meeting payload or recording bounds" = "Données de réunion Parrot ou limites temporelles de l’enregistrement non valides";
+"Invalid Parrot transcript turn" = "Tour de parole non valide dans la transcription Parrot";
+"Invalid Parrot webhook signature" = "Signature du webhook Parrot non valide";
+"Missing meeting" = "Réunion manquante";
+"Parrot meeting could not be saved; retry later" = "Impossible d’enregistrer la réunion Parrot ; réessayez plus tard";
+"Parrot webhook body timed out" = "Délai dépassé lors de la réception du corps du webhook Parrot";
+"Parrot webhook enabled" = "Webhook Parrot activé";
+"Parrot webhook exceeds 16 MB" = "Le webhook Parrot dépasse 16 Mo";
+"Parrot webhook receiver is busy; retry later" = "Le récepteur des webhooks Parrot est occupé ; réessayez plus tard";
+"Parrot webhook receiver is disabled" = "Le récepteur des webhooks Parrot est désactivé";
+"Parrot webhook secret" = "Secret de signature du webhook Parrot";
+"Receive signed Parrot meeting transcripts after each call." = "Recevez les transcriptions de réunion signées par Parrot après chaque appel.";
+"Save a Parrot webhook secret in server settings" = "Enregistrez un secret de signature pour le webhook Parrot dans les réglages du serveur";
+"Send signed meeting webhooks from Parrot with Include the full transcript enabled." = "Envoyez des webhooks de réunion signés depuis Parrot en activant Inclure la transcription complète.";
+"Send uncompressed application/json" = "Envoyez du contenu application/json non compressé";
+"Use the same signing secret in Parrot's webhook settings. Enable Include the full transcript in Parrot." = "Utilisez le même secret de signature dans les réglages des webhooks de Parrot. Activez Inclure la transcription complète dans Parrot.";

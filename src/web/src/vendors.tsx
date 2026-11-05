@@ -8,6 +8,7 @@ export type Vendor = {
   setup_url: string;
   import_instructions: string;
   configured: boolean;
+  enabled?: boolean;
   key_setting?: string;
 };
 

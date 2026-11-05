@@ -5,6 +5,7 @@ import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
 import { TranscriptExportImport } from "./TranscriptExportImport";
 import type { Vendor } from "./vendors";
+import { profileResourceUrl } from "./profiles";
 
 type ImportResult = {
   imported: number; existing: number; skipped: number; has_more: boolean;
@@ -37,6 +38,7 @@ export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected
   const [result, setResult] = useState<ImportResult>();
   const [nextPage, setNextPage] = useState<{ end: string; offset: number; cursor: string | null }>();
   const cloud = vendor.capabilities.includes("transcript_import");
+  const webhook = vendor.capabilities.includes("transcript_webhook");
   const unavailable = busy || !profileSelected || !vendor.configured;
   async function importPage(next = false) {
     if (unavailable || (next && !nextPage)) return;
@@ -57,11 +59,21 @@ export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected
     finally { setBusy(false); }
   }
   return <details className="settings-disclosure" open={expanded ? true : undefined}>
-    <summary>{t(vendor.label)}{" "}<span>{cloud ? t("Optional · transcripts only") : t("Export and upload")}</span></summary>
+    <summary>{t(vendor.label)}{" "}<span>{cloud || webhook ? t("Optional · transcripts only") : t("Export and upload")}</span></summary>
     <div className="settings-disclosure-body">
       <p className="caption">{t(vendor.import_instructions)}</p>
       {vendor.setup_url ? <a className="text-link" href={vendor.setup_url} target="_blank" rel="noreferrer">{t("Device setup and export instructions")}</a> : null}
       {vendor.capabilities.includes("file_upload") ? <p className="caption">{t("Use Upload recordings on Today and choose this brand to keep its source information.")}</p> : null}
+      {webhook ? <>
+        <p className="caption">{t("Enable the Parrot webhook receiver in server settings and save the same signing secret here and in Parrot.")}</p>
+        <p className="caption" role="status">{t("Receiver:")}{" "}{vendor.enabled && vendor.configured ? t("enabled; waiting for deliveries") : t("disabled")}</p>
+        {profileSelected ? <>
+          <p className="caption">{t("Paste this address into Parrot using an HTTPS origin reachable from your Mac. The address selects this archive profile.")}</p>
+          <code style={{ overflowWrap: "anywhere" }}>{`${typeof window === "undefined" ? "" : window.location.origin}${profileResourceUrl("/v1/integrations/parrot/webhook")}`}</code>
+        </> : <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p>}
+        <p className="caption">{t("In Parrot, enable Send after every call and Include the full transcript, save the signing secret, then Send Test. Test events add no recordings. Audio is not included.")}</p>
+        <button type="button" className="text-button" onClick={() => onConfigure(vendor.label)}>{t("Configure {vendor} connection", { vendor: t(vendor.label) })}</button>
+      </> : null}
       {cloud ? <>
         <p className="caption">{t("This connection imports transcripts only. Original audio remains with the vendor.")}</p>
         {!profileSelected ? <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p> : null}

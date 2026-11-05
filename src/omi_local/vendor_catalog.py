@@ -45,6 +45,14 @@ VENDORS = (
         "pocket_api_key",
     ),
     VendorDefinition(
+        "parrot",
+        "Parrot",
+        ("file_upload", "transcript_webhook"),
+        "https://openparrot.app/help/connections.html",
+        "Send signed meeting webhooks from Parrot with Include the full transcript enabled.",
+        "parrot_webhook_secret",
+    ),
+    VendorDefinition(
         "apple",
         "Apple Voice Memos",
         ("file_upload",),
@@ -85,4 +93,7 @@ def vendor_status(vendor: VendorDefinition, settings) -> dict:
     configured = bool(
         vendor.key_setting and getattr(settings, vendor.key_setting).get_secret_value().strip()
     )
-    return {**asdict(vendor), "configured": configured}
+    result = {**asdict(vendor), "configured": configured}
+    if vendor.id == "parrot":
+        result["enabled"] = settings.parrot_webhook_enabled
+    return result

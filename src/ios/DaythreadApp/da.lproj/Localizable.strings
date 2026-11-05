@@ -3100,3 +3100,24 @@
 
 "Summary reasoning" = "Ræsonnering i opsummeringer";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Tilsidesæt den fælles indstilling for ræsonnering ved generering af opsummeringer. Modelstandard arver den fælles indstilling; andre LLM-opgaver påvirkes ikke.";
+
+/* Parrot meeting webhooks */
+"Parrot" = "Parrot";
+"Enable Include the full transcript in Parrot's webhook settings" = "Slå Medtag hele transskriptionen til i Parrots webhookindstillinger";
+"Invalid Content-Length" = "Ugyldig Content-Length";
+"Invalid Parrot meeting payload or recording bounds" = "Ugyldige mødedata eller optagelsesgrænser fra Parrot";
+"Invalid Parrot transcript turn" = "Ugyldig taletur i Parrot-transskriptionen";
+"Invalid Parrot webhook signature" = "Ugyldig signatur på Parrot-webhook";
+"Missing meeting" = "Intet møde angivet";
+"Parrot meeting could not be saved; retry later" = "Mødet fra Parrot kunne ikke gemmes; prøv igen senere";
+"Parrot webhook body timed out" = "Tidsfristen for modtagelse af Parrot-webhookens indhold blev overskredet";
+"Parrot webhook enabled" = "Parrot-webhook aktiveret";
+"Parrot webhook exceeds 16 MB" = "Parrot-webhook overstiger 16 MB";
+"Parrot webhook receiver is busy; retry later" = "Modtageren til Parrot-webhooks er optaget; prøv igen senere";
+"Parrot webhook receiver is disabled" = "Modtageren til Parrot-webhooks er slået fra";
+"Parrot webhook secret" = "Signeringshemmelighed til Parrot-webhook";
+"Receive signed Parrot meeting transcripts after each call." = "Modtag signerede mødetransskriptioner fra Parrot efter hvert opkald.";
+"Save a Parrot webhook secret in server settings" = "Gem en signeringshemmelighed til Parrot-webhook i serverindstillingerne";
+"Send signed meeting webhooks from Parrot with Include the full transcript enabled." = "Send signerede mødewebhooks fra Parrot med Medtag hele transskriptionen slået til.";
+"Send uncompressed application/json" = "Send ukomprimeret application/json";
+"Use the same signing secret in Parrot's webhook settings. Enable Include the full transcript in Parrot." = "Brug samme signeringshemmelighed i Parrots webhookindstillinger. Slå Medtag hele transskriptionen til i Parrot.";

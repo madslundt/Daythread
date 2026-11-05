@@ -130,7 +130,7 @@ Current upstream sends from Omi’s backend and blocks private destinations. Hos
 
 Brand identity is independent of transport. `vendor_catalog.py` declares each brand's stable ID,
 display name, setup instructions, and capabilities (`file_upload`, `transcript_import`,
-`transcript_export`, `local_capture`, `audio_webhook`). Web and native audio import pickers read
+`transcript_export`, `transcript_webhook`, `local_capture`, `audio_webhook`). Web and native audio import pickers read
 `GET /v1/vendors`; adding an audio-export brand requires a catalog entry and translations.
 Catalog entries advertise implemented paths, never inferred Bluetooth compatibility.
 
@@ -159,6 +159,20 @@ the unchanged export and capture bounds; changed exports require the original ID
 Plaud's documented consumer access does not provide a general API-key REST contract, so no
 invented Plaud credential or private endpoint is used. See the official [export formats](https://support.plaud.ai/hc/en-us/articles/51023259082393-Export-recordings-transcripts-and-summaries)
 and [API availability](https://support.plaud.ai/hc/en-us/articles/60726890231449-How-can-I-get-API-access-to-my-Plaud-data).
+
+Parrot's optional signed `POST /v1/integrations/parrot/webhook` accepts its `test` and
+`meeting.finished` events. HMAC-SHA256 verifies exact raw JSON bytes with the private
+`parrot_webhook_secret`; the receiver is disabled by default. Meeting imports require the
+full transcript and pass through `TranscriptArchive` with `source_kind=parrot_export`,
+the Parrot meeting UUID and a stable vendor namespace. Original date/duration and speaker
+turns are preserved; minute/second starts remain point timestamps because Parrot supplies
+no end times. Reports/notes never enter source speech. Body size, concurrency, timeout and
+turn/text lengths are bounded. Dates have `timestamp_basis=provider_meeting_date`; the original
+date and duration remain in source metadata because Parrot uses file modification dates for
+imported audio. Future-ended intervals are rejected rather than replacing capture bounds.
+Acknowledgement follows persistence and retention; retries preserve corrections and deletion
+tombstones. The URL selects the archive profile, independently
+of Parrot's own profile name. No audio is included. See [setup and audio options](README.md#parrot-meeting-webhooks-and-audio-options).
 
 Exported audio retains `source_kind=manual_upload`, its filename, and the selected
 `source_metadata.vendor_id`. The upload plan captures that brand before transfer and validates

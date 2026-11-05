@@ -58,7 +58,7 @@ def group(key: str) -> str:
         return "Semantic search"
     if key in {"inference_token", "inference_timeout_seconds"}:
         return "Local inference"
-    if key.startswith("pocket_"):
+    if key.startswith(("pocket_", "parrot_")):
         return "Device connections"
     if key.startswith("omi_") or key.startswith("audio_forwarding_"):
         return "Omi connections"
@@ -181,6 +181,9 @@ DESCRIPTIONS = {
     "inference_token": "Shared STT/LLM gateway credential, used when no provider key is set. "
     "Leave unchanged to keep it.",
     "pocket_api_key": "Pocket developer API key for optional transcript import.",
+    "parrot_webhook_enabled": "Receive signed Parrot meeting transcripts after each call.",
+    "parrot_webhook_secret": "Use the same signing secret in Parrot's webhook settings. "
+    "Enable Include the full transcript in Parrot.",
     "omi_api_key": "Personal Omi developer API key for optional transcript import.",
     "audio_forwarding_token": "Separate receiver secret: 32–128 URL-safe letters, digits, _ or -.",
     "embedding_enabled": "Requires a model, immutable revision and positive output dimension.",
@@ -278,6 +281,8 @@ def descriptors() -> list[dict]:
             "chat_context_window_tokens": "Chat context window (tokens)",
             "meeting_quiet_minutes": "End meeting after recorded quiet (minutes)",
             "pocket_api_key": "Pocket API key",
+            "parrot_webhook_enabled": "Parrot webhook enabled",
+            "parrot_webhook_secret": "Parrot webhook secret",
             "stt_base_url": "Transcription endpoint",
             "stt_api_key": "Transcription API key",
             "stt_model": "Transcription model",

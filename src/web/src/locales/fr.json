@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Les voix mémorisées sont reconnues automatiquement dans les prochains enregistrements. Vérifiez les noms automatiques et corrigez les erreurs.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Les voix mémorisées sont proposées dans les prochains enregistrements. Confirmez chaque suggestion avant d’enregistrer un nom.",
   "Enable saved voice recognition before automatic assignment": "Activez la reconnaissance des voix mémorisées avant l’attribution automatique",
-  "At least one confirmed conversation is required": "Au moins une conversation confirmée est nécessaire"
+  "At least one confirmed conversation is required": "Au moins une conversation confirmée est nécessaire",
+  "Copy signing secret": "Copier le secret de signature",
+  "Copy this secret into Parrot, then save these settings.": "Copiez ce secret dans Parrot, puis enregistrez ces réglages.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Impossible de copier le secret de signature. Affichez-le et copiez-le manuellement.",
+  "Enter the same signing secret used in Parrot.": "Saisissez le même secret de signature que dans Parrot.",
+  "Generate signing secret": "Générer un secret de signature",
+  "Hide signing secret": "Masquer le secret de signature",
+  "Parrot settings saved. Changes apply immediately.": "Réglages de Parrot enregistrés. Les modifications prennent effet immédiatement.",
+  "Save Parrot settings": "Enregistrer les réglages de Parrot",
+  "Show signing secret": "Afficher le secret de signature",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Secret de signature enregistré. Laissez le champ vide pour le conserver ou saisissez un nouveau secret.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Ces réglages s’appliquent à tous les profils. L’adresse du webhook ci-dessous détermine le profil de destination.",
+  "missing signing secret": "secret de signature manquant"
 }

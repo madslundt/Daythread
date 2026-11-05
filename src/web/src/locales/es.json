@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Las voces guardadas se identifican automáticamente en futuras grabaciones. Revisa los nombres automáticos y corrige los errores.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Las voces guardadas se sugieren en futuras grabaciones. Confirma cada sugerencia antes de guardar un nombre.",
   "Enable saved voice recognition before automatic assignment": "Activa el reconocimiento de voces guardadas antes de la asignación automática",
-  "At least one confirmed conversation is required": "Se requiere al menos una conversación confirmada"
+  "At least one confirmed conversation is required": "Se requiere al menos una conversación confirmada",
+  "Copy signing secret": "Copiar secreto de firma",
+  "Copy this secret into Parrot, then save these settings.": "Copia este secreto en Parrot y después guarda estos ajustes.",
+  "Could not copy the signing secret. Show it and copy it manually.": "No se pudo copiar el secreto de firma. Muéstralo y cópialo manualmente.",
+  "Enter the same signing secret used in Parrot.": "Introduce el mismo secreto de firma que usas en Parrot.",
+  "Generate signing secret": "Generar secreto de firma",
+  "Hide signing secret": "Ocultar secreto de firma",
+  "Parrot settings saved. Changes apply immediately.": "Ajustes de Parrot guardados. Los cambios se aplican de inmediato.",
+  "Save Parrot settings": "Guardar ajustes de Parrot",
+  "Show signing secret": "Mostrar secreto de firma",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Secreto de firma guardado. Deja el campo vacío para conservarlo o introduce uno nuevo.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Estos ajustes se aplican a todos los perfiles. La dirección del webhook de abajo selecciona el perfil de destino.",
+  "missing signing secret": "falta el secreto de firma"
 }

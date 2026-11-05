@@ -6,6 +6,7 @@ import { ErrorState, Loading, Notice } from "./UI";
 import { TranscriptExportImport } from "./TranscriptExportImport";
 import type { Vendor } from "./vendors";
 import { profileResourceUrl } from "./profiles";
+import { ParrotReceiver } from "./ParrotReceiver";
 
 type ImportResult = {
   imported: number; existing: number; skipped: number; has_more: boolean;
@@ -24,14 +25,14 @@ export function VendorConnections({ onSaved, onConfigure, refreshRevision, searc
     {resource.loading ? <Loading>{t("Loading recording devices…")}</Loading> : null}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.data?.items.filter((vendor) => vendor.id !== "manual" && vendor.id !== "omi").map((vendor) =>
-      <VendorConnection key={vendor.id} vendor={vendor} onSaved={onSaved} onConfigure={onConfigure}
-        profileSelected={profileSelected} expanded={Boolean(search.trim())} />)}
+      <VendorConnection key={vendor.id} vendor={vendor} onSaved={() => { resource.refresh(); onSaved(); }} onConfigure={onConfigure}
+        refreshRevision={refreshRevision} profileSelected={profileSelected} expanded={Boolean(search.trim())} />)}
   </section>;
 }
 
-export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected, expanded }: {
+export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected, expanded, refreshRevision }: {
   vendor: Vendor; onSaved: () => void; onConfigure: (label?: string) => void;
-  profileSelected: boolean; expanded: boolean;
+  profileSelected: boolean; expanded: boolean; refreshRevision?: number;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -65,14 +66,12 @@ export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected
       {vendor.setup_url ? <a className="text-link" href={vendor.setup_url} target="_blank" rel="noreferrer">{t("Device setup and export instructions")}</a> : null}
       {vendor.capabilities.includes("file_upload") ? <p className="caption">{t("Use Upload recordings on Today and choose this brand to keep its source information.")}</p> : null}
       {webhook ? <>
-        <p className="caption">{t("Enable the Parrot webhook receiver in server settings and save the same signing secret here and in Parrot.")}</p>
-        <p className="caption" role="status">{t("Receiver:")}{" "}{vendor.enabled && vendor.configured ? t("enabled; waiting for deliveries") : t("disabled")}</p>
+        <ParrotReceiver onSaved={onSaved} refreshRevision={refreshRevision} />
         {profileSelected ? <>
           <p className="caption">{t("Paste this address into Parrot using an HTTPS origin reachable from your Mac. The address selects this archive profile.")}</p>
           <code style={{ overflowWrap: "anywhere" }}>{`${typeof window === "undefined" ? "" : window.location.origin}${profileResourceUrl("/v1/integrations/parrot/webhook")}`}</code>
         </> : <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p>}
         <p className="caption">{t("In Parrot, enable Send after every call and Include the full transcript, save the signing secret, then Send Test. Test events add no recordings. Audio is not included.")}</p>
-        <button type="button" className="text-button" onClick={() => onConfigure(vendor.label)}>{t("Configure {vendor} connection", { vendor: t(vendor.label) })}</button>
       </> : null}
       {cloud ? <>
         <p className="caption">{t("This connection imports transcripts only. Original audio remains with the vendor.")}</p>

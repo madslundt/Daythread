@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Gemte stemmer genkendes automatisk i fremtidige optagelser. Gennemgå de automatiske navne, og ret eventuelle fejl.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Gemte stemmer foreslås i fremtidige optagelser. Bekræft hvert forslag, før du gemmer et navn.",
   "Enable saved voice recognition before automatic assignment": "Aktivér genkendelse af gemte stemmer før automatisk tildeling",
-  "At least one confirmed conversation is required": "Der kræves mindst én bekræftet samtale"
+  "At least one confirmed conversation is required": "Der kræves mindst én bekræftet samtale",
+  "Copy signing secret": "Kopiér signeringshemmelighed",
+  "Copy this secret into Parrot, then save these settings.": "Kopiér denne hemmelighed til Parrot, og gem derefter disse indstillinger.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Signeringshemmeligheden kunne ikke kopieres. Vis den, og kopiér den manuelt.",
+  "Enter the same signing secret used in Parrot.": "Indtast den samme signeringshemmelighed som i Parrot.",
+  "Generate signing secret": "Generér signeringshemmelighed",
+  "Hide signing secret": "Skjul signeringshemmelighed",
+  "Parrot settings saved. Changes apply immediately.": "Parrot-indstillingerne er gemt. Ændringerne træder i kraft med det samme.",
+  "Save Parrot settings": "Gem Parrot-indstillinger",
+  "Show signing secret": "Vis signeringshemmelighed",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Signeringshemmeligheden er gemt. Lad feltet være tomt for at beholde den, eller indtast en ny.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Disse indstillinger gælder for alle profiler. Webhook-adressen nedenfor vælger modtagerprofilen.",
+  "missing signing secret": "signeringshemmelighed mangler"
 }

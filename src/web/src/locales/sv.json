@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Sparade röster matchas automatiskt i framtida inspelningar. Granska automatiska namn och rätta eventuella fel.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Sparade röster föreslås i framtida inspelningar. Bekräfta varje förslag innan du sparar ett namn.",
   "Enable saved voice recognition before automatic assignment": "Aktivera igenkänning av sparade röster före automatisk tilldelning",
-  "At least one confirmed conversation is required": "Minst ett bekräftat samtal krävs"
+  "At least one confirmed conversation is required": "Minst ett bekräftat samtal krävs",
+  "Copy signing secret": "Kopiera signeringshemlighet",
+  "Copy this secret into Parrot, then save these settings.": "Kopiera denna hemlighet till Parrot och spara sedan dessa inställningar.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Det gick inte att kopiera signeringshemligheten. Visa den och kopiera den manuellt.",
+  "Enter the same signing secret used in Parrot.": "Ange samma signeringshemlighet som i Parrot.",
+  "Generate signing secret": "Generera signeringshemlighet",
+  "Hide signing secret": "Dölj signeringshemlighet",
+  "Parrot settings saved. Changes apply immediately.": "Parrot-inställningarna har sparats. Ändringarna gäller direkt.",
+  "Save Parrot settings": "Spara Parrot-inställningar",
+  "Show signing secret": "Visa signeringshemlighet",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Signeringshemligheten har sparats. Lämna fältet tomt för att behålla den eller ange en ny.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Dessa inställningar gäller alla profiler. Webhook-adressen nedan väljer målprofilen.",
+  "missing signing secret": "signeringshemlighet saknas"
 }

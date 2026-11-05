@@ -165,8 +165,10 @@ This API supplies **transcripts only**. Imported sources have no original audio 
 
 ### Parrot meeting webhooks and audio options
 
-In web **Settings → Recording & devices → Parrot**, open **Configure Parrot connection**,
-enable **Parrot webhook enabled**, and save a **Parrot webhook secret**. Copy the selected
+In web **Settings → Recording & devices → Parrot**, enable **Parrot webhook enabled**
+and enter a **Parrot webhook secret**, or use **Generate signing secret** and **Copy signing secret**.
+Use the same secret in Parrot, then click **Save Parrot settings**. Changes apply immediately;
+leaving the secret blank preserves the saved secret. Copy the selected
 profile's receiver address into Parrot's webhook settings, using an HTTPS origin reachable
 from the Mac running Parrot. The route is `POST /v1/integrations/parrot/webhook`; its
 `profile_id` query parameter chooses the destination archive. Server settings and the secret

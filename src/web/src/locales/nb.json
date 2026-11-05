@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Lagrede stemmer gjenkjennes automatisk i fremtidige opptak. Se gjennom automatiske navn og rett eventuelle feil.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Lagrede stemmer foreslås i fremtidige opptak. Bekreft hvert forslag før du lagrer et navn.",
   "Enable saved voice recognition before automatic assignment": "Aktiver gjenkjenning av lagrede stemmer før automatisk tilordning",
-  "At least one confirmed conversation is required": "Minst én bekreftet samtale kreves"
+  "At least one confirmed conversation is required": "Minst én bekreftet samtale kreves",
+  "Copy signing secret": "Kopier signeringshemmelighet",
+  "Copy this secret into Parrot, then save these settings.": "Kopier denne hemmeligheten til Parrot, og lagre deretter disse innstillingene.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Kunne ikke kopiere signeringshemmeligheten. Vis den og kopier den manuelt.",
+  "Enter the same signing secret used in Parrot.": "Skriv inn den samme signeringshemmeligheten som i Parrot.",
+  "Generate signing secret": "Generer signeringshemmelighet",
+  "Hide signing secret": "Skjul signeringshemmelighet",
+  "Parrot settings saved. Changes apply immediately.": "Parrot-innstillingene er lagret. Endringene trer i kraft med en gang.",
+  "Save Parrot settings": "Lagre Parrot-innstillinger",
+  "Show signing secret": "Vis signeringshemmelighet",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Signeringshemmeligheten er lagret. La feltet stå tomt for å beholde den, eller skriv inn en ny.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Disse innstillingene gjelder for alle profiler. Webhook-adressen nedenfor velger målprofilen.",
+  "missing signing secret": "mangler signeringshemmelighet"
 }

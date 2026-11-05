@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.",
   "Enable saved voice recognition before automatic assignment": "Enable saved voice recognition before automatic assignment",
-  "At least one confirmed conversation is required": "At least one confirmed conversation is required"
+  "At least one confirmed conversation is required": "At least one confirmed conversation is required",
+  "Copy signing secret": "Copy signing secret",
+  "Copy this secret into Parrot, then save these settings.": "Copy this secret into Parrot, then save these settings.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Could not copy the signing secret. Show it and copy it manually.",
+  "Enter the same signing secret used in Parrot.": "Enter the same signing secret used in Parrot.",
+  "Generate signing secret": "Generate signing secret",
+  "Hide signing secret": "Hide signing secret",
+  "Parrot settings saved. Changes apply immediately.": "Parrot settings saved. Changes apply immediately.",
+  "Save Parrot settings": "Save Parrot settings",
+  "Show signing secret": "Show signing secret",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Signing secret saved. Leave blank to keep it, or enter a replacement.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "These settings apply to all profiles. The webhook address below selects the destination profile.",
+  "missing signing secret": "missing signing secret"
 }

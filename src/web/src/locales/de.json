@@ -3239,5 +3239,17 @@
   "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes.": "Gespeicherte Stimmen werden in künftigen Aufnahmen automatisch zugeordnet. Überprüfe automatische Namen und korrigiere Fehler.",
   "Saved voices are suggested in future recordings. Confirm each suggestion before saving a name.": "Gespeicherte Stimmen werden in künftigen Aufnahmen vorgeschlagen. Bestätige jeden Vorschlag, bevor du einen Namen speicherst.",
   "Enable saved voice recognition before automatic assignment": "Aktiviere die Erkennung gespeicherter Stimmen vor der automatischen Zuordnung",
-  "At least one confirmed conversation is required": "Mindestens ein bestätigtes Gespräch ist erforderlich"
+  "At least one confirmed conversation is required": "Mindestens ein bestätigtes Gespräch ist erforderlich",
+  "Copy signing secret": "Signaturgeheimnis kopieren",
+  "Copy this secret into Parrot, then save these settings.": "Dieses Geheimnis in Parrot kopieren und dann diese Einstellungen speichern.",
+  "Could not copy the signing secret. Show it and copy it manually.": "Das Signaturgeheimnis konnte nicht kopiert werden. Anzeigen und manuell kopieren.",
+  "Enter the same signing secret used in Parrot.": "Dasselbe Signaturgeheimnis wie in Parrot eingeben.",
+  "Generate signing secret": "Signaturgeheimnis generieren",
+  "Hide signing secret": "Signaturgeheimnis verbergen",
+  "Parrot settings saved. Changes apply immediately.": "Parrot-Einstellungen gespeichert. Änderungen werden sofort wirksam.",
+  "Save Parrot settings": "Parrot-Einstellungen speichern",
+  "Show signing secret": "Signaturgeheimnis anzeigen",
+  "Signing secret saved. Leave blank to keep it, or enter a replacement.": "Signaturgeheimnis gespeichert. Leer lassen, um es beizubehalten, oder einen Ersatz eingeben.",
+  "These settings apply to all profiles. The webhook address below selects the destination profile.": "Diese Einstellungen gelten für alle Profile. Die Webhook-Adresse unten bestimmt das Zielprofil.",
+  "missing signing secret": "Signaturgeheimnis fehlt"
 }

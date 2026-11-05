@@ -5,6 +5,24 @@ CREATE TABLE IF NOT EXISTS voice_meta (
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), revision TEXT NOT NULL
 );
 INSERT OR IGNORE INTO voice_meta VALUES(1,lower(hex(randomblob(16))));
+CREATE TABLE IF NOT EXISTS voice_preferences (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+ enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+ auto_assign INTEGER NOT NULL CHECK(auto_assign IN (0,1) AND auto_assign<=enabled)
+);
+CREATE TABLE IF NOT EXISTS voice_preference_events (
+ id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, auto_assign INTEGER NOT NULL,
+ created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS voice_preferences_insert AFTER INSERT ON voice_preferences BEGIN
+ UPDATE voice_meta SET revision=lower(hex(randomblob(16)));
+END;
+CREATE TRIGGER IF NOT EXISTS voice_preferences_update AFTER UPDATE ON voice_preferences BEGIN
+ UPDATE voice_meta SET revision=lower(hex(randomblob(16)));
+END;
+CREATE TRIGGER IF NOT EXISTS voice_preferences_delete AFTER DELETE ON voice_preferences BEGIN
+ UPDATE voice_meta SET revision=lower(hex(randomblob(16)));
+END;
 CREATE TABLE IF NOT EXISTS voice_profiles (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
 );

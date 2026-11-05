@@ -327,7 +327,8 @@ def test_concurrent_distinct_speaker_intervals_mark_timed_word_overlap(app_recor
     assert evidence[0]["recording_id"] == recording_id
 
 
-def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recording):
+@pytest.mark.parametrize("automatic", [False, True])
+def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recording, automatic):
     client, store, rid, ids, _, _ = app_recording
     memory = client.app.state.memory
     pinned_settings(memory)
@@ -348,6 +349,8 @@ def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recor
         "speakers": [{"id": "a", "label": "A", "name": "Reviewed name"}],
         "turns": [{"source_id": ids[0], "start": 0.0, "end": 1.0, "speaker_id": "a"}],
     }
+    if automatic:
+        scope["speakers"][0]["automatic_match"] = {"profile_id": "voice-1", "name": "Reviewed name"}
     memory.recaps.speaker_projection = lambda _group, db=None: {
         source_id: scope for source_id in ids
     }
@@ -361,6 +364,7 @@ def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recor
     assert pieces[0]["text"] == "hello world"
     assert pieces[0]["start_offset"] == 0 and pieces[0]["end_offset"] == 11
     assert pieces[0]["speaker_name"] == "Reviewed name"
+    assert pieces[0].get("speaker_name_origin") == ("automatic" if automatic else None)
     assert pieces[0]["child_source_id"] == ids[0]
 
 def test_same_speaker_words_coalesce_across_parts_without_false_child_owner(app_recording):

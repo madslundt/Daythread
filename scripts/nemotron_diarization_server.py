@@ -5,6 +5,8 @@
 #   "fastapi>=0.115,<1",
 #   "python-multipart>=0.0.20,<1",
 #   "uvicorn>=0.30,<1",
+#   "sherpa-onnx==2.0.1",
+#   "numpy==2.5.4",
 # ]
 # ///
 """Local Nemotron diarization adapter for the existing Daythread /diarize API.
@@ -38,8 +40,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 try:
     from .nemotron_provenance import verify_installation
+    from .speaker_embeddings import SpeakerEmbeddings
 except ImportError:  # direct `python scripts/nemotron_diarization_server.py` entrypoint
     from nemotron_provenance import verify_installation
+    from speaker_embeddings import SpeakerEmbeddings
 
 MODEL_ID = "nvidia/Nemotron-3-Diarization"
 MODEL_REVISION = "f667ed73aee57d40cc39428eb768b4fd87a0a29e"
@@ -149,6 +153,7 @@ class NemotronRuntime:
         model: str | None = None,
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         verifier: Callable[..., dict | None] | None = None,
+        embeddings: SpeakerEmbeddings | None = None,
     ) -> None:
         self.binary = Path(binary or os.environ.get("OMI_NEMO_SPEECH_BIN", ""))
         self.model = Path(model or os.environ.get("OMI_NEMO_DIARIZATION_MODEL", ""))
@@ -161,6 +166,7 @@ class NemotronRuntime:
         self._verification_signature = None
         self._verification_result = None
         self.lock = threading.Lock()
+        self.embeddings = embeddings or SpeakerEmbeddings()
 
     def verified_metadata(self) -> dict | None:
         try:
@@ -189,7 +195,7 @@ class NemotronRuntime:
                 "model_revision": metadata.get("model_revision") if metadata else None,
                 "runtime": metadata.get("runtime") if metadata else None,
                 "runtime_version": metadata.get("runtime_version") if metadata else None,
-                "device": "cpu"}
+                "device": "cpu", "voice_embeddings": self.embeddings.health()}
 
     def diarize(self, stream: BinaryIO, num_speakers: int | None = None) -> dict[str, Any]:
         if num_speakers is not None:
@@ -227,9 +233,13 @@ class NemotronRuntime:
                 raise
             except Exception:
                 raise HTTPException(503, "Local speaker detection failed.") from None
+            try:
+                voices = self.embeddings.extract(stream, turns)
+            except Exception:
+                voices = {"voices": []}
             return {"turns": turns, "model": MODEL_ID, "model_revision": MODEL_REVISION,
                     "runtime": "NeMo-Speech.cpp", "runtime_version": RUNTIME_VERSION,
-                    "voices": []}
+                    **voices}
         finally:
             self.lock.release()
 

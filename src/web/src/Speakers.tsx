@@ -173,6 +173,7 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
   return <SpeakersView data={data} voices={voices} voiceError={voiceError} loading={loading} busy={busy} detecting={detecting} error={error}
     onForget={(profile, example) => void forgetVoice(profile, example)}
     onSetSelf={(profile) => { if (voices) void updateVoices(() => voiceRequests.setSelf(profile, voices.revision)); }}
+    onAutomaticRecognition={(enabled) => { if (voices) void updateVoices(() => voiceRequests.preferences(enabled, voices.revision)); }}
     onRemember={(speaker, choice) => void mutate("POST", `/${encodeURIComponent(speaker)}/remember`, { ...choice, version: data?.version })}
     onConfirm={(speaker, profile) => void mutate("POST", `/${encodeURIComponent(speaker)}/confirm`, { profile_id: profile, version: data?.version })}
     onRetry={() => setRevision((value) => value + 1)} onDetect={() => {
@@ -185,9 +186,9 @@ function SpeakersPanel({ kind, id }: { kind: "source" | "meeting"; id: string })
     onReassign={(turn, speaker) => void mutate("PATCH", `/turns/${encodeURIComponent(turn)}`, { speaker_id: speaker, version: data?.version })}
     onListen={(speaker) => { setAudioError(false); setListening(speaker); }}>
     {selected && data?.version ? <div className="speaker-playback">
-      <p className="caption">{t("Listening to")}{" "}{speakerName(selected)} {t("· speaking turns joined in order.")}</p>
+      <p className="caption">{t("Listening to")}{" "}{speakerName(selected)}</p>
       <RecordingAudioPlayer key={`${selected.id}:${data.version}`} audioRef={bindAudio} autoPlay
-        label={t("Listen to {value0} only", { value0: speakerName(selected) })} src={requests.audioUrl(selected.id, data.version)}
+        label={t("Listen to {value0} only", { value0: speakerName(selected) })} src={requests.sampleAudioUrl(selected.id, data.version)}
         onError={() => setAudioError(true)} />
       {audioError ? <p className="caption" role="alert">{t("Speaker audio is unavailable. The original audio may have expired. Refresh speakers to check again.")}</p> : null}
     </div> : null}
@@ -227,7 +228,7 @@ function speakerPositionLabel(turn: SpeakersData["turns"][number]): string {
     : t("Speaker for turn at {value0}", { value0: time });
 }
 
-export function SpeakersView({ data, voices, voiceError, loading, busy, detecting = false, error, onDetect, onRetry, onRename, onListen, onMerge, onReassign, onRemember, onConfirm, onForget, onSetSelf, children }: {
+export function SpeakersView({ data, voices, voiceError, loading, busy, detecting = false, error, onDetect, onRetry, onRename, onListen, onMerge, onReassign, onRemember, onConfirm, onForget, onSetSelf, onAutomaticRecognition, children }: {
   data?: SpeakersData;
   voices?: VoiceProfilesData;
   voiceError?: string;
@@ -245,6 +246,7 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
   onConfirm?: (speaker: string, profile: string) => void;
   onForget?: (profile: VoiceProfile, exampleId?: string) => void;
   onSetSelf?: (profileId: string | null) => void;
+  onAutomaticRecognition?: (enabled: boolean) => void;
   children?: ReactNode;
 }) {
   const stale = data?.state === "stale";
@@ -265,18 +267,20 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
     {data?.processing?.state === "processing" ? <p className="caption" role="status">{t("Automatic speaker detection is processing.")}</p> : null}
     {data?.processing?.state === "error" ? <p className="caption" role="alert">{t("Automatic speaker detection failed: {value0}", { value0: data.processing.error || t("Unknown error") })}</p> : null}
     {error ? <ErrorState message={error} retry={onRetry} /> : null}
-    {data?.recognition || voices?.recognition ? <p className="caption" role="status">{t((data?.recognition || voices?.recognition)?.message || "")}</p> : null}
-    <p className="caption">{t("Voice profiles stay in the selected archive. A suggestion never changes a name until you confirm it.")}</p>
+    <p className="caption">{t("Listen to a voice, choose a person, then assign. Remembered voices are recognized in later recordings.")}</p>
+    {(data?.recognition || voices?.recognition)?.state !== "disabled" && (data?.recognition || voices?.recognition)
+      ? <p className="caption" role="status">{t((data?.recognition || voices?.recognition)?.message || "")}</p> : null}
+    {voices && onAutomaticRecognition ? <label className="speaker-self-choice"><input type="checkbox"
+      checked={voices.preferences?.auto_assign ?? false} disabled={busy || loading}
+      onChange={(event) => onAutomaticRecognition(event.target.checked)} />{t("Automatically recognize saved voices")}</label> : null}
     {voiceError ? <ErrorState message={voiceError} retry={onRetry} /> : null}
-    {onRemember ? <MyVoiceSetup voices={voices} busy={busy || loading} onSetSelf={onSetSelf} /> : null}
-    {onForget ? <VoiceProfilesManager voices={voices} busy={busy || loading} onForget={onForget} onSetSelf={onSetSelf} /> : null}
     {data && !data.configured ? <p className="caption">{t("Enable speaker detection and configure your local speaker service in")}{" "}<a href="/settings/server">{t("Settings → Advanced → Speaker detection")}</a>.</p> : null}
     {data && !data.audio_available ? <p className="caption">{t("Original audio is unavailable. Speaker detection and speaker-only playback require retained audio.")}</p> : null}
     {data && data.state !== "idle" ? <p className="caption">{t("Detecting again replaces speaker labels, names and turn assignments.")}</p> : null}
     {stale ? <p className="caption" role="status">{t("The recordings or transcript changed. Detect speakers again before editing labels or listening to their turns.")}</p> : null}
     {data?.state === "ready" && !data.speakers.length ? <p className="caption">{t("No speakers detected in this audio.")}</p> : null}
     {data?.speakers.length ? <>
-      <p className="caption">{t("Names apply only to this")}{" "}{data.scope?.kind === "meeting" ? t("meeting") : t("conversation")}{data.source_count && data.source_count > 1 ? t(" across {value0} recordings", { value0: data.source_count }) : ""}{t(". Detection can make mistakes; review speaking turns below. Overlapping voices may remain audible.")}</p>
+      <p className="caption">{t("Speakers")}{" · "}{data.scope?.kind === "meeting" ? t("meeting") : t("conversation")}{data.source_count && data.source_count > 1 ? t(" across {value0} recordings", { value0: data.source_count }) : ""}{t(". Detection can make mistakes; review speaking turns below. Overlapping voices may remain audible.")}</p>
       {data.speakers.some((speaker) => speaker.remembered_example_id) ? <p className="caption">{t("Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers.")}</p> : null}
       <div className="speaker-list">
         {data.speakers.map((speaker) => <SpeakerEditor key={`${speaker.id}:${speaker.name || ""}:${speaker.voice_profile_id || ""}:${speaker.remembered_example_id || ""}`} speaker={speaker}
@@ -315,6 +319,8 @@ export function SpeakersView({ data, voices, voiceError, loading, busy, detectin
         <p className="transcript-text">{utterance.text}</p>
       </li>)}</ol>
     </details> : null}
+    {onForget ? <VoiceProfilesManager voices={voices} busy={busy || loading} onForget={onForget} onSetSelf={onSetSelf} /> : null}
+    {onRemember ? <MyVoiceSetup voices={voices} busy={busy || loading} onSetSelf={onSetSelf} /> : null}
   </section>;
 }
 
@@ -327,10 +333,10 @@ function SpeakerEditor({ speaker, speakers, voices, recognition, editable, canLi
   onRemember?: (speaker: string, choice: RememberVoiceChoice) => void;
   onConfirm?: (speaker: string, profile: string) => void;
 }) {
-  const [name, setName] = useState(speaker.name || "");
   const [mergeTarget, setMergeTarget] = useState("");
-  const [voiceTarget, setVoiceTarget] = useState(speaker.voice_profile_id || "");
+  const [voiceTarget, setVoiceTarget] = useState(speaker.voice_profile_id || speaker.automatic_match?.profile_id || "");
   const [voiceName, setVoiceName] = useState(speaker.name || "");
+  const [remember, setRemember] = useState(Boolean(onRemember));
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
   const [isSelf, setIsSelf] = useState(false);
   const ownVoice = voices?.profiles.find((profile) => profile.is_self);
@@ -340,6 +346,7 @@ function SpeakerEditor({ speaker, speakers, voices, recognition, editable, canLi
     <div className="speaker-heading"><strong>{label}</strong>{speaker.is_self ? <span className="caption">{t("My voice")}</span> : null}<span className="caption">{speakerTime(speaker.seconds)} {t("speaking")}</span>
       <button type="button" className="button small" disabled={!canListen} onClick={() => onListen(speaker.id)}>{t("Listen to")}{" "}{label} {t("only")}</button>
     </div>
+    {speaker.automatic_match ? <p className="caption">{t("Automatically matched. Listen to verify or edit the name.")}</p> : null}
     {speaker.suggestion && !dismissedSuggestion ? <div className="speaker-suggestion">
       <p className="caption">{t("Suggested:")}{" "}{speaker.suggestion.name}{t(". Listen first, then confirm the person.")}</p>
       <div className="button-row">
@@ -349,31 +356,29 @@ function SpeakerEditor({ speaker, speakers, voices, recognition, editable, canLi
       </div>
     </div> : null}
     {speaker.remembered_example_id ? <p className="caption">{t("Saved as a voice example for future conversations.")}</p> : null}
-    <form className="speaker-name-form" onSubmit={(event) => { event.preventDefault(); onRename(speaker.id, name.trim() || null); }}>
-      <label>{t("Name for")}{" "}{label}<input value={name} placeholder={speaker.label} maxLength={120} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
-      <button className="button small" type="submit" disabled={!editable || (name.trim() || null) === speaker.name}>{t("Save name")}</button>
-      {speaker.name ? <button className="text-button" type="button" disabled={!editable} onClick={() => onRename(speaker.id, null)}>{t("Reset to")}{" "}{speaker.label}</button> : null}
-    </form>
-    {onRemember ? <details className="speaker-remember">
-      <summary>{t("Remember speaker for future conversations")}</summary>
-      <p className="caption">{t("After listening, explicitly choose whose voice this is. Saved examples can suggest a name in later conversations; you confirm every suggestion. A new profile remains separate even if its name matches another profile.")}</p>
-      <label className="speaker-self-choice"><input type="checkbox" checked={isSelf} disabled={!editable || !voices}
-        onChange={(event) => setIsSelf(event.target.checked)} />{t("This is my voice")}</label>
-      <form className="speaker-name-form" onSubmit={(event) => {
+    <form className="speaker-name-form" onSubmit={(event) => {
         event.preventDefault();
-        if (isSelf && !voices) return;
-        onRemember(speaker.id, { ...(target ? { profile_id: target } : { name: voiceName.trim() }),
+        if (remember && onRemember) {
+          if (!voices) return;
+          onRemember(speaker.id, { ...(target ? { profile_id: target } : { name: voiceName.trim() }), auto_assign: true,
           ...(isSelf ? { is_self: true, voice_revision: voices!.revision } : {}) });
+        } else {
+          onRename(speaker.id, target ? voices?.profiles.find((profile) => profile.id === target)?.name || null : voiceName.trim() || null);
+        }
       }}>
-        {isSelf && ownVoice ? <p className="caption">{t("My voice")}: {ownVoice.name}</p> : <label>{t("Save voice to")}{" "}<select value={voiceTarget} onChange={(event) => setVoiceTarget(event.target.value)} disabled={!editable || !voices}>
-          <option value="">{t("Create a new voice profile")}</option>
+        {isSelf && ownVoice ? <p className="caption">{t("My voice")}: {ownVoice.name}</p> : <label>{t("Speaker")}{" "}<select value={voiceTarget} onChange={(event) => setVoiceTarget(event.target.value)} disabled={!editable || !voices}>
+          <option value="">{t("New speaker")}</option>
           {voices?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.example_count} {t("examples")}</option>)}
         </select></label>}
-        {!target ? <label>{t("New voice profile name")}<input value={voiceName} maxLength={120} disabled={!editable}
+        {!target ? <label>{t("Name")}<input value={voiceName} maxLength={120} disabled={!editable}
           onChange={(event) => setVoiceName(event.target.value)} placeholder={t("Name")} /></label> : null}
-        <button className="button small" type="submit" disabled={!canListen || !voices || recognition === "disabled" || (!target && !voiceName.trim())}>{t("Confirm and remember voice")}</button>
-      </form>
-    </details> : null}
+        {onRemember ? <label className="speaker-self-choice"><input type="checkbox" checked={remember} disabled={!editable}
+          onChange={(event) => { setRemember(event.target.checked); if (!event.target.checked) setIsSelf(false); }} />{t("Remember voice for future recordings")}</label> : null}
+        {remember ? <label className="speaker-self-choice"><input type="checkbox" checked={isSelf} disabled={!editable || !voices}
+          onChange={(event) => setIsSelf(event.target.checked)} />{t("This is my voice")}</label> : null}
+        <button className="button small" type="submit" disabled={!editable || (remember && (!canListen || !voices)) || (!target && !voiceName.trim())}>{t("Assign speaker")}</button>
+        {speaker.name ? <button className="text-button" type="button" disabled={!editable} onClick={() => onRename(speaker.id, null)}>{t("Reset to")}{" "}{speaker.label}</button> : null}
+    </form>
     {speakers.length > 1 ? <form className="speaker-merge-form" onSubmit={(event) => { event.preventDefault(); if (mergeTarget) onMerge(speaker.id, mergeTarget); }}>
       <label>{t("Same person as")}{" "}<select value={mergeTarget} disabled={!editable} onChange={(event) => setMergeTarget(event.target.value)}>
         <option value="">{t("Choose speaker…")}</option>
@@ -393,12 +398,13 @@ export function MyVoiceSetup({ voices, busy, onSetSelf }: { voices?: VoiceProfil
     </div>
     {!voices ? <p className="caption">{t("Loading saved voices…")}</p> : ownVoice ? <>
       <p><strong>{ownVoice.name}</strong> · {ownVoice.example_count} {t("examples ·")} {ownVoice.conversation_count} {t("conversations")}</p>
-      <p className="caption">{ownVoice.conversation_count < 2
+      <p className="caption">{voices?.preferences?.mode === "personal"
+        ? t("Your voice is saved for recognition in future recordings.")
+        : ownVoice.conversation_count < 2
         ? t("Add at least ten seconds of clear speech from two separate conversations.")
         : t("Your voice examples are saved. Suggestions still require a passing evaluation and your confirmation.")}</p>
     </> : <><p className="caption">{t("No voice has been marked as yours in this archive.")}</p>
-      <p className="caption">{t("Add at least ten seconds of clear speech from two separate conversations.")}</p></>}
-    <p className="caption">{t("Detect speakers, listen to your turns, then choose “This is my voice” when remembering a speaker.")}</p>
+      <p className="caption">{t("Choose “This is my voice” when assigning your voice.")}</p></>}
   </section>;
 }
 

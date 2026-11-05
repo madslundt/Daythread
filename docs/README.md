@@ -320,23 +320,26 @@ Real recording accuracy still needs evaluation; detection can miscount or confus
 
 ### Remembering speakers across conversations
 
-Enable **Remember speakers** in advanced server settings, then use **Remember for future
-conversations** on a reviewed speaker. Choose a saved voice identity or explicitly create
-one by name. Identical names do not merge identities. Plain conversation names and model
-suggestions never create training examples. You can also enroll previously named
-conversations while their original audio is retained.
+Open a recording or meeting's **Speakers** panel on web or iPhone. Each detected voice
+has a short **Listen** sample. Choose an existing person or **New speaker**, enter their
+name, and press **Assign speaker**. **Remember voice for future recordings** starts
+selected: one confirmed assignment saves the voice and enables automatic recognition
+for this archive. No advanced settings or evaluation report are needed for this flow.
+Uncheck it to save a name only in this recording. Identical names do not merge saved
+identities; choose the existing person to reuse their voice profile.
 
-To teach Daythread your own voice, open a recording or meeting's **Speakers** panel
-on web or iPhone. Detect speakers, listen to your turns, then open **Remember speaker
-for future conversations** and select **This is my voice** before confirming. Choose
-an existing voice or enter a name for your first profile. Later examples reuse your
-own profile. **My voice** shows your saved examples and independent conversation
-count; collect at least ten seconds of clear speech in each of two separate conversations.
-You can also choose **Use as my voice** on an existing saved voice. Each archive has
-one own-voice identity. **Clear my voice** removes that designation while preserving
-saved examples; **Forget voice** removes the profile and its examples. Names alone
-never establish which voice is yours. This establishes identity for future personal
-analysis; it does not generate a personal analysis or bypass the evaluation below.
+Later recordings receive names when their voices closely match a saved person with a
+clear margin over other candidates. Unknown and ambiguous voices keep their letter
+labels. Automatic names are marked and editable; they never create new training
+examples. **Automatically recognize saved voices** switches recognition off or on for
+this archive. Switching it off preserves saved examples and earlier names. Preferences,
+voice profiles and examples survive backup/restore and remain separate between archives.
+
+Select **This is my voice** during assignment to mark your own voice. **My voice** shows
+your saved examples. You can also choose **Use as my voice** on an existing saved voice.
+Each archive has one own-voice identity. **Clear my voice** removes that designation
+while preserving saved examples; **Forget voice** removes the profile and its examples.
+Names alone never establish which voice is yours.
 
 `PATCH /v1/voice-profiles/self` accepts `{ "revision": "<directory revision>",
 "profile_id": "<saved voice UUID>" }`; use `null` to clear the designation. The
@@ -344,18 +347,30 @@ directory and confirmed speaker responses expose `is_self`. Enrollment can atomi
 designate a voice with `is_self: true` and `voice_revision` alongside the existing
 speaker `version` and either `name` or `profile_id`. Stale revisions are rejected.
 
-Enrollment rechecks up to 60 seconds of that speaker's current original turns with the
-local model. It requires at least ten seconds of usable clean speech, excludes detected
-overlap, and rejects distorted or mixed samples. Recognition needs confirmed examples
-from at least two independent conversations per identity. Duplicate source audio and
-meeting/source aliases count as one conversation. Unknown and ambiguous speakers keep
-their letter labels. Names are never applied automatically: **Suggested: Mads** needs
-explicit confirmation, which saves the name and a confirmed example.
-Use automatic speaker-count detection for future voice suggestions; a forced speaker
-count produces labels without recognition vectors. Enrollment always rechecks its sample
-without forcing a speaker count.
+Enrollment rechecks up to 60 seconds of that speaker's original turns with the local
+model. It requires at least ten seconds of clear speech, excludes detected overlap,
+and rejects distorted or mixed samples. The regular Community-1 service supplies
+voiceprints. Nemotron supports them with its optional local TitaNet encoder; see
+[Nemotron voiceprint setup](nemotron-diarization.md#remembered-voices).
+Automatic names are also marked as unreviewed in recap evidence. Use automatic
+speaker-count detection for future matching; a forced count produces labels without
+recognition vectors.
 
-Suggestions stay disabled until an evaluation passes on separate real recordings. Copy
+`POST /v1/speakers/{kind}/{key}/{speaker_id}/remember` accepts `auto_assign: true`
+alongside `version` and either `name` or `profile_id`. A successful enrollment atomically
+saves archive-local recognition preferences. `GET /v1/voice-profiles` exposes
+`preferences` (`enabled`, `auto_assign`, `mode`). Update them through
+`PATCH /v1/voice-profiles/preferences` with the directory `revision` and both boolean
+flags. Stale revisions are rejected. Personal matching uses conservative similarity
+and runner-up margin cutoffs, not a measured identity probability or accuracy guarantee.
+
+#### Optional evaluated server setup
+
+The advanced **Remember speakers**, **Automatically assign recognized speakers** and
+evaluation-report settings remain available for archives without personal assignment
+preferences. This mode requires two independent conversations per identity and a passing
+evaluation before suggesting or automatically applying names. Personal assignment
+preferences take precedence within their archive. For evaluated matching, copy
 the [manifest shape](speaker-evaluation-manifest.example.json) and replace all placeholders
 with your held-out local 16 kHz mono PCM16 WAVs and manually checked speaker identities.
 The `speakers` map must label every cluster returned by the local `/diarize` service,

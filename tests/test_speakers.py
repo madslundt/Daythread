@@ -101,6 +101,34 @@ def test_detect_names_and_playback_share_a_whole_upload_and_persist(client):
         assert db.execute("SELECT count(*) FROM speaker_events").fetchone()[0] == 2
 
 
+@pytest.mark.parametrize("overlap_seconds,expected_seconds", [(0, 12), (14, 6)])
+def test_voice_samples_are_short_and_prefer_speech_without_other_speakers(
+    client, overlap_seconds, expected_seconds,
+):
+    memory = client.app.state.memory
+    key = str(uuid4())
+    memory.store.ingest(key, "manual-web", utc_now() - timedelta(hours=1), wav(seconds=20), 20,
+                        source_kind="manual_upload", source_id=key + ".wav")
+    memory.store.complete(key, "Voice sample")
+
+    async def detect(data, num_speakers=None):
+        turns = [{"start": 0, "end": 20, "speaker": "a"}]
+        if overlap_seconds:
+            turns.append({"start": 0, "end": overlap_seconds, "speaker": "b"})
+        return {"turns": turns}
+
+    memory.speakers.detect_turns = detect
+    path = f"/v1/speakers/source/{key}"
+    detected = client.post(path).json()
+    speaker = next(t["speaker_id"] for t in detected["turns"] if t["end"] == 20)
+    sample = client.get(f"{path}/{speaker}/audio", params={
+        "version": detected["version"], "sample": "true",
+    })
+    assert sample.status_code == 200
+    with wave.open(io.BytesIO(sample.content)) as stream:
+        assert stream.getnframes() == expected_seconds * 16000
+
+
 def test_multipart_turns_keep_source_times_and_add_conversation_elapsed_times(client):
     keys, path = recordings(client)
     detector(client)

@@ -295,6 +295,7 @@ class Settings(BaseSettings):
     diarization_base_url: str = "http://127.0.0.1:8790"
     diarization_timeout_seconds: int = Field(default=600, ge=1, le=3600)
     voice_recognition_enabled: bool = False
+    voice_recognition_auto_assign: bool = False
     voice_recognition_report: Path | None = None
     web_dir: Path | None = None
 

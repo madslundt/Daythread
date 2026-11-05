@@ -142,8 +142,10 @@ def independent_conversation_counts(gallery: list[dict]) -> dict[str, int]:
     return {owner: len(supports) for owner, supports in _conversation_supports(gallery).items()}
 
 
-def rank_voice(vector, gallery: list[dict]) -> dict | None:
+def rank_voice(vector, gallery: list[dict], min_conversations: int = 2) -> dict | None:
     """Rank identities; an underenrolled identity can block but cannot win a suggestion."""
+    if type(min_conversations) is not int or min_conversations < 1:
+        raise ValueError("At least one confirmed conversation is required")
     dimension = len(vector) if isinstance(vector, (list, tuple)) else 0
     query = validate_vector(vector, dimension)
     grouped = _conversation_supports(gallery)
@@ -176,18 +178,19 @@ def rank_voice(vector, gallery: list[dict]) -> dict | None:
         return None
     scores.sort(key=lambda item: (-item[0], item[1]))
     best, owner = scores[0]
-    if len(grouped[owner]) < 2:
+    if len(grouped[owner]) < min_conversations:
         return None
     runner_up = scores[1][0] if len(scores) > 1 else -1.0
     return {"profile_id": owner, "score": best, "margin": best - runner_up}
 
 
-def match_voice(vector, gallery: list[dict], threshold: float, margin: float) -> dict | None:
+def match_voice(vector, gallery: list[dict], threshold: float, margin: float,
+                min_conversations: int = 2) -> dict | None:
     for value, lower, upper in ((threshold, -1, 1), (margin, 0, 2)):
         if isinstance(value, bool) or not isinstance(value, Real) \
                 or not math.isfinite(value) or not lower <= value <= upper:
             raise ValueError("Invalid voice matching threshold or margin")
-    ranked = rank_voice(vector, gallery)
+    ranked = rank_voice(vector, gallery, min_conversations)
     if ranked is None or ranked["score"] < threshold or ranked["margin"] < margin:
         return None
     # An exact runner-up tie is ambiguous even when the configured margin is zero.

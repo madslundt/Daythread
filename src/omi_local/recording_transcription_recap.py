@@ -273,5 +273,7 @@ def recording_speaker_evidence(
                     evidence.update(attribution="attributed", speaker_id=speaker_id,
                                     speaker_label=speaker.get("label"),
                                     speaker_name=speaker.get("name"))
+                    if speaker.get("automatic_match"):
+                        evidence["speaker_name_origin"] = "automatic"
         output.append(evidence)
     return _recording_utterances(output, recording_id), evidence_version, "ready"

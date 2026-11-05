@@ -8,14 +8,16 @@ export type Speaker = {
   remembered_example_id?: string | null;
   is_self?: boolean;
   suggestion?: { profile_id: string; name: string } | null;
+  automatic_match?: { profile_id: string; name: string } | null;
 };
 export type VoiceProfile = {
   id: string; name: string; example_count: number; conversation_count: number;
   is_self?: boolean;
   examples: { id: string; scope: { kind: string; id: string }; speaker_id: string; seconds: number; created_at: string }[];
 };
-export type VoiceProfilesData = { revision: string; profiles: VoiceProfile[]; recognition: VoiceRecognition };
-export type RememberVoiceChoice = ({ profile_id: string } | { name: string }) & { is_self?: true; voice_revision?: string };
+export type VoicePreferences = { enabled: boolean; auto_assign: boolean; mode: "personal" | "evaluated" };
+export type VoiceProfilesData = { revision: string; profiles: VoiceProfile[]; recognition: VoiceRecognition; preferences?: VoicePreferences };
+export type RememberVoiceChoice = ({ profile_id: string } | { name: string }) & { is_self?: true; voice_revision?: string; auto_assign?: true };
 export type SpeakerTurn = {
   id: string; source_id: string; start: number; end: number; speaker_id: string; text?: string;
   audio_start?: number | null; audio_end?: number | null;
@@ -75,10 +77,16 @@ export class SpeakersRequests extends ScopedRequests<SpeakersData> {
   audioUrl(speakerId: string, version: string): string {
     return profileResourceUrl(`${this.path}/${encodeURIComponent(speakerId)}/audio?${new URLSearchParams({ version })}`, this.scope.id);
   }
+  sampleAudioUrl(speakerId: string, version: string): string {
+    return this.audioUrl(speakerId, version) + "&sample=true";
+  }
 }
 
 export class VoiceProfilesRequests extends ScopedRequests<VoiceProfilesData> {
   constructor() { super("/v1/voice-profiles"); }
+  preferences(enabled: boolean, revision: string) {
+    return this.run("PATCH", "/preferences", { enabled, auto_assign: enabled, revision });
+  }
   setSelf(profileId: string | null, revision: string) {
     return this.run("PATCH", "/self", { profile_id: profileId, revision });
   }

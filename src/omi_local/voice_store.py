@@ -1,8 +1,9 @@
-"""Voice profile persistence and conservative, evaluated identity suggestions."""
+"""Voice profile persistence, archive preferences, and conservative identity matching."""
 
 import hashlib
 import json
 import math
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,6 +23,9 @@ MAX_OVERLAP = 0.1
 MAX_CLIPPING = 0.01
 MAX_PROFILES = 100
 MAX_EXAMPLES = 30
+# Personal matching uses a conservative heuristic, not a measured accuracy guarantee.
+PERSONAL_THRESHOLD = 0.85
+PERSONAL_MARGIN = 0.15
 
 
 class EmbeddingModel(BaseModel):
@@ -92,6 +96,39 @@ class VoiceStore:
     def revision(db) -> str:
         return db.execute("SELECT revision FROM voice_meta WHERE singleton=1").fetchone()[0]
 
+    def preferences(self, db) -> dict:
+        row = db.execute("SELECT enabled,auto_assign FROM voice_preferences WHERE singleton=1") \
+            .fetchone()
+        if row:
+            return {"enabled": bool(row["enabled"]), "auto_assign": bool(row["auto_assign"]),
+                    "mode": "personal"}
+        return {"enabled": self.memory.settings.voice_recognition_enabled,
+                "auto_assign": self.memory.settings.voice_recognition_auto_assign,
+                "mode": "evaluated"}
+
+    def save_preferences(self, db, *, enabled: bool, auto_assign: bool) -> None:
+        previous = db.execute(
+            "SELECT enabled,auto_assign FROM voice_preferences WHERE singleton=1"
+        ).fetchone()
+        if previous and (bool(previous["enabled"]), bool(previous["auto_assign"])) == (
+            enabled, auto_assign,
+        ):
+            return
+        db.execute("INSERT INTO voice_preferences VALUES(1,?,?) "
+                   "ON CONFLICT(singleton) DO UPDATE SET enabled=excluded.enabled,"
+                   "auto_assign=excluded.auto_assign", (int(enabled), int(auto_assign)))
+        db.execute("INSERT INTO voice_preference_events VALUES(?,?,?,?)", (
+            str(uuid4()), int(enabled), int(auto_assign), stamp(utc_now()),
+        ))
+
+    def update_preferences(self, revision: str, *, enabled: bool, auto_assign: bool) -> dict:
+        with self.memory.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if self.revision(db) != revision:
+                raise HTTPException(409, "Saved voices changed; reload and retry")
+            self.save_preferences(db, enabled=enabled, auto_assign=auto_assign)
+            return self.directory(db)
+
     @staticmethod
     def self_profile_id(db) -> str | None:
         row = db.execute("SELECT profile_id FROM self_voice WHERE singleton=1").fetchone()
@@ -151,10 +188,23 @@ class VoiceStore:
     def recognition(
         self, db, model: dict | None = None, gallery: list[dict] | None = None,
     ) -> tuple[dict, dict | None]:
-        if not self.memory.settings.voice_recognition_enabled:
+        preferences = self.preferences(db)
+        if not preferences["enabled"]:
             return {"state": "disabled", "message":
                     "Enable Remember speakers in server settings to save confirmed voices."}, None
         gallery = self.gallery(db) if gallery is None else gallery
+        if preferences["mode"] == "personal":
+            message = ("Assign a speaker and remember their voice to recognize them next time."
+                       if not gallery else
+                       "Saved voices are matched automatically in future recordings. "
+                       "Review automatic names and correct any mistakes."
+                       if preferences["auto_assign"] else
+                       "Saved voices are suggested in future recordings. "
+                       "Confirm each suggestion before saving a name.")
+            return {"state": "ready", "message": message}, {
+                "threshold": PERSONAL_THRESHOLD, "margin": PERSONAL_MARGIN,
+                "min_conversations": 1,
+            }
         message = ("Save clear examples from at least two separate conversations per person. "
                    "Suggestions stay off until evaluation on separate recordings passes.")
         path = self.memory.settings.voice_recognition_report
@@ -181,10 +231,15 @@ class VoiceStore:
                 if len(self._report_cache) >= 8:
                     self._report_cache.clear()
                 self._report_cache[cache_key] = valid
-            # The evaluator returns a bool/reason pair; no report can enable automatic naming.
+            # A passing report still requires an explicit setting for automatic naming.
             accepted, reason = valid
             if not accepted:
                 return {"state": "unvalidated", "message": str(reason)}, None
+            if preferences["auto_assign"]:
+                return {"state": "ready", "message":
+                        "Voice matching passed the configured recording evaluation. "
+                        "Recognized names are applied automatically to new detections; "
+                        "only confirmed examples are saved."}, report
             return {"state": "ready", "message":
                     "Voice suggestions passed the configured recording evaluation. "
                     "Confirm each suggestion before its name or example is saved."}, report
@@ -227,6 +282,7 @@ class VoiceStore:
                              "example_count": len(examples),
                              "conversation_count": conversation_counts.get(row["id"], 0)})
         return {"revision": self.revision(db), "profiles": profiles,
+                "preferences": self.preferences(db),
                 "recognition": self.recognition(db, gallery=gallery)[0]}
 
     @staticmethod
@@ -243,7 +299,7 @@ class VoiceStore:
 
     def save_vectors(self, db, scope: dict, payload: dict, result: dict) -> None:
         db.execute("DELETE FROM voice_vectors WHERE scope_key=?", (scope["key"],))
-        if not self.memory.settings.voice_recognition_enabled:
+        if not self.preferences(db)["enabled"]:
             return
         model, voices = compatible_voices(result)
         if not model:
@@ -265,10 +321,26 @@ class VoiceStore:
                     }),
                 ))
 
+    def auto_assign(self, db, scope: dict, payload: dict) -> None:
+        """Apply matches to a fresh detection, without adding gallery examples."""
+        if not self.preferences(db)["auto_assign"]:
+            return
+        preview = deepcopy(payload)
+        audio_available = all(row["audio_available"] and self.memory.store.has_audio(row["id"])
+                              for row in scope["rows"])
+        self.annotate(db, scope, preview, audio_available)
+        suggestions = {speaker["id"]: speaker["suggestion"] for speaker in preview["speakers"]
+                       if speaker["suggestion"]}
+        for speaker in payload["speakers"]:
+            match = suggestions.get(speaker["id"])
+            if speaker["name"] is None and match:
+                speaker.update(name=match["name"], automatic_match=match)
+
     def annotate(self, db, scope: dict, payload: dict, ready: bool) -> dict:
         from .voice_matching import match_voice
 
-        gallery = self.gallery(db) if self.memory.settings.voice_recognition_enabled else []
+        preferences = self.preferences(db)
+        gallery = self.gallery(db) if preferences["enabled"] else []
         recognition, report = self.recognition(db, gallery=gallery)
         models = {}
         if gallery:
@@ -289,7 +361,9 @@ class VoiceStore:
                 speaker.update(voice_profile_id=learned["profile_id"],
                                remembered_example_id=learned["id"],
                                is_self=learned["profile_id"] == self_profile)
-            if speaker["name"] is not None or learned or recognition["state"] != "ready":
+            automatic = speaker.get("automatic_match")
+            if ((speaker["name"] is not None and not automatic)
+                    or learned or recognition["state"] != "ready"):
                 continue
             vector = db.execute(
                 "SELECT * FROM voice_vectors WHERE scope_key=? AND speaker_id=?",
@@ -308,10 +382,13 @@ class VoiceStore:
             # A conversation's own confirmed examples must never identify its other clusters.
             sources = {row["id"] for row in scope["rows"]}
             candidates = [e for e in gallery if e["conversation_id"] != scope["key"]
-                          and not sources.intersection(e["source_ids"])]
+                          and not sources.intersection(e["source_ids"])
+                          and (preferences["mode"] != "personal" or e["model"] == model)]
             result = match_voice(json.loads(vector["embedding"]), candidates,
-                                 report["threshold"], report["margin"])
-            if result and result["profile_id"] in names:
+                                 report["threshold"], report["margin"],
+                                 report.get("min_conversations", 2))
+            if (result and result["profile_id"] in names
+                    and (not automatic or automatic["profile_id"] == result["profile_id"])):
                 speaker["suggestion"] = {"profile_id": result["profile_id"],
                                          "name": names[result["profile_id"]]}
         return recognition
@@ -371,4 +448,5 @@ class VoiceStore:
         for speaker in payload["speakers"]:
             if speaker["id"] == speaker_id:
                 speaker["name"] = profile["name"]
+                speaker.pop("automatic_match", None)
         return example_id

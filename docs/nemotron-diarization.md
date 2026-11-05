@@ -57,6 +57,36 @@ remain concurrent; each model output channel is normalized to an anonymous
 `SPEAKER_00`-style ID. An explicit requested speaker count is rejected because
 this CLI path does not expose a safe count-forcing option.
 
+## Remembered voices
+
+To recognize people after assigning their voices in Daythread, install the optional
+local TitaNet-Small voice encoder once alongside Nemotron:
+
+```sh
+sh scripts/provision_speaker_embeddings.sh /absolute/new/path/to/voice-embeddings
+```
+
+Export the two printed assignments, `OMI_SPEAKER_EMBEDDING_MODEL` and
+`OMI_SPEAKER_EMBEDDING_SHA256`, in the Nemotron service's environment and restart that
+service. The helper downloads the pinned 40 MB ONNX model and verifies its SHA-256.
+The isolated runtime pins sherpa-onnx/core 2.0.1 and NumPy 2.5.4. Inference is local;
+there are no model downloads or hosted fallbacks during a request. `/health` exposes
+`voice_embeddings.configured` and `voice_embeddings.loaded`.
+
+The adapter extracts at most 60 seconds of clear speech per voice, excluding detected
+overlap and short boundary windows. At least ten seconds of usable speech is needed.
+Unsupported or unavailable embeddings preserve ordinary anonymous speaker detection.
+The model/runtime/extraction fingerprint prevents incompatible voiceprints being mixed.
+
+For a private Linux image with the encoder included, provide the provisioned voice
+asset directory as the build helper's optional third argument:
+
+```sh
+sudo sh scripts/build_nemotron_cpu_image.sh /tmp/nemotron-assets daythread-nemotron-diarization:0.3.0-voices /absolute/path/to/voice-embeddings
+```
+
+The one- and two-argument build forms continue to produce anonymous-only images.
+
 ## Persistent private Linux x86_64 service
 
 NixOS does not provide the generic Linux dynamic loader required by NVIDIA's

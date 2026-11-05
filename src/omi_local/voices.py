@@ -83,14 +83,15 @@ class Voices(VoiceStore):
         self, kind: Kind, key: str, speaker_id: str, version: str,
         profile_id: str | None = None, name: str | None = None, confirm: bool = False,
         *, is_self: bool = False, voice_revision: str | None = None,
+        auto_assign: bool = False,
     ) -> dict:
-        if not self.memory.settings.voice_recognition_enabled:
-            raise HTTPException(409, "Enable Remember speakers in server settings first")
         if not self.memory.settings.diarization_enabled:
             raise HTTPException(409, "Enable the local speaker service before remembering voices")
         async with self.memory.speakers.lock:
             with self.memory.store.connect() as db:
                 db.execute("BEGIN")
+                if not auto_assign and not self.preferences(db)["enabled"]:
+                    raise HTTPException(409, "Enable Remember speakers in server settings first")
                 scope, saved, payload = self.enrollment_snapshot(
                     db, kind, key, speaker_id, version, profile_id, confirm,
                 )
@@ -147,7 +148,7 @@ class Voices(VoiceStore):
                         ) from exc
                     raise
                 if (fingerprint(current) != fingerprint(scope) or self.revision(db) != revision
-                        or not self.memory.settings.voice_recognition_enabled
+                        or (not auto_assign and not self.preferences(db)["enabled"])
                         or not self.memory.settings.diarization_enabled):
                     raise HTTPException(409, "Recorded evidence or saved voices changed; try again")
                 # Verify availability under the same writer lock used by retention/deletion.
@@ -157,6 +158,8 @@ class Voices(VoiceStore):
                     db, current, current_payload, speaker_id, profile_id, name, model, voice,
                     source_ids,
                 )
+                if auto_assign:
+                    self.save_preferences(db, enabled=True, auto_assign=True)
                 if is_self:
                     learned = db.execute("SELECT profile_id FROM voice_examples WHERE id=?",
                                          (example_id,)).fetchone()

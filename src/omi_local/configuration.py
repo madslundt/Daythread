@@ -91,8 +91,11 @@ DESCRIPTIONS = {
     "as prompt; JSON keyterms sends a JSON array as keyterms. Choose only a format your "
     "transcription endpoint supports. Language routes can override this choice.",
     "voice_recognition_enabled": "Remember explicitly confirmed voices across conversations in "
-    "this archive. Suggestions require a passing evaluation on separate recordings; names are "
-    "never applied automatically. Original audio retention also removes learned examples.",
+    "this archive. Matching requires a passing evaluation on separate recordings. "
+    "Original audio retention also removes learned examples.",
+    "voice_recognition_auto_assign": "Apply recognized names when detecting speakers. Requires "
+    "Remember speakers and a passing evaluation. "
+    "Automatic matches never create saved voice examples.",
     "voice_recognition_report": "Local JSON report from scripts/evaluate_speakers.py. "
     "Suggestions stay off until its model, confirmed examples and accuracy checks match. "
     "A relative path is resolved within this archive's data directory.",
@@ -302,6 +305,7 @@ def descriptors() -> list[dict]:
             "llm_summary_enable_thinking": "Summary reasoning",
             "llm_summary_thinking_token_budget": "Summary thinking token budget",
             "voice_recognition_enabled": "Remember speakers",
+            "voice_recognition_auto_assign": "Automatically assign recognized speakers",
             "voice_recognition_report": "Speaker recognition evaluation report",
             "diarization_enabled": "Enable speaker detection",
             "diarization_base_url": "Speaker service address",

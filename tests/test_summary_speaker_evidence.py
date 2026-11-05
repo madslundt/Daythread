@@ -113,6 +113,21 @@ def test_speech_blocks_partition_exact_text_and_keep_valid_owner_identity():
     assert source["speaker_evidence"] == original_rows
 
 
+def test_automatic_speaker_names_are_marked_as_unreviewed_in_summary_evidence():
+    speaker = str(uuid4())
+    source = source_with_evidence("Hello", [{
+        "text": "Hello", "start_offset": 0, "end_offset": 5,
+        "attribution": "attributed", "speaker_id": speaker,
+        "speaker_name": "Alice", "speaker_name_origin": "automatic",
+    }])
+    pieces = source_prompt_pieces(source, Inference._speaker_evidence_window, max_chars=12_000)
+    payload = speech_payload(pieces[0])
+    assert payload["speakers"] == {
+        "speaker_1": {"id": speaker, "name": "Alice", "name_origin": "automatic"},
+    }
+    assert "automatic voice matches, not reviewed identities" in pieces[0].content
+
+
 def test_unanchored_stale_and_wrong_source_text_stays_unknown():
     canonical = "repeat repeat"
     source = source_with_evidence(

@@ -191,13 +191,29 @@ describe("confirmed voice learning requests", () => {
 describe("confirmed voice learning display", () => {
   const learning = { ...view, onRemember: () => {}, onConfirm: () => {}, onForget: () => {} };
 
+  it("marks automatic names and keeps review and correction controls available", () => {
+    const automatic: SpeakersData = {
+      ...data,
+      speakers: [{ ...data.speakers[0], automatic_match: { profile_id: "voice-1", name: "Mads" },
+        suggestion: { profile_id: "voice-1", name: "Mads" } }],
+      recognition: { state: "ready", message: "Ready" },
+    };
+    const html = renderToStaticMarkup(<SpeakersView {...learning} data={automatic} />);
+    expect(html).toContain("Automatically matched. Listen to verify or edit the name.");
+    expect(html).toContain("Confirm");
+    expect(html).toContain("Assign speaker");
+    expect(html).toContain("Reset to");
+    expect(html).not.toContain("Saved as a voice example for future conversations.");
+  });
+
   it("guides enrollment without guessing which named profile belongs to the owner", () => {
     const html = renderToStaticMarkup(<SpeakersView {...learning} voices={voices} data={data} onSetSelf={() => {}} />);
     expect(html).toContain("No voice has been marked as yours in this archive.");
     expect(html).toContain("This is my voice");
     expect(html).toContain("Use as my voice");
     expect(html).not.toContain("Clear my voice");
-    expect(html).not.toContain('type="checkbox" checked');
+    expect(html).not.toMatch(/checked=""[^>]*\/>This is my voice/);
+    expect(html).toContain('checked=""/>Remember voice for future recordings');
   });
 
   it("shows learning progress and preserves evaluation requirements after two conversations", () => {
@@ -209,11 +225,26 @@ describe("confirmed voice learning display", () => {
     expect(learned).toContain("Suggestions still require a passing evaluation and your confirmation.");
   });
 
+  it("shows personal recognition as ready after one assignment and exposes its saved toggle", () => {
+    const personal: VoiceProfilesData = {
+      ...voices,
+      preferences: { enabled: true, auto_assign: true, mode: "personal" },
+      profiles: [{ ...voices.profiles[0], is_self: true }],
+      recognition: { state: "ready", message: "Saved voices are matched automatically in future recordings. Review automatic names and correct any mistakes." },
+    };
+    const html = renderToStaticMarkup(<SpeakersView {...learning} voices={personal}
+      data={{ ...data, recognition: personal.recognition }} onAutomaticRecognition={() => {}} />);
+    expect(html).toContain('checked=""/>Automatically recognize saved voices');
+    expect(html).toContain("Your voice is saved for recognition in future recordings.");
+    expect(html).not.toContain("two separate conversations");
+    expect(html).not.toContain("passing evaluation");
+  });
+
   it("keeps self identity management available when learning is disabled", () => {
     const own = { ...voices, recognition: { state: "disabled" as const, message: "Disabled" }, profiles: [{ ...voices.profiles[0], is_self: true }] };
     const html = renderToStaticMarkup(<SpeakersView {...learning} voices={own} data={{ ...data, recognition: own.recognition }} onSetSelf={() => {}} />);
     expect(html).not.toContain('disabled="">Clear my voice');
-    expect(html).toContain('disabled="">Confirm and remember voice');
+    expect(html).toContain("Assign speaker");
     const busy = renderToStaticMarkup(<MyVoiceSetup voices={own} busy onSetSelf={() => {}} />);
     expect(busy).toContain('disabled="">Clear my voice');
   });
@@ -226,24 +257,24 @@ describe("confirmed voice learning display", () => {
     expect(html).toContain("Listen to B only");
     expect(html).not.toContain("Listen to Mads only");
     expect(html).toContain("Leave B unchanged");
-    expect(html).toContain("Voice profiles stay in the selected archive");
+    expect(html).toContain("Remembered voices are recognized in later recordings");
   });
 
   it("permits collecting confirmed examples while readiness is unvalidated and explains the limitation", () => {
     const html = renderToStaticMarkup(<SpeakersView {...learning} voices={voices} data={{ ...data, speakers: [data.speakers[0]], recognition: voices.recognition }} />);
     expect(html).toContain(voices.recognition.message);
-    expect(html).toContain("Remember speaker for future conversations");
-    expect(html).toContain("Confirm and remember voice");
-    expect(html).not.toContain('disabled="">Confirm and remember voice');
-    expect(html).toContain("A new profile remains separate even if its name matches another profile");
+    expect(html).toContain("Remember voice for future recordings");
+    expect(html).toContain("Assign speaker");
+    expect(html).not.toContain('disabled="">Assign speaker');
+    expect(html).toContain("New speaker");
   });
 
-  it("disables learning when recognition is disabled while keeping saved voice management available", () => {
-    const html = renderToStaticMarkup(<SpeakersView {...learning} voices={voices} data={{ ...data, recognition: { state: "disabled", message: "Enable Remember speakers in advanced settings." } }} />);
-    expect(html).toContain('disabled="">Confirm and remember voice');
+  it("allows the first assignment to enable recognition without opening advanced settings", () => {
+    const html = renderToStaticMarkup(<SpeakersView {...learning} voices={voices} data={{ ...data, speakers: [data.speakers[0]], recognition: { state: "disabled", message: "Enable Remember speakers in advanced settings." } }} />);
+    expect(html).not.toContain('disabled="">Assign speaker');
     expect(html).toContain("Forget voice");
     expect(html).not.toContain('disabled="">Forget voice');
-    expect(html).toContain("Enable Remember speakers in advanced settings.");
+    expect(html).not.toContain("Enable Remember speakers in advanced settings.");
   });
 
   it("uses scope-specific readiness over a ready directory when the current recording is unvalidated", () => {
@@ -260,7 +291,7 @@ describe("confirmed voice learning display", () => {
       data={{ ...data, audio_available: false, recognition: { state: "ready", message: "Ready" },
         speakers: [{ ...data.speakers[1], name: "Someone", suggestion: { profile_id: "voice-1", name: "Mads" } }] }} />);
     expect(html).toContain('disabled="">Confirm Mads');
-    expect(html).toContain('disabled="">Confirm and remember voice');
+    expect(html).toContain('disabled="">Assign speaker');
     expect(html).not.toContain('disabled="">Forget voice');
   });
 
@@ -317,9 +348,9 @@ describe("speaker display", () => {
 
   it("keeps saved names available when audio expires but disables speaker playback", () => {
     const html = renderToStaticMarkup(<SpeakersView {...view} data={{ ...data, audio_available: false }} />);
-    expect(html).toContain("Name for Mads");
+    expect(html).toContain('value="Mads"');
     expect(html).toContain('disabled="">Listen to Mads only');
-    expect(html).toContain("Save name");
+    expect(html).toContain("Assign speaker");
   });
 
   it("reports empty detection and long-running inference", () => {

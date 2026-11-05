@@ -361,6 +361,9 @@ class Speakers:
                 )
                 self.memory.voices.invalidate_scope(db, scope["key"])
                 self.memory.voices.save_vectors(db, scope, payload, result)
+                self.memory.voices.auto_assign(db, scope, payload)
+                db.execute("UPDATE speaker_scopes SET payload=? WHERE scope_key=?",
+                           (json.dumps(payload), scope["key"]))
                 # Detection snapshots plus later edit events can replay this projection.
                 self.event(db, scope, "detected", payload | {
                     "version": version, "fingerprint": fingerprint(scope),
@@ -383,15 +386,22 @@ class Speakers:
                 if values["speaker_id"] not in speakers:
                     raise HTTPException(404, "Speaker not found")
                 speakers[values["speaker_id"]]["name"] = values["name"]
+                speakers[values["speaker_id"]].pop("automatic_match", None)
             elif action == "reassign":
                 turn = next((t for t in payload["turns"] if t["id"] == values["turn_id"]), None)
                 if turn is None or values["speaker_id"] not in speakers:
                     raise HTTPException(404, "Turn or speaker not found")
+                for speaker_id in (turn["speaker_id"], values["speaker_id"]):
+                    changed = speakers[speaker_id]
+                    if changed.pop("automatic_match", None):
+                        changed["name"] = None
                 turn["speaker_id"] = values["speaker_id"]
             else:
                 source, target = values["source_id"], values["target_id"]
                 if source == target or source not in speakers or target not in speakers:
                     raise HTTPException(422, "Choose two different speakers in this conversation")
+                if speakers[target].pop("automatic_match", None):
+                    speakers[target]["name"] = None
                 for turn in payload["turns"]:
                     if turn["speaker_id"] == source:
                         turn["speaker_id"] = target
@@ -403,7 +413,8 @@ class Speakers:
             self.event(db, scope, action, values | {"version": new_version})
             return self.view(scope, self.load(db, scope), db)
 
-    def audio(self, kind: Kind, key: str, speaker: str, version: str | None = None) -> bytes:
+    def audio(self, kind: Kind, key: str, speaker: str, version: str | None = None,
+              *, sample: bool = False) -> bytes:
         with self.memory.store.connect() as db:
             # Prevent retention/deletion between the availability check and reading audio.
             db.execute("BEGIN IMMEDIATE")
@@ -419,6 +430,16 @@ class Speakers:
             intervals = self.intervals(payload["turns"], speaker)
             if not intervals:
                 raise HTTPException(409, "This speaker has no assigned speaking turns")
+            if sample:
+                from .voices import subtract_intervals
+
+                clean = [(source, left, right) for source, start, end in intervals
+                         for left, right in subtract_intervals(start, end, [
+                             (turn["start"], turn["end"]) for turn in payload["turns"]
+                             if turn["source_id"] == source and turn["speaker_id"] != speaker
+                         ])]
+                source, start, end = max(clean or intervals, key=lambda turn: turn[2] - turn[1])
+                intervals = [(source, start, min(end, start + 12))]
             return pcm_wav(b"".join(
                 slice_pcm(rows[source], a, b, self.memory.store.read_audio)
                 for source, a, b in intervals

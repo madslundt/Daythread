@@ -81,6 +81,51 @@ def test_explicit_local_runtime_path_is_used_with_offline_cpu_flags(tmp_path):
     assert response["turns"] == [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]
 
 
+@pytest.mark.parametrize("encoder_fails", [False, True])
+def test_voiceprint_extraction_preserves_original_audio_and_diarization(tmp_path, encoder_fails):
+    binary, model = tmp_path / "nemo-speech", tmp_path / "model.gguf"
+    binary.touch()
+    model.touch()
+    (tmp_path / "PROVENANCE.txt").touch()
+    captured = []
+    vector = {"embedding_model": {"id": "fixture", "revision": "a" * 64,
+                                  "dimension": 2, "normalization": "l2-v1"},
+              "voices": [{"speaker": "SPEAKER_00", "embedding": [1.0, 0.0],
+                          "clean_seconds": 15, "overlap_ratio": 0, "clipped_ratio": 0}]}
+
+    class Embeddings:
+        def health(self):
+            return {"configured": True, "loaded": True}
+
+        def extract(self, stream, turns):
+            stream.seek(0)
+            captured.append((stream.read(), turns))
+            if encoder_fails:
+                raise RuntimeError("Optional encoder failed")
+            return vector
+
+    def runner(args, **kwargs):
+        output = args[args.index("--output") + 1]
+        with open(output, "w") as result:
+            json.dump({"segments": [{"start": 0, "end": 20, "speaker": 1}]}, result)
+        return subprocess.CompletedProcess(args, 0)
+
+    runtime = service.NemotronRuntime(str(binary), str(model), runner,
+                                      verifier=lambda *_: {"model": service.MODEL_ID},
+                                      embeddings=Embeddings())
+    original = wav_bytes(20)
+    result = runtime.diarize(io.BytesIO(original))
+    assert captured == [(original, [{"start": 0.0, "end": 20.0, "speaker": "SPEAKER_00"}])]
+    assert result["turns"] == captured[0][1]
+    if encoder_fails:
+        assert result["voices"] == []
+        assert "embedding_model" not in result
+    else:
+        assert result["embedding_model"] == vector["embedding_model"]
+        assert result["voices"] == vector["voices"]
+    assert runtime.health()["voice_embeddings"]["configured"] is True
+
+
 def test_unconfigured_and_forced_count_never_start_runtime(tmp_path):
     calls = []
     runtime = service.NemotronRuntime(run=lambda *args, **kwargs: calls.append(args))

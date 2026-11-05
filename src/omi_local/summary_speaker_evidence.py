@@ -72,6 +72,7 @@ def _speaker_aliases(items: list[dict], ordered_ids: list[str] | None = None) ->
 
 def _speaker_legend(items: list[dict], aliases: dict[str, str]) -> dict:
     observations: dict[str, set[str]] = defaultdict(set)
+    automatic = set()
     for item in items:
         if item.get("attribution") != "attributed":
             continue
@@ -82,6 +83,8 @@ def _speaker_legend(items: list[dict], aliases: dict[str, str]) -> dict:
         names = observations[owner]
         if isinstance(name, str) and name:
             names.add(name)
+            if item.get("speaker_name_origin") == "automatic":
+                automatic.add(owner)
 
     ids_by_alias = {alias: speaker_id for speaker_id, alias in aliases.items()}
     result = {}
@@ -89,6 +92,8 @@ def _speaker_legend(items: list[dict], aliases: dict[str, str]) -> dict:
         entry = {"id": ids_by_alias[owner]}
         if len(names) == 1:
             entry["name"] = next(iter(names))
+            if owner in automatic:
+                entry["name_origin"] = "automatic"
         result[owner] = entry
     return result
 
@@ -293,6 +298,12 @@ def source_prompt_pieces(
     def render(first: int, last: int) -> str:
         value = prefix
         if actionable:
+            if any(entry.get("name_origin") == "automatic"
+                   for entry in speaker_legend.values()):
+                value += (
+                    "\nNames marked name_origin=automatic are automatic voice matches, not "
+                    "reviewed identities. Treat their identity as unconfirmed."
+                )
             value += (
                 "\nUnknown or overlapping ownership means the speaker is unavailable; it does "
                 "not make clearly transcribed words uncertain. Preserve transcription "

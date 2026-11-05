@@ -78,8 +78,11 @@ def speaker_routes(get_memory) -> APIRouter:
     def audio(
         kind: Kind, key: UUID, speaker_id: UUID,
         version: str | None = Query(default=None, min_length=1, max_length=100),
+        sample: bool = False,
     ) -> Response:
-        return Response(get_memory().speakers.audio(kind, str(key), str(speaker_id), version),
+        return Response(get_memory().speakers.audio(
+                            kind, str(key), str(speaker_id), version, sample=sample,
+                        ),
                         media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
     return router

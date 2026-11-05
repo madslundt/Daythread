@@ -187,6 +187,8 @@ def project_utterances(
                     "speaker_id": owner,
                     "speaker_label": speaker_by_id.get(owner, {}).get("label"),
                     "speaker_name": speaker_by_id.get(owner, {}).get("name"),
+                    **({"speaker_name_origin": "automatic"}
+                       if speaker_by_id.get(owner, {}).get("automatic_match") else {}),
                     "attribution": status,
                     "start_offset": left,
                     "end_offset": right,

@@ -209,7 +209,10 @@ def backup():
  else: target.mkdir(mode=0o700,parents=False)
  remote='/data/.exports/.assistant-context-'+p['release']; script=remote+'/archive.py'
  archive=target/'daythread.zip'
- check="from pathlib import Path; p=Path("+repr(remote)+"); assert not p.exists() and not p.is_symlink(); p.mkdir(mode=0o700)"
+ check=("from pathlib import Path; import os,stat; root=Path('/data/.exports'); "
+        "root.mkdir(mode=0o700,exist_ok=True); i=root.lstat(); "
+        "assert stat.S_ISDIR(i.st_mode) and not stat.S_ISLNK(i.st_mode) and i.st_uid==os.geteuid() and stat.S_IMODE(i.st_mode)==0o700; "
+        "p=Path("+repr(remote)+"); assert not p.exists() and not p.is_symlink(); p.mkdir(mode=0o700)")
  run('docker','exec',container,'python','-c',check)
  try:
   run('docker','cp',str(release/'scripts/archive.py'),container+':'+script)

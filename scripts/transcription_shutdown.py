@@ -1,4 +1,4 @@
-"""Audited inbox recovery and bounded SIGTERM observation for the pinned app image."""
+"""Audited durable job recovery and SIGTERM observation for the pinned app image."""
 
 import hashlib
 import json
@@ -14,6 +14,9 @@ SOURCE_HASHES = {
     "omi_local/worker.py": "6ea2d604feb20e6ae241343f40e0acf873de9b2be671d03533d390945355d335",
     "omi_local/inbox_jobs.py": "ae1ac7aef7ad6ea83cc608e3b85914a73282675ee178c6414de7679e41162e00",
     "omi_local/inbox_store.py": "1032c227a121dda179026209dc693ab27cf4e9264ce32518996c0c7e272ae398",
+    "omi_local/speaker_worker.py":
+        "f4f0fee6281074c18c41e3c2043ee9d4e26dbcc86b2d3f487ee677ca7470874c",
+    "omi_local/speakers.py": "bbc7ad702e3e17f404e1f12fdbb55e109742298a70a7f405872a5a76a4a54377",
     "omi_local/notifications.py":
         "93763a6d0c4c6beb47062d9e85b41095f5592a7834549146815c602aee4c94f3",
     "omi_local/notification_store.py":
@@ -39,7 +42,7 @@ def verify_shutdown_runtime(current: dict, output, container: str) -> None:
             "print(json.dumps({n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in "
             + repr(sorted(SOURCE_HASHES)) + "}))")
     if json.loads(output("docker", "exec", container, "python", "-c", code)) != SOURCE_HASHES:
-        raise RuntimeError("The audited shutdown or inbox recovery source changed")
+        raise RuntimeError("The audited shutdown or job recovery source changed")
 
 
 def require_restartable(snapshot: dict) -> None:
@@ -47,7 +50,8 @@ def require_restartable(snapshot: dict) -> None:
         for table, states in tables.items():
             for state in ACTIVE:
                 if states.get(state, 0) and not (
-                    table == "inbox_jobs" and state in {"queued", "running"}
+                    (table == "inbox_jobs" and state in {"queued", "running"})
+                    or (table == "speaker_jobs" and state in {"queued", "processing"})
                 ):
                     raise RuntimeError("Durable work in unaudited table " + table)
 
@@ -102,4 +106,46 @@ def merge_inbox_snapshots(before: dict, stopped: dict) -> dict:
         result.setdefault(key, {"jobs": {}})["jobs"].update(value["jobs"])
     for value in result.values():
         value["ids_sha256"] = hashlib.sha256(json.dumps(sorted(value["jobs"])).encode()).hexdigest()
+    return result
+
+
+def speaker_snapshot(data: Path, expected: dict | None = None) -> dict:
+    """Retain tracked jobs, including completion/errors, and newly claimed work."""
+    result = {}
+    for path in data.rglob("*.sqlite3"):
+        key = str(path.relative_to(data))
+        previous = (expected or {}).get(key, {}).get("jobs", {})
+        with sqlite3.connect("file:" + str(path) + "?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='speaker_jobs'").fetchone():
+                continue
+            db.execute("BEGIN")
+            rows = list(db.execute("SELECT * FROM speaker_jobs WHERE state IN "
+                                   "('queued','processing')"))
+            keys = list(previous)
+            for offset in range(0, len(keys), 500):
+                batch = keys[offset:offset + 500]
+                rows.extend(db.execute("SELECT * FROM speaker_jobs WHERE scope_key IN ("
+                                       + ",".join("?" for _ in batch) + ")", batch))
+            jobs = {row["scope_key"]: {field: row[field] for field in
+                    ("fingerprint", "state", "attempts", "retry_at", "error", "updated_at")}
+                    for row in rows}
+        if not previous.keys() <= jobs.keys():
+            raise RuntimeError("Durable speaker job identities were not preserved")
+        for identity, job in jobs.items():
+            if (type(job["attempts"]) is not int or job["attempts"] < 0
+                    or job["state"] not in {"queued", "processing", "done", "error"}
+                    or (job["state"] == "done" and
+                        (job["retry_at"] is not None or job["error"] is not None))
+                    or (job["state"] == "error" and
+                        (not job["attempts"] or not job["retry_at"] or not job["error"]))):
+                raise RuntimeError("Durable speaker job state/retry metadata is invalid")
+            prior = previous.get(identity)
+            if prior and (job["fingerprint"] != prior["fingerprint"]
+                          or job["attempts"] < prior["attempts"]):
+                raise RuntimeError("Durable speaker fingerprint or retry history changed")
+        result[key] = {"jobs": jobs, "ids_sha256": hashlib.sha256(
+            json.dumps(sorted(jobs)).encode()).hexdigest()}
+    if expected is not None and not expected.keys() <= result.keys():
+        raise RuntimeError("Durable speaker database was not preserved")
     return result

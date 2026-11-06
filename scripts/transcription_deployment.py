@@ -21,6 +21,7 @@ from transcription_shutdown import (
     inbox_snapshot,
     merge_inbox_snapshots,
     require_restartable,
+    speaker_snapshot,
     verify_shutdown_runtime,
     wait_for_shutdown,
 )
@@ -288,18 +289,25 @@ def rollback(receipt: dict, manifest: dict, path: Path) -> None:
             current = None
         if current and current["Image"] not in (receipt["base_image"], receipt["image_id"]):
             raise RuntimeError("Running image belongs to another release; refusing recovery")
+        receipt["speaker_retained"] = speaker_snapshot(
+            DATA, receipt.get("speaker_retained", receipt.get("speaker_before", {})),
+        )
+        checkpoint(path, receipt, "rolling_back")
         if current and current["State"].get("Running", False):
             run("docker", "kill", "--signal=SIGTERM", CONTAINER,
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             current = wait_for_shutdown(inspect, current["Id"])
             if current["State"].get("ExitCode") != 0 or current["State"].get("OOMKilled"):
                 raise RuntimeError("Recovery shutdown was not graceful")
+        receipt["speaker_retained"] = speaker_snapshot(DATA, receipt["speaker_retained"])
+        checkpoint(path, receipt, "rolling_back")
         compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
                 image=receipt["base_image"])
         ready(receipt["base_image"], manifest["baseline_hashes"])
         receipt["inbox_after_rollback"] = inbox_snapshot(
             DATA, receipt.get("inbox_retained", receipt.get("inbox_before", {})),
         )
+        receipt["speaker_after_rollback"] = speaker_snapshot(DATA, receipt["speaker_retained"])
         if (ROOT / "current").resolve() == release:
             temporary = ROOT / ("current.recover-" + release.name)
             temporary.symlink_to(base)
@@ -364,6 +372,7 @@ def deploy(payload: dict) -> dict:
                "qualification": payload["qualification"], "before_jobs": before,
                "gateway_admission": gateway, "rollback_config": str(base / "config"),
                "inbox_before": inbox_snapshot(DATA), "container_id": inspect().get("Id"),
+               "speaker_before": speaker_snapshot(DATA),
                "overlay_sha256": payload["overlay_sha256"], "status": "in_progress"}
     # Recheck after the isolated image check and before stopping the real service.
     baseline(payload)
@@ -383,6 +392,7 @@ def deploy(payload: dict) -> dict:
         receipt["inbox_retained"] = merge_inbox_snapshots(
             receipt["inbox_before"], inbox_snapshot(DATA),
         )
+        receipt["speaker_retained"] = speaker_snapshot(DATA, receipt["speaker_before"])
         checkpoint(path, receipt, "backing_up")
         receipt["backup_hashes"] = backup(saved)
         checkpoint(path, receipt, "starting")
@@ -394,6 +404,7 @@ def deploy(payload: dict) -> dict:
                 raise RuntimeError("Saved settings changed during restart")
         receipt["after_jobs"] = queue_snapshot()
         receipt["inbox_after"] = inbox_snapshot(DATA, receipt["inbox_retained"])
+        receipt["speaker_after"] = speaker_snapshot(DATA, receipt["speaker_retained"])
         if (ROOT / "current").resolve() != base:
             raise RuntimeError("Current pointer changed; preserving conflicting release")
         checkpoint(path, receipt, "switching_pointer")

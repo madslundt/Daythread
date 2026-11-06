@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -336,3 +337,53 @@ def test_remote_program_bundles_the_reviewed_shutdown_helper():
         assert "scripts/transcription_shutdown.py" in cli.HELPERS
     finally:
         sys.modules["transcription_shutdown"] = prior
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+def test_speaker_identity_and_retry_metadata_retained_on_restart_and_rollback(
+    artifact, monkeypatch, tmp_path, rollback,
+):
+    payload, _, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(remote, "DATA", data)
+    path = data / "omi.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE speaker_jobs(scope_key TEXT PRIMARY KEY,fingerprint TEXT,"
+                   "state TEXT,attempts INTEGER,retry_at TEXT,error TEXT,updated_at TEXT)")
+        db.execute("INSERT INTO speaker_jobs VALUES('source:a','exact-input','processing',"
+                   "5,'old-retry',NULL,'before')")
+    monkeypatch.setattr(remote, "queue_snapshot", lambda: {
+        "omi.sqlite3": {"speaker_jobs": {"processing": 1}},
+    })
+
+    def ready(image, _hashes):
+        if rollback and image != payload["base_image"]:
+            # A new job can be claimed by the candidate before readiness fails.
+            with sqlite3.connect(path) as db:
+                db.execute("INSERT INTO speaker_jobs VALUES('source:b','new-input',"
+                           "'processing',0,NULL,NULL,'during-candidate')")
+            raise RuntimeError("Failed candidate health")
+        with sqlite3.connect(path) as db:
+            db.execute("UPDATE speaker_jobs SET state='error',attempts=7,retry_at='later',"
+                       "error='Speaker detection failed',updated_at='after' "
+                       "WHERE scope_key='source:a'")
+
+    monkeypatch.setattr(remote, "ready", ready)
+    if rollback:
+        with pytest.raises(RuntimeError, match="Failed candidate health"):
+            remote.deploy(payload)
+    else:
+        remote.deploy(payload)
+    receipt = json.loads((release.parent.parent / "backups/new/deployment.json").read_text())
+    before = receipt["speaker_before"]["omi.sqlite3"]["jobs"]["source:a"]
+    result_key = "speaker_after_rollback" if rollback else "speaker_after"
+    jobs = receipt[result_key]["omi.sqlite3"]["jobs"]
+    assert before["attempts"] == 5 and before["retry_at"] == "old-retry"
+    assert jobs["source:a"] == {
+        "fingerprint": "exact-input", "state": "error", "attempts": 7,
+        "retry_at": "later", "error": "Speaker detection failed", "updated_at": "after",
+    }
+    if rollback:
+        assert jobs["source:b"]["fingerprint"] == "new-input"

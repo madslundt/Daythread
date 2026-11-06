@@ -268,8 +268,10 @@ class HybridRetriever:
         start: datetime | None,
         end: datetime | None,
         mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
+        source_ids: list[str] | None = None,
     ) -> tuple[list[dict], dict]:
         details = {"mode": "keyword", "fallback_reason": None}
+        scope_kwargs = {"source_ids": source_ids} if source_ids is not None else {}
         candidate_limit = self.settings.retrieval_candidate_limit
         matches_per_source = self.settings.retrieval_matches_per_source
         if mode != "keyword":
@@ -279,7 +281,9 @@ class HybridRetriever:
 
         async def lexical_candidates():
             return (
-                await asyncio.to_thread(self.store.search, query, candidate_limit, start, end)
+                await asyncio.to_thread(
+                    self.store.search, query, candidate_limit, start, end, **scope_kwargs,
+                )
                 if mode != "semantic" or not route_set_id
                 else []
             )
@@ -304,6 +308,7 @@ class HybridRetriever:
                     start,
                     end,
                     matches_per_source,
+                    **scope_kwargs,
                 )
                 details["mode"] = "semantic" if mode == "semantic" else "hybrid"
                 return semantic
@@ -316,7 +321,9 @@ class HybridRetriever:
             semantic_task = group.create_task(semantic_candidates())
         lexical, semantic = lexical_task.result(), semantic_task.result()
         if mode == "semantic" and details["fallback_reason"]:
-            lexical = await asyncio.to_thread(self.store.search, query, candidate_limit, start, end)
+            lexical = await asyncio.to_thread(
+                self.store.search, query, candidate_limit, start, end, **scope_kwargs,
+            )
         status = await asyncio.to_thread(self.status, start, end, route)
         details["embedding"] = status
         if route_set_id and status["indexed"] < status["total"]:
@@ -416,6 +423,8 @@ class HybridRetriever:
                 if len(result) >= limit:
                     break
                 if neighbor["id"] in included or not verified_context(row, neighbor):
+                    continue
+                if source_ids is not None and neighbor["id"] not in source_ids:
                     continue
                 neighbor["matches"] = [excerpt(neighbor["text"], "")]
                 neighbor["context_for"] = row["id"]

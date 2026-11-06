@@ -21,17 +21,19 @@ type Props = {
 };
 
 type TopicRow = RecapBrowserTopic & { displayTitle: string; displayParts: RecapTopicGroup["parts"]; followups?: boolean };
+const topicOverviewLimit = 5;
 
 export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage, topicRequest }: Props) {
   const [query, setQuery] = useState("");
   const [browsingRecordings, setBrowsingRecordings] = useState(false);
+  const [showingAllTopics, setShowingAllTopics] = useState(false);
   const [selected, setSelected] = useState<string>();
   const workspace = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!topicRequest) return;
     const index = recapTopics(recapParts(text), day).topics.findIndex((topic) => topic.title === topicRequest.title);
     if (index < 0) { setSelected(undefined); return; }
-    setBrowsingRecordings(false); setQuery(""); setSelected(`recap:${index}:${topicRequest.title}`);
+    setBrowsingRecordings(false); setShowingAllTopics(true); setQuery(""); setSelected(`recap:${index}:${topicRequest.title}`);
   }, [topicRequest, text, day]);
   useEffect(() => {
     if (!topicRequest || !selected || !selected.endsWith(`:${topicRequest.title}`)) return;
@@ -73,8 +75,10 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     if (active && !active.originalPassages) onFocus?.({ ...topicFocus(active, sources), displayTitle: active.displayTitle });
   }, [active, sources, onFocus]);
   const normalized = query.normalize("NFKC").toLocaleLowerCase().trim();
-  const visible = rows.filter((topic) => `${topic.displayTitle}\n${recapTopicText(topic.displayParts)}\n${topic.title}\n${recapTopicText(topic.parts)}\n${topic.originalPassages?.map((passage) => passage.text).join("\n") || ""}`
+  const matching = rows.filter((topic) => `${topic.displayTitle}\n${recapTopicText(topic.displayParts)}\n${topic.title}\n${recapTopicText(topic.parts)}\n${topic.originalPassages?.map((passage) => passage.text).join("\n") || ""}`
     .normalize("NFKC").toLocaleLowerCase().includes(normalized));
+  const limitedOverview = !browsingRecordings && !normalized;
+  const visible = limitedOverview && !showingAllTopics ? matching.slice(0, topicOverviewLimit) : matching;
   function toggle(topic: RecapBrowserTopic) {
     const next = selected === topic.id ? undefined : topic.id;
     setSelected(next);
@@ -88,7 +92,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     {!text.trim() && !browsingRecordings ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
     <div className="recap-topic-browser">
       {recordingTopics.length ? <button type="button" className="text-button" aria-pressed={browsingRecordings}
-        onClick={() => { setBrowsingRecordings((value) => !value); setQuery(""); setSelected(undefined); onFocus?.(undefined); }}>
+        onClick={() => { setBrowsingRecordings((value) => !value); setShowingAllTopics(false); setQuery(""); setSelected(undefined); onFocus?.(undefined); }}>
         <Icon name={browsingRecordings ? "chevron-left" : "search"} size={16} />
         {browsingRecordings ? t("Back to daily recap") : t("Browse all topics")}
       </button> : null}
@@ -100,10 +104,17 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
           aria-label={browsingRecordings ? t("Find a topic in this day") : t("Search recap topics")} />
       </label>
       <DisplayTranslationStatus value={labels} />
-      <div className="recap-topic-list">
+      <div id={`${id}-topics`} className="recap-topic-list">
         {visible.map((topic) => <RecapTopicRow key={topic.id} topic={topic} expanded={selected === topic.id} onToggle={() => toggle(topic)}
           day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} />)}
       </div>
+      {limitedOverview && matching.length > topicOverviewLimit ? <button type="button" className="text-button"
+        aria-expanded={showingAllTopics} aria-controls={`${id}-topics`} onClick={() => {
+          setShowingAllTopics((value) => !value);
+          if (showingAllTopics && matching.findIndex((topic) => topic.id === selected) >= topicOverviewLimit) {
+            setSelected(undefined); onFocus?.(undefined);
+          }
+        }}>{showingAllTopics ? t("Show fewer topics") : t("Show all topics")}</button> : null}
       {!visible.length && normalized ? <p className="recap-topic-empty">{t("No topics match. Try another word, or ask about this day.")}</p> : null}
       <div className="recap-overview-actions">
         {onChat ? <button className="text-button" onClick={() => onChat({ kind: "day", day }, query.trim()

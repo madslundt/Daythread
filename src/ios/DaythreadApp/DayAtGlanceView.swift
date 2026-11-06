@@ -24,6 +24,7 @@ struct DayAtGlanceSections: View {
     @State private var decisionScanError: String?
     @State private var decisionScanMessage: String?
     @State private var loading = false
+    @State private var hasLoaded = false
     @State private var scanning = false
     @State private var findingDecisions = false
     @State private var scanID = UUID()
@@ -76,7 +77,7 @@ struct DayAtGlanceSections: View {
         .task(id: key + String(describing: phase)) {
             guard phase == .active else { return }
             if loadedScope != scope {
-                items = []; decisions = []; coverage = nil; visibleDecisions = compact ? 3 : 5; loadedScope = scope
+                items = []; decisions = []; coverage = nil; visibleDecisions = compact ? 3 : 5; hasLoaded = false; loadedScope = scope
             }
             await load()
             while !Task.isCancelled {
@@ -202,8 +203,10 @@ struct DayAtGlanceSections: View {
 
     private func load() async {
         let requested = key
-        loading = items.isEmpty && decisions.isEmpty
-        defer { if key == requested { loading = false } }
+        // Empty is a loaded result too. Re-inserting this row on every poll
+        // changes the List layout and shifts the content while reading.
+        loading = !hasLoaded
+        defer { if key == requested { hasLoaded = true; loading = false } }
         async let inbox: Void = loadInbox(requested)
         async let choices: Void = loadDecisions(requested)
         _ = await (inbox, choices)

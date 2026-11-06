@@ -16,7 +16,7 @@ from .summary_filter import NO_CONTENT, filter_summary_sources
 if TYPE_CHECKING:
     from .service import Memory
 
-VERSION = "day-overview-9-inline-navigation"
+VERSION = "day-overview-10-parent-topic-navigation"
 MAX_WORDS = 900
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS day_overviews (
@@ -60,12 +60,24 @@ def topic_details(markdown: str, *, include_source_ids: bool = False) -> list[di
     """Retain canonical titles and their saved detail for navigation after regrouping."""
     topics = []
     current = None
-    for line in markdown.splitlines():
-        heading = re.match(r"^#{1,4}\s+(.+)$", line.strip())
+    lines = markdown.splitlines()
+    headings = [(index, len(match[1])) for index, line in enumerate(lines)
+                if (match := re.match(r"^(#{1,4})\s+", line.strip()))]
+    parents = {index for (index, level), (_, following) in zip(headings, headings[1:])
+               if level == 2 and following == 3}
+    hierarchical = False
+    for index, line in enumerate(lines):
+        heading = re.match(r"^(#{1,4})\s+(.+)$", line.strip())
         legacy = re.match(r"^[-*+]\s+\*\*([^*]+)\*\*\s*(?:[—–:-]\s*)?(.*)$",
                           line.strip())
+        if current is not None and hierarchical and (
+            not heading or len(heading[1]) == 3
+        ):
+            current["summary"] += line + "\n"
+            continue
         if heading or legacy:
-            title = (heading[1] if heading else legacy[1]).replace("**", "").strip()
+            hierarchical = index in parents
+            title = (heading[2] if heading else legacy[1]).replace("**", "").strip()
             current = next((topic for topic in topics if topic["title"] == title), None)
             if current is None:
                 current = {"id": title, "title": title, "summary": ""}

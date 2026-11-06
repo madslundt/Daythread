@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .conversation_state import conversations, meeting_timeline
 from .domain import stamp, utc_now
+from .imported_meetings import contains_source
 from .speaker_projection import (
     add_conversation_audio_times,
     attach_text,
@@ -106,8 +107,12 @@ class Speakers:
             raise HTTPException(404, "Recording not found")
         timeline = timeline if timeline is not None else meeting_timeline(snapshot, utc_now())
         meetings = timeline["meetings"]
+        if kind == "source":
+            # Explicit file membership takes precedence over a simultaneous live hint.
+            meetings = sorted(meetings, key=lambda meeting: "source_ids" not in meeting)
         meeting = next((m for m in meetings if (
             m["id"] == key if kind == "meeting" else
+            contains_source(m, source) if "source_ids" in m else
             m["started_at"] < source["ended_at"]
             and source["started_at"] < (m["ended_at"] or stamp(utc_now()))
         )), None)
@@ -119,7 +124,8 @@ class Speakers:
             right = meeting["ended_at"] or max(
                 (r["ended_at"] for r in rows if r["started_at"] >= left), default=left,
             )
-            rows = [r for r in rows if r["started_at"] < right and r["ended_at"] > left]
+            rows = [r for r in rows if r["started_at"] < right and r["ended_at"] > left
+                    and ("source_ids" not in meeting or contains_source(meeting, r))]
         elif source["source_kind"] == "manual_upload":
             # A browser upload is split into contiguous chunks with the original filename.
             candidates = [r for r in rows if r["source_kind"] == "manual_upload"

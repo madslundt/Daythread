@@ -65,6 +65,7 @@ export type Marker = {
 };
 export type Meeting = {
   id: string;
+  source_ids?: string[];
   started_at: string;
   ended_at: string | null;
   auto_stop_at: string | null;

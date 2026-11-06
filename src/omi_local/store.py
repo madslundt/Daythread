@@ -491,7 +491,8 @@ class Store(
             )
 
     def sample_transcripts(
-        self, limit: int, start: datetime | None = None, end: datetime | None = None
+        self, limit: int, start: datetime | None = None, end: datetime | None = None,
+        source_ids: list[str] | None = None,
     ) -> tuple[list[dict], int]:
         """Evenly sample chronological IDs before loading selected transcript bodies."""
         if limit < 1:
@@ -501,11 +502,15 @@ class Store(
         if start and end:
             where += " AND started_at<? AND ended_at>?"
             args = (stamp(end), stamp(start))
+        table = "canonical_audio" if source_ids is None else "audio"
+        if source_ids is not None:
+            where += " AND id IN (SELECT value FROM json_each(?))"
+            args += (json.dumps(source_ids),)
         with self.connect() as db:
             # Count and selected IDs must describe the same snapshot during capture/corrections.
             db.execute("BEGIN")
             total = db.execute(
-                "SELECT count(*) FROM canonical_audio WHERE " + where, args
+                f"SELECT count(*) FROM {table} WHERE " + where, args
             ).fetchone()[0]
             if not total:
                 return [], 0
@@ -517,7 +522,7 @@ class Store(
             )
             rows = db.execute(
                 "WITH ranked AS (SELECT id, row_number() OVER (ORDER BY started_at,id)-1 AS n "
-                "FROM canonical_audio WHERE " + where + ") "
+                f"FROM {table} WHERE " + where + ") "
                 "SELECT a.* FROM ranked r JOIN audio a ON a.id=r.id WHERE r.n IN ("
                 + ",".join("?" for _ in offsets)
                 + ") ORDER BY a.started_at,a.id",
@@ -535,14 +540,20 @@ class Store(
             ]
 
     def search(
-        self, question: str, limit: int, start: datetime | None = None, end: datetime | None = None
+        self, question: str, limit: int, start: datetime | None = None, end: datetime | None = None,
+        source_ids: list[str] | None = None,
     ) -> list[dict]:
         words = re.findall(r"\w+", question, re.UNICODE)[:30]
         if not words:
             return []
         match = " OR ".join('"' + word + '"' for word in words)
         scope = " AND a.started_at<? AND a.ended_at>?" if start and end else ""
-        args = (match, stamp(end), stamp(start), limit) if start and end else (match, limit)
+        args = (match, stamp(end), stamp(start)) if start and end else (match,)
+        table = "canonical_audio" if source_ids is None else "audio"
+        if source_ids is not None:
+            scope += " AND a.id IN (SELECT value FROM json_each(?))"
+            args += (json.dumps(source_ids),)
+        args += (limit,)
         # FTS highlight uses the exact unicode61 matching/normalization rules, so accents
         # and whole tokens retain authoritative offsets into the original transcript.
         marker = f"<omi-match-{uuid4().hex}>"
@@ -550,7 +561,7 @@ class Store(
         with self.connect() as db:
             rows = db.execute(
                 "SELECT a.*,highlight(transcript_search,1,?,?) AS matched_text "
-                "FROM transcript_search f JOIN canonical_audio a ON a.id=f.id "
+                f"FROM transcript_search f JOIN {table} a ON a.id=f.id "
                 "WHERE transcript_search MATCH ?"
                 + scope
                 + " AND a.state='done' ORDER BY bm25(transcript_search),a.started_at,a.id LIMIT ?",

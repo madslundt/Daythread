@@ -56,7 +56,11 @@ public enum RecapTranslationMapping {
         for (original, display) in zip(originals, displays) {
             if original.hasActions { followUps.append(display); continue }
             guard original.parts.count == display.parts.count,
-                  zip(original.parts, display.parts).allSatisfy({ $0.0.kind == $0.1.kind }) else { return nil }
+                  zip(original.parts, display.parts).allSatisfy({ $0.0.kind == $0.1.kind && $0.0.headingLevel == $0.1.headingLevel }) else { return nil }
+            if original.hasSubtopics {
+                topics.append(.init(id: "recap:\(topics.count)", original: original, display: display))
+                continue
+            }
             var start = 0, title = original.title, translatedTitle = display.title
             func append(_ end: Int) {
                 guard end > start else { return }

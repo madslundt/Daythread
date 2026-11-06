@@ -50,6 +50,27 @@ final class RecapTranslationMappingTests: XCTestCase {
         XCTAssertNil(map(original, translated.replacingOccurrences(of: "\n\n", with: "\n"), metadata))
     }
 
+    func testSubtopicTranslationsKeepOneParentIdentityAndItsOriginalEvidence() throws {
+        let original = "## NNCD.SAR meeting\n### Bookmarks\n- **Sharing**: Keep links [\(first)].\n### Deployment\nReview release [\(second)].\n## Home\nOrder seeds."
+        let translated = "## NNCD.SAR-møde\n### Bogmærker\n- **Deling**: Behold links [\(first)].\n### Udrulning\nGennemgå udgivelsen [\(second)].\n## Hjem\nBestil frø."
+        let mapped = try XCTUnwrap(map(original, translated))
+        XCTAssertEqual(mapped.topics.map(\.original.title), ["NNCD.SAR meeting", "Home"])
+        XCTAssertEqual(mapped.topics.map(\.display.title), ["NNCD.SAR-møde", "Hjem"])
+        XCTAssertEqual(mapped.topics[0].id, "recap:0")
+        XCTAssertEqual(mapped.topics[0].display.parts.filter { $0.kind == .heading }.map(\.text), ["Bogmærker", "Udrulning"])
+        XCTAssertEqual(mapped.topics.map(\.original), RecapTranslationMapping.original(original, day: day).topics.map(\.original))
+        XCTAssertTrue(mapped.topics[0].original.parts.map(\.text).joined().contains(first))
+        XCTAssertTrue(mapped.topics[0].original.parts.map(\.text).joined().contains(second))
+        let originalSections = mapped.topics[0].original.contentSections
+        let translatedSections = mapped.topics[0].display.contentSections
+        XCTAssertEqual(originalSections.map(\.title), ["Bookmarks", "Deployment"])
+        XCTAssertEqual(translatedSections.map(\.title), ["Bogmærker", "Udrulning"])
+        for (index, sourceID) in [first, second].enumerated() {
+            XCTAssertTrue(originalSections[index].parts.map(\.text).joined().contains(sourceID))
+            XCTAssertTrue(translatedSections[index].parts.map(\.text).joined().contains(sourceID))
+        }
+    }
+
     func testWrongVersionRangesOriginalTextIndexOrKindRejectsTheMapping() {
         let original = "## Coffee\nA useful point.", translated = "## Kaffe\nEn nyttig pointe."
         let metadata = structure(original, translated), block = metadata.blocks[1]

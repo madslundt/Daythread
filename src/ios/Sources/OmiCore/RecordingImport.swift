@@ -130,18 +130,26 @@ public struct RecordingUploadPlan: Codable, Sendable {
     public let endedAt: String
     public let conversationSourceID: UUID?
     public let vendorID: String?
+    public let treatAsMeeting: Bool?
     public let parts: [Part]
 
     public var resolvedVendorID: String { vendorID ?? "manual" }
+    public var resolvedTreatAsMeeting: Bool { treatAsMeeting ?? false }
 
     enum CodingKeys: String, CodingKey {
         case recordingID = "recording_id", sourceID = "source_id", startedAt = "started_at"
         case endedAt = "ended_at", conversationSourceID = "conversation_source_id", parts
         case vendorID = "vendor_id"
+        case treatAsMeeting = "treat_as_meeting"
     }
 
-    public func validate(digests: [String], sampleCount: Int) throws {
+    public func validate(digests: [String], sampleCount: Int, treatAsMeeting expectedMeeting: Bool? = nil) throws {
         let ranges = try RecordingImport.sampleRanges(count: sampleCount)
+        // An existing upload plan keeps its accepted choice on resume. A missing
+        // field indicates a server that ignored the requested meeting option.
+        if expectedMeeting == true && treatAsMeeting == nil {
+            throw RecordingImportError(AppLocalization.source("This server does not support importing recordings as meetings. Update Daythread and retry."))
+        }
         guard parts.count == ranges.count, parts.map(\.digest) == digests,
               Set(parts.map(\.id)).count == parts.count, !sourceID.isEmpty, sourceID.unicodeScalars.count <= 255,
               !resolvedVendorID.isEmpty, resolvedVendorID.count <= 80,

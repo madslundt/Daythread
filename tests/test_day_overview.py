@@ -303,6 +303,23 @@ def test_unknown_links_are_removed_and_plain_topic_mentions_are_linked():
     assert reading_text(text) == f"{TITLE} progressed. Invented and external."
 
 
+def test_overview_navigation_targets_main_topic_and_preserves_cited_subtopic_details():
+    first = "11111111-1111-4111-8111-111111111111"
+    second = "22222222-2222-4222-8222-222222222222"
+    markdown = (f"## NNCD.SAR meeting\n\n### Release\nBeta is planned [{first}].\n\n"
+                f"### Bookmarks\n- **Sharing** — Links preserve state [{second}].\n\n"
+                f"## Garden\nOrder seeds [{second}].")
+    topics = topic_details(markdown, include_source_ids=True)
+    assert [topic["title"] for topic in topics] == ["NNCD.SAR meeting", "Garden"]
+    assert topics[0]["source_ids"] == [first, second]
+    assert "Release" in topics[0]["summary"] and "Bookmarks" in topics[0]["summary"]
+    assert "Beta is planned" in topics[0]["summary"]
+    assert "Links preserve state" in topics[0]["summary"]
+    linked = linked_overview("NNCD.SAR meeting progressed.", topics)
+    assert "(topic:NNCD.SAR%20meeting)" in linked
+    assert "topic:Release" not in linked
+
+
 def test_paraphrased_topics_do_not_append_a_topic_index():
     topics = [{"id": TITLE, "title": TITLE, "summary": "Launch details"},
               {"id": "Hiring activities", "title": "Hiring activities", "summary": "Hiring"}]

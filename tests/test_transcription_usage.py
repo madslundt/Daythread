@@ -2,6 +2,7 @@ import io
 import json
 import wave
 from datetime import UTC, datetime
+from email.parser import BytesParser
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -205,7 +206,9 @@ async def test_worker_filters_requests_preserves_original_timing_and_measures_ch
     original = wav()
     recording_id = str(uuid4())
     store.ingest(recording_id, "omi", datetime.now(UTC), original, 10)
-    settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode="off")
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode="off",
+                        stt_filter_speech=True, stt_chunk_seconds=3,
+                        stt_boundary_search_seconds=0)
     requests = []
 
     def provider(request):
@@ -228,14 +231,14 @@ async def test_worker_filters_requests_preserves_original_timing_and_measures_ch
     row = store.get_audio(recording_id)
     assert row["state"] == "done"
     segments = json.loads(row["segments"])
-    assert [s["start"] for s in segments] == pytest.approx([.8, 6.8])
-    assert [s["end"] for s in segments] == pytest.approx([1.2, 7.2])
+    assert [s["start"] for s in segments] == pytest.approx([.1, 6.1])
+    assert [s["end"] for s in segments] == pytest.approx([.5, 6.5])
     details = json.loads(row["transcription_details"])
-    assert details["filtering"]["retained_seconds"] == pytest.approx(3.2)
+    assert details["filtering"]["retained_seconds"] == 6
     totals = ledger.report()["totals"]
     assert totals["captured_minutes"] == pytest.approx(10 / 60)
-    assert totals["retained_minutes"] == pytest.approx(3.2 / 60)
-    assert totals["submitted_minutes"] == pytest.approx(3.2 / 60)
+    assert totals["retained_minutes"] == pytest.approx(6 / 60)
+    assert totals["submitted_minutes"] == pytest.approx(6 / 60)
     assert totals["transcription_credits"] == 2.5
     assert totals["summary_credits"] == 5
     assert totals["unknown_credit_attempts"] == 0
@@ -247,7 +250,7 @@ async def test_worker_filters_requests_preserves_original_timing_and_measures_ch
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("digital_silence", [False, True])
-async def test_non_speech_skips_provider_but_keeps_recording_and_usage(
+async def test_default_digital_silence_and_opt_in_non_speech_skip_provider(
     tmp_path, monkeypatch, digital_silence,
 ):
     monkeypatch.setattr("omi_local.worker.analyze_voice", lambda data: activity(False))
@@ -256,7 +259,8 @@ async def test_non_speech_skips_provider_but_keeps_recording_and_usage(
     original = wav(sample=b"\0\0" if digital_silence else b"\x08\0")
     key = str(uuid4())
     store.ingest(key, "omi", datetime.now(UTC), original, 10)
-    settings = Settings(data_dir=tmp_path, _env_file=None)
+    filtering = {} if digital_silence else {"stt_filter_speech": True}
+    settings = Settings(data_dir=tmp_path, _env_file=None, **filtering)
 
     def unexpected(request):
         pytest.fail("Non-speech must not reach a transcription or enhancement provider")
@@ -276,8 +280,48 @@ async def test_non_speech_skips_provider_but_keeps_recording_and_usage(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("detected_speech", [False, True])
+async def test_default_processing_keeps_full_nonzero_audio_despite_vad(
+    tmp_path, monkeypatch, detected_speech,
+):
+    monkeypatch.setattr("omi_local.worker.analyze_voice", lambda _: activity(detected_speech))
+    store = Store(tmp_path)
+    original = wav()
+    key = str(uuid4())
+    store.ingest(key, "omi", datetime.now(UTC), original, 10)
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_max_gain_db=0,
+                        stt_enhancement_mode="off")
+    requests = []
+
+    def provider(request):
+        message = BytesParser().parsebytes(
+            f"Content-Type: {request.headers['content-type']}\r\n\r\n".encode() + request.content
+        )
+        submitted_audio = next(
+            part.get_payload(decode=True) for part in message.get_payload()
+            if part.get_param("name", header="content-disposition") == "file"
+        )
+        requests.append(submitted_audio)
+        return httpx.Response(200, json={"text": "Quiet words are retained."})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        inference = Inference(settings, client)
+        memory = SimpleNamespace(store=store, settings=settings, inference=inference)
+        assert await process_one(memory)
+    assert requests == [original]
+    row = store.get_audio(key)
+    assert row["text"] == "Quiet words are retained."
+    assert row["transcription_outcome"] == "text"
+    assert store.read_audio(key) == original
+    filtering = json.loads(row["transcription_details"])["filtering"]
+    assert filtering["status"] == "disabled"
+    assert filtering["original_seconds"] == filtering["retained_seconds"] == 10
+
+
+@pytest.mark.anyio
 async def test_failed_detection_retains_full_audio_and_unreported_credits_stay_unknown(tmp_path):
-    settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode="off")
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_enhancement_mode="off",
+                        stt_filter_speech=True)
     ledger = UsageLedger(Store(tmp_path))
     async with httpx.AsyncClient(transport=httpx.MockTransport(
         lambda request: httpx.Response(200, json={"text": "Speech"}),

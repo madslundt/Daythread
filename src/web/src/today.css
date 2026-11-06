@@ -398,6 +398,20 @@
 
 .recap-topic-summary { font-size: 13px; line-height: 1.7; color: var(--secondary); }
 .recap-topic-summary > .prose { font-size: inherit; }
+.recap-topic-summary .prose h4 { font: 600 15px/1.5 var(--font-display); color: var(--ink); margin: 24px 0 8px; }
+.recap-topic-summary .prose h4:first-child { margin-top: 0; }
+.recap-subtopics { margin: 0 0 8px 8px; padding-left: 16px; border-left: 2px solid var(--line); }
+.recap-subtopics > .recap-topic-summary { padding: 0 0 12px; }
+.recap-subtopic + .recap-subtopic { border-top: 1px solid var(--line); }
+.recap-subtopic > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 10px 0; list-style: none; cursor: pointer; }
+.recap-subtopic > summary::-webkit-details-marker { display: none; }
+.recap-subtopic > summary h4 { min-width: 0; margin: 0; font: 600 15px/1.5 var(--font-display); overflow-wrap: anywhere; }
+.recap-subtopic > summary > svg { flex-shrink: 0; color: var(--muted); transition: transform .15s; }
+.recap-subtopic[open] > summary > svg { transform: rotate(90deg); }
+.recap-subtopic > summary:hover { color: var(--accent); }
+.recap-subtopic > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.recap-subtopic > .recap-topic-summary { padding: 0 0 16px; }
+@media (prefers-reduced-motion: reduce) { .recap-subtopic > summary > svg { transition: none; } }
 .recap-topic-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 8px 0 12px; }
 .recap-topic-actions > button { display: inline-flex; align-items: center; gap: 7px; }
 .copy-summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }

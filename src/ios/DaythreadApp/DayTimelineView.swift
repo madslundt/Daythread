@@ -267,7 +267,12 @@ private struct RecordingChapterPassage: View {
         }
         if timeline["markers"].array.contains(where: overlaps) { values["important"] = .bool(true) }
         if case .array(let meetings) = timeline["meetings"] {
-            values["meeting_hint_ids"] = .array(meetings.filter(overlaps).map { $0["id"] })
+            values["meeting_hint_ids"] = .array(meetings.filter { meeting in
+                if case .array(let members) = meeting["source_ids"] {
+                    return members.contains { $0.text == source["id"].text }
+                }
+                return overlaps(meeting)
+            }.map { $0["id"] })
         }
         return .object(values)
     }

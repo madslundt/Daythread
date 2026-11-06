@@ -7,7 +7,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .domain import project_events, stamp, utc_now
+from .conversation_state import meeting_timeline
+from .domain import stamp, utc_now
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS importance (
@@ -19,6 +20,15 @@ CREATE TRIGGER IF NOT EXISTS importance_source_delete AFTER DELETE ON audio BEGI
 END;
 CREATE TRIGGER IF NOT EXISTS importance_meeting_delete AFTER DELETE ON events BEGIN
  DELETE FROM importance WHERE kind='meeting' AND id=OLD.event_id;
+END;
+CREATE TRIGGER IF NOT EXISTS importance_import_meeting_delete AFTER DELETE ON audio BEGIN
+ DELETE FROM importance WHERE kind='meeting'
+ AND id=json_extract(OLD.source_metadata,'$.recording_id');
+END;
+CREATE TRIGGER IF NOT EXISTS importance_import_meeting_expire AFTER UPDATE OF state ON audio
+WHEN NEW.state='expired' BEGIN
+ DELETE FROM importance WHERE kind='meeting'
+ AND id=json_extract(OLD.source_metadata,'$.recording_id');
 END;
 CREATE TRIGGER IF NOT EXISTS importance_label_delete AFTER DELETE ON entities BEGIN
  DELETE FROM importance WHERE kind='label' AND id=OLD.id;
@@ -67,8 +77,7 @@ class ImportanceStore:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if body.kind == "meeting":
-                events = [dict(row) for row in db.execute("SELECT * FROM events")]
-                timeline = project_events(events, utc_now())
+                timeline = meeting_timeline(self.recap_snapshot(db), utc_now())
                 exists = any(meeting["id"] == key[1] for meeting in timeline["meetings"])
             elif body.kind == "label":
                 exists = db.execute(

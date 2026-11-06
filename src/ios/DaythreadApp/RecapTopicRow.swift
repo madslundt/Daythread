@@ -66,7 +66,18 @@ struct RecapTopicRow: View {
             RecapTopicHeader(id: topic.id, title: displayTitle, preview: RecapPresentation.topicSummary(display), expanded: $expanded)
             if expanded {
                 if !filters.isFiltered || validatedKey == key {
-                    Text(.init(RecapPresentation.topicSummary(display))).textSelection(.enabled)
+                    if display.hasSubtopics {
+                        ForEach(Array(display.contentSections.enumerated()), id: \.offset) { index, section in
+                            if let title = section.title {
+                                RecapSubtopicDisclosure(id: topic.id + ":\(index)",
+                                    title: RecapPresentation.readingText(title), text: section.text)
+                            } else {
+                                Text(.init(section.text)).textSelection(.enabled)
+                            }
+                        }
+                    } else {
+                        Text(.init(RecapPresentation.topicSummary(display))).textSelection(.enabled)
+                    }
                 }
                 if loading { ProgressView(L10n.text("Checking original evidence…")) }
                 ErrorNote(message: error)
@@ -117,6 +128,23 @@ struct RecapTopicRow: View {
             onFocus(.init(id: topic.id, title: title, sourceIDs: Set(incoming.map { $0["id"].text }), passages: passages,
                           versions: rawSourceVersions))
         } catch { if !Task.isCancelled, expanded, key == requested { self.error = L10n.error(error) } }
+    }
+}
+
+private struct RecapSubtopicDisclosure: View {
+    let id: String
+    let title: String
+    let text: String
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            Text(.init(text)).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text(.init(title)).font(.subheadline.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+        }.accessibilityIdentifier("recap.subtopic." + id)
     }
 }
 

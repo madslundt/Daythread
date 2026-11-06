@@ -15,7 +15,7 @@ from .inference import (
 from .summary_filter import NO_CONTENT
 from .summary_speaker_evidence import source_prompt_pieces
 
-VERSION = "whole-original-coherence-v3-third-party-names-paragraph-citations"
+VERSION = "whole-original-coherence-v4-topic-hierarchy"
 MAX_RENDERED_CHARACTERS = 100_000
 # request_tokens is a conservative UTF-8 byte-level upper bound, not a tokenizer receipt.
 MAX_INPUT_TOKEN_ESTIMATE = 120_000
@@ -92,9 +92,12 @@ def request(
     if level == "mixed":
         return "", "", 0, "unsupported_heading_format"
     headings = (
-        "Preserve the draft's level-two subject-heading format; merge or rename headings as "
-        "needed and do not add an introduction."
-        if level == 2 else
+        "Use ## main topic headings with optional ### subtopic headings. Keep substantial "
+        "aspects of the same supported meeting or project under their parent; keep simple "
+        "subjects flat. Preserve the hierarchy when present; merge or rename headings as "
+        "needed, without duplicating facts in a parent overview and its subtopics. "
+        "Do not add an introduction, orphan subtopics or deeper headings."
+        if level in (2, "hierarchical") else
         "Preserve the draft's plain-paragraph format; do not add Markdown headings."
         if level is None else
         f"Preserve the draft's level-{level} heading format; do not add other heading levels."
@@ -124,6 +127,9 @@ def heading_level(text: str) -> int | None | str:
               if (match := re.match(r"^(#{1,6})\s+", line))}
     if not levels:
         return None
+    if levels == {2, 3}:
+        first = re.search(r"^(#{1,6})\s+", text, re.M)
+        return "hierarchical" if len(first[1]) == 2 else "mixed"
     return next(iter(levels)) if len(levels) == 1 else "mixed"
 
 
@@ -164,16 +170,21 @@ def validate_edit(text: str, sources: list[dict], draft: str) -> str:
             headings.append((index, len(match.group(1))))
     if expected_level is None and headings:
         raise CoherenceValidationError("unexpected_heading")
-    if isinstance(expected_level, int):
-        if not headings or any(level != expected_level for _, level in headings):
+    hierarchical = expected_level in (2, "hierarchical")
+    if isinstance(expected_level, int) or hierarchical:
+        allowed = {2, 3} if hierarchical else {expected_level}
+        if (not headings or any(level not in allowed for _, level in headings)
+                or headings[0][1] != (2 if hierarchical else expected_level)):
             raise CoherenceValidationError("heading_format")
         lines = text.splitlines()
         first_index = next((index for index, line in enumerate(lines) if line.strip()), -1)
         if first_index != headings[0][0]:
             raise CoherenceValidationError("heading_format")
-        for position, (line_index, _) in enumerate(headings):
-            end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
-            if not any(line.strip() for line in lines[line_index + 1:end]):
+        for position, (line_index, level) in enumerate(headings):
+            end = next((index for index, following in headings[position + 1:]
+                        if following <= level), len(lines))
+            if not any(line.strip() and not re.match(r"^#{1,6}\s+", line)
+                       for line in lines[line_index + 1:end]):
                 raise CoherenceValidationError("empty_heading")
 
     validate_paragraph_citations(text, sources)

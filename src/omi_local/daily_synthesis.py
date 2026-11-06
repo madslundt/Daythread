@@ -13,6 +13,9 @@ PLAN = (
     "Organize useful recorded information into coherent daily topics. This is ONLY a topic "
     "planning task, not summary writing. Supplied context labels are provisional; read the "
     "individual facts and regroup them. Use a project, plan, goal or workflow as the topic, "
+    "or a meeting when the speech establishes its common subject. A product review's release, "
+    "bookmarks, interface, search, training and migration can be aspects of one main topic; "
+    "do not promote each feature or agenda item to an independent daily topic. "
     "not one topic per technical detail. Group details only when the source connects them to "
     "the same project or workflow. Keep current role, team context and earlier project "
     "background with the subject they explain; a project mention alone does not make an "
@@ -51,17 +54,30 @@ REVIEW = (
     "justify separate daily topics. Keep genuinely independent projects and "
     "personal arrangements separately findable; shared vocabulary alone is insufficient. "
     "Keep consequential differences, qualifications and unique useful details inside their "
-    "subject. Do not preserve the draft topic count or impose a numeric limit. "
+    "subject. Use main topics for source-connected meetings, projects or personal plans. "
+    "When a main subject contains several substantial, separately useful aspects, retain them "
+    "as optional subtopics instead of sibling main topics. For example a product review can "
+    "contain release, bookmarks, interface and search subtopics when facts establish the same "
+    "product. Do not invent a project name or meeting relationship from adjacent recording "
+    "times. Keep a simple subject flat; avoid one-child wrappers or a subtopic per detail. "
+    "Do not preserve the draft topic count or impose a numeric limit. "
     "Reassess incidental background, speaker introductions, routine closing remarks, generic "
     "networking invitations and opaque fragments; omit these unless the facts establish "
     "a concrete later use or meaningful personal significance. Preserve explicit requests "
     "to remember ordinary errands. Never remove useful independent subjects to shorten a list. "
     "Return only JSON: {\"topics\":[{\"title\":\"specific subject\","
-    "\"scope\":\"what belongs here\",\"items\":[\"n1\",\"n2\"]}],"
+    "\"scope\":\"what belongs here\",\"items\":[\"n1\",\"n2\"],"
+    "\"subtopics\":[{\"title\":\"useful aspect\",\"scope\":\"only this aspect\","
+    "\"items\":[\"n1\"]},{\"title\":\"another aspect\",\"scope\":\"only that aspect\","
+    "\"items\":[\"n2\"]}]}],"
     "\"omitted_items\":[{\"id\":\"n3\","
     "\"reason\":\"why this item lacks lasting relevance\"}]}. omitted_items is optional. "
-    "Account for EVERY supplied item ID either in topics or in omitted_items with a specific "
-    "reason, never both. Use only supplied IDs. No summaries, citations or Markdown."
+    "subtopics is optional; omit it for flat topics. Use only one subtopic level, with at least "
+    "two children when needed. Parent items must equal the union of their children's items; "
+    "each child needs a specific scope and supporting items. Do not repeat the same fact "
+    "across subtopics. Account for EVERY supplied item ID either in topics or in omitted_items "
+    "with a specific reason, never both. Use only supplied IDs. "
+    "No summaries, citations or Markdown."
 )
 
 
@@ -71,7 +87,7 @@ def note_items(sources):
     }
     items = []
     for source in sources:
-        heading, buffer = '', []
+        heading, buffer, parents = '', [], []
 
         def flush():
             if not buffer:
@@ -89,14 +105,18 @@ def note_items(sources):
                     end = 6000
                 piece, text = text[:end], text[end:].lstrip()
                 items.append({'id': f'n{len(items) + 1}', 'context': context,
-                              'parent_context': heading, 'text': piece, 'sources': refs})
+                              'parent_context': parents[-2][1] if len(parents) > 1 else heading,
+                              'text': piece, 'sources': refs})
 
         for line in (source.get('text') or '').splitlines():
-            title = re.match(r'^#{1,6}\s+(.+)', line)
+            title = re.match(r'^(#{1,6})\s+(.+)', line)
             bullet = re.match(r'^\s*(?:[-*•]|\d+\.)\s+(.+)', line)
             if title:
                 flush()
-                heading = title[1]
+                level, heading = len(title[1]), title[2]
+                while parents and parents[-1][0] >= level:
+                    parents.pop()
+                parents.append((level, heading))
             elif bullet:
                 flush()
                 buffer.append(bullet[1])
@@ -131,7 +151,7 @@ def batches(rows):
     return result
 
 
-def parse_plan(answer, known, required=None):
+def parse_plan(answer, known, required=None, *, allow_subtopics=True):
     try:
         text = answer.strip()
         if text.startswith('```'):
@@ -153,8 +173,16 @@ def parse_plan(answer, known, required=None):
                 raise ValueError()
             titles.add(title.casefold())
             selected.update(ids)
-            result.append({'title': title.strip(), 'scope': scope.strip(),
-                           'items': list(dict.fromkeys(ids))})
+            prepared = {'title': title.strip(), 'scope': scope.strip(),
+                        'items': list(dict.fromkeys(ids))}
+            if 'subtopics' in topic:
+                children = topic['subtopics']
+                if not allow_subtopics or not isinstance(children, list) or len(children) < 2:
+                    raise ValueError()
+                prepared['subtopics'] = parse_plan(
+                    json.dumps({'topics': children}), set(ids), set(ids), allow_subtopics=False,
+                )
+            result.append(prepared)
         if required is not None and selected != required:
             raise ValueError()
         return result
@@ -326,7 +354,7 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
         trace['topic_count'] = 0
         return NO_CONTENT, trace
 
-    async def write(topic):
+    async def write(topic, parent=None):
         selected = [lookup[key] for key in topic['items']]
         refs = sorted({key for item in selected for key in item['sources']})
         evidence = '\n\n'.join(item['context'] + '\n' + item['text'] for item in selected)
@@ -345,6 +373,10 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
             'a concise paragraph for ONLY the planned topic '
             + json.dumps(topic['title'], ensure_ascii=False) + '. Scope: '
             + topic['scope'] + '. The title and scope are organizational hints, not facts. '
+            + ((' This is a subtopic of ' + json.dumps(parent['title'], ensure_ascii=False)
+                + '; parent scope: ' + parent['scope']
+                + '. Cover only this subtopic, without repeating a general parent overview. ')
+               if parent else '') +
             'Use only the supporting evidence. Write a few focused sentences preserving useful '
             'outcomes, follow-ups, dates, conditions and uncertainty. Omit other subjects and '
             'opaque fragments. Do not add a title, headings, bullets, introduction or conclusion. '
@@ -366,11 +398,17 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
         if answer == NO_CONTENT or re.search(r'^\s*#{1,6}\s+', answer, re.M):
             raise InferenceError('Invalid LLM response')
         validate_citations(answer, [{'id': key} for key in refs])
-        return f"## {topic['title']}\n{answer.strip()}"
+        return f"{'###' if parent else '##'} {topic['title']}\n{answer.strip()}"
 
-    tasks = [asyncio.create_task(write(topic)) for topic in topics]
+    leaves = [(child, topic) if topic.get('subtopics') else (topic, None)
+              for topic in topics for child in topic.get('subtopics', [topic])]
+    tasks = [asyncio.create_task(write(topic, parent)) for topic, parent in leaves]
     try:
-        sections = await asyncio.gather(*tasks)
+        written = iter(await asyncio.gather(*tasks))
+        sections = [
+            f"## {topic['title']}\n\n" + '\n\n'.join(next(written) for _ in topic['subtopics'])
+            if topic.get('subtopics') else next(written) for topic in topics
+        ]
     except BaseException:
         for task in tasks:
             task.cancel()
@@ -380,4 +418,5 @@ async def summarize_daily(inference, sources, purpose='', *, original_sources=No
         key for topic in topics for item in topic['items'] for key in lookup[item]['sources']
     })
     trace['topic_count'] = len(topics)
+    trace['subtopic_count'] = sum(len(topic.get('subtopics', [])) for topic in topics)
     return '\n\n'.join(sections), trace

@@ -677,8 +677,9 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
                 trace["model_calls"] += 1
                 trace["draft_model_calls"] += 1
                 heading_requirement = (
-                    " For a daily recap, include a level-two ## heading for each subject and "
-                    "useful content beneath every heading."
+                    " For a daily recap, use ## main topic headings with optional ### "
+                    "subtopic headings and useful cited content beneath every leaf heading. "
+                    "Start with a main topic; do not add orphan subtopics or deeper headings."
                     if require_subject_headings else ""
                 )
                 repaired = await inference._summary_generate(
@@ -719,19 +720,19 @@ class Inference(Transcription, InferenceUsage, StructuredGeneration):
             raise InferenceError("Complete recording summary requires a source citation")
         if require_subject_headings:
             lines = validated.splitlines()
-            headings = [
-                index for index, line in enumerate(lines)
-                if re.match(r"^#{1,6}\s+\S", line)
-            ]
+            headings = [(index, len(match[1])) for index, line in enumerate(lines)
+                        if (match := re.match(r"^(#{1,6})\s+\S", line))]
             first_content = next(
                 (index for index, line in enumerate(lines) if line.strip()), -1,
             )
-            if (not headings or first_content != headings[0]
-                    or any(not re.match(r"^##\s+\S", lines[index]) for index in headings)):
-                raise InferenceError("Daily recording summary requires level-two subject headings")
-            for position, index in enumerate(headings):
-                end = headings[position + 1] if position + 1 < len(headings) else len(lines)
-                if not any(line.strip() for line in lines[index + 1:end]):
+            if (not headings or first_content != headings[0][0] or headings[0][1] != 2
+                    or any(level not in (2, 3) for _, level in headings)):
+                raise InferenceError("Daily recording summary requires main topic headings")
+            for position, (index, level) in enumerate(headings):
+                end = next((following for following, depth in headings[position + 1:]
+                            if depth <= level), len(lines))
+                if not any(line.strip() and not re.match(r"^#{1,6}\s+", line)
+                           for line in lines[index + 1:end]):
                     raise InferenceError("Daily recording summary has an empty subject heading")
         return validated
 

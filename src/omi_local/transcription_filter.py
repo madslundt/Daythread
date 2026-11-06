@@ -1,13 +1,14 @@
-"""Conservative speech spans for STT requests; archived audio remains unchanged."""
+"""Select complete STT windows using speech observations; preserve original context."""
 
 import io
 import math
 import wave
 from typing import Literal, TypedDict
 
+from .audio import transcription_chunks
 from .voice_activity import analyze_voice
 
-FILTER_VERSION = "webrtcvad-mode0-boosted-padding300ms-merge200ms-v1"
+FILTER_VERSION = "webrtcvad-mode0-boosted-padding300ms-merge200ms-request-windows-v2"
 _RATE = 16000
 _VAD_FRAMES = 320  # analyze_voice observes complete 20 ms frames.
 _PADDING_FRAMES = 4800
@@ -68,15 +69,37 @@ def _validated_activity(activity: dict, frames: int, raw: bytes) -> list[tuple[f
     return speech
 
 
+def _retained_windows(
+    data: bytes, intervals: list[tuple[int, int]],
+    chunk_seconds: int, boundary_search_seconds: float,
+) -> tuple[list[tuple[float, bytes]], int]:
+    if not intervals:
+        return [], 0
+    spans, retained_frames, index = [], 0, 0
+    for offset, chunk in transcription_chunks(data, chunk_seconds, boundary_search_seconds):
+        left = round(offset * _RATE)
+        with wave.open(io.BytesIO(chunk)) as window:
+            right = left + window.getnframes()
+        while index < len(intervals) and intervals[index][1] <= left:
+            index += 1
+        if index < len(intervals) and intervals[index][0] < right:
+            spans.append((offset, chunk))
+            retained_frames += right - left
+    return spans, retained_frames
+
+
 def filter_transcription_audio(
     data: bytes, *, enabled: bool = True, activity: dict | None = None,
+    chunk_seconds: int = 30, boundary_search_seconds: float = 5,
 ) -> TranscriptionAudio:
-    """Keep padded original WAV spans with source offsets, never concatenate gaps.
+    """Keep complete original request windows intersecting padded speech observations.
 
     Speech detected in either original or boosted audio by analyze_voice is kept,
     including single-frame utterances. Each span gets 300 ms context on both sides;
-    padded spans separated by at most 200 ms are merged. Unobserved partial frames
-    get the same context. Unknown or inconsistent activity retains the entire WAV.
+    padded spans separated by at most 200 ms are merged. Select windows from the
+    original chunk/boundary policy, never trim a selected window or concatenate gaps.
+    Unobserved partial frames get the same context. Unknown or inconsistent activity
+    retains the entire WAV.
     ``activity`` allows a precomputed detector result or deterministic testing.
     """
     result: TranscriptionAudio = {
@@ -114,19 +137,12 @@ def filter_transcription_audio(
             else:
                 padded.append((left, right))
 
-        spans = []
-        for left, right in padded:
-            if left == 0 and right == frames:
-                spans.append((0.0, data))
-                continue
-            output = io.BytesIO()
-            with wave.open(output, "wb") as target:
-                target.setparams(params)
-                target.writeframes(raw[left * 2:right * 2])
-            spans.append((left / _RATE, output.getvalue()))
+        spans, retained_frames = _retained_windows(
+            data, padded, chunk_seconds, boundary_search_seconds,
+        )
         result.update(
             spans=spans, status="filtered",
-            retained_seconds=sum(right - left for left, right in padded) / _RATE,
+            retained_seconds=retained_frames / _RATE,
             detected_speech_seconds=sum(end - start for start, end in speech),
         )
     except Exception:

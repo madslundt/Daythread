@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .domain import project_events, stamp
+from .imported_meetings import contains_source, imported_meetings
 from .source_matching import manual_upload, merge_groups
 from .vendor_imports import transcript_import
 from .voice_activity import VERSION
@@ -118,7 +119,10 @@ def meeting_timeline(snapshot: dict, now: datetime) -> dict:
         blockers.extend((gap["started_at"], gap["ended_at"]) for gap in snapshot["gaps"]
                         if gap["device_id"] in {device, ""})
         observed[device] = quiet_runs(quiet, blockers)
-    return project_events(snapshot["events"], now, observed)
+    timeline = project_events(snapshot["events"], now, observed)
+    timeline["meetings"] = sorted(timeline["meetings"] + imported_meetings(snapshot, now),
+                                  key=lambda meeting: (meeting["started_at"], meeting["id"]))
+    return timeline
 
 
 @dataclass(frozen=True)
@@ -275,7 +279,9 @@ def conversations(
         group.hints = {
             kind: [{**hint, "context_end": min(hint["context_end"], group.end)}
                    for hint in timeline[kind]
-                   if hint["context_start"] < group.end and hint["context_end"] > group.start]
+                   if hint["context_start"] < group.end and hint["context_end"] > group.start
+                   and (kind != "meetings" or "source_ids" not in hint
+                        or any(contains_source(hint, row) for row in group.sources))]
             for kind in ("markers", "meetings")
         }
     return sorted(result, key=lambda group: group.start)
@@ -322,7 +328,9 @@ def recordings(snapshot: dict, now: datetime, quiet_seconds: int) -> list[Conver
         group.hints = {
             kind: [{**hint, "context_end": min(hint["context_end"], group.end)}
                    for hint in timeline[kind]
-                   if hint["context_start"] < group.end and hint["context_end"] > group.start]
+                   if hint["context_start"] < group.end and hint["context_end"] > group.start
+                   and (kind != "meetings" or "source_ids" not in hint
+                        or any(contains_source(hint, row) for row in group.sources))]
             for kind in ("markers", "meetings")
         }
     return sorted(result, key=lambda group: group.start)

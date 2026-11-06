@@ -844,7 +844,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start = datetime.fromisoformat(meeting["context_start"])
         end = datetime.fromisoformat(meeting["context_end"])
         result = await memory().window(
-            start, end, "meeting notes with decisions and action items", kind="meeting"
+            start, end, "meeting notes with decisions and action items", kind="meeting",
+            source_ids=meeting.get("source_ids"),
         )
         return {**result, "meeting": meeting}
 

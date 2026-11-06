@@ -26,7 +26,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   const text = recapTopicText(parts);
   const plain = text.replace(/\*\*/g, "");
   const heading = title.replace(/\*\*/g, "");
-  const displayText = recapTopicText(displayParts);
+  const displayText = recapTopicText(displayParts, true);
   const originalText = displayText ? "" : originalRecapText(originalPassages, sources);
   const displayHeading = displayTitle.replace(/\*\*/g, "");
   const reportFocus = useCallback((focus?: RecapFocus) => onFocus?.(focus ? { ...focus, displayTitle: displayHeading } : undefined), [onFocus, displayHeading]);
@@ -36,7 +36,8 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
       point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
   const body = <>
-    {displayText ? inline ? <div className="recap-topic-summary"><RichText text={displayText} /></div> : <RecapSummary text={displayText} /> : null}
+    {displayText ? displayParts.some((part) => part.kind === "heading") ? <RecapSubtopics parts={displayParts} />
+      : inline ? <div className="recap-topic-summary"><RichText text={displayText} headingLevel={4} /></div> : <RecapSummary text={displayText} /> : null}
     {originalText ? <><p className="caption">{t("Original passages")}</p><RecapSummary text={originalText} /></> : null}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
@@ -66,6 +67,29 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
     </div> : null}
     {body}
   </section>;
+}
+
+function RecapSubtopics({ parts }: { parts: RecapPart[] }) {
+  const introduction: RecapPart[] = [];
+  const children: { title: string; parts: RecapPart[] }[] = [];
+  for (const part of parts) {
+    if (part.kind === "heading") children.push({ title: part.text, parts: [] });
+    else (children.at(-1)?.parts || introduction).push(part);
+  }
+  const intro = recapTopicText(introduction);
+  return <div className="recap-subtopics">
+    {intro ? <div className="recap-topic-summary"><RichText text={intro} /></div> : null}
+    {children.map((child, index) => <RecapSubtopic key={`${index}:${child.title}`} {...child} />)}
+  </div>;
+}
+
+function RecapSubtopic({ title, parts }: { title: string; parts: RecapPart[] }) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  return <details className="recap-subtopic" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary role="button" aria-expanded={open} aria-controls={id}><h4><InlineText text={title} /></h4><Icon name="chevron-right" size={15} /></summary>
+    <div id={id} className="recap-topic-summary"><RichText text={recapTopicText(parts)} /></div>
+  </details>;
 }
 
 export function RecapSummary({ text }: { text: string }) {

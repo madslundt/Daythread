@@ -55,6 +55,10 @@ class RecapStore:
             "phones": [dict(row) for row in db.execute("SELECT * FROM phone_observations")],
             "source_matches": [dict(row) for row in db.execute("SELECT * FROM source_matches")],
             "upload_parts": [dict(row) for row in db.execute("SELECT * FROM upload_parts")],
+            "meeting_uploads": [json.loads(row["plan"]) for row in db.execute(
+                "SELECT plan FROM recording_uploads "
+                "WHERE json_extract(plan,'$.treat_as_meeting')=1"
+            )],
         }
 
     def save_recap_activity(self, source_id: str, digest: str, activity: dict) -> None:

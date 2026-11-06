@@ -475,17 +475,22 @@ Streams send `Cache-Control: no-store` and `X-Accel-Buffering: no`; a private re
 
 Adapters use HTTP `/audio/transcriptions` and `/chat/completions`; the existing home-core Wyoming service on port 10300 needs an HTTP bridge before it can be used here. The configured gateway and previous `192.168.30.122:18080` address were unreachable from this Mac during validation, so real STT/LLM quality and latency have not been verified. When models are unreachable, audio remains queued and summary/chat errors remain visible.
 
-Optional **STT segment timestamps** in Settings requests verbose segment timestamps from compatible providers. Local speech filtering skips detected silence and non-speech in transcription copies by default; original playback remains complete. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
+Optional **STT segment timestamps** in Settings requests verbose segment timestamps from compatible providers. Local speech filtering is opt-in; the default keeps nonzero audio eligible for transcription, and original playback remains complete. See [speech processing](#speech-processing-and-cleanup-review) for optional cleanup and limitations. Retrieval combines keywords with local date scoping, including today/yesterday/ISO dates and English/Danish weekdays. Broad day queries sample bounded evidence; semantic retrieval is opt-in and remembered voice suggestions require separate enrollment/evaluation. Answers supply source references and reject unknown cited UUIDs, but model accuracy still needs checking against source audio.
 
 ### Speech processing and cleanup review
 
 Transcription preserves original archive files, hashes, capture times and playback.
-**STT filter speech** is enabled by default in Models & server. Local WebRTC VAD checks both
-original and amplified audio and sends detected speech with 300 ms of context on each side.
-Nearby spans merge; discarded gaps are not concatenated or retimed. Transcripts and cleanup
-candidates retain offsets into the original recording. Entirely non-speech recordings make no
-transcription request. If detection is unavailable or inconsistent, the full original audio is
-sent instead. Short unobserved tails are retained conservatively. This needs no cloud detector.
+**STT filter speech** is disabled by default in Models & server so a detector cannot remove
+quiet words before recognition. Existing saved values remain unchanged; disable this option
+explicitly if an older installation saved it as enabled. When enabled, local WebRTC VAD checks
+both original and amplified audio. Detected speech receives 300 ms of padding, then selects
+complete windows from the normal STT chunk/boundary policy. Selected windows keep all their
+original audio and context; VAD cannot create extra tiny requests inside those windows.
+Only whole windows without padded speech are skipped. Discarded gaps are not concatenated or
+retimed, and transcripts and cleanup candidates retain original recording offsets. Recordings
+classified entirely as non-speech make no transcription request. If detection is unavailable
+or inconsistent, the full original audio is sent instead. Short unobserved tails retain their
+containing window. This needs no cloud detector.
 Speech detection is approximate: quiet or overlapping speech may be missed, and background
 speech or noise may be retained. Disable **STT filter speech** to transcribe full recordings.
 The setting affects subsequent processing, not completed transcripts.
@@ -554,8 +559,9 @@ minutes and separate credit categories across workdays and weekends.
 Quiet transcription copies receive uniform amplification toward -25 dBFS RMS, with peak
 headroom and at most **STT max gain dB** (default 12 dB in Settings). Set 0 to disable. This changes amplitude,
 not signal-to-noise ratio, and cannot uncover a quieter voice masked by a louder one. For
-internal STT request splits, **STT boundary search seconds** (default 0.5 in Settings) searches for a 100 ms quiet
-gap near the boundary; 0 restores fixed cuts. Every sample within each retained speech span is retained exactly once. Phone
+internal STT request splits, **STT boundary search seconds** (default 5 in Settings) searches for
+a quiet gap near the boundary (at least 250 ms with the default search window); 0 restores
+fixed cuts. Every sample within each retained speech span is retained exactly once. Phone
 chunk boundaries and existing captured gaps are unchanged; there is no cross-source context
 or word deduplication.
 
@@ -609,6 +615,84 @@ plus p95 total processing/review latency. Reports contain metrics and fixture ID
 text. Measure heldout clean, quiet, noisy, overlapping and noise-only fixtures; check names,
 dates and each simultaneous speaker by listening. WER alone depends on the arbitrary ordering
 of overlapping words. Do not claim accuracy gains before these checks pass on real audio.
+
+To compare saved Daythread and Plaud transcripts without any inference calls, use the same
+manifest and add `reference_provenance` to every case:
+
+```json
+"reference_provenance": {
+  "kind": "human",
+  "source": "listened-and-corrected",
+  "revision": "v1"
+}
+```
+
+Use `kind: "vendor"` for an uncorrected vendor reference. Those results measure agreement,
+not accuracy. Use Plaud's original transcript, not its cleaned-up version, for verbatim
+comparisons. Keep Danish, English and `da-en` mixed-language cases distinguishable.
+
+Save the candidate outputs in a separate JSON file. Each run must cover every manifest case,
+and `audio_sha256` must be the SHA-256 of the exact WAV file used by that system:
+
+```json
+{
+  "schema_version": 1,
+  "runs": [
+    {
+      "id": "daythread",
+      "metadata": {
+        "provider": "daythread",
+        "model": "effective-upstream-model",
+        "revision": "model-revision",
+        "configuration": "baseline-v1"
+      },
+      "cases": [
+        {
+          "id": "quiet-danish-example",
+          "audio_sha256": "REPLACE_WITH_SHA256_OF_THE_WAV_FILE",
+          "text": "Vi mødes på fredag klokken ti.",
+          "latency_ms": 1234
+        }
+      ]
+    },
+    {
+      "id": "plaud-original",
+      "metadata": {
+        "provider": "plaud",
+        "model": "undisclosed",
+        "revision": "export-version",
+        "configuration": "original-text"
+      },
+      "cases": [
+        {
+          "id": "quiet-danish-example",
+          "audio_sha256": "REPLACE_WITH_SHA256_OF_THE_WAV_FILE",
+          "text": "Vi mødes på fredag klokken ti."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The example shows one case; include all cases from your actual manifest. Latency is optional;
+omit it when unknown. Metadata contains descriptive identifiers, never keys or full private
+configuration. Use the effective upstream model, not a gateway alias. Unknown vendor model
+details must stay explicitly unknown. Compute the audio hash with `shasum -a 256 clip.wav`.
+
+```sh
+uv run python scripts/evaluate_audio.py /path/to/manifest.json \
+  --hypotheses /path/to/runs.json > /tmp/daythread-transcription-comparison.json
+```
+
+This mode requires at least two complete runs, verifies their audio hashes and makes no model
+requests. Reports contain scores and provenance hashes rather than transcript text. Corpus WER
+weights by reference words; `macro_wer` separately shows the mean per-case WER. Inspect deletion,
+insertion, character error, phrase recall and false-speech results by language and condition.
+Treat matching hashes as supplied run provenance, not proof that a vendor processed those bytes.
+Human listening remains necessary for numbers, negation, overlap and semantic fidelity.
+The [staged quality plan](audio-processing-plan.md#quality-programme-transcription-before-interpretation)
+defines the subsequent speaker, concise-summary, label, recap and chat acceptance work.
 
 For a private TLS CA, export `SSL_CERT_FILE=/path/to/trusted-ca-bundle.pem` into the process environment, or mount/set it in Compose. Certificate verification remains enabled.
 

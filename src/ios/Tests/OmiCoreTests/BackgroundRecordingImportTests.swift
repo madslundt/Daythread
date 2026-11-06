@@ -26,7 +26,7 @@ final class BackgroundRecordingImportTests: XCTestCase {
 
     func testHandoffMovesAudioAndPersistsDestinationPlanAndOptionalDetailsBeforeNetworking() throws {
         try withWorkspace { root in
-            let fixture = try fixture(in: root)
+            let fixture = try fixture(in: root, treatAsMeeting: true)
             let location = Data(#"{"zone_id":"saved-zone","location_id":"saved-place"}"#.utf8)
             let job = try stage(fixture, root: root, location: location)
             let directory = job.directory(in: root)
@@ -34,6 +34,7 @@ final class BackgroundRecordingImportTests: XCTestCase {
             XCTAssertEqual(restored.state, .prepared)
             XCTAssertEqual(restored.plan.recordingID, fixture.plan.recordingID)
             XCTAssertEqual(restored.plan.startedAt, "2026-10-29T10:00:00Z")
+            XCTAssertTrue(restored.plan.resolvedTreatAsMeeting)
             XCTAssertEqual(restored.configuration.archiveIdentity, "original-archive")
             XCTAssertEqual(restored.profileID, "original-profile")
             XCTAssertEqual(restored.tagIDs, ["work-id"])
@@ -157,13 +158,14 @@ final class BackgroundRecordingImportTests: XCTestCase {
         let audio: Data
     }
 
-    private func fixture(in root: URL, name: String = "Meeting.wav") throws -> Fixture {
+    private func fixture(in root: URL, name: String = "Meeting.wav", treatAsMeeting: Bool = false) throws -> Fixture {
         let audio = Data("test audio body".utf8)
         let source = root.appendingPathComponent("original-part.wav")
         try audio.write(to: source)
         let body: [String: Any] = [
             "recording_id": UUID().uuidString, "source_id": name,
             "started_at": "2026-10-29T10:00:00Z", "ended_at": "2026-10-29T10:00:01Z", "vendor_id": "plaud",
+            "treat_as_meeting": treatAsMeeting,
             "parts": [["id": UUID().uuidString, "digest": "test-digest", "uploaded": false]],
         ]
         let plan = try JSONDecoder().decode(RecordingUploadPlan.self, from: JSONSerialization.data(withJSONObject: body))

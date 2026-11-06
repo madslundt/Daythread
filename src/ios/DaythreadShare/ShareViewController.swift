@@ -11,6 +11,7 @@ final class ShareViewController: UIViewController {
     let openAppButton = UIButton(type: .system)
     let tagsButton = UIButton(type: .system)
     let locationButton = UIButton(type: .system)
+    let meetingToggle = UISwitch()
     var stagedURLs: [URL] = []
     var timeEditors: [URL: ShareRecordingTimeView] = [:]
     let recordingOptions = UIStackView()
@@ -134,7 +135,7 @@ final class ShareViewController: UIViewController {
         options.axis = .horizontal; options.spacing = 10; options.distribution = .fillEqually
         recordingOptions.axis = .vertical
         recordingOptions.spacing = 16
-        let stack = UIStackView(arrangedSubviews: [icon, heading, options, recordingOptions, status, saveButton, cancelButton, openAppButton])
+        let stack = UIStackView(arrangedSubviews: [icon, heading, options, meetingOptions(), recordingOptions, status, saveButton, cancelButton, openAppButton])
         stack.axis = .vertical
         stack.spacing = 16
         stack.alignment = .fill
@@ -314,6 +315,7 @@ final class ShareViewController: UIViewController {
             "file_digest": digest, "digests": converted.parts.map(\.digest), "sample_count": converted.sampleCount,
             "source_id": Self.originalName(source.lastPathComponent), "started_at": formatter.string(from: bounds.startedAt),
             "ended_at": formatter.string(from: bounds.endedAt), "conversation_source_id": NSNull(),
+            "treat_as_meeting": meetingToggle.isOn,
         ]
         let plan: RecordingUploadPlan
         if let saved = plans[source] {
@@ -323,7 +325,8 @@ final class ShareViewController: UIViewController {
                                       body: try JSONSerialization.data(withJSONObject: body))
             let response = try JSONDecoder().decode(RecordingPreparation.self, from: data)
             guard case .upload(let prepared) = response else { return }
-            try prepared.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount)
+            try prepared.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount,
+                                  treatAsMeeting: meetingToggle.isOn)
             plan = prepared
             plans[source] = plan
             editor.locked = true

@@ -313,9 +313,9 @@ def test_settings_are_validated_described_and_persisted(tmp_path):
     with TestClient(create_app(settings)) as client:
         config = client.get("/v1/configuration").json()
         assert config["values"]["stt_preserve_quiet"] is True
-        assert config["values"]["stt_filter_speech"] is True
+        assert config["values"]["stt_filter_speech"] is False
         changes = {
-            "stt_enhancement_mode": "compare", "stt_max_gain_db": 6, "stt_filter_speech": False,
+            "stt_enhancement_mode": "compare", "stt_max_gain_db": 6, "stt_filter_speech": True,
         }
         saved = client.patch("/v1/configuration", json={
             "revision": config["revision"], "changes": changes,

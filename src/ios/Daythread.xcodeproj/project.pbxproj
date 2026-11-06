@@ -11,6 +11,7 @@
 		A072FEC91A894927A71AE308 /* ChatConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A072FEC91A894927A71AE309 /* ChatConversationTests.swift */; };
 		A072FEC91A894927A71AE306 /* ChatConversations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A072FEC91A894927A71AE307 /* ChatConversations.swift */; };
 		A072FEC91A894927A71AE304 /* ChatMarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A072FEC91A894927A71AE305 /* ChatMarkdownTests.swift */; };
+		F1F176B42415464EBA2E0101 /* DayRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F176B42415464EBA2E0102 /* DayRefreshTests.swift */; };
 		A072FEC91A894927A71AE301 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = A072FEC91A894927A71AE302 /* MarkdownUI */; };
 		02341B5F191F35D69EE5BA68 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 38F938352BFD5D3D1451DC01 /* Assets.xcassets */; };
 		051F3D04F37881B1953DB61F /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADB19E52FE217BF3AF994B8 /* ShareViewController.swift */; };
@@ -140,6 +141,7 @@
 		A072FEC91A894927A71AE309 /* ChatConversationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConversationTests.swift; sourceTree = "<group>"; };
 		A072FEC91A894927A71AE307 /* ChatConversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConversations.swift; sourceTree = "<group>"; };
 		A072FEC91A894927A71AE305 /* ChatMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownTests.swift; sourceTree = "<group>"; };
+		F1F176B42415464EBA2E0102 /* DayRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRefreshTests.swift; sourceTree = "<group>"; };
 		02BD786AA72054D2669EAFDC /* DayQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayQuestionsView.swift; sourceTree = "<group>"; };
 		0363D0DBFE7A0B5091A3C5C5 /* InboxDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxDetail.swift; sourceTree = "<group>"; };
 		08115E64E3FF3451A21DA640 /* DecisionFollowUpsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionFollowUpsView.swift; sourceTree = "<group>"; };
@@ -278,6 +280,7 @@
 			children = (
 				951F560D82A29B4BB38EDFC8 /* ShareImportOptionsTests.swift */,
 				A072FEC91A894927A71AE305 /* ChatMarkdownTests.swift */,
+				F1F176B42415464EBA2E0102 /* DayRefreshTests.swift */,
 				A072FEC91A894927A71AE309 /* ChatConversationTests.swift */,
 			);
 			name = DaythreadShareTests;
@@ -644,6 +647,7 @@
 				54C17565437348D74A1466EA /* ShareImportOptions.swift in Sources */,
 				795B06107FD2D8238216A728 /* ShareImportOptionsTests.swift in Sources */,
 				A072FEC91A894927A71AE304 /* ChatMarkdownTests.swift in Sources */,
+				F1F176B42415464EBA2E0101 /* DayRefreshTests.swift in Sources */,
 				A072FEC91A894927A71AE308 /* ChatConversationTests.swift in Sources */,
 				A84A20C37024337826488DA0 /* ShareImportTransport.swift in Sources */,
 				8A234DD0D4E26D7B69F808C0 /* ShareRecordingTimeView.swift in Sources */,

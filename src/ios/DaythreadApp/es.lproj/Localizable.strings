@@ -3098,6 +3098,11 @@
 
 "Summary reasoning" = "Razonamiento para resúmenes";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Anula el ajuste compartido de razonamiento al generar resúmenes. La opción predeterminada del modelo hereda el ajuste compartido; las demás tareas de LLM no se ven afectadas.";
+"Show all topics" = "Mostrar todos los temas";
+"Show fewer topics" = "Mostrar menos temas";
+"Treat as meeting" = "Tratar como reunión";
+"Each imported recording appears as a completed meeting at its original recording time." = "Cada grabación importada aparece como una reunión finalizada en la fecha y hora originales de la grabación.";
+"This server does not support importing recordings as meetings. Update Daythread and retry." = "Este servidor no permite importar grabaciones como reuniones. Actualiza Daythread e inténtalo de nuevo.";
 
 /* Parrot meeting webhooks */
 "Parrot" = "Parrot";

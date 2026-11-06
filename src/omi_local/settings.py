@@ -176,7 +176,7 @@ class Settings(BaseSettings):
     stt_vocabulary_mode: VocabularyMode = "off"
     stt_preview_enabled: bool = False
     stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
-    stt_filter_speech: bool = True
+    stt_filter_speech: bool = False
     stt_preserve_quiet: bool = True
     stt_max_gain_db: float = Field(default=12, ge=0, le=24)
     stt_boundary_search_seconds: float = Field(default=5, ge=0, le=10)

@@ -3100,6 +3100,11 @@
 
 "Summary reasoning" = "Summary reasoning";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected.";
+"Show all topics" = "Show all topics";
+"Show fewer topics" = "Show fewer topics";
+"Treat as meeting" = "Treat as meeting";
+"Each imported recording appears as a completed meeting at its original recording time." = "Each imported recording appears as a completed meeting at its original recording time.";
+"This server does not support importing recordings as meetings. Update Daythread and retry." = "This server does not support importing recordings as meetings. Update Daythread and retry.";
 
 /* Parrot meeting webhooks */
 "Parrot" = "Parrot";

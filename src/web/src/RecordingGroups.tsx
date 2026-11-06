@@ -118,6 +118,7 @@ function withHints(sources: Source[], timeline?: Timeline): Source[] {
     important: source.important || timeline?.markers.some((mark) =>
       source.started_at < mark.context_end && source.ended_at > mark.context_start),
     meeting_hint_ids: timeline?.meetings.filter((meeting) =>
-      source.started_at < meeting.context_end && source.ended_at > meeting.context_start).map((meeting) => meeting.id) || source.meeting_hint_ids,
+      meeting.source_ids ? meeting.source_ids.includes(source.id)
+        : source.started_at < meeting.context_end && source.ended_at > meeting.context_start).map((meeting) => meeting.id) || source.meeting_hint_ids,
   }));
 }

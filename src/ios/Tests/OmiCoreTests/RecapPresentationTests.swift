@@ -38,6 +38,42 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertEqual(RecapPresentation.groups(markdown, day: "2026-10-16").last?.parts.first?.text, "Book a service")
     }
 
+    func testMeetingSubtopicsStayInsideTheirParentAndRemainSearchable() {
+        let second = "22222222-2222-4222-8222-222222222222"
+        let markdown = "## NNCD.SAR meeting\n### Bookmarks\n- **Sharing**: Links preserve analysis state [\(sourceID)].\n### Deployment\nRelease is planned [\(second)].\n## Garden\nOrder seeds [\(second)]."
+        let topics = RecapPresentation.topics(markdown, day: "2026-10-16")
+        XCTAssertEqual(topics.map(\.title), ["NNCD.SAR meeting", "Garden"])
+        XCTAssertEqual(topics[0].parts.filter { $0.kind == .heading }.map(\.text), ["Bookmarks", "Deployment"])
+        XCTAssertTrue(topics[0].text.contains("**Bookmarks**"))
+        XCTAssertTrue(topics[0].text.contains("**Deployment**"))
+        XCTAssertEqual(RecapPresentation.topics(markdown, day: "2026-10-16", query: "Bookmarks"), [topics[0]])
+        let sources: [RecapPresentation.Source] = [.init(id: sourceID, text: "Links"), .init(id: second, text: "Release")]
+        XCTAssertEqual(RecapPresentation.sources(for: topics[0].parts.map(\.text).joined(), in: sources).ids, [sourceID, second])
+    }
+
+    func testNestedFollowUpsDoNotHideTheWholeMeeting() {
+        let markdown = "## Meeting\n### Release\nBeta is available.\n### Follow-ups\n- Confirm the date.\n## Action points\n- Call Sam."
+        let topics = RecapPresentation.topics(markdown, day: "2026-10-16")
+        XCTAssertEqual(topics.map(\.title), ["Meeting"])
+        XCTAssertTrue(topics[0].text.contains("Confirm the date."))
+    }
+
+    func testSubtopicSectionsKeepIntroductionsAndSiblingEvidenceSeparate() throws {
+        let second = "22222222-2222-4222-8222-222222222222"
+        let markdown = "## NNCD.SAR meeting\nThe team reviewed the release.\n### Bookmarks\nKeep sharing links [\(sourceID)].\n### Deployment\nReview Friday [\(second)]."
+        let topic = try XCTUnwrap(RecapPresentation.topics(markdown, day: "2026-10-16").first)
+        let sections = topic.contentSections
+        XCTAssertEqual(sections.map(\.title), [nil, "Bookmarks", "Deployment"])
+        XCTAssertEqual(sections.map(\.text), ["The team reviewed the release.", "Keep sharing links.", "Review Friday."])
+        XCTAssertEqual(sections.flatMap(\.parts), topic.parts.filter { $0.kind != .heading })
+        XCTAssertTrue(sections[1].parts[0].text.contains(sourceID))
+        XCTAssertFalse(sections[1].parts[0].text.contains(second))
+        XCTAssertTrue(sections[2].parts[0].text.contains(second))
+        let flat = try XCTUnwrap(RecapPresentation.topics("## Garden\nOrder seeds.", day: "2026-10-16").first)
+        XCTAssertEqual(flat.contentSections.map(\.title), [nil])
+        XCTAssertEqual(flat.contentSections.flatMap(\.parts), flat.parts)
+    }
+
     func testTopicSummaryOmitsOnlyItsRepeatedHeadingWithoutChangingOriginalParts() throws {
         let markdown = "## Highlights\n- **Café (home)** — Discussed **cocoa** [\(sourceID)].\n  Kept the original evidence.\n- **Roadster**: Book a service."
         let topics = RecapPresentation.topics(markdown, day: "2026-10-16")

@@ -596,6 +596,50 @@ def test_complete_context_validator_requires_citations_per_paragraph_and_accepts
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("hierarchical_draft", [False, True])
+async def test_complete_recording_daily_summary_accepts_hierarchy_before_and_after_review(
+    tmp_path, hierarchical_draft,
+):
+    source_id = str(uuid4())
+    _, source = full_recording("The release and bookmarks belong to the same product.", source_id)
+    settings = Settings(data_dir=tmp_path, summary_language="en", _env_file=None)
+    hierarchy = (f"## Product meeting\n\n### Release\nBeta is planned [{source_id}].\n\n"
+                 f"### Bookmarks\nLinks preserve state [{source_id}].")
+    flat = f"## Product meeting\nBeta is planned and links preserve state [{source_id}]."
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{
+                "id": settings.llm_route("summary").model, "context_window": 262144,
+            }]})
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        reviewed = "completed_draft" in payload["evidence"]
+        return completion(hierarchy if hierarchical_draft or reviewed else flat)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result, trace = await Inference(settings, client).summarize_complete_recording_traced(
+            source, "a daily recap", require_subject_headings=True,
+        )
+    assert result == hierarchy
+    assert trace["model_calls"] == 2 and trace["draft_model_calls"] == 1
+    assert trace["coherence_review"]["status"] == "applied"
+
+
+@pytest.mark.parametrize("invalid", [
+    "### Orphan\nFact [source]\n## Parent\nFact [source]",
+    "## Parent\n#### Deep\nFact [source]",
+    "## Parent\n### Empty\n### Child\nFact [source]",
+    "## Parent\n### Child\nNo source citation.",
+    "## Parent\n### Child\nFact [unknown]",
+])
+def test_complete_recording_hierarchy_keeps_format_and_source_constraints(invalid):
+    source_id = str(uuid4())
+    invalid = invalid.replace("[source]", f"[{source_id}]").replace("[unknown]", f"[{uuid4()}]")
+    with pytest.raises(InferenceError):
+        Inference._validate_complete_recording_output(invalid, source_id, True)
+
+
+@pytest.mark.anyio
 async def test_context_fallback_filters_source_once_in_existing_reducer(tmp_path, monkeypatch):
     source_id = str(uuid4())
     _, source = full_recording("A meaningful original sentence.", source_id)

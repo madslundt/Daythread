@@ -3098,6 +3098,11 @@
 
 "Summary reasoning" = "Resonnering i sammendrag";
 "Override the shared thinking setting for summary generation. Model default inherits the shared setting; other LLM tasks are unaffected." = "Overstyr den delte innstillingen for resonnering ved generering av sammendrag. Modellstandard arver den delte innstillingen; andre LLM-oppgaver påvirkes ikke.";
+"Show all topics" = "Vis alle emner";
+"Show fewer topics" = "Vis færre emner";
+"Treat as meeting" = "Behandle som møte";
+"Each imported recording appears as a completed meeting at its original recording time." = "Hvert importerte opptak vises som et avsluttet møte på opptakets opprinnelige tidspunkt.";
+"This server does not support importing recordings as meetings. Update Daythread and retry." = "Denne serveren støtter ikke import av opptak som møter. Oppdater Daythread og prøv igjen.";
 
 /* Parrot meeting webhooks */
 "Parrot" = "Parrot";

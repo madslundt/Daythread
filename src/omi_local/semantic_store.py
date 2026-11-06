@@ -381,16 +381,21 @@ class SemanticStore:
         start: datetime | None,
         end: datetime | None,
         max_per_source: int = 3,
+        source_ids: list[str] | None = None,
     ) -> list[dict]:
         """Exact scoped passage scan with bounded source diversity and memory use."""
         if limit <= 0 or max_per_source <= 0:
             return []
         scope = " AND a.started_at<? AND a.ended_at>?" if start and end else ""
         args = (set_id, stamp(end), stamp(start)) if start and end else (set_id,)
+        table = "canonical_audio" if source_ids is None else "audio"
+        if source_ids is not None:
+            scope += " AND a.id IN (SELECT value FROM json_each(?))"
+            args += (json.dumps(source_ids),)
         heap = []
         with self.connect() as db:
             rows = getattr(db, "iterate", db.execute)(
-                "SELECT p.* FROM retrieval_passages p JOIN canonical_audio a ON a.id=p.audio_id "
+                f"SELECT p.* FROM retrieval_passages p JOIN {table} a ON a.id=p.audio_id "
                 "AND a.transcript_version=p.version JOIN embedding_sets s ON s.id=p.set_id "
                 "WHERE p.set_id=? AND s.active=1 AND p.vector IS NOT NULL AND a.state='done'"
                 + scope

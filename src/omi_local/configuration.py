@@ -127,10 +127,12 @@ DESCRIPTIONS = {
     "Longer recordings are split and their transcripts joined. Default: 30. "
     "Use a duration accepted by every configured STT route; gateway model lists may not "
     "advertise audio limits. Applies to subsequent recordings without a restart.",
-    "stt_filter_speech": "Skip locally detected silence and non-speech before transcription. "
-    "Speech receives surrounding context; original audio and playback stay unchanged. "
-    "Detection can miss quiet speech; disable to transcribe full recordings. "
-    "If detection is unavailable, full audio is sent instead. Applies to new processing only.",
+    "stt_filter_speech": "Optionally skip transcription windows without detected speech. "
+    "Disabled by default to retain quiet, distant and overlapping speech the detector may miss. "
+    "When enabled, keeps complete original windows containing padded speech, preserving context "
+    "and timestamps. Original playback is unchanged. "
+    "Unavailable detection retains full audio. Saved choices remain in effect; changes apply "
+    "to new processing only.",
     "stt_preserve_quiet": "Avoid the legacy volume threshold for faint or overlapping voices. "
     "Speech filtering is controlled separately by STT filter speech. "
     "Disable only to opt into the legacy silence threshold, which may miss quiet voices.",

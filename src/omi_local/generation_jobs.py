@@ -305,6 +305,7 @@ class GenerationJobs(ChatJobs):
             datetime.fromisoformat(meeting["context_start"]),
             datetime.fromisoformat(meeting["context_end"]),
             "meeting notes with decisions and action items", kind="meeting",
+            source_ids=meeting.get("source_ids"),
         )
         return result | {"meeting": meeting}
     def complete(self, job: dict, result: dict) -> None:

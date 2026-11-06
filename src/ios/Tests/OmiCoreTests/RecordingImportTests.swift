@@ -120,6 +120,26 @@ final class RecordingImportTests: XCTestCase {
         XCTAssertEqual(RecordingImport.vendorParameters(vendorID: plan.resolvedVendorID), ["vendor_id": "plaud"])
     }
 
+    func testMeetingChoiceKeepsServerPlanOnResumeAndSurvivesEncoding() throws {
+        let legacy = try decode(planBody())
+        XCTAssertFalse(legacy.resolvedTreatAsMeeting)
+        XCTAssertNoThrow(try legacy.validate(digests: ["first", "last"], sampleCount: 16_000 * 121,
+                                            treatAsMeeting: false))
+        XCTAssertThrowsError(try legacy.validate(digests: ["first", "last"], sampleCount: 16_000 * 121,
+                                                treatAsMeeting: true), "An old server must not silently ignore the requested meeting option")
+        for meeting in [false, true] {
+            var body = planBody()
+            body["treat_as_meeting"] = meeting
+            let plan = try decode(body)
+            let restored = try JSONDecoder().decode(RecordingUploadPlan.self, from: JSONEncoder().encode(plan))
+            XCTAssertEqual(restored.resolvedTreatAsMeeting, meeting)
+            XCTAssertEqual(restored.parts.map(\.id), plan.parts.map(\.id))
+            XCTAssertEqual(restored.startedAt, plan.startedAt)
+            XCTAssertNoThrow(try restored.validate(digests: ["first", "last"], sampleCount: 16_000 * 121,
+                                                  treatAsMeeting: !meeting), "Resuming preserves the server's accepted choice")
+        }
+    }
+
     func testFutureBrandsUseCatalogCapabilitiesWithoutAClientRelease() throws {
         let body: [String: Any] = ["items": [
             ["id": "new-recorder", "label": "New recorder", "capabilities": ["file_upload", "new_capability"],

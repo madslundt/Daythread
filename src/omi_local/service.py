@@ -20,6 +20,7 @@ from .completion_events import generating_job
 from .conversation_state import meeting_timeline
 from .domain import ChatScopeConflict, ChatScopeNotFound, stamp, utc_now
 from .hybrid import HybridRetriever, bound_sources
+from .imported_meetings import contains_source
 from .inference import Inference, InferenceError, validate_citations
 from .recaps import Recaps
 from .retrieval import archive_recall, contextual_query, date_scope, topic_query
@@ -100,6 +101,7 @@ class Memory:
         if isinstance(inference, Inference):
             inference.usage_recorder = self.usage.record
         self.recap_lock = asyncio.Lock()
+        self.recap_organization_lock = asyncio.Lock()
         self.topic_lock = asyncio.Lock()
         self.recaps = Recaps(self)
         self.translation_lock = asyncio.Lock()
@@ -145,15 +147,18 @@ class Memory:
             for kind in ("markers", "meetings")
         }
 
-    def window_data(self, start: datetime, end: datetime) -> dict:
+    def window_data(
+        self, start: datetime, end: datetime, source_ids: list[str] | None = None,
+    ) -> dict:
         rows = self.store.window(start, end)
+        if source_ids is not None:
+            selected = set(source_ids)
+            rows = [row for row in rows if row["id"] in selected]
         sources = [public_source(row) for row in rows]
         hints = self.hints(start, end)
         for source in sources:
-            if source.get("source_kind") == "manual_upload":
-                source.update(important=False, meeting_hint_ids=[])
-                continue
-            source["important"] = any(
+            manual = source.get("source_kind") == "manual_upload"
+            source["important"] = not manual and any(
                 source["started_at"] < mark["context_end"]
                 and source["ended_at"] > mark["context_start"]
                 for mark in hints["markers"]
@@ -161,8 +166,7 @@ class Memory:
             source["meeting_hint_ids"] = [
                 meeting["id"]
                 for meeting in hints["meetings"]
-                if source["started_at"] < meeting["context_end"]
-                and source["ended_at"] > meeting["context_start"]
+                if (not manual or "source_ids" in meeting) and contains_source(meeting, source)
             ]
         result = {
             "start": stamp(start),
@@ -192,8 +196,9 @@ class Memory:
         purpose: str,
         summarize: bool = True,
         kind: str = "summary",
+        source_ids: list[str] | None = None,
     ) -> dict:
-        result = self.window_data(start, end)
+        result = self.window_data(start, end, source_ids)
         done = [row for row in result["sources"] if row["state"] == "done" and row["text"]]
         if summarize and done:
             self.settings.require_inference("llm")
@@ -313,6 +318,11 @@ class Memory:
         *, force: bool = False,
     ) -> dict:
         self.settings.require_inference("llm")
+        if (not force and not tag_id and not zone_id
+                and self.recaps.can_reuse_prose(day, utc_now())):
+            async with self.recap_organization_lock:
+                with self.processing_activity("summarizing"):
+                    return await self.recaps.generate(day, utc_now(), reuse_only=True)
         async with self.recap_lock:
             with self.processing_activity("summarizing"):
                 if tag_id or zone_id:
@@ -448,6 +458,7 @@ class Memory:
         history = [message for message in history if message["id"] != exclude_message_id]
         today = utc_now().astimezone(ZoneInfo(self.settings.timezone)).date()
         scope = (day, day) if day else ((start_day, end_day) if start_day else None)
+        source_scope = None
         if meeting_id:
             meeting = next(
                 (item for item in self.timeline()["meetings"] if item["id"] == meeting_id), None
@@ -456,6 +467,7 @@ class Memory:
                 raise ChatScopeNotFound("Meeting not found")
             start = datetime.fromisoformat(meeting["context_start"])
             end = datetime.fromisoformat(meeting["context_end"])
+            source_scope = meeting.get("source_ids")
         else:
             if scope is None:
                 scope = date_scope(question, today)
@@ -481,7 +493,10 @@ class Memory:
         if query_override is not None:
             query = query_override
         if not query:
-            rows, total = await asyncio.to_thread(self.store.sample_transcripts, limit, start, end)
+            rows, total = await asyncio.to_thread(
+                self.store.sample_transcripts, limit, start, end,
+                **({"source_ids": source_scope} if source_scope is not None else {}),
+            )
             details = {
                 "mode": "sample",
                 "embedding": await asyncio.to_thread(self.retriever.status, start, end),
@@ -495,6 +510,7 @@ class Memory:
                 start,
                 end,
                 mode=retrieval_mode,
+                **({"source_ids": source_scope} if source_scope is not None else {}),
             )
         details["contextual_query"] = search_question != question
         if not query and not start and not end and history and not archive_recall(question):

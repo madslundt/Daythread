@@ -27,6 +27,7 @@ struct RecapContentView: View {
     @State private var scrolledRequestID: UUID?
     @State private var query = ""
     @State private var browsingRecordings = false
+    @State private var showingAllTopics = false
     @State private var expandedID: String?
     @Environment(\.locale) private var interfaceLocale
     private var effectiveFilters: DayFilterScope {
@@ -54,7 +55,7 @@ struct RecapContentView: View {
                 }
             }
         }.buttonStyle(.borderless).disclosureGroupStyle(RecapDisclosureStyle())
-            .onChange(of: recap["summary"]) { _, _ in query = ""; select(nil, title: "") }
+            .onChange(of: recap["summary"]) { _, _ in query = ""; showingAllTopics = false; select(nil, title: "") }
             .onDisappear { onFocusChange?(nil); onContentLanguageChange?(nil) }
             .task(id: (requestedTopic?.id.uuidString ?? "") + recap["summary"].text) {
                 openRequestedTopic()
@@ -74,7 +75,8 @@ struct RecapContentView: View {
             mappingUnavailable: translation != nil && translated == nil, originals: originalTopics,
             contentLanguage: showingTranslation ? translation?["language"].text : nil,
             recap: recap, day: day, filters: effectiveFilters, emptyMessage: emptyMessage,
-            query: Binding(get: { query }, set: { query = $0; select(nil, title: "") }), browsingRecordings: $browsingRecordings, expandedID: expandedID, requestedTopic: requestedTopic, onSelect: select, onCorrect: onCorrect,
+            query: Binding(get: { query }, set: { query = $0; select(nil, title: "") }), browsingRecordings: $browsingRecordings,
+            showingAllTopics: $showingAllTopics, expandedID: expandedID, requestedTopic: requestedTopic, onSelect: select, onCorrect: onCorrect,
             onFocus: { focus in if expandedID == focus.id { onFocusChange?(focus) } })
     }
 
@@ -89,7 +91,7 @@ struct RecapContentView: View {
         guard let request = requestedTopic, request.id != openedRequestID,
               let id = RecapTranslationMapping.topicID(for: request.title,
                 in: RecapTranslationMapping.original(recap["summary"].text, day: day)) else { return }
-        query = ""; browsingRecordings = false
+        query = ""; browsingRecordings = false; showingAllTopics = true
         select(id, title: request.title)
         openedRequestID = request.id
     }
@@ -113,6 +115,7 @@ private struct RecapTopicsContent: View {
     let emptyMessage: String?
     @Binding var query: String
     @Binding var browsingRecordings: Bool
+    @Binding var showingAllTopics: Bool
     let expandedID: String?
     let requestedTopic: RecapTopicRequest?
     let onSelect: (String?, String) -> Void
@@ -124,7 +127,9 @@ private struct RecapTopicsContent: View {
     @State private var canonicalFocus: RecapTopicFocus?
     @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
-    private var visibleTopics: [RecapTranslationMapping.Topic] {
+    private let topicOverviewLimit = 5
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var matchingTopics: [RecapTranslationMapping.Topic] {
         guard !browsingRecordings else { return [] }
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return original.topics.filter { topic in
@@ -132,6 +137,9 @@ private struct RecapTopicsContent: View {
             let text = (topic.original.title ?? "") + " " + topic.original.text + " " + (display?.title ?? "") + " " + (display?.text ?? "")
             return topic.id == expandedID || search.isEmpty || text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
+    }
+    private var visibleTopics: [RecapTranslationMapping.Topic] {
+        showingAllTopics || searching ? matchingTopics : Array(matchingTopics.prefix(topicOverviewLimit))
     }
     private var followUps: [RecapPresentation.Group] { showingTranslation ? translated?.followUps ?? original.followUps : original.followUps }
     private var labels: [DisplayTranslations.Label] { browsingRecordings ? originals.compactMap(\.displayLabel) : [] }
@@ -167,7 +175,7 @@ private struct RecapTopicsContent: View {
         VStack(alignment: .leading, spacing: 14) {
             if !originals.isEmpty {
                 Button {
-                    browsingRecordings.toggle(); query = ""; select(nil, title: "")
+                    browsingRecordings.toggle(); showingAllTopics = false; query = ""; select(nil, title: "")
                 } label: {
                     Label(browsingRecordings ? L10n.text("Back to daily recap") : L10n.text("Browse all topics"),
                           systemImage: browsingRecordings ? "chevron.left" : "magnifyingglass")
@@ -206,6 +214,16 @@ private struct RecapTopicsContent: View {
                         }
                     }
                 Divider()
+            }
+            if !browsingRecordings && !searching && matchingTopics.count > topicOverviewLimit {
+                Button(showingAllTopics ? L10n.text("Show fewer topics") : L10n.text("Show all topics")) {
+                    showingAllTopics.toggle()
+                    if !showingAllTopics, let expandedID,
+                       !matchingTopics.prefix(topicOverviewLimit).contains(where: { $0.id == expandedID }) {
+                        select(nil, title: "")
+                    }
+                }.accessibilityIdentifier("recap.showAllTopics")
+                    .accessibilityValue(showingAllTopics ? L10n.text("Expanded") : L10n.text("Collapsed"))
             }
             ForEach(visibleOriginals) { topic in
                 RecapOriginalTopicRow(topic: topic, day: day, onCorrect: onCorrect, displayTitle: originalTitle(topic), filters: filters,

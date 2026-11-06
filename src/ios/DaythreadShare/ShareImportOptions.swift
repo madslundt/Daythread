@@ -2,6 +2,27 @@ import UIKit
 import OmiCore
 
 extension ShareViewController {
+    func meetingOptions() -> UIStackView {
+        let label = UILabel()
+        label.text = AppLocalization.text("Treat as meeting")
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
+        meetingToggle.accessibilityLabel = label.text
+        meetingToggle.accessibilityIdentifier = "share.treatAsMeeting"
+        let row = UIStackView(arrangedSubviews: [label, meetingToggle])
+        row.axis = .horizontal; row.spacing = 12; row.alignment = .center
+        let explanation = UILabel()
+        explanation.text = AppLocalization.text("Each imported recording appears as a completed meeting at its original recording time.")
+        explanation.font = .preferredFont(forTextStyle: .caption1)
+        explanation.adjustsFontForContentSizeCategory = true
+        explanation.textColor = .secondaryLabel
+        explanation.numberOfLines = 0
+        let options = UIStackView(arrangedSubviews: [row, explanation])
+        options.axis = .vertical; options.spacing = 6
+        return options
+    }
+
     func configureOptionButton(_ button: UIButton, title: String) {
         var style = UIButton.Configuration.gray()
         style.cornerStyle = .large
@@ -92,6 +113,7 @@ extension ShareViewController {
     func setOptionsEnabled(_ enabled: Bool) {
         tagsButton.isEnabled = enabled
         locationButton.isEnabled = enabled
+        meetingToggle.isEnabled = enabled && plans.isEmpty
         for editor in timeEditors.values { editor.setEnabled(enabled) }
     }
 

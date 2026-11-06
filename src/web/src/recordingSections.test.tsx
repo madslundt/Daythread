@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SourceList } from "./SourceList";
 import { RecordingSections } from "./RecordingSections";
+import { RecordingGroups } from "./RecordingGroups";
+import { Icon } from "./Icon";
 import type { Source } from "./types";
 
 describe("recording topic sections", () => {
@@ -64,5 +66,20 @@ describe("recording topic sections", () => {
   it("keeps pending or corrected recordings free of stale sections", () => {
     expect(renderToStaticMarkup(<RecordingSections source={{ ...source, sections: [] }} />)).toBe("");
     expect(renderToStaticMarkup(<RecordingSections source={{ ...source, text: null }} />)).toBe("");
+  });
+  it("marks only the imported meeting's own recording when another recording overlaps", () => {
+    const sources = [source, { ...source, id: "unrelated" }];
+    const groups = sources.map((item) => ({
+      id: item.id, started_at: item.started_at, ended_at: item.ended_at,
+      title: "Recording", recording_count: 1, sources: [item],
+    }));
+    const html = renderToStaticMarkup(<RecordingGroups groups={groups} day="2026-10-16"
+      query="" timezone="UTC" onCorrect={() => {}} timeline={{ markers: [], active_meeting: null,
+        meetings: [{ id: "imported-meeting", source_ids: [source.id], started_at: source.started_at,
+          ended_at: source.ended_at, context_start: source.started_at, context_end: source.ended_at,
+          auto_stop_at: null, qualifies_at: source.started_at, status: "closed" }],
+      }} />);
+    const meetingIcon = renderToStaticMarkup(<Icon name="mic" size={15} />);
+    expect(html.split(meetingIcon)).toHaveLength(2);
   });
 });

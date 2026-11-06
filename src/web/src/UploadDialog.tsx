@@ -221,7 +221,7 @@ export function UploadDialog({
         {checking ? <p role="status" className="caption">{t("Checking files for duplicates before upload…")}</p> : null}
         {!checking && queue.skipped.size ? <p role="status" className="caption">
           {t("{uploaded} uploaded · {skipped} duplicates skipped.", { uploaded: queue.completed.size, skipped: queue.skipped.size })}</p> : null}
-        {(recordings.length ? recordings : [{ recordedAt: "", timeReference: "end" as const, file: undefined, vendorId: "manual" }]).map((recording, index) => {
+        {(recordings.length ? recordings : [{ recordedAt: "", timeReference: "end" as const, file: undefined, vendorId: "manual", treatAsMeeting: false }]).map((recording, index) => {
           const { file, recordedAt, timeReference } = recording;
           const suffix = index ? `_${index}` : "";
           const saved = file && queue.completed.has(file);
@@ -236,6 +236,16 @@ export function UploadDialog({
               disabled={!file} onChange={(event) => updateRecording(index, { vendorId: event.target.value })}>
               <VendorOptions vendors={vendors.data?.items ?? []} />
             </select>
+            <label className="checkbox-label" htmlFor={`recording-meeting${suffix}`}>
+              <input id={`recording-meeting${suffix}`} name={`treat_as_meeting${suffix}`} type="checkbox"
+                checked={recording.treatAsMeeting ?? false} disabled={!file}
+                aria-describedby={`recording-meeting-hint${suffix}`}
+                onChange={(event) => updateRecording(index, { treatAsMeeting: event.target.checked })} />
+              {t("Treat as meeting")}
+            </label>
+            <p className="caption" id={`recording-meeting-hint${suffix}`}>
+              {t("Each imported recording appears as a completed meeting at its original recording time.")}
+            </p>
             <label htmlFor={`capture-time-reference${suffix}`}>{t("Time refers to")}</label>
             <select id={`capture-time-reference${suffix}`} name={`time_reference${suffix}`} value={timeReference}
               onChange={(event) => updateRecording(index, { timeReference: event.target.value === "start" ? "start" : "end" })}

@@ -44,6 +44,7 @@ final class RecordingImporter {
     var linking = false
     var conversationSourceID = ""
     var vendorID = "manual"
+    var treatAsMeeting = false
     var selectedTagIDs: Set<String> = []
     var selectedTagNames: Set<String> = []
     var selectedPlace: (zoneID: String, locationID: String)?
@@ -169,6 +170,7 @@ final class RecordingImporter {
             "source_id": record.name, "started_at": record.plan?.startedAt ?? DurableStore.stamp(bounds.startedAt),
             "ended_at": record.plan?.endedAt ?? DurableStore.stamp(bounds.endedAt),
             "conversation_source_id": linking ? conversationSourceID as Any : NSNull(),
+            "treat_as_meeting": record.plan?.resolvedTreatAsMeeting ?? treatAsMeeting,
         ]
         // A resumed server plan owns provenance, including legacy manual plans.
         let plannedVendor = record.plan?.resolvedVendorID ?? vendorID
@@ -181,7 +183,8 @@ final class RecordingImporter {
             if case .duplicate(let source) = response { recordings[index].skipped = L10n.source("Already imported as \(source)") }
             return
         }
-        try plan.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount)
+        try plan.validate(digests: converted.parts.map(\.digest), sampleCount: converted.sampleCount,
+                          treatAsMeeting: record.plan?.resolvedTreatAsMeeting ?? treatAsMeeting)
         recordings[index].plan = plan
         totalBytes = Int64(converted.bytes)
         partCount = plan.parts.count

@@ -49,6 +49,10 @@ describe("recordings chosen or dropped from another device", () => {
     expect(html).toContain("Checking files for duplicates before upload");
     expect(html.match(/<input[^>]+name="recorded_at"[^>]*>/)?.[0]).toContain(`value="${recordingEndTime(first)}"`);
     expect(html.match(/<input[^>]+name="recorded_at_1"[^>]*>/)?.[0]).toContain(`value="${recordingEndTime(second)}"`);
+    const meetingChoices = html.match(/<input[^>]+name="treat_as_meeting(?:_1)?"[^>]*>/g);
+    expect(meetingChoices).toHaveLength(2);
+    expect(meetingChoices?.every((input) => !input.includes("checked="))).toBe(true);
+    expect(html).toContain("Treat as meeting");
     expect(html).not.toContain('role="alert"');
     expect(selectRecordings({ 0: first, 1: second, length: 2 })).toEqual([first, second]);
     expect(() => selectRecordings([first, new File([], "bad.wav")])).toThrow("bad.wav: The recording is empty");
@@ -337,6 +341,49 @@ describe("duplicate recording detection", () => {
       started_at: url.searchParams.get("started_at"),
       ended_at: new Date(Date.parse(url.searchParams.get("started_at")!) + (body.size - 44) / 32).toISOString() };
   }
+  it.each([false, true])("saves the optional meeting choice (%s) in the upload plan without changing source provenance", async (treatAsMeeting) => {
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: vi.fn(async (body) => plan(body)),
+    };
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body));
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000)), send, backend);
+    await queue.upload({ ...first, treatAsMeeting }, "", signal, scope, vi.fn(), vi.fn());
+    expect(backend.prepare).toHaveBeenCalledWith(expect.objectContaining({
+      treat_as_meeting: treatAsMeeting, source_id: first.file.name,
+      started_at: "2026-10-15T11:59:59.000Z", ended_at: "2026-10-15T12:00:00.000Z",
+    }), expect.any(AbortSignal), scope);
+    const url = new URL(send.mock.calls[0][0], "http://localhost");
+    expect(url.searchParams.get("source_kind")).toBe("manual_upload");
+    expect(url.searchParams.has("treat_as_meeting")).toBe(false);
+  });
+  it("keeps the server's original meeting choice when an interrupted import resumes", async () => {
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: vi.fn(async (body) => ({ ...plan(body), treat_as_meeting: true })),
+    };
+    const send = vi.fn(async (path: string, body: Blob) => receipt(path, body))
+      .mockRejectedValueOnce(new Error("Connection lost"));
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000)), send, backend);
+    await expect(queue.upload(first, "", signal, scope, vi.fn(), vi.fn())).rejects.toThrow("Connection lost");
+    await queue.upload(first, "", signal, scope, vi.fn(), vi.fn());
+    expect(vi.mocked(backend.prepare).mock.calls.map(([body]) => body.treat_as_meeting)).toEqual([false, true]);
+  });
+  it("reports unsupported meeting imports before sending audio to an older server", async () => {
+    const backend: RecordingUploadAPI = {
+      lookup: async () => ({ duplicate: false }),
+      prepare: async (body) => {
+        const result = plan(body);
+        delete result.treat_as_meeting;
+        return result;
+      },
+    };
+    const send = vi.fn();
+    const queue = new RecordingUploadQueue(prepareSamples(async () => new Float32Array(16000)), send, backend);
+    await expect(queue.upload({ ...first, treatAsMeeting: true }, "", signal, scope, vi.fn(), vi.fn()))
+      .rejects.toThrow("does not support importing recordings as meetings");
+    expect(send).not.toHaveBeenCalled();
+  });
   it("hashes actual bytes on LAN HTTP without relying on browser Web Crypto", async () => {
     vi.stubGlobal("crypto", {});
     try {

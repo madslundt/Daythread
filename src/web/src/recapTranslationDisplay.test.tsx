@@ -28,6 +28,23 @@ const translated = `## Kakao ☕️\nEt kakaoforsøg [${source.id}].\n\n## Opfø
 const props = { day, version: "original-output", sources: [source], timezone: "UTC", onCorrect: () => {} };
 
 describe("canonical recap translation display", () => {
+  it("keeps translated subtopics under their canonical parent", () => {
+    const before = `## NNCD.SAR meeting\n### Cocoa\nA cocoa trial [${source.id}].\n### Garden\nGarden tools [${source.id}].`;
+    const after = `## NNCD.SAR-møde\n### Kakao\nEt kakaoforsøg [${source.id}].\n### Have\nHaveredskaber [${source.id}].`;
+    expect(recapTranslationDisplay(before, after, structure(before, after))).toBe(after);
+    const canonical = recapTopics(recapParts(before), day).topics;
+    const display = recapTopics(recapParts(before), day, recapParts(before, after)).topics;
+    expect(canonical).toHaveLength(1);
+    expect(display).toHaveLength(1);
+    expect(display[0].title).toBe("NNCD.SAR-møde");
+    expect(display[0].parts.filter((part) => part.kind === "heading").map((part) => part.text)).toEqual(["Kakao", "Have"]);
+    const topic = { ...recapBrowserTopics(canonical, [source])[0], displayTitle: display[0].title, displayParts: display[0].parts };
+    const html = renderToStaticMarkup(<RecapTopicRow {...props} topic={topic} expanded onToggle={() => {}} />);
+    expect(html).toContain("<h4>Kakao</h4>");
+    expect(html).toContain("<h4>Have</h4>");
+    expect(topicFocus(topic, [source]).passages).toHaveLength(2);
+  });
+
   it("groups repeated headings by their canonical subject even when translations differ", () => {
     const before = "## Work\nMorning review.\n## Garden\nGarden plans.\n## WORK\nAfternoon decision.";
     const after = "## Arbejde\nMorgenmøde.\n## Have\nHaveplaner.\n## Job\nEftermiddagens beslutning.";

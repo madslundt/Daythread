@@ -226,8 +226,9 @@ public enum RecapPresentation {
         public let kind: Kind
         public var text: String
         public let action: Bool
-        public init(kind: Kind, text: String, action: Bool = false) {
-            self.kind = kind; self.text = text; self.action = action
+        public let headingLevel: Int?
+        public init(kind: Kind, text: String, action: Bool = false, headingLevel: Int? = nil) {
+            self.kind = kind; self.text = text; self.action = action; self.headingLevel = headingLevel
         }
     }
     public struct Group: Equatable {
@@ -235,13 +236,26 @@ public enum RecapPresentation {
         public var parts: [Part]
         public var text: String {
             var seen: Set<String> = []
-            return parts.filter { $0.kind != .heading }.map { readingText($0.text) }.filter {
+            return parts.map { $0.kind == .heading ? "**\(readingText($0.text))**" : readingText($0.text) }.filter {
                 let key = $0.replacingOccurrences(of: "**", with: "")
                     .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).lowercased()
                 return !key.isEmpty && seen.insert(key).inserted
             }.joined(separator: "\n\n")
         }
-        public var hasActions: Bool { parts.contains { $0.action } }
+        public var hasSubtopics: Bool { parts.contains { $0.kind == .heading } }
+        public var hasActions: Bool { !hasSubtopics && parts.contains { $0.action } }
+        public var contentSections: [Group] {
+            var sections: [Group] = []
+            for part in parts {
+                if part.kind == .heading {
+                    sections.append(Group(title: part.text, parts: []))
+                } else {
+                    if sections.isEmpty { sections.append(Group(title: nil, parts: [])) }
+                    sections[sections.count - 1].parts.append(part)
+                }
+            }
+            return sections
+        }
     }
     public struct Source {
         public let id: String
@@ -278,13 +292,13 @@ public enum RecapPresentation {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
             let plain = line.replacingOccurrences(of: "**", with: "")
-            let heading = captures(#"^#{1,4}\s+(.+)$"#, line)?.first
+            let heading = captures(#"^(#{1,6})\s+(.+)$"#, line)
             let label = captures(#"^([^:]+):\s*(.*)$"#, plain)
             let bare = plain.replacingOccurrences(of: #":$"#, with: "", options: .regularExpression)
             if heading != nil || label.map({ matches(actionHeading, $0[0].trimmingCharacters(in: .whitespaces)) }) == true || matches(actionHeading, bare) {
-                let title = heading ?? label?.first ?? bare
+                let title = heading?[1] ?? label?.first ?? bare
                 actions = matches(actionHeading, title.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: #":$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces))
-                result.append(Part(kind: .heading, text: title))
+                result.append(Part(kind: .heading, text: title, headingLevel: heading?[0].count))
                 if actions, let body = label?[1], !body.isEmpty {
                     let clean = body.replacingOccurrences(of: #"(?i)\s+Completion is not recorded\.?$"#, with: "", options: .regularExpression)
                     let separator = #"(?i)(?:;\s*|,\s*(?:and\s+)?)(?=(?:share|call|bring|confirm|send|book|check|prepare|schedule|review|ask|buy|pick up|follow up)\b)"#
@@ -301,11 +315,19 @@ public enum RecapPresentation {
 
     public static func groups(_ markdown: String, day: String) -> [Group] {
         var result: [Group] = []
+        var parentLevel: Int?
         for part in parts(markdown) {
+            if part.kind == .heading, let level = part.headingLevel,
+               let parentLevel, level > parentLevel, !result.isEmpty {
+                result[result.count - 1].parts.append(part)
+                continue
+            }
             if part.kind == .heading || (part.kind == .text && matches(#"^\*\*[^*]+\*\*:?$"#, part.text)) {
                 let title = part.text.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
                 if result.isEmpty && matches(#"(?i)^(?:diary recap|day recap|daily recap|recap)\s*[:·—-]?\s*"# + NSRegularExpression.escapedPattern(for: day) + "$", title) { continue }
+                if result.isEmpty, part.headingLevel == 1, !day.isEmpty, title.hasSuffix(day) { continue }
                 result.append(Group(title: part.text, parts: []))
+                parentLevel = part.headingLevel
             } else {
                 if result.isEmpty { result.append(Group(title: nil, parts: [])) }
                 result[result.count - 1].parts.append(part)
@@ -318,6 +340,7 @@ public enum RecapPresentation {
     /// Action lists remain readable in the day overview; Inbox owns their review/status.
     public static func topics(_ markdown: String, day: String, query: String = "") -> [Group] {
         let result = groups(markdown, day: day).filter { !$0.hasActions }.flatMap { group -> [Group] in
+            guard !group.hasSubtopics else { return [group] }
             let labelled = group.parts.compactMap { part -> (String, Part)? in
                 guard let title = captures(#"^\*\*([^*]+)\*\*\s*(?:[—–:]\s*)?"#, part.text)?.first else { return nil }
                 return (title, part)

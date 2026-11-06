@@ -248,7 +248,8 @@ def test_meeting_purpose_allows_consequential_detail_without_changing_diary_styl
     assert "a few focused sentences" in diary
     assert "do not impose a short sentence quota" not in diary
     assert "do not impose a short sentence quota or fixed section count" in meeting
-    assert "## subject headings" in diary and "## subject headings" in meeting
+    assert "## main topic headings" in diary and "## main topic headings" in meeting
+    assert "### subtopic headings" in diary and "### subtopic headings" in meeting
     assert "scope and constraints, concrete examples and quantities" in meeting
     assert "approaches or options, resourcing and timing" in meeting
     assert "conditional follow-ups when present" in meeting
@@ -864,7 +865,8 @@ def test_prompt_upgrade_refreshes_saved_recap(client, monkeypatch, version, expe
     assert len(memory.inference.calls) == expected_calls
     purpose = memory.inference.calls[-1][1]
     assert "no target, minimum or maximum number of topics" in purpose
-    assert "one coherent summary per topic" in purpose
+    assert "one coherent summary per leaf subject" in purpose
+    assert "optional ### subtopic headings" in purpose
     assert "group details only when the source connects them" in purpose.lower()
     assert "a project mention alone does not make an independent recap subject" in purpose.lower()
     assert "use a reviewed speaker name only to identify that speaker" in purpose.lower()
@@ -997,3 +999,188 @@ def test_repeated_long_excerpt_keeps_all_sources_without_regrouping_identical_in
     assert after['evidence']['pipeline']['exact_repeated_excerpt_ids'] == [duplicate]
     assert after['evidence']['pipeline']['daily_synthesis']['cache_hit'] == 'identical_unique_notes'
     assert memory.store.get_audio(duplicate)['text'] == text
+
+
+def legacy_recap_for_organization(client):
+    memory = client.app.state.memory
+    first = insert(client, text="Product release is planned, with testing still pending.",
+                   kind="manual_upload")
+    second = insert(client, AT + timedelta(minutes=20),
+                    text="Product bookmarks preserve analysis state via a URL.",
+                    kind="manual_upload")
+    summary = (f"## Release strategy\nTesting is still pending [{first}].\n\n"
+               f"## Bookmarks\nLinks preserve analysis state [{second}].")
+
+    class WrittenRecap(FakeInference):
+        async def summarize(self, sources, purpose):
+            if purpose.startswith("a readable diary recap"):
+                self.calls.append((sources, purpose))
+                return summary
+            return await super().summarize(sources, purpose)
+
+    memory.inference = WrittenRecap()
+    generated = client.post("/v1/recaps/2026-10-16")
+    assert generated.status_code == 200
+    assert generated.json()["summary"] == summary
+    previous = json.loads(memory.store.diary(AT.date().isoformat())["content"])
+    groups = memory.recaps.for_day(memory.recaps.groups(AT + timedelta(hours=1)), AT.date())
+    legacy_key = memory.recaps.day_key(groups, day=AT.date(), include_organization=False)
+    with memory.store.connect() as db:
+        db.execute("UPDATE diary SET fingerprint=? WHERE day=?",
+                   (legacy_key, AT.date().isoformat()))
+    return memory, previous, first
+
+
+class RecapNavigationOrganizer:
+    def __init__(self, settings, during=None):
+        self.settings, self.during, self.calls = settings, during, []
+
+    def for_task(self, task):
+        assert task == "summary"
+        return self
+
+    async def summarize(self, sources, purpose):
+        pytest.fail("An organization-only migration must not call the recap writers")
+
+    async def generate(self, task, evidence):
+        assert "navigation organization ONLY" in task
+        self.calls.append(json.loads(evidence))
+        if self.during:
+            self.during()
+        return json.dumps({"groups": [{"title": "Product review",
+                                       "section_ids": ["t1", "t2"]}]})
+
+
+class StructuredRecapNavigationOrganizer(RecapNavigationOrganizer):
+    async def generate_structured_json(self, task, evidence, schema):
+        assert schema["properties"]["groups"]["type"] == "array"
+        return await self.generate(task, evidence)
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_navigation_upgrade_reuses_saved_prose_and_selection_without_rewriting(
+    client, monkeypatch, structured,
+):
+    memory, before, _first = legacy_recap_for_organization(client)
+    organizer = (StructuredRecapNavigationOrganizer if structured else RecapNavigationOrganizer)(
+        memory.settings,
+    )
+    memory.inference = organizer
+    monkeypatch.setattr("omi_local.service.utc_now", lambda: AT + timedelta(hours=2))
+    assert client.get("/v1/recaps/2026-10-16").json()["stale"]
+    response = client.post("/v1/recaps/2026-10-16")
+    assert response.status_code == 200
+    result = response.json()
+    assert not result["stale"] and len(organizer.calls) == 1
+    expected = "## Product review\n\n" + "\n\n".join(
+        "#" + section for section in before["summary"].split("\n\n")
+    )
+    assert result["summary"] == expected
+    assert result["output_id"] != before["output_id"]
+    assert result["generated_at"] == before["generated_at"]
+    assert result["included_through"] == before["included_through"]
+    assert result["sources"] == before["sources"]
+    saved = json.loads(memory.store.diary(AT.date().isoformat())["content"])
+    assert saved["completeness"] == before["completeness"]
+    for field in ("selected", "cited_ids", "eligible_transcripts", "pending_chunks",
+                  "blocked_chunks", "selection_observed_at", "completeness"):
+        assert saved["evidence"][field] == before["evidence"][field]
+    assert saved["evidence"]["pipeline"]["topic_organization"]["model_calls"] == 1
+    assert memory.store.evidence(result["output_id"])["selected"] == before["evidence"]["selected"]
+    assert memory.store.summary_translation_source(result["output_id"])["text"] == expected
+    assert memory.store.summary_translation_source(before["output_id"])["text"] == before["summary"]
+    assert client.get("/v1/recaps/2026-10-16").json()["output_id"] == result["output_id"]
+    assert client.post("/v1/recaps/2026-10-16").json()["output_id"] == result["output_id"]
+    assert len(organizer.calls) == 1
+
+
+@pytest.mark.parametrize("mutation", ["correct", "delete"])
+def test_navigation_upgrade_cannot_publish_when_its_saved_source_changes(client, mutation):
+    memory, before, first = legacy_recap_for_organization(client)
+
+    def change():
+        if mutation == "correct":
+            memory.store.correct_transcript(first, "The release was postponed pending testing.")
+        else:
+            assert memory.store.delete_audio(first)
+
+    organizer = RecapNavigationOrganizer(memory.settings, during=change)
+    memory.inference = organizer
+    response = client.post("/v1/recaps/2026-10-16")
+    assert response.status_code == 409
+    assert len(organizer.calls) == 1
+    with memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM summary_outputs WHERE text LIKE ?",
+                          ("## Product review%",)).fetchone()[0] == 0
+        versions = [json.loads(row[0]) for row in db.execute("SELECT content FROM diary_versions")]
+    assert all(version["output_id"] == before["output_id"] for version in versions)
+
+
+def test_cached_navigation_upgrade_does_not_wait_for_unrelated_recap_writers(client):
+    import asyncio
+
+    memory, before, _first = legacy_recap_for_organization(client)
+    organizer = RecapNavigationOrganizer(memory.settings)
+    memory.inference = organizer
+
+    async def regroup_while_writer_busy():
+        async with memory.recap_lock:
+            return await asyncio.wait_for(memory.recap(AT.date()), timeout=1)
+
+    result = asyncio.run(regroup_while_writer_busy())
+    assert result["summary"].startswith("## Product review\n")
+    assert result["sources"] == before["sources"]
+    assert result["generated_at"] == before["generated_at"]
+    assert len(organizer.calls) == 1
+
+
+def test_cached_navigation_upgrade_cannot_overwrite_a_newer_saved_recap(client):
+    memory, before, _first = legacy_recap_for_organization(client)
+    newer = json.loads(json.dumps(before))
+    newer["output_id"] = str(uuid4())
+    newer["summary"] = before["summary"].replace(
+        "Testing is still pending", "Testing remains pending",
+    )
+    fingerprint = memory.store.diary(AT.date().isoformat())["fingerprint"]
+
+    def replace_saved_recap():
+        memory.store.save_diary(AT.date().isoformat(), fingerprint, newer)
+
+    organizer = RecapNavigationOrganizer(memory.settings, during=replace_saved_recap)
+    memory.inference = organizer
+    response = client.post("/v1/recaps/2026-10-16")
+    assert response.status_code == 409
+    assert len(organizer.calls) == 1
+    saved = memory.store.diary(AT.date().isoformat())
+    assert saved["fingerprint"] == fingerprint
+    assert json.loads(saved["content"]) == newer
+    assert memory.store.summary_translation_source(newer["output_id"])["text"] == newer["summary"]
+    with memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM summary_outputs WHERE text LIKE ?",
+                          ("## Product review%",)).fetchone()[0] == 0
+
+
+def test_cached_navigation_upgrade_rechecks_sources_before_entering_the_cached_only_path(
+    client, monkeypatch,
+):
+    memory, _before, first = legacy_recap_for_organization(client)
+    organizer = RecapNavigationOrganizer(memory.settings)
+    memory.inference = organizer
+    can_reuse = memory.recaps.can_reuse_prose
+    corrected = "The release was postponed pending another review."
+
+    def reuse_then_correct(day, now):
+        reusable = can_reuse(day, now)
+        assert reusable
+        memory.store.correct_transcript(first, corrected)
+        return reusable
+
+    monkeypatch.setattr(memory.recaps, "can_reuse_prose", reuse_then_correct)
+    response = client.post("/v1/recaps/2026-10-16")
+    assert response.status_code == 409
+    assert organizer.calls == []
+    assert memory.store.get_audio(first)["text"] == corrected
+    assert not memory.recap_organization_lock.locked()
+    with memory.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM summary_outputs WHERE text LIKE ?",
+                          ("## Product review%",)).fetchone()[0] == 0

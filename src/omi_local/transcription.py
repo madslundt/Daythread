@@ -89,6 +89,8 @@ class Transcription:
                 filtered = await asyncio.to_thread(
                     filter_transcription_audio, data, enabled=settings.stt_filter_speech,
                     activity=voice_activity,
+                    chunk_seconds=settings.stt_chunk_seconds,
+                    boundary_search_seconds=settings.stt_boundary_search_seconds,
                 )
                 filtering = {
                     "version": FILTER_VERSION,

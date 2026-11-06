@@ -86,7 +86,8 @@ export function InlineText({ text }: { text: string }) {
 }
 
 // Render a small, safe Markdown subset. Model output never becomes HTML.
-export function RichText({ text }: { text: string }) {
+export function RichText({ text, headingLevel = 3 }: { text: string; headingLevel?: 3 | 4 }) {
+  const Heading = headingLevel === 4 ? "h4" : "h3";
   return (
     <div className="prose">
       {text.split(/\n\s*\n/).map((block, index) => {
@@ -103,7 +104,7 @@ export function RichText({ text }: { text: string }) {
         if (/^#{1,4} /.test(lines[0]))
           return (
             <Fragment key={index}>
-              <h3>{inline(lines[0].replace(/^#+\s*/, ""))}</h3>
+              <Heading>{inline(lines[0].replace(/^#+\s*/, ""))}</Heading>
               {lines.length > 1 ? (
                 <p>{inline(lines.slice(1).join("\n"))}</p>
               ) : null}

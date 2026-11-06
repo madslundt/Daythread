@@ -21,12 +21,15 @@ from .conversation_state import (
 )
 from .domain import EvidenceChanged, stamp, utc_now
 from .embedding_chunking import topic_regions
+from .imported_meetings import contains_source
 from .inference import (
     COMPLETE_RECORDING_SUMMARY_VERSION,
     SUMMARY_REDUCTION_VERSION,
     InferenceError,
     validate_citations,
 )
+from .recap_organization import VERSION as ORGANIZATION_VERSION
+from .recap_organization import organize_recap
 from .recording_topics import VERSION as TOPIC_VERSION
 from .recording_topics import ensure_topics
 from .recording_transcription_selection import (
@@ -47,7 +50,7 @@ if TYPE_CHECKING:
 
 PROMPT_VERSION = (f"subject-chapters-10-selective-{TOPIC_VERSION}-{SUMMARY_FILTER_VERSION}"
                   f"-{SUMMARY_REDUCTION_VERSION}-{COHERENCE_VERSION}")
-DAY_PROMPT_VERSION = f"daily-topics-20-source-connected-{COHERENCE_VERSION}"
+DAY_PROMPT_VERSION = f"daily-topics-21-hierarchical-{COHERENCE_VERSION}"
 RELEVANCE = (
     "Select for lasting relevance: meaningful outcomes or changes, concrete follow-ups and "
     "deadlines, agreed plans, consequential unanswered questions, useful unresolved concerns, "
@@ -145,7 +148,8 @@ def _daily_recap_purpose(
     )
     filing_date = "for the selected day" if complete_recording else f"for {day.isoformat()}"
     meeting_detail = (
-        "Output only short specific ## subject headings and coherent prose per subject. "
+        "Use short specific ## main topic headings and optional ### subtopic headings, "
+        "with coherent prose under each leaf subject. "
         "For this meeting recap, use as many focused paragraphs as needed to preserve the "
         "consequential details; do not impose a short sentence quota or fixed section count. "
         "Retain supported scope and constraints, concrete examples and quantities, approaches "
@@ -153,7 +157,8 @@ def _daily_recap_purpose(
         "unanswered question or speculation is unresolved, not a confirmed fact or absence. "
         "Preserve spoken units and date precision; do not fill in missing units, dates or years. "
         if presentation is not None and presentation.template == "meeting" else
-        "Output only short specific ## subject headings and one coherent summary per topic in "
+        "Use short specific ## main topic headings, optional ### subtopic headings, "
+        "and one coherent summary per leaf subject in "
         "a few focused sentences, with a second paragraph only when needed. "
     )
     return (
@@ -173,7 +178,10 @@ def _daily_recap_purpose(
         "subject. Keep substantial independent projects and personal arrangements separately "
         "findable. Shared vocabulary or appearing in one recording does not establish a "
         "connection. There is no target, minimum or maximum number of topics; do not preserve "
-        "fragmented headings just because they already exist. Preserve useful details once and "
+        "fragmented headings just because they already exist. Group substantial aspects of "
+        "the same supported meeting or project as subtopics rather than main topics; keep "
+        "simple subjects flat and use only one subtopic level. Do not infer a common meeting "
+        "or project from capture time alone. Preserve useful details once and "
         "keep conflicting readings qualified. "
         "Prepared headings are provisional; do not copy their structure. Reconsider earlier "
         "discussions when later source evidence connects them, but later mentions alone do not "
@@ -189,9 +197,10 @@ def _daily_recap_purpose(
         + meeting_detail +
         "Do not create a "
         "recap title, date heading, overview, separate short and long summaries, previews, "
-        "bullet lists or subheadings. Keep decisions, follow-ups and unresolved questions in "
-        "their subject. Omit opaque fragments and incidental background. Do not turn garbled "
-        "names or labels into confident subject headings; use a plain description only when "
+        "bullet lists or headings deeper than ###. Keep decisions, follow-ups and unresolved "
+        "questions in their subject. Omit opaque fragments and incidental background. "
+        "Do not turn garbled names or labels into confident subject headings; "
+        "use a plain description only when "
         "supported, otherwise qualify or omit the unclear label. Do not create empty sections "
         "or placeholders, mix unrelated subjects, or claim the day is complete."
     )
@@ -313,11 +322,16 @@ class Recaps:
             },
         })
 
-    def day_key(self, groups: list[Conversation], day: date | None = None, db=None) -> str:
+    def day_key(
+        self, groups: list[Conversation], day: date | None = None, db=None, *,
+        include_organization: bool = True,
+    ) -> str:
         identity = {
             "conversations": [self.group_key(group, db) for group in groups if group.ready],
             "prompt": DAY_PROMPT_VERSION,
         }
+        if include_organization:
+            identity["topic_organization"] = ORGANIZATION_VERSION
         presentation = selected(self.memory, day, db)
         if presentation != SummaryTemplate():
             identity.update(presentation=presentation.model_dump(),
@@ -413,10 +427,9 @@ class Recaps:
                 source["started_at"] < mark["context_end"]
                 and source["ended_at"] > mark["context_start"] for mark in hints["markers"]
             )
-            source["meeting_hint_ids"] = [] if manual else [
+            source["meeting_hint_ids"] = [
                 meeting["id"] for meeting in hints["meetings"]
-                if source["started_at"] < meeting["context_end"]
-                and source["ended_at"] > meeting["context_start"]
+                if (not manual or "source_ids" in meeting) and contains_source(meeting, source)
             ]
         for recording_id, value in selected.items():
             recording, variant = value["recording"], value["variant"]
@@ -620,7 +633,18 @@ class Recaps:
 
             await self.prepare_group(group, guard)
 
-    async def generate(self, day: date, now: datetime, *, force: bool = False) -> dict:
+    def can_reuse_prose(self, day: date, now: datetime) -> bool:
+        existing = self.memory.store.diary(day.isoformat())
+        if not existing:
+            return False
+        groups = self.for_day(self.groups(now), day)
+        prose_key = self.day_key(groups, day=day, include_organization=False)
+        return (existing["fingerprint"] in (self.day_key(groups, day=day), prose_key)
+                or json.loads(existing["content"]).get("prose_fingerprint") == prose_key)
+
+    async def generate(
+        self, day: date, now: datetime, *, force: bool = False, reuse_only: bool = False,
+    ) -> dict:
         memory = self.memory
         start, end = memory.day_window(day)
         groups = self.for_day(self.groups(now), day)
@@ -629,16 +653,41 @@ class Recaps:
             raise EvidenceChanged("Transcribed recording evidence changed; retry the recap")
         key = self.day_key(groups, day=day)
         guard = self.guard(day, now, groups)
+        publication_guard = guard
         existing = memory.store.diary(day.isoformat())
         if not force and existing and existing["fingerprint"] == key:
             return self.cached(day, now)
-        result = await self.synthesize(
-            day, now, groups, guard, memory.window_data(start, end) | self.status(groups),
-            force=force,
+        prose_key = self.day_key(groups, day=day, include_organization=False)
+        previous = json.loads(existing["content"]) if existing else {}
+        reuse = not force and existing and (
+            existing["fingerprint"] == prose_key or previous.get("prose_fingerprint") == prose_key
         )
+        if reuse_only and not reuse:
+            raise EvidenceChanged("Recorded evidence changed; try the recap again")
+        if reuse:
+            # Only navigation policy changed. The selected originals, prose policy,
+            # model and preferences still match; never rerun the grounded writers.
+            result = previous
+            source_guard = guard
+
+            def guard(db):
+                source_guard(db)
+                current = db.execute(
+                    "SELECT fingerprint,content FROM diary WHERE day=?", (day.isoformat(),),
+                ).fetchone()
+                if (current is None or current["fingerprint"] != existing["fingerprint"]
+                        or current["content"] != existing["content"]):
+                    raise EvidenceChanged("Saved recap changed during organization; try again")
+        else:
+            result = await self.synthesize(
+                day, now, groups, guard, memory.window_data(start, end) | self.status(groups),
+                force=force,
+            )
+        result = await organize_recap(memory, result, day, now)
+        result["prose_fingerprint"] = prose_key
         if any(group.ready for group in groups) or existing:
             memory.store.save_diary(day.isoformat(), key, result, guard=guard)
-            publish_recap(memory, result, key, guard=guard)
+            publish_recap(memory, result, key, guard=publication_guard)
             return self.cached(day, now)
         return result
 

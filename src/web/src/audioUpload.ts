@@ -27,23 +27,23 @@ export function selectRecordings(files: ArrayLike<File>): File[] {
   });
 }
 
-export type RecordingSelection = { file: File; recordedAt: string; timeReference: RecordingTimeReference; vendorId?: string };
+export type RecordingSelection = { file: File; recordedAt: string; timeReference: RecordingTimeReference; vendorId?: string; treatAsMeeting?: boolean };
 export type UploadProgress = {
   sent: number; total: number; completed: number; parts: number;
   attemptStarted: number; attemptBytes: number; updated: number; confirming: boolean;
 };
 type UploadPlan = {
   startedAt: string; endedAt: string; sourceId: string; recordingId: string; conversationSourceId: string;
-  vendorId: string; sampleCount: number; ids: string[]; uploaded: boolean[];
+  vendorId: string; treatAsMeeting: boolean; sampleCount: number; ids: string[]; uploaded: boolean[];
 };
 
 export type PrepareRecording = {
   vendor_id?: string; file_digest: string; digests: string[]; sample_count: number; source_id: string;
-  started_at: string; ended_at: string; conversation_source_id: string | null;
+  started_at: string; ended_at: string; conversation_source_id: string | null; treat_as_meeting?: boolean;
 };
 export type PreparedRecording = { status: "duplicate"; source_id: string } | {
   status: "upload"; vendor_id?: string; source_id: string; recording_id: string; started_at: string; ended_at: string;
-  conversation_source_id: string | null; parts: { id: string; digest: string; uploaded: boolean }[];
+  conversation_source_id: string | null; treat_as_meeting?: boolean; parts: { id: string; digest: string; uploaded: boolean }[];
 };
 export type RecordingUploadAPI = {
   lookup: (digest: string, signal: AbortSignal, scope: ProfileScope) => Promise<{ duplicate: boolean; source_id?: string }>;
@@ -139,11 +139,13 @@ export class RecordingUploadQueue {
     const previous = this.plans.get(file);
     const bounds = recordingTimes(recording.recordedAt, audio.sampleCount, recording.timeReference);
     const digests = audio.digests;
+    const treatAsMeeting = previous?.treatAsMeeting ?? recording.treatAsMeeting ?? false;
     const prepared = await this.backend.prepare({
       vendor_id: previous?.vendorId ?? recording.vendorId ?? "manual",
       file_digest: fileDigest, digests, sample_count: audio.sampleCount, source_id: file.name,
       started_at: previous?.startedAt ?? bounds.startedAt.toISOString(),
       ended_at: previous?.endedAt ?? bounds.endedAt.toISOString(), conversation_source_id: target || null,
+      treat_as_meeting: treatAsMeeting,
     }, signal, scope);
     signal.throwIfAborted();
     scope.signal.throwIfAborted();
@@ -154,8 +156,11 @@ export class RecordingUploadQueue {
     }
     if (prepared.parts.length !== digests.length || prepared.parts.some((part, index) => part.digest !== digests[index]))
       throw new Error(t("The server returned a mismatched recording upload plan."));
+    if (treatAsMeeting && prepared.treat_as_meeting === undefined)
+      throw new Error(t("This server does not support importing recordings as meetings. Update Daythread and retry."));
     const current: UploadPlan = {
       vendorId: prepared.vendor_id ?? "manual",
+      treatAsMeeting: prepared.treat_as_meeting ?? false,
       startedAt: prepared.started_at, endedAt: prepared.ended_at, sourceId: prepared.source_id,
       recordingId: prepared.recording_id, conversationSourceId: prepared.conversation_source_id || "",
       sampleCount: audio.sampleCount, ids: prepared.parts.map((part) => part.id), uploaded: prepared.parts.map((part) => part.uploaded),

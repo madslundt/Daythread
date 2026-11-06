@@ -13,6 +13,56 @@ const sources: Source[] = [
 ];
 
 describe("day recap interactions", () => {
+  it.each([false, true])("starts with five topics and offers the full list (compact=%s)", (compact) => {
+    const text = Array.from({ length: 7 }, (_, index) => `## Subject ${index + 1}\nUseful detail ${index + 1}.`).join("\n");
+    const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test"
+      sources={[]} timezone="UTC" onCorrect={() => {}} compact={compact} />);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(5);
+    expect(html).toContain('data-topic-id="recap:4:Subject 5"');
+    expect(html).not.toContain('data-topic-id="recap:5:Subject 6"');
+    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+-topics">Show all topics<\/button>/);
+    // The saved recap remains complete for copy/export and topic search.
+    expect(recapTopics(recapParts(text), "2026-10-16").topics).toHaveLength(7);
+  });
+
+  it("keeps a short day's entire topic list visible without an expansion control", () => {
+    const html = renderToStaticMarkup(<RecapContent text={"## Garden\nPlanting plans.\n## Travel\nTrain tickets."}
+      day="2026-10-16" version="test" sources={[]} timezone="UTC" onCorrect={() => {}} />);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(2);
+    expect(html).not.toContain("Show all topics");
+  });
+
+  it("keeps nested follow-up details inside their meeting", () => {
+    const text = "## NNCD.SAR meeting\n### Release\nReview the rollout.\n### Follow-ups\n- Send the rollout plan.\n## Bicycle\nCollect Monday.";
+    const result = recapTopics(recapParts(text), "2026-11-04");
+    expect(result.topics.map((topic) => topic.title)).toEqual(["NNCD.SAR meeting", "Bicycle"]);
+    expect(result.followups).toEqual([]);
+    expect(recapTopicText(result.topics[0].parts)).toContain("Send the rollout plan.");
+  });
+
+  it("keeps meeting subtopics inside one searchable parent with all original source spans", () => {
+    const source: Source = { ...sources[0], text: "Architecture review. Deployment review.", sections: [
+      { title: "Architecture", start_offset: 0, end_offset: 21 },
+      { title: "Deployment", start_offset: 21, end_offset: 39 },
+    ] };
+    const text = `## NNCD.SAR meeting\n### Architecture\n- **Design** — Architecture review [${source.id}].\n### Deployment\nDeployment review [${source.id}].\n## Garden\nWatered the plants.`;
+    const topics = recapTopics(recapParts(text), "2026-10-16").topics;
+    expect(topics.map((topic) => topic.title)).toEqual(["NNCD.SAR meeting", "Garden"]);
+    expect(topics[0].parts.filter((part) => part.kind === "heading").map((part) => part.text)).toEqual(["Architecture", "Deployment"]);
+    expect(recapTopicText(topics[0].parts)).toContain("Architecture");
+    expect(topicFocus(topics[0], [source]).passages).toEqual([
+      { source_id: source.id, start: 0, end: 21 }, { source_id: source.id, start: 21, end: 39 },
+    ]);
+    const props = { day: "2026-10-16", sources: [source], timezone: "UTC", onCorrect: () => {} };
+    const html = renderToStaticMarkup(<RecapContent {...props} text={text} version="test" />);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(2);
+    expect(html).toContain("Architecture");
+    const topic = { ...recapBrowserTopics(topics, [source])[0], displayTitle: topics[0].title, displayParts: topics[0].parts };
+    const expanded = renderToStaticMarkup(<RecapTopicRow {...props} topic={topic} expanded onToggle={() => {}} />);
+    expect(expanded).toContain("<h4>Architecture</h4>");
+    expect(expanded).toContain("<h4>Deployment</h4>");
+  });
+
   it("offers one searchable topic list without duplicate views or separate task state", () => {
     const html = renderToStaticMarkup(<RecapContent text={"## Cocoa\nA test with dark chocolate.\n## Follow-ups\n- Buy cocoa"}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}} />);
@@ -301,11 +351,13 @@ describe("day recap interactions", () => {
     expect(acrossDay[0].evidencePassages?.map((passage) => passage.source_id)).toEqual([source.id, separate.id]);
   });
 
-  it.each([1, 10, 12])("shows all %i meaningful daily topics without a quota or overflow cutoff", (count) => {
+  it.each([1, 10, 12])("retains all %i meaningful daily topics behind a limited overview", (count) => {
     const text = Array.from({ length: count }, (_, i) => `## Subject ${i + 1}\nUseful details for subject ${i + 1}.`).join("\n\n");
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test"
       sources={[]} timezone="UTC" onCorrect={() => {}} />);
-    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(count);
+    expect(html.match(/class="recap-topic-row"/g)).toHaveLength(Math.min(count, 5));
+    expect(recapTopics(recapParts(text), "2026-10-16").topics).toHaveLength(count);
+    expect(html.includes("Show all topics")).toBe(count > 5);
     expect(html).not.toContain("More from today");
   });
 

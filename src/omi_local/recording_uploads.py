@@ -45,6 +45,7 @@ class PrepareUpload(BaseModel):
     started_at: AwareDatetime
     ended_at: AwareDatetime
     conversation_source_id: UUID | None = None
+    treat_as_meeting: bool = Field(default=False, strict=True)
 
     @field_validator("vendor_id")
     @classmethod
@@ -155,10 +156,13 @@ class RecordingUploadStore:
                         "started_at": stamp(body.started_at), "ended_at": stamp(body.ended_at),
                         "sample_count": body.sample_count,
                         "conversation_source_id": target,
+                        "treat_as_meeting": body.treat_as_meeting,
                         "parts": [{"id": str(uuid4()), "digest": digest}
                                   for digest in body.digests]}
             if plan.get("sample_count", body.sample_count) != body.sample_count:
                 raise ValueError("Audio fingerprint has a conflicting recording length")
+            # Existing plans keep their original ordinary-recording classification.
+            plan.setdefault("treat_as_meeting", False)
             db.execute("INSERT OR REPLACE INTO recording_uploads VALUES(?,?)",
                        (fingerprint, json.dumps(plan)))
             db.execute("INSERT OR REPLACE INTO recording_upload_files VALUES(?,?)",

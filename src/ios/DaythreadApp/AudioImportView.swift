@@ -117,6 +117,10 @@ struct AudioImportView: View {
                 }
                 if !importer.recordings.isEmpty {
                     Section {
+                        Toggle(L10n.text("Treat as meeting"), isOn: $importer.treatAsMeeting)
+                            .accessibilityIdentifier("import.treatAsMeeting")
+                        Text(L10n.text("Each imported recording appears as a completed meeting at its original recording time."))
+                            .font(.caption).foregroundStyle(.secondary)
                         Toggle(L10n.text("Add to an existing conversation"), isOn: $importer.linking)
                         if importer.linking {
                             NavigationLink {

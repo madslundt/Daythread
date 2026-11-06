@@ -5,6 +5,30 @@ import Network
 
 @MainActor
 final class ShareImportOptionsTests: XCTestCase {
+    func testMeetingChoiceDefaultsOffAndLocksOnceAnUploadPlanExists() throws {
+        let controller = ShareViewController()
+        _ = controller.meetingOptions()
+        XCTAssertFalse(controller.meetingToggle.isOn)
+        XCTAssertEqual(controller.meetingToggle.accessibilityLabel, AppLocalization.text("Treat as meeting"))
+        controller.meetingToggle.isOn = true
+        controller.setOptionsEnabled(false)
+        XCTAssertFalse(controller.meetingToggle.isEnabled)
+        controller.setOptionsEnabled(true)
+        XCTAssertTrue(controller.meetingToggle.isEnabled)
+
+        let planBody: [String: Any] = [
+            "recording_id": UUID().uuidString, "source_id": "Meeting.wav",
+            "started_at": "2026-10-29T10:00:00Z", "ended_at": "2026-10-29T10:00:01Z",
+            "treat_as_meeting": true,
+            "parts": [["id": UUID().uuidString, "digest": "audio", "uploaded": false]],
+        ]
+        let plan = try JSONDecoder().decode(RecordingUploadPlan.self, from: JSONSerialization.data(withJSONObject: planBody))
+        controller.plans[URL(fileURLWithPath: "/tmp/Meeting.wav")] = plan
+        controller.setOptionsEnabled(true)
+        XCTAssertFalse(controller.meetingToggle.isEnabled, "Retry keeps the accepted meeting choice frozen")
+        XCTAssertTrue(controller.meetingToggle.isOn)
+    }
+
     func testRecordingStartedIsFirstButMissingDateDefaultsToRecordingEnded() throws {
         XCTAssertEqual(RecordingTimeReference.allCases, [.start, .end])
         let editor = ShareRecordingTimeView(name: "Recording.wav", suggestion: nil)

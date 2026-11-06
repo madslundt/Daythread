@@ -5,7 +5,7 @@ import { t } from "./i18n";
 
 export type RecapPart =
   | { kind: "text"; text: string }
-  | { kind: "heading"; text: string }
+  | { kind: "heading"; text: string; level?: number }
   | { kind: "item"; text: string; action: boolean };
 
 export type RecapFocus = {
@@ -48,6 +48,10 @@ export function recapTopics(parts: RecapPart[], day: string, displayParts = part
   const displays = new Map(parts.map((part, index) => [part, displayParts[index] || part]));
   const displayGroups = recapGroups(parts, day, displayParts);
   for (const [index, group] of recapGroups(parts, day).entries()) {
+    if (group.title && group.parts.some((part) => part.kind === "heading")) {
+      append(group.title.replace(/\*\*/g, ""), displayGroups[index].title!.replace(/\*\*/g, ""), group.parts.map((part) => displays.get(part)!));
+      continue;
+    }
     const narrative = group.parts.filter((part) => part.kind !== "item" || !part.action);
     followups.push(...group.parts.filter((part) => part.kind === "item" && part.action).map((part) => displays.get(part)!));
     const labelled = narrative.some((part) => part.kind === "item" && /^\*\*[^*]+\*\*/.test(part.text));
@@ -70,6 +74,16 @@ export function recapTopics(parts: RecapPart[], day: string, displayParts = part
 }
 
 export function topicFocus(topic: RecapTopicGroup, sources: Source[]): RecapFocus {
+  if (topic.parts.some((part) => part.kind === "heading")) {
+    const groups: RecapTopicGroup[] = [{ title: topic.title, parts: [] }];
+    for (const part of topic.parts) {
+      if (part.kind === "heading") groups.push({ title: part.text, parts: [] });
+      else groups.at(-1)!.parts.push(part);
+    }
+    const spans = groups.filter((group) => group.parts.length).flatMap((group) => topicFocus(group, sources).passages);
+    const unique = new Map(spans.map((span) => [`${span.source_id}:${span.start}:${span.end}`, span]));
+    return { title: topic.title, passages: [...unique.values()] };
+  }
   const text = topic.parts.map((part) => part.text).join("\n");
   return { title: topic.title, passages: itemSources(`**${topic.title}**\n${text}`, sources).sources.flatMap((source) =>
     recapSourceSections(text, source, topic.title).map((section) => ({ source_id: source.id, start: section.start_offset, end: section.end_offset }))) };
@@ -146,13 +160,20 @@ export function originalRecapText(passages: OriginalRecapPassage[] | undefined, 
 // Group the reading view without rewriting saved text or its importance keys.
 export function recapGroups(parts: RecapPart[], day: string, displayParts = parts) {
   const groups: { title?: string; parts: RecapPart[] }[] = [];
+  let parentLevel: number | undefined;
   for (const [index, part] of parts.entries()) {
     const display = displayParts[index] || part;
     const title = part.text.replace(/\*\*/g, "").trim();
     const isHeading = part.kind === "heading" || (part.kind === "text" && /^\*\*[^*]+\*\*:?$/.test(part.text));
     if (isHeading) {
+      // Explicit subtopics belong to their subject, including parents with no opening prose.
+      if (part.kind === "heading" && part.level === 3 && parentLevel === 2 && groups.length) {
+        groups.at(-1)!.parts.push(display);
+        continue;
+      }
       if (!groups.length && new RegExp(`^(?:diary recap|day recap|daily recap|recap)\\s*[:·—-]?\\s*${day}$`, "i").test(title)) continue;
       groups.push({ title: display.text, parts: [] });
+      parentLevel = part.kind === "heading" ? part.level : undefined;
     } else {
       if (!groups.length) groups.push({ parts: [] });
       groups[groups.length - 1].parts.push(display);
@@ -173,9 +194,10 @@ export function recapGroupSummary(parts: RecapPart[]): string {
     .map((part) => recapReadingText(part.text).replace(/\*\*/g, "")).join(" ");
 }
 
-export function recapTopicText(parts: RecapPart[]): string {
+export function recapTopicText(parts: RecapPart[], markdown = false): string {
   const seen = new Set<string>();
-  return parts.filter((part) => part.kind !== "heading").map((part) => recapReadingText(part.text))
+  return parts.filter((part) => part.kind !== "heading" || part.level === 3)
+    .map((part) => recapReadingText(part.kind === "heading" && markdown ? `### ${part.text}` : part.text))
     .filter((text) => {
       const key = text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().toLowerCase();
       if (!key || seen.has(key)) return false;
@@ -241,7 +263,8 @@ export function recapParts(markdown: string, displayMarkdown?: string): RecapPar
       const displayHeading = displayLine.match(/^#{1,4}\s+(.+)$/);
       const displayLabel = displayLine.replace(/\*\*/g, "").match(/^([^:]+):\s*(.*)$/);
       actions = actionHeading.test(title.replace(/\*\*/g, "").replace(/:$/, "").trim());
-      parts.push({ kind: "heading", text: displayHeading?.[1] ?? displayLabel?.[1] ?? displayLine.replace(/\*\*/g, "").replace(/:$/, "") });
+      parts.push({ kind: "heading", text: displayHeading?.[1] ?? displayLabel?.[1] ?? displayLine.replace(/\*\*/g, "").replace(/:$/, ""),
+        ...(heading ? { level: line.match(/^#+/)![0].length } : {}) });
       if (actions && label?.[2]) {
         // Older recaps can contain a single, comma-separated follow-up paragraph.
         const body = label[2].replace(/\s+Completion is not recorded\.?$/i, "");

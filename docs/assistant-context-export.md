@@ -15,21 +15,51 @@ configuration, or repository:
 - `OMI_ASSISTANT_CONTEXT_ENABLED=true`
 - `OMI_ASSISTANT_CONTEXT_PROFILE_ID=default` or one existing profile UUID
 - `OMI_ASSISTANT_CONTEXT_DOMAIN=personal` (explicit admission for this connector)
-- `OMI_ASSISTANT_CONTEXT_TOKEN_FILE=/absolute/private/path`
+- `OMI_ASSISTANT_CONTEXT_TOKEN_FILE=/run/secrets/daythread-assistant-context-token`
 
-The token file must be a regular, single-link file owned by root or the service
-user, mode `0600`, and contain a random URL-safe token of at least 40 characters.
-The token is shared with the separately configured HomeCompute collector. The
+On home-core, `config/compose.assistant-context.yaml` mounts
+`/etc/homecompute/daythread-assistant-context-token` at
+`/run/secrets/daythread-assistant-context-token`. Provision the mounted source
+outside Git as a regular, single-link file owned by container UID `10001`, mode
+`0600`, containing a random URL-safe token of at least 40 characters. The
+collector uses a separate owner-only copy of the same independently generated
+credential. Keep both copies outside Git and do not print either file. The
 credential is bound to the one selected profile. Requests carrying
 `X-Omi-Profile` or `profile_id` are rejected; the request cannot select a
 profile. If the configured profile is unavailable, the endpoint returns 404 and
 does not fall back to another profile.
 
-For HomeCompute owner/personal ingestion, select a profile containing only
-admitted personal data. A profile containing employer recordings must not be
-connected to the personal assistant. Work data requires the separate principal,
-domain and approval process in HomeCompute's personal-data contract; profile
-binding alone does not classify mixed recordings or grant work-data admission.
+The provider overlay keeps export disabled and leaves the domain unset until
+the selected profile's data classification is confirmed. Daythread profiles
+store only an ID and display name; they do not distinguish personal from work
+recordings. Confirm the profile contains only admitted personal data before
+enabling export. A profile containing employer recordings must not be connected
+to the personal assistant. Work data requires the separate principal, domain
+and approval process in HomeCompute's personal-data contract; profile binding
+alone does not classify mixed recordings or grant work-data admission.
+
+The guarded home-core helper owns credential provisioning and provider rollout:
+
+```sh
+uv run python scripts/deploy_assistant_context_homecore.py credentials-plan
+uv run python scripts/deploy_assistant_context_homecore.py credentials-apply
+uv run python scripts/deploy_assistant_context_homecore.py plan
+uv run python scripts/deploy_assistant_context_homecore.py stage
+uv run python scripts/deploy_assistant_context_homecore.py deploy
+```
+
+Credential apply creates one external random token only when both copies are
+absent, or verifies the existing pair without printing either value. It refuses
+partial or inconsistent copies. The initial provider overlay explicitly keeps
+export disabled and its domain unset. Leave those declarations unchanged until
+the selected profile is confirmed personal-only. The provider rollout backs up
+the archive, adds only the assistant API files atop the pinned current Daythread
+image, and verifies the transcription module hashes remain unchanged. Roll back
+with the exact release name printed by `plan` or `deploy`:
+
+```sh
+uv run python scripts/deploy_assistant_context_homecore.py rollback --release 20261106-assistant-context-RELEASE_HASH
+```
 
 The endpoint returns only existing saved diary summary versions and explicit
 commitment decisions in `proposed` or `confirmed` review state. It does not

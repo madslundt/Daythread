@@ -22,6 +22,10 @@ DECODING_FIELDS = {
 }
 
 
+def recording_decoding_fields(settings) -> dict[str, str]:
+    return DECODING_FIELDS | settings.stt_language_candidate_fields()
+
+
 def _spool_wav(store, recording, path: Path, maximum_bytes: int, maximum_seconds: int, on_part):
     frames = recording.frames
     expected_frames = sum(frames)
@@ -82,7 +86,7 @@ async def _request(settings, path: Path):
                 "POST",
                 f"{settings.recording_transcription_base_url.rstrip('/')}/audio/transcriptions",
                 headers=headers,
-                data=DECODING_FIELDS,
+                data=recording_decoding_fields(settings),
                 files={"file": ("recording.wav", audio, "audio/wav")},
             ) as response:
                 response.raise_for_status()
@@ -104,6 +108,12 @@ def _validate_response(headers, payload, settings, duration):
             settings.recording_transcription_expected_runtime_commit
         ),
     }
+    for name, configured in (
+        ("homecompute-revision", settings.recording_transcription_expected_homecompute_revision),
+        ("image-id", settings.recording_transcription_expected_image_id),
+    ):
+        if configured:
+            expected[f"x-homecompute-stt-{name}"] = configured
     provenance = {key.removeprefix("x-homecompute-stt-"): headers.get(key) for key in expected}
     provenance["runtime"] = headers.get("x-homecompute-stt-runtime")
     if not provenance["runtime"] or any(

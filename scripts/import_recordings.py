@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # Daythread standalone folder importer. Python 3.10+ and FFmpeg; no pip packages.
 # ruff: noqa: UP017 -- datetime.UTC is unavailable on Python 3.10 laptops.
-"""Upload finished audio to Daythread. Requires Python 3.10+, FFmpeg and lsof.
-Save DAYTHREAD_SERVER_URL, DAYTHREAD_PROFILE, DAYTHREAD_IMPORT_TOKEN, DAYTHREAD_IMPORT_FOLDER
-and optional SSL_CERT_FILE in .env. CLI > exported variables > .env. Originals are preserved."""
+"""Upload finished audio to Daythread; standalone Python 3.10+, FFmpeg and lsof."""
 
 from __future__ import annotations
 
@@ -275,8 +273,8 @@ class Uploader:
             return result
         except urllib.error.HTTPError as exc:
             raise ValueError(f"Server HTTP {exc.code}; check server, profile and access") from None
-        except urllib.error.URLError:
-            raise ValueError("Server unavailable; check its address, connection and TLS") from None
+        except urllib.error.URLError as exc:
+            raise ValueError(f"Server unavailable: {exc.reason}") from None
 
     def upload(self, recording: Recording, signature: str) -> str:
         LOG.info("Preparing %s (%s track(s))", recording.source_id, len(recording.paths))
@@ -299,12 +297,11 @@ class Uploader:
             mtime = datetime.fromtimestamp(max(p.stat().st_mtime for p in recording.paths),
                                           tz=timezone.utc)
             start = recording.started_at or (mtime if self.mtime_is_start else mtime - duration)
-            end = start + duration
             plan = self.request("POST", "/v1/recording-uploads/prepare", {
                 "vendor_id": recording.vendor_id, "file_digest": digest,
                 "digests": [hashlib.sha256(part).hexdigest() for part in parts(pcm)],
                 "sample_count": samples, "source_id": recording.source_id,
-                "started_at": stamp(start), "ended_at": stamp(end),
+                "started_at": stamp(start), "ended_at": stamp(start + duration),
                 "treat_as_meeting": recording.vendor_id == "parrot",
             })
             if plan.get("status") == "duplicate":
@@ -398,18 +395,18 @@ def install(target: Path) -> None:
     if target.is_symlink() or (target.exists() and b"# Daythread standalone folder importer."
                                not in target.read_bytes()[:200]):
         raise ValueError("Installation target exists and is not this importer")
-    source = Path(__file__).read_bytes()
-    target.write_bytes(source)
+    target.write_bytes(Path(__file__).read_bytes())
     target.chmod(0o755)
     print(f"Installed {target}\nRun: {target} (reads .env defaults)")
 
 
 def main(argv: list[str] | None = None) -> int:
     home = Path.home()
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, help="use this .env file instead of discovery")
     parser.add_argument("--server", help="server URL (default: DAYTHREAD_SERVER_URL)")
+    parser.add_argument("--insecure", action=argparse.BooleanOptionalAction, default=None,
+                        help="skip TLS certificate verification (unsafe; default: verified)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--parrot", action="store_true", help="watch Parrot's local CAF recordings")
     mode.add_argument("--folder", type=Path, help="watch another audio folder")
@@ -449,10 +446,13 @@ def main(argv: list[str] | None = None) -> int:
     folder = folder.expanduser().resolve()
     uploader = Uploader(args.server or "http://localhost", args.profile,
                         env.get("DAYTHREAD_IMPORT_TOKEN", ""), args.mtime_is_start)
-    if env.get("SSL_CERT_FILE"):
-        context = ssl.create_default_context(cafile=Path(env["SSL_CERT_FILE"]).expanduser())
-        uploader.opener = urllib.request.build_opener(
-            NoRedirect(), urllib.request.HTTPSHandler(context=context))
+    insecure = args.insecure if args.insecure is not None else (
+        env.get("DAYTHREAD_INSECURE", "false").strip().lower() == "true")
+    LOG.log(logging.WARNING if insecure else logging.DEBUG, "TLS verification off: %s", insecure)
+    context = ssl._create_unverified_context() if insecure else ssl.create_default_context(
+        cafile=Path(env["SSL_CERT_FILE"]).expanduser() if env.get("SSL_CERT_FILE") else None)
+    uploader.opener = urllib.request.build_opener(
+        NoRedirect(), urllib.request.HTTPSHandler(context=context))
     destination = json.dumps([uploader.server, uploader.profile])
     scope = json.dumps([destination, str(folder), parrot, args.mtime_is_start])
     indexes = home / "Library/Application Support/Daythread Folder Import"

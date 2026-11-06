@@ -31,6 +31,13 @@ defaults. Quote values containing spaces or `#`. `export KEY=value` and comments
 Shell commands and variable substitutions are never executed. `--parrot` overrides a saved
 generic folder.
 
+For an explicit certificate-verification bypass, add `DAYTHREAD_INSECURE=true` to `.env`
+or run `python3 import_recordings.py --include-existing --insecure`. This disables both
+certificate-chain and hostname checks for the importer; it does not bypass network access
+rules. Verification stays enabled by default, and `--no-insecure` overrides a saved bypass.
+When enabled, the bypass takes precedence over `SSL_CERT_FILE` and prints a startup warning.
+Use a trusted CA with `SSL_CERT_FILE` when available.
+
 You can still supply settings directly:
 
 ```bash

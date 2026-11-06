@@ -21,7 +21,7 @@ def importer(monkeypatch, tmp_path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     for key in ("DAYTHREAD_SERVER_URL", "DAYTHREAD_PROFILE", "DAYTHREAD_IMPORT_FOLDER",
-                "DAYTHREAD_IMPORT_TOKEN", "SSL_CERT_FILE"):
+                "DAYTHREAD_IMPORT_TOKEN", "DAYTHREAD_INSECURE", "SSL_CERT_FILE"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
     return module

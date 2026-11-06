@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
 # Daythread standalone folder importer. Python 3.10+ and FFmpeg; no pip packages.
-# ruff: noqa: UP017
-# datetime.UTC is unavailable on Python 3.10 laptops.
-"""Upload finished audio to a Daythread server without installing Daythread locally.
-
-  brew install python ffmpeg
-  python3 import_recordings.py --server https://daythread.example --parrot --watch
-  python3 import_recordings.py --server http://home-core:8787 --folder ~/Recordings --once
-
-Watching imports new/changed files; --include-existing also imports older files.
---once processes current files and exits. --dry-run previews without uploading.
-Parrot mode mixes matching system/microphone CAF tracks, including on-device-only
-recordings: a folder cannot reveal Parrot's privacy flags. Originals are never changed.
-Other folders use file modification time as the recording end unless --mtime-is-start.
-Use DAYTHREAD_IMPORT_TOKEN for an optional server/proxy Bearer token.
+# ruff: noqa: UP017 -- datetime.UTC is unavailable on Python 3.10 laptops.
+"""Upload finished audio to Daythread. Requires Python 3.10+, FFmpeg and lsof.
+Save DAYTHREAD_SERVER_URL, DAYTHREAD_PROFILE, DAYTHREAD_IMPORT_TOKEN, DAYTHREAD_IMPORT_FOLDER
+and optional SSL_CERT_FILE in .env. CLI > exported variables > .env. Originals are preserved.
 """
 
 from __future__ import annotations
@@ -27,8 +17,10 @@ import logging
 import math
 import os
 import re
+import shlex
 import shutil
 import sqlite3
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -48,6 +40,23 @@ PARROT = re.compile(r"^(system|mic)_(\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ)\.caf$")
 EXTENSIONS = {".wav", ".wave", ".m4a", ".mp3", ".mp4", ".ogg", ".oga", ".opus",
               ".flac", ".aac", ".aif", ".aiff", ".caf", ".webm"}
 LOG = logging.getLogger("daythread-import")
+
+
+def read_environment(path: Path | None = None) -> dict[str, str]:
+    path = path or next((p for p in (Path.cwd() / ".env", Path(__file__).with_name(".env"))
+                         if p.is_file()), None)
+    values = {}
+    lines = path.expanduser().read_text(encoding="utf-8-sig").splitlines() if path else []
+    for number, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            key, value = re.fullmatch(r"(?:export\s+)?([A-Za-z_]\w*)\s*=\s*(.*)", line).groups()
+            values[key] = " ".join(shlex.split(value, comments=True))
+        except (AttributeError, ValueError):
+            raise ValueError(f"Invalid environment assignment at {path}:{number}") from None
+    return values | dict(os.environ)
 
 
 def stamp(value: datetime) -> str:
@@ -265,9 +274,7 @@ class Uploader:
                 raise ValueError("Invalid server response")
             return result
         except urllib.error.HTTPError as exc:
-            raise ValueError(
-                f"Server returned HTTP {exc.code}; check server, profile and access"
-            ) from None
+            raise ValueError(f"Server HTTP {exc.code}; check server, profile and access") from None
         except urllib.error.URLError:
             raise ValueError("Server unavailable; check its address, connection and TLS") from None
 
@@ -289,11 +296,9 @@ class Uploader:
             if recording.signature() != signature or open_for_writing(recording.paths):
                 raise ValueError("Recording changed or reopened during conversion; retrying")
             duration = timedelta(seconds=samples / RATE)
-            modified = datetime.fromtimestamp(max(p.stat().st_mtime for p in recording.paths),
-                                              tz=timezone.utc)
-            start = recording.started_at or (
-                modified if self.mtime_is_start else modified - duration
-            )
+            mtime = datetime.fromtimestamp(max(p.stat().st_mtime for p in recording.paths),
+                                          tz=timezone.utc)
+            start = recording.started_at or (mtime if self.mtime_is_start else mtime - duration)
             end = start + duration
             plan = self.request("POST", "/v1/recording-uploads/prepare", {
                 "vendor_id": recording.vendor_id, "file_digest": digest,
@@ -396,43 +401,42 @@ def install(target: Path) -> None:
     source = Path(__file__).read_bytes()
     target.write_bytes(source)
     target.chmod(0o755)
-    print(f"Installed {target}\nRun: {target} --server YOUR_DAYTHREAD_URL --parrot")
+    print(f"Installed {target}\nRun: {target} (reads .env defaults)")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--server", default=os.environ.get("DAYTHREAD_SERVER_URL"))
+    home = Path.home()
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--env-file", type=Path, help="use this .env file instead of discovery")
+    parser.add_argument("--server", help="server URL (default: DAYTHREAD_SERVER_URL)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--parrot", action="store_true", help="watch Parrot's local CAF recordings")
     mode.add_argument("--folder", type=Path, help="watch another audio folder")
-    parser.add_argument("--profile", default="default", help="destination profile UUID or default")
-    parser.add_argument("--include-existing", action="store_true",
-                        help="also import existing recordings")
+    parser.add_argument("--profile", help="profile UUID (default: DAYTHREAD_PROFILE or default)")
+    parser.add_argument("--include-existing", action="store_true", help="include old recordings")
     run_mode = parser.add_mutually_exclusive_group()
-    run_mode.add_argument("--watch", action="store_true",
-                          help="keep watching for recordings (default)")
-    run_mode.add_argument("--once", action="store_true",
-                          help="import current closed files, then exit")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="preview files; no uploads or saved receipts")
+    run_mode.add_argument("--watch", action="store_true", help="keep watching (default)")
+    run_mode.add_argument("--once", action="store_true", help="import current files and exit")
+    parser.add_argument("--dry-run", action="store_true", help="preview; no uploads or receipts")
     parser.add_argument("--recursive", action="store_true")
-    parser.add_argument("--mtime-is-start", action="store_true",
-                        help="generic folder: mtime is capture start")
-    parser.add_argument("--settle-seconds", type=float, default=30,
-                        help="unchanged period (default: 30)")
+    parser.add_argument("--mtime-is-start", action="store_true", help="mtime is capture start")
+    parser.add_argument("--settle-seconds", type=float, default=30, help="unchanged period (30)")
     parser.add_argument("--poll-seconds", type=float, default=5, help="poll interval (default: 5)")
     parser.add_argument("--state", type=Path, help="override the local acknowledgement database")
-    parser.add_argument("--install", nargs="?",
-                        const=str(Path.home() / ".local/bin/daythread-import"), type=Path,
-                        help="install this one file as a command; optional destination path")
+    parser.add_argument("--install", nargs="?", const=str(home / ".local/bin/daythread-import"),
+                        type=Path, help="install this one file; optional destination path")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     os.umask(0o077)
     if args.install:
         install(args.install)
         return 0
+    env = read_environment(args.env_file)
+    args.server = args.server if args.server is not None else env.get("DAYTHREAD_SERVER_URL")
+    args.profile = env.get("DAYTHREAD_PROFILE", "default") if args.profile is None else args.profile
+    if not args.parrot and args.folder is None and env.get("DAYTHREAD_IMPORT_FOLDER"):
+        args.folder = Path(env["DAYTHREAD_IMPORT_FOLDER"])
     if not args.server and not args.dry_run:
         parser.error("supply --server or DAYTHREAD_SERVER_URL (the remote Daythread server)")
     if (not math.isfinite(args.settle_seconds) or not math.isfinite(args.poll_seconds)
@@ -441,13 +445,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and not shutil.which("ffmpeg"):
         parser.error("FFmpeg is required. On macOS: brew install ffmpeg")
     parrot = args.parrot or args.folder is None
-    folder = args.folder or Path.home() / "Library/Application Support/Parrot/Audio"
+    folder = args.folder or home / "Library/Application Support/Parrot/Audio"
     folder = folder.expanduser().resolve()
     uploader = Uploader(args.server or "http://localhost", args.profile,
-                        os.environ.get("DAYTHREAD_IMPORT_TOKEN", ""), args.mtime_is_start)
+                        env.get("DAYTHREAD_IMPORT_TOKEN", ""), args.mtime_is_start)
+    if env.get("SSL_CERT_FILE"):
+        context = ssl.create_default_context(cafile=Path(env["SSL_CERT_FILE"]).expanduser())
+        uploader.opener = urllib.request.build_opener(
+            NoRedirect(), urllib.request.HTTPSHandler(context=context))
     destination = json.dumps([uploader.server, uploader.profile])
     scope = json.dumps([destination, str(folder), parrot, args.mtime_is_start])
-    indexes = Path.home() / "Library/Application Support/Daythread Folder Import"
+    indexes = home / "Library/Application Support/Daythread Folder Import"
     state_path = args.state or indexes / (hashlib.sha256(scope.encode()).hexdigest()[:24]
                                         + ".sqlite3")
     state = State(None if args.dry_run else state_path.expanduser())
@@ -469,8 +477,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.once:
             time.sleep(args.settle_seconds)
             result = watcher.scan()
-            LOG.info("Finished: %(imported)s imported/duplicate, "
-                     "%(pending)s still recording/changing, "
+            LOG.info("Finished: %(imported)s imported/duplicate, %(pending)s pending, "
                      "%(failed)s failed.", result)
             return 1 if result["failed"] or result["pending"] else 0
         while True:

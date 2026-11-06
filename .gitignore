@@ -4,6 +4,7 @@ __pycache__/
 .ruff_cache/
 .playwright-mcp/
 *.pyc
+# Private environment files, including standalone importer settings.
 .env
 .env.*
 !*.env.example

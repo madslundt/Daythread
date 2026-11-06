@@ -8,7 +8,30 @@ model evaluation. Run repository commands below from the repository root.
 Download only [import_recordings.py](import_recordings.py) to your laptop. It needs Python
 3.10+, FFmpeg, and `lsof` (included with macOS), plus access to an existing Daythread server.
 No Daythread checkout, backend installation, or pip packages are required on the laptop.
-From the folder containing the downloaded script:
+Download [.env.example](.env.example) alongside the script, copy it with
+`cp .env.example .env`, and edit the saved defaults:
+
+```dotenv
+DAYTHREAD_SERVER_URL=https://daythread.home.arpa
+DAYTHREAD_PROFILE=default
+# Optional, only if your server/proxy requires a bearer token:
+# DAYTHREAD_IMPORT_TOKEN=your-private-token
+# Optional, for a generic audio folder instead of Parrot:
+# DAYTHREAD_IMPORT_FOLDER="~/Recordings"
+# Optional, to trust your server's private certificate authority:
+# SSL_CERT_FILE="/path/to/root-ca.crt"
+```
+
+Then run `python3 import_recordings.py` to watch Parrot with those saved settings,
+or `python3 import_recordings.py --once` for one import. No repeated exports are needed.
+`.env` is ignored by Git. The importer uses the first `.env` it finds: the working folder,
+then the folder beside the script. Use `--env-file /path/to/.env.import` to select a file
+explicitly. Command arguments override exported environment variables, which override file
+defaults. Quote values containing spaces or `#`. `export KEY=value` and comments are supported.
+Shell commands and variable substitutions are never executed. `--parrot` overrides a saved
+generic folder.
+
+You can still supply settings directly:
 
 ```bash
 # Install dependencies if needed (macOS with Homebrew).

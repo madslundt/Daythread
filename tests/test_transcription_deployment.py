@@ -13,16 +13,54 @@ import deploy_transcription_homecore as cli  # noqa: E402
 import transcription_deployment as remote  # noqa: E402
 
 
+def reliability_receipt():
+    return {
+        "status": "qualified_reliability", "scope": "request_determinism",
+        "accuracy_status": "NOT_QUALIFIED_FOR_FULL_LONG_COVERAGE_OR_LANGUAGE_RETENTION",
+        "source_revision": "a" * 40, "image_id": "sha256:" + "b" * 64,
+        "checks": dict.fromkeys(("short_exact_repeat", "long_exact_repeat",
+                                "cross_history_repeat", "request_provenance", "request_bounds",
+                                "admission_and_idle", "resource_headroom",
+                                "full_recording_requests", "complete_input_frame_submission",
+                                "segment_timing_and_anchors", "client_response_compatibility"),
+                               "passed"),
+        "accuracy_limitations": ["Existing omissions and language conversion remain unresolved."],
+    }
+
+
 def test_qualification_requires_completed_identified_runtime(tmp_path):
     path = tmp_path / "receipt.json"
     path.write_text(json.dumps({"status": "pending"}))
     with pytest.raises(ValueError, match="qualification"):
         cli.qualification(path)
-    value = {"status": "qualified", "source_revision": "a" * 40, "image_id": "sha256:" + "b" * 64}
+    value = reliability_receipt()
     path.write_text(json.dumps(value))
     assert cli.qualification(path) == value | {
         "receipt_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
+
+
+@pytest.mark.parametrize("change", [
+    {"status": "qualified"}, {"scope": "transcription_accuracy"},
+    {"accuracy_status": "qualified"}, {"accuracy_limitations": []},
+    {"accuracy_limitations": [123]}, {"checks": {}},
+    {"checks": {"short_exact_repeat": "passed"}}, {"source_revision": None},
+])
+def test_incomplete_or_unscoped_qualification_is_rejected(tmp_path, change):
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(reliability_receipt() | change))
+    with pytest.raises(ValueError, match="qualification"):
+        cli.qualification(path)
+
+
+@pytest.mark.parametrize("check", sorted(remote.QUALIFICATION_CHECKS))
+def test_failed_required_check_cannot_qualify(tmp_path, check):
+    value = reliability_receipt()
+    value["checks"][check] = "failed"
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match="qualification"):
+        cli.qualification(path)
 
 
 @pytest.mark.parametrize("admission", [{}, {"active_requests": True}, {"active_requests": 1}])
@@ -76,7 +114,7 @@ def artifact(tmp_path, monkeypatch):
         "release": "new", "file_hashes": hashes, "helper_hashes": {"helper": "value"},
         "overlay_sha256": "a" * 64, "source_revision": "c" * 40,
         "files": {name: base64.b64encode(raw).decode() for name in remote.MODULES},
-        "qualification": {"status": "qualified"},
+        "qualification": reliability_receipt() | {"receipt_sha256": "f" * 64},
     }
     monkeypatch.setattr(remote, "baseline", lambda _: base)
     monkeypatch.setattr(remote, "installed", lambda _: hashes)
@@ -103,7 +141,23 @@ def test_stage_uses_immutable_parent_and_only_reviewed_modules(artifact):
     assert original["services"]["backend"]["image"] == "old-tag"
     assert staged["services"]["backend"]["environment"] == {"KEEP": "yes"}
     assert staged["services"]["backend"]["image"] == "sha256:" + "d" * 64
+    manifest = json.loads((release / "config/transcription-overlay.json").read_text())
+    assert manifest["qualification"] == payload["qualification"]
     assert (release.parent.parent / "current").resolve() == base
+
+
+def test_stage_rejects_generic_qualification_before_baseline(monkeypatch):
+    monkeypatch.setattr(remote, "baseline", lambda _: pytest.fail("Unexpected baseline access"))
+    with pytest.raises(ValueError, match="qualification"):
+        remote.stage({"qualification": {"status": "qualified"}})
+
+
+def test_deploy_rejects_changed_qualification_before_stopping(artifact):
+    payload, _, _, calls = artifact
+    payload["qualification"] = payload["qualification"] | {"receipt_sha256": "e" * 64}
+    with pytest.raises(RuntimeError, match="Staged artifact differs"):
+        remote.deploy(payload)
+    assert not any(call[:2] == ("docker", "stop") for call in calls)
 
 
 def deploy_mocks(monkeypatch, calls):

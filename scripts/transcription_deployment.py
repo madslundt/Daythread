@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import sqlite3
@@ -23,6 +24,11 @@ MODULES = {"configuration", "settings", "transcription", "transcription_filter",
            "recording_transcription_import"}
 BUSY = {"queued", "running", "processing", "transcribing", "summarizing", "pending"}
 DATA = Path("/var/lib/docker/volumes/omi-local_omi-data/_data")
+QUALIFICATION_CHECKS = {"short_exact_repeat", "long_exact_repeat", "cross_history_repeat",
+                        "request_provenance", "request_bounds", "admission_and_idle",
+                        "resource_headroom", "full_recording_requests",
+                        "complete_input_frame_submission", "segment_timing_and_anchors",
+                        "client_response_compatibility"}
 SMOKE = r'''
 import asyncio,io,json,wave
 import httpx
@@ -49,6 +55,34 @@ async def check():
 asyncio.run(check())
 print(json.dumps({'default_filter':False,'original_windows':'passed','mixed_alignment':'passed'}))
 '''
+
+
+def validate_qualification(value: dict, *, require_digest: bool = False) -> dict:
+    """Keep repeatability acceptance distinct from unresolved recognition accuracy."""
+    value = value if isinstance(value, dict) else {}
+    checks, limitations = value.get("checks"), value.get("accuracy_limitations")
+    identified = all(isinstance(value.get(key), str) and re.fullmatch(pattern, value[key])
+                     for key, pattern in (("source_revision", r"[a-f0-9]{40}"),
+                                          ("image_id", r"sha256:[a-f0-9]{64}")))
+    if (value.get("status") != "qualified_reliability"
+            or value.get("scope") != "request_determinism"
+            or value.get("accuracy_status") !=
+            "NOT_QUALIFIED_FOR_FULL_LONG_COVERAGE_OR_LANGUAGE_RETENTION"
+            or not identified or not isinstance(checks, dict)
+            or any(checks.get(key) != "passed" for key in QUALIFICATION_CHECKS)
+            or not isinstance(limitations, list) or not 1 <= len(limitations) <= 32
+            or any(not isinstance(item, str) or not item.strip() or len(item) > 2000
+                   for item in limitations)):
+        raise ValueError(
+            "Identified request-determinism qualification with limitations is required",
+        )
+    if require_digest and not (isinstance(value.get("receipt_sha256"), str)
+                               and re.fullmatch(r"[a-f0-9]{64}", value["receipt_sha256"])):
+        raise ValueError("The original qualification receipt digest is required")
+    return {key: value[key] for key in ("status", "scope", "accuracy_status", "source_revision",
+                                      "image_id", "accuracy_limitations")} | {
+        "checks": {key: checks[key] for key in sorted(QUALIFICATION_CHECKS)},
+    }
 
 
 def run(*args: str, **kwargs):
@@ -126,6 +160,7 @@ def compose(release: Path, *args: str, image: str) -> None:
 
 
 def stage(payload: dict) -> dict:
+    validate_qualification(payload.get("qualification"), require_digest=True)
     base = baseline(payload)
     release = ROOT / "releases" / payload["release"]
     if release.exists():
@@ -290,10 +325,12 @@ def recover(payload: dict) -> dict:
 
 
 def deploy(payload: dict) -> dict:
+    validate_qualification(payload.get("qualification"), require_digest=True)
     base = baseline(payload)
     release = ROOT / "releases" / payload["release"]
     manifest = json.loads((release / "config/transcription-overlay.json").read_text())
-    for key in ("overlay_sha256", "file_hashes", "helper_hashes", "base_image", "base_release"):
+    for key in ("overlay_sha256", "file_hashes", "helper_hashes", "base_image", "base_release",
+                "qualification"):
         if manifest[key] != payload[key]:
             raise RuntimeError("Staged artifact differs from reviewed source")
     if digest(release / "config/compose.release.json") != manifest["compose_sha256"]:
@@ -385,8 +422,7 @@ def main() -> None:
     with deployment_lock():
         if payload["command"] == "stage":
             result = stage(payload)
-        elif (payload["command"] == "deploy"
-              and (payload.get("qualification") or {}).get("status") == "qualified"):
+        elif payload["command"] == "deploy":
             result = deploy(payload)
         elif payload["command"] == "recover":
             result = recover(payload)

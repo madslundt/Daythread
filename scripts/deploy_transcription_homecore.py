@@ -10,6 +10,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from transcription_deployment import validate_qualification
+
 BASE_RELEASE = "20261106-parrot-settings-001ce3b355d5"
 BASE_IMAGE = "sha256:b7b3337407352af28655f5cd2cc5de16805be76290fc984b467250a076994d48"
 BASE_HASHES = {
@@ -42,15 +44,11 @@ def git(root: Path, *args: str) -> str:
 
 
 def qualification(path: Path) -> dict:
-    if path.stat().st_size > 1_000_000:
+    with path.open("rb") as stream:
+        raw = stream.read(1_000_001)
+    if len(raw) > 1_000_000:
         raise ValueError("Qualification receipt is too large")
-    raw = path.read_bytes()
-    value = json.loads(raw)
-    if (not isinstance(value, dict) or value.get("status") != "qualified"
-            or not re.fullmatch(r"[a-f0-9]{40}", value.get("source_revision", ""))
-            or not re.fullmatch(r"sha256:[a-f0-9]{64}", value.get("image_id", ""))):
-        raise ValueError("A completed, identified STT qualification receipt is required")
-    return {key: value[key] for key in ("status", "source_revision", "image_id")} | {
+    return validate_qualification(json.loads(raw)) | {
         "receipt_sha256": sha256(raw),
     }
 
@@ -61,9 +59,9 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
     helpers = {name: sha256((root / name).read_bytes()) for name in HELPERS}
     digest = sha256(json.dumps({"modules": hashes, "helpers": helpers}, sort_keys=True).encode())
     revision = git(root, "rev-parse", "HEAD")
+    if command in {"stage", "deploy"} and receipt is None:
+        raise ValueError("--qualification is required for staging and deployment")
     if command == "deploy":
-        if receipt is None:
-            raise ValueError("--qualification is required for deployment")
         if git(root, "diff", "HEAD", "--", *FILES, *HELPERS):
             raise ValueError("Commit the reviewed source and helpers before deployment")
         for name in HELPERS:

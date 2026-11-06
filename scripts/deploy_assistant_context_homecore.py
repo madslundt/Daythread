@@ -203,16 +203,26 @@ def disabled_health():
   raise SystemExit('Daythread transcription source hashes changed during provider rollout')
  return {'service':'healthy','export':'disabled','get_status':404,'resolve_status':404,'token_mount':'read-only'}
 def backup():
- target=root/'backups'/p['release']; target.mkdir(mode=0o700,parents=False,exist_ok=False)
- remote='/tmp/daythread-'+p['release']+'.zip'
- run('docker','cp',str(release/'scripts/archive.py'),container+':/tmp/daythread-archive.py')
- run('docker','exec',container,'python','/tmp/daythread-archive.py','backup',remote,'--data-dir','/data')
- archive=target/'daythread.zip'; run('docker','cp',container+':'+remote,str(archive))
- run('docker','exec',container,'rm','-f',remote,'/tmp/daythread-archive.py')
- with zipfile.ZipFile(archive) as z:
-  if 'omi.sqlite3' not in z.namelist() or z.testzip() is not None: raise SystemExit('Daythread backup archive validation failed')
- os.chmod(archive,0o600)
- return {'path':str(archive),'bytes':archive.stat().st_size,'sha256':digest(archive)}
+ target=root/'backups'/p['release']
+ if target.exists():
+  if list(target.iterdir()): raise SystemExit('A prior backup artifact exists; preserve and review it')
+ else: target.mkdir(mode=0o700,parents=False)
+ remote='/data/.exports/.assistant-context-'+p['release']; script=remote+'/archive.py'
+ archive=target/'daythread.zip'
+ check="from pathlib import Path; p=Path("+repr(remote)+"); assert not p.exists() and not p.is_symlink(); p.mkdir(mode=0o700)"
+ run('docker','exec',container,'python','-c',check)
+ try:
+  run('docker','cp',str(release/'scripts/archive.py'),container+':'+script)
+  run('docker','exec',container,'python',script,'backup',remote+'/daythread.zip','--data-dir','/data')
+  run('docker','cp',container+':'+remote+'/daythread.zip',str(archive))
+  with zipfile.ZipFile(archive) as z:
+   if 'omi.sqlite3' not in z.namelist() or z.testzip() is not None:
+    raise SystemExit('Daythread backup archive validation failed')
+  os.chmod(archive,0o600)
+  result={'path':str(archive),'bytes':archive.stat().st_size,'sha256':digest(archive)}
+ finally:
+  run('docker','exec',container,'rm','-rf',remote)
+ return result
 def stage():
  if release.exists(): raise SystemExit('Assistant-context release already exists; preserve it')
  shutil.copytree(base,release,symlinks=True)

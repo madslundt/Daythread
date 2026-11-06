@@ -20,6 +20,7 @@ def setup_client(tmp_path, monkeypatch, *, enabled=True, profile="default"):
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_ENABLED", str(enabled).lower())
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_PROFILE_ID", profile)
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_TOKEN_FILE", str(token_path))
+    monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_DOMAIN", "personal")
     settings = Settings(data_dir=tmp_path / "data", worker_enabled=False, _env_file=None)
     return TestClient(create_app(settings)), token
 
@@ -139,15 +140,22 @@ def test_stale_saved_summary_is_hidden_after_source_correction(tmp_path, monkeyp
 def test_only_explicit_commitments_export_without_evidence_quotes(tmp_path, monkeypatch):
     client, token = setup_client(tmp_path, monkeypatch)
     with client:
+        source_id = add_diaries(client, 0)
         store = client.app.state.profiles.runtimes["default"].memory.store
+        with store.connect() as db:
+            source = dict(
+                db.execute(
+                    "SELECT id,source_version FROM audio WHERE id=?", (source_id,)
+                ).fetchone()
+            )
         now = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
         content = {
             "choice": {
                 "text": "Send the proposal on Friday",
                 "evidence": [
                     {
-                        "source_id": "recording-1",
-                        "source_version": "v3",
+                        "source_id": source_id,
+                        "source_version": source["source_version"],
                         "quote": "PRIVATE QUOTATION",
                     }
                 ],
@@ -179,7 +187,18 @@ def test_only_explicit_commitments_export_without_evidence_quotes(tmp_path, monk
         assert [item["event_type"] for item in items] == ["daythread.commitment"]
         exported = json.dumps(items[0])
         assert "Send the proposal on Friday" in exported
-        assert "recording-1" in exported and "PRIVATE QUOTATION" not in exported
+        assert source_id in exported and "PRIVATE QUOTATION" not in exported
+        store.correct_transcript(source_id, "Corrected synthetic source")
+        after_correction = client.get(
+            "/v1/integrations/assistant-context", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert after_correction.json()["items"] == []
+        resolved = client.post(
+            "/v1/integrations/assistant-context/resolve",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"object_ids": ["decision:decision-1"]},
+        )
+        assert resolved.json()["results"][0]["status"] == "invalidated"
 
 
 def test_configured_missing_profile_does_not_fallback(tmp_path, monkeypatch):
@@ -200,5 +219,77 @@ def test_token_file_permissions_are_required(tmp_path, monkeypatch):
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_ENABLED", "true")
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_PROFILE_ID", "default")
     monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_TOKEN_FILE", str(path))
+    monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_DOMAIN", "personal")
     with pytest.raises(ValueError, match="configuration invalid"):
         create_app(Settings(data_dir=tmp_path / "data", worker_enabled=False, _env_file=None))
+
+
+def test_profile_export_requires_explicit_personal_admission(tmp_path, monkeypatch):
+    token = secrets.token_urlsafe(40)
+    token_path = tmp_path / "token"
+    token_path.write_text(token, encoding="ascii")
+    token_path.chmod(0o600)
+    monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_ENABLED", "true")
+    monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_PROFILE_ID", "default")
+    monkeypatch.setenv("OMI_ASSISTANT_CONTEXT_TOKEN_FILE", str(token_path))
+    monkeypatch.delenv("OMI_ASSISTANT_CONTEXT_DOMAIN", raising=False)
+    with pytest.raises(ValueError, match="profile is not admitted"):
+        create_app(Settings(data_dir=tmp_path / "data", worker_enabled=False, _env_file=None))
+
+
+def test_resolve_known_ids_reports_current_invalidated_deleted_and_window_expiry(
+    tmp_path, monkeypatch
+):
+    client, token = setup_client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+    with client:
+        source_id = add_diaries(client, 1)
+        store = client.app.state.profiles.runtimes["default"].memory.store
+        with store.connect() as db:
+            old_day = (datetime.now(UTC).date() - timedelta(days=45)).isoformat()
+            db.execute(
+                "INSERT INTO diary_versions VALUES(?,?,?,?,?)",
+                (
+                    "old-version",
+                    old_day,
+                    "old-fingerprint",
+                    json.dumps({"summary": "old", "sources": [], "pending_chunks": 0}),
+                    (datetime.now(UTC) - timedelta(days=45)).isoformat().replace("+00:00", "Z"),
+                ),
+            )
+        response = client.post(
+            "/v1/integrations/assistant-context/resolve",
+            headers=headers,
+            json={
+                "object_ids": [
+                    "diary:" + datetime.now(UTC).date().isoformat(),
+                    "diary:" + old_day,
+                    "diary:2000-01-01",
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        results = {row["object_id"]: row for row in response.json()["results"]}
+        assert results["diary:" + datetime.now(UTC).date().isoformat()]["status"] == "valid"
+        assert results["diary:" + datetime.now(UTC).date().isoformat()]["item"]["version_ref"]
+        assert results["diary:" + old_day]["status"] == "expired-window"
+        assert results["diary:2000-01-01"]["status"] == "deleted"
+        store.correct_transcript(source_id, "Corrected synthetic source")
+        invalid = client.post(
+            "/v1/integrations/assistant-context/resolve",
+            headers=headers,
+            json={"object_ids": ["diary:" + datetime.now(UTC).date().isoformat()]},
+        )
+        assert invalid.json()["results"][0]["status"] == "invalidated"
+        assert (
+            client.post(
+                "/v1/integrations/assistant-context/resolve",
+                json={"object_ids": ["diary:2000-01-01"]},
+            ).status_code
+            == 401
+        )
+        assert client.post(
+            "/v1/integrations/assistant-context/resolve",
+            headers={**headers, "X-Omi-Profile": "other"},
+            json={"object_ids": ["diary:2000-01-01"]},
+        ).status_code in {400, 404}

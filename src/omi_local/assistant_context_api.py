@@ -17,9 +17,11 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from .domain import EvidenceChanged
 from .service import Memory
 
 PATH = "/v1/integrations/assistant-context"
+RESOLVE_PATH = PATH + "/resolve"
 HISTORY_DAYS = 30
 PAGE_MAX = 20
 SNAPSHOT_RECORD_MAX = 1000
@@ -105,6 +107,10 @@ class ExportConfig:
             raise ExportConfigurationError("assistant context export configuration invalid")
         if switch == "false":
             return cls(False)
+        # Daythread profiles do not encode HomeCompute data domains. Admission
+        # therefore requires a separate explicit personal-domain declaration.
+        if values.get("OMI_ASSISTANT_CONTEXT_DOMAIN") != "personal":
+            raise ExportConfigurationError("assistant context profile is not admitted")
         profile_id = values.get("OMI_ASSISTANT_CONTEXT_PROFILE_ID", "")
         token_path = values.get("OMI_ASSISTANT_CONTEXT_TOKEN_FILE", "")
         if not PROFILE_ID.fullmatch(profile_id) or not token_path:
@@ -277,7 +283,7 @@ def _diary_items(memory: Memory, db, snapshot_at: str, window_start: str) -> lis
             continue
         try:
             memory.store.verify_sources(db, raw_sources)
-        except Exception:
+        except EvidenceChanged:
             # Historical recap versions can outlive transcript corrections; do
             # not export them once any recorded source is no longer current.
             continue
@@ -305,7 +311,9 @@ def _diary_items(memory: Memory, db, snapshot_at: str, window_start: str) -> lis
     return items
 
 
-def _decision_items(db, snapshot_at: str, window_start: str) -> list[dict[str, Any]]:
+def _decision_items(
+    memory: Memory, db, snapshot_at: str, window_start: str
+) -> list[dict[str, Any]]:
     rows = db.execute(
         "SELECT e.decision_id,e.version,e.content,e.created_at,e.metadata "
         "FROM decision_events e WHERE e.created_at<=? AND e.created_at>=? AND NOT EXISTS ("
@@ -348,6 +356,14 @@ def _decision_items(db, snapshot_at: str, window_start: str) -> list[dict[str, A
         refs = _source_refs(content, decision=True)
         if not refs:
             continue
+        try:
+            if any(not ref["version"] for ref in refs):
+                continue
+            memory.store.verify_sources(
+                db, [{"id": ref["id"], "source_version": ref["version"]} for ref in refs]
+            )
+        except EvidenceChanged:
+            continue
         timestamp = row["created_at"]
         object_id = "decision:" + row["decision_id"]
         items.append(
@@ -374,6 +390,133 @@ def _decision_items(db, snapshot_at: str, window_start: str) -> list[dict[str, A
     return items
 
 
+def _resolve_saved_object(
+    memory: Memory, db, object_id: str, snapshot_at: str
+) -> tuple[str, dict[str, Any] | None]:
+    """Resolve one known ID directly against its saved source versions."""
+    cutoff = datetime.now(UTC) - timedelta(days=HISTORY_DAYS)
+    if object_id.startswith("diary:"):
+        day = object_id.removeprefix("diary:")
+        row = db.execute(
+            "SELECT id,day,fingerprint,content,created_at FROM diary_versions WHERE day=? "
+            "AND created_at<=? ORDER BY created_at DESC,id DESC LIMIT 1",
+            (day, snapshot_at),
+        ).fetchone()
+        if row is None:
+            return "deleted", None
+        if _parse_stamp(row["created_at"]) < cutoff:
+            return "expired-window", None
+        try:
+            content = json.loads(row["content"])
+            raw_sources = content.get("sources") if isinstance(content, dict) else None
+            if (
+                not isinstance(content, dict)
+                or not isinstance(content.get("summary"), str)
+                or not isinstance(raw_sources, list)
+                or not raw_sources
+                or any(
+                    not isinstance(source, dict)
+                    or not isinstance(source.get("id"), str)
+                    or not source.get("id")
+                    or (
+                        source.get("reference_type") != "recording_transcription"
+                        and not isinstance(source.get("source_version"), str)
+                    )
+                    for source in raw_sources
+                )
+            ):
+                return "invalidated", None
+            memory.store.verify_sources(db, raw_sources)
+            sources = _source_refs(raw_sources, decision=False)
+            if not sources:
+                return "invalidated", None
+            timestamp = row["created_at"]
+            return "valid", {
+                "object_id": object_id,
+                "revision": 1,
+                "event_type": "daythread.summary",
+                "source_timestamp": timestamp,
+                "modified_at": timestamp,
+                "version_ref": f"diary:{day}:{row['id']}:{row['fingerprint']}",
+                "source_ref": f"daythread:diary/{day}",
+                "payload": {
+                    "day": day,
+                    "summary": _clip(content["summary"], SUMMARY_BYTES_MAX),
+                    "source_refs": sources,
+                    "pending_chunks": int(content.get("pending_chunks") or 0),
+                },
+            }
+        except EvidenceChanged, ValueError, TypeError, KeyError:
+            return "invalidated", None
+    decision_id = object_id.removeprefix("decision:")
+    row = db.execute(
+        "SELECT e.decision_id,e.version,e.content,e.created_at,e.metadata FROM decision_events e "
+        "WHERE e.decision_id=? AND e.created_at<=? ORDER BY e.version DESC LIMIT 1",
+        (decision_id, snapshot_at),
+    ).fetchone()
+    if row is None:
+        return "deleted", None
+    if _parse_stamp(row["created_at"]) < cutoff:
+        return "expired-window", None
+    try:
+        metadata = json.loads(row["metadata"])
+        content = json.loads(row["content"]) if row["content"] else None
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("review_status") not in {"proposed", "confirmed"}
+            or metadata.get("evidence_condition") == "removed"
+            or not isinstance(content, dict)
+        ):
+            return "invalidated", None
+        relationships = content.get("relationships")
+        commitments = (
+            [
+                item
+                for item in relationships
+                if isinstance(item, dict) and item.get("kind") == "commitment"
+            ]
+            if isinstance(relationships, list)
+            else []
+        )
+        choice = content.get("choice")
+        refs = _source_refs(content, decision=True)
+        if (
+            not commitments
+            or not isinstance(choice, dict)
+            or not isinstance(choice.get("text"), str)
+            or not refs
+        ):
+            return "invalidated", None
+        if any(not ref["version"] for ref in refs):
+            return "invalidated", None
+        memory.store.verify_sources(
+            db, [{"id": ref["id"], "source_version": ref["version"]} for ref in refs]
+        )
+        timestamp = row["created_at"]
+        return "valid", {
+            "object_id": object_id,
+            "revision": int(row["version"]),
+            "event_type": "daythread.commitment",
+            "source_timestamp": timestamp,
+            "modified_at": timestamp,
+            "version_ref": f"decision:{decision_id}:v{row['version']}",
+            "source_ref": f"daythread:decision/{decision_id}",
+            "payload": {
+                "text": _clip(choice["text"], COMMITMENT_BYTES_MAX),
+                "review_status": metadata["review_status"],
+                "state": metadata.get("state", ""),
+                "relationships": [
+                    {"kind": "commitment", "label": _clip(item.get("label", ""), 200)}
+                    for item in commitments[:8]
+                ],
+                "source_refs": refs,
+            },
+        }
+    except EvidenceChanged, ValueError, TypeError, KeyError:
+        return "invalidated", None
+    return "invalidated", None
+
+
 def _snapshot(
     memory: Memory, config: ExportConfig, cursor: dict[str, Any] | None, limit: int
 ) -> dict[str, Any]:
@@ -383,7 +526,7 @@ def _snapshot(
     with memory.store.connect() as db:
         db.execute("BEGIN")
         diaries = _diary_items(memory, db, snapshot_at, window_start)
-        decisions = _decision_items(db, snapshot_at, window_start)
+        decisions = _decision_items(memory, db, snapshot_at, window_start)
         concurrent_diary = db.execute(
             "SELECT 1 FROM diary_versions WHERE created_at>? LIMIT 1", (snapshot_at,)
         ).fetchone()
@@ -511,5 +654,68 @@ def create_router(get_profiles: Callable[[], Any], config: ExportConfig) -> APIR
         except Exception:
             # The route never writes provider errors or source text to logs.
             return response(503, {"detail": "Export temporarily unavailable"})
+
+    @router.post(RESOLVE_PATH)
+    async def resolve(request: Request) -> JSONResponse:
+        """Resolve only IDs already known to an authenticated importer."""
+        if not config.enabled:
+            return response(404, {"detail": "Not found"})
+        authorization = request.headers.getlist("authorization")
+        expected = "Bearer " + config._token
+        if len(authorization) != 1 or not hmac.compare_digest(
+            authorization[0].encode(), expected.encode()
+        ):
+            return response(401, {"detail": "Unauthorized"})
+        if (
+            request.headers.getlist("x-omi-profile")
+            or request.query_params
+            or request.headers.getlist("content-type") != ["application/json"]
+        ):
+            return response(400, {"detail": "Profile selection and extra parameters are refused"})
+        try:
+            raw = await request.body()
+            if len(raw) > 16_384:
+                raise ValueError
+            body = _strict_json(raw)
+            ids = (
+                body.get("object_ids")
+                if isinstance(body, dict) and set(body) == {"object_ids"}
+                else None
+            )
+            if (
+                not isinstance(ids, list)
+                or not 1 <= len(ids) <= PAGE_MAX
+                or any(not isinstance(value, str) or not 1 <= len(value) <= 220 for value in ids)
+                or len(set(ids)) != len(ids)
+                or any(
+                    not re.fullmatch(
+                        r"(?:diary:\d{4}-\d{2}-\d{2}|decision:[A-Za-z0-9_-]{1,180})", value
+                    )
+                    for value in ids
+                )
+            ):
+                raise ValueError
+        except ValueError, UnicodeError, TypeError:
+            return response(400, {"detail": "Bounded known object IDs required"})
+        runtime = get_profiles().runtimes.get(config.profile_id)
+        if runtime is None:
+            return response(404, {"detail": "Not found"})
+        try:
+            with runtime.memory.store.connect() as db:
+                db.execute("BEGIN")
+                results = []
+                snapshot_at = _stamp(datetime.now(UTC))
+                for object_id in ids:
+                    status, item = _resolve_saved_object(runtime.memory, db, object_id, snapshot_at)
+                    results.append(
+                        {
+                            "object_id": object_id,
+                            "status": status,
+                            **({"item": item} if item is not None else {}),
+                        }
+                    )
+            return response(200, {"schema_version": 1, "source": "daythread", "results": results})
+        except Exception:
+            return response(503, {"detail": "Resolve temporarily unavailable"})
 
     return router

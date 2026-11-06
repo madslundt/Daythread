@@ -2,8 +2,9 @@
 
 Daythread provides an optional, read-only export for the HomeCompute personal
 assistant. It is disabled unless `OMI_ASSISTANT_CONTEXT_ENABLED=true` is set in
-the Daythread service environment. The route is `GET
-/v1/integrations/assistant-context`.
+the Daythread service environment. The routes are `GET
+/v1/integrations/assistant-context` and the bounded known-ID resolver at `POST
+/v1/integrations/assistant-context/resolve`.
 
 ## Enablement
 
@@ -13,6 +14,7 @@ configuration, or repository:
 
 - `OMI_ASSISTANT_CONTEXT_ENABLED=true`
 - `OMI_ASSISTANT_CONTEXT_PROFILE_ID=default` or one existing profile UUID
+- `OMI_ASSISTANT_CONTEXT_DOMAIN=personal` (explicit admission for this connector)
 - `OMI_ASSISTANT_CONTEXT_TOKEN_FILE=/absolute/private/path`
 
 The token file must be a regular, single-link file owned by root or the service
@@ -46,9 +48,18 @@ current behavior.
 
 `coverage.window_complete` is true only when the bounded source window was read
 without reaching the record cap, cursor continuation, or a detected concurrent
-write. `coverage.deletion_complete` is always false: Daythread has no deletion
-feed for this connector, and removals must not be inferred from absence. The
-HomeCompute collector therefore never issues deletion events for Daythread.
+write. `coverage.deletion_complete` remains false: a missing item on a page or
+a missing page never implies deletion. Separately, the resolver accepts at most
+20 previously observed object IDs per request and returns one status for each:
+`valid` with its current evidence-checked saved item, `invalidated` when the
+underlying saved version remains but its evidence is no longer current,
+`expired-window` when the saved version is older than the 30-day export window,
+or `deleted` when the source object no longer exists. Resolver responses are
+bound to the same token-fixed profile, require the exact object-ID request
+shape, and do not accept profile or domain selectors. If the resolver is
+unavailable or partial, HomeCompute must preserve local records and retry.
+Only explicit non-valid statuses for IDs already held by its revision ledger
+can create tombstones.
 The export is a recent snapshot, not a durable event stream; a long or changing
 snapshot can be incomplete and should be retried from its first page.
 Concurrent source edits between pages may also make the cursor snapshot
@@ -65,7 +76,7 @@ does not accept an arbitrary CA path. Keep the endpoint on a trusted private
 network and leave it disabled until that path is configured.
 
 The 30-day snapshot retains only the latest diary version per day and current
-eligible commitment versions modified in that window. Since there is no delete
-feed, HomeCompute cannot automatically clear an item that disappears from the
-window or is deleted in Daythread. Review that retention consequence before
-enabling the integration; no deletion guarantee is implied.
+eligible commitment versions modified in that window. The resolver makes
+retention and deletion changes discoverable for known IDs without treating a
+partial or moving snapshot as a delete feed. It does not enumerate IDs the
+collector has never observed.

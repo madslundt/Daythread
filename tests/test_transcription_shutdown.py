@@ -32,6 +32,8 @@ def test_shutdown_observer_leaves_slow_foreground_request_alive(monkeypatch):
 def test_shutdown_observer_rejects_container_replacement():
     with pytest.raises(RuntimeError, match="identity"):
         shutdown.wait_for_shutdown(lambda: {"Id": "foreign"}, "old")
+    with pytest.raises(RuntimeError, match="unknown"):
+        shutdown.wait_for_shutdown(lambda: {"Id": "old", "State": {}}, "old")
 
 
 def test_runtime_proof_requires_exact_sources_command_and_no_init():
@@ -45,6 +47,10 @@ def test_runtime_proof_requires_exact_sources_command_and_no_init():
     with pytest.raises(RuntimeError, match="PID1"):
         shutdown.verify_shutdown_runtime(current, output, "app")
     current["HostConfig"]["Init"] = False
+    current["Config"]["Env"] = ["UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=1"]
+    with pytest.raises(RuntimeError, match="PID1"):
+        shutdown.verify_shutdown_runtime(current, output, "app")
+    current["Config"]["Env"] = []
     current["Config"]["Cmd"] = [*shutdown.COMMAND, "--timeout-graceful-shutdown", "1"]
     with pytest.raises(RuntimeError, match="PID1"):
         shutdown.verify_shutdown_runtime(current, output, "app")

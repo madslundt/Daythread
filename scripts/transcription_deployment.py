@@ -297,6 +297,9 @@ def rollback(receipt: dict, manifest: dict, path: Path) -> None:
         compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
                 image=receipt["base_image"])
         ready(receipt["base_image"], manifest["baseline_hashes"])
+        receipt["inbox_after_rollback"] = inbox_snapshot(
+            DATA, receipt.get("inbox_retained", receipt.get("inbox_before", {})),
+        )
         if (ROOT / "current").resolve() == release:
             temporary = ROOT / ("current.recover-" + release.name)
             temporary.symlink_to(base)

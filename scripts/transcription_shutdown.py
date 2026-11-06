@@ -32,7 +32,8 @@ class ShutdownPending(RuntimeError):
 
 def verify_shutdown_runtime(current: dict, output, container: str) -> None:
     if (current["Config"].get("Cmd") != COMMAND or current["Config"].get("Entrypoint")
-            or current.get("HostConfig", {}).get("Init")):
+            or current.get("HostConfig", {}).get("Init")
+            or any(item.startswith("UVICORN_") for item in current["Config"].get("Env", []))):
         raise RuntimeError("The audited Python PID1 shutdown contract changed")
     code = ("import pathlib,hashlib,json,uvicorn;root=pathlib.Path(uvicorn.__file__).parent.parent;"
             "print(json.dumps({n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in "
@@ -56,7 +57,9 @@ def wait_for_shutdown(inspect, identifier: str, attempts: int = 60) -> dict:
         current = inspect()
         if current.get("Id") != identifier:
             raise RuntimeError("Container identity changed during graceful shutdown")
-        if not current["State"].get("Running", False):
+        if type(current["State"].get("Running")) is not bool:
+            raise RuntimeError("Container running state is unknown during graceful shutdown")
+        if not current["State"]["Running"]:
             return current
         if attempt < attempts - 1:
             time.sleep(1)

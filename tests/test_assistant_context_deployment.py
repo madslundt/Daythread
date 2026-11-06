@@ -17,6 +17,10 @@ def test_remote_program_compiles_and_checks_authenticated_metadata():
     assert "Authenticated Daythread resolve metadata is invalid" in DEPLOYMENT.REMOTE
     assert "SQLITE_TMPDIR" in DEPLOYMENT.REMOTE
     assert "if overlay.is_file()" in DEPLOYMENT.REMOTE
+    assert "SQLITE_TMPDIR: /data/.exports" in DEPLOYMENT.REMOTE
+    assert "tempfile.gettempdir()==expected" in DEPLOYMENT.REMOTE
+    assert "20*1024*1024" in DEPLOYMENT.REMOTE
+    assert "live_data_volume_mounted':False" in DEPLOYMENT.REMOTE
     assert DEPLOYMENT.BASE_RELEASE == "20261106-transcription-fc4a4eeddd4f"
     assert "transcription source hashes changed during provider rollout" in DEPLOYMENT.REMOTE
     assert len(DEPLOYMENT.ASR_MODULE_HASHES) == 7

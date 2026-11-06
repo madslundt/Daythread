@@ -55,7 +55,7 @@ def make_payload(root: Path, command: str) -> dict:
     files = {name: (root / name).read_bytes() for name in FILES}
     hashes = {name: _sha256(value) for name, value in files.items()}
     digest = _sha256(json.dumps(hashes, sort_keys=True).encode())
-    if command in {"stage", "deploy", "credentials-apply", "ca-apply"}:
+    if command in {"stage", "deploy", "credentials-apply", "ca-apply", "backup-fixture-check"}:
         if _git(root, "status", "--porcelain", "--", *FILES):
             raise ValueError("Commit the selected provider source before staging")
         if set(_git(root, "ls-files", "--", *FILES).splitlines()) != set(FILES):
@@ -84,7 +84,7 @@ def make_payload(root: Path, command: str) -> dict:
 
 
 REMOTE = r'''
-import base64,hashlib,hmac,json,os,pathlib,pwd,secrets,shutil,ssl,stat,subprocess,sys,time,urllib.error,urllib.request,zipfile
+import base64,hashlib,hmac,json,os,pathlib,pwd,secrets,shutil,ssl,stat,subprocess,sys,tempfile,time,urllib.error,urllib.request,zipfile
 p=json.load(sys.stdin); root=pathlib.Path('/home/mads/projects/omi')
 base=root/'releases'/p['base_release']; release=root/'releases'/p['release']; image='omi-local:'+p['release']
 container='omi-local-backend-1'
@@ -310,12 +310,7 @@ def backup():
  else: target.mkdir(mode=0o700,parents=False)
  remote='/data/.exports/.assistant-context-'+p['release']+'-'+str(time.time_ns()); script=remote+'/archive.py'
  archive=target/'daythread.zip'
- backup_config=release/'config/compose.assistant-context-backup.yaml'
- if backup_config.exists(): raise SystemExit('A prior backup Compose artifact exists; preserve and review it')
- backup_config.write_text('services:\n  backend:\n    volumes:\n      - type: bind\n'
-   '        source: '+json.dumps(str(release/'scripts/archive.py'))+'\n'
-   '        target: /tmp/daythread-archive.py\n        read_only: true\n'
-   '        bind:\n          create_host_path: false\n')
+ backup_config=write_backup_config()
  try:
   compose(release,'stop','--timeout','120','backend')
   code=("from pathlib import Path; import os,stat; e=Path('/data/.exports'); e.mkdir(mode=0o700,exist_ok=True); i=e.lstat(); "
@@ -328,9 +323,7 @@ def backup():
    '-f',str(release/'config/compose.yaml'),'-f',str(release/'config/compose.home-core.yaml'),
    '-f',str(release/'config/compose.release.json'),'-f',str(release/'config/compose.assistant-context.yaml'),
    '-f',str(backup_config)]
-  backup_env=os.environ.copy()
-  for name in ('TMPDIR','TEMP','TMP','SQLITE_TMPDIR'): backup_env[name]='/data/.exports'
-  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code,env=backup_env)
+  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code)
   run('docker','cp',container+':'+remote+'/daythread.zip',str(archive))
   with zipfile.ZipFile(archive) as z:
    if 'omi.sqlite3' not in z.namelist() or z.testzip() is not None:
@@ -376,6 +369,57 @@ def pointer(target,suffix):
  temp=root/('current.'+suffix+'.tmp')
  if temp.is_symlink(): temp.unlink()
  temp.symlink_to(target); temp.replace(root/'current')
+def write_backup_config():
+ backup_config=release/'config/compose.assistant-context-backup.yaml'
+ if backup_config.exists(): raise SystemExit('A prior backup Compose artifact exists; preserve and review it')
+ backup_config.write_text('services:\n  backend:\n    environment:\n'
+  '      TMPDIR: /data/.exports\n      TEMP: /data/.exports\n      TMP: /data/.exports\n      SQLITE_TMPDIR: /data/.exports\n'
+  '    volumes:\n      - type: bind\n'
+  '        source: '+json.dumps(str(release/'scripts/archive.py'))+'\n'
+  '        target: /tmp/daythread-archive.py\n        read_only: true\n'
+  '        bind:\n          create_host_path: false\n')
+ return backup_config
+def backup_fixture_check():
+ fixture_config=release/'config/compose.assistant-context-backup-fixture.yaml'
+ if fixture_config.exists(): raise SystemExit('A prior backup fixture Compose artifact exists; preserve and review it')
+ fixture=pathlib.Path(tempfile.mkdtemp(prefix='daythread-backup-fixture-'))
+ os.chown(fixture,10001,10001); os.chmod(fixture,0o700)
+ backup_config=write_backup_config()
+ fixture_config.write_text('services:\n  backend:\n    volumes:\n'
+  '      - type: bind\n        source: '+json.dumps(str(fixture))+'\n        target: /data\n'
+  '        bind:\n          create_host_path: false\n')
+ config=['docker','compose','-p','omi-local','--env-file',str(release/'.env'),
+  '-f',str(release/'config/compose.yaml'),'-f',str(release/'config/compose.home-core.yaml'),
+  '-f',str(release/'config/compose.release.json'),'-f',str(release/'config/compose.assistant-context.yaml'),
+  '-f',str(backup_config),'-f',str(fixture_config)]
+ try:
+  rendered=json.loads(out(*config,'config','--format','json'))
+  mounts=rendered['services']['backend']['volumes']; data=[m for m in mounts if m.get('target')=='/data']
+  if len(data)!=1 or data[0].get('source')!=str(fixture): raise SystemExit('Backup fixture Compose does not isolate the live data volume')
+  code="""import json,os,pathlib,runpy,sqlite3,tempfile,zipfile
+expected='/data/.exports'
+assert all(os.environ.get(name)==expected for name in ('TMPDIR','TEMP','TMP','SQLITE_TMPDIR'))
+assert tempfile.gettempdir()==expected
+probe=pathlib.Path(expected)/'.assistant-context-backup-temp-probe'
+probe.write_bytes(b'ok'); probe.unlink()
+from omi_local.store import Store
+Store('/data')
+with sqlite3.connect('/data/omi.sqlite3') as db:
+ db.execute('CREATE TABLE backup_fixture(payload BLOB NOT NULL)')
+ db.execute('INSERT INTO backup_fixture VALUES(zeroblob(?))',(20*1024*1024,))
+ db.commit()
+import sys
+sys.argv=['/tmp/daythread-archive.py','backup','/data/.exports/fixture.zip','--data-dir','/data']
+runpy.run_path('/tmp/daythread-archive.py',run_name='__main__')
+with zipfile.ZipFile('/data/.exports/fixture.zip') as archive:
+ assert 'omi.sqlite3' in archive.namelist() and archive.testzip() is None
+ assert archive.getinfo('omi.sqlite3').file_size>16*1024*1024
+"""
+  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code)
+  print(json.dumps({'fixture':'passed','sqlite_fixture_bytes':20*1024*1024,'tmpfs_tmp_mib':16,
+   'temporary_directory':'/data/.exports','live_data_volume_mounted':False},sort_keys=True))
+ finally:
+  backup_config.unlink(missing_ok=True); fixture_config.unlink(missing_ok=True); shutil.rmtree(fixture)
 if p['command']=='plan':
  check_base()
  print(json.dumps({'active_release':p['base_release'],'active_image':p['base_image'],'candidate':p['release'],
@@ -406,6 +450,8 @@ elif p['command']=='rollback':
  else: raise SystemExit('Daythread rollback health check failed')
  pointer(base,'assistant-context-rollback')
  print(json.dumps({'rolled_back_to':p['base_release'],'backup_preserved':True},sort_keys=True))
+elif p['command']=='backup-fixture-check':
+ check_base(); verify_stage(); backup_fixture_check()
 elif p['command']=='credentials-plan': credential_plan()
 elif p['command']=='credentials-apply': credential_apply()
 elif p['command']=='ca-plan': ca_plan()
@@ -415,7 +461,7 @@ elif p['command']=='ca-apply': ca_apply()
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "stage", "deploy", "rollback", "credentials-plan", "credentials-apply", "ca-plan", "ca-apply"])
+    parser.add_argument("command", choices=["plan", "stage", "deploy", "rollback", "credentials-plan", "credentials-apply", "ca-plan", "ca-apply", "backup-fixture-check"])
     parser.add_argument("--host", default="home-core")
     parser.add_argument("--release", help="Exact assistant-context release name for rollback")
     args = parser.parse_args()

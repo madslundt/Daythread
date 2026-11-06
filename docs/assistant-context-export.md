@@ -47,6 +47,7 @@ uv run python scripts/deploy_assistant_context_homecore.py ca-plan
 uv run python scripts/deploy_assistant_context_homecore.py ca-apply
 uv run python scripts/deploy_assistant_context_homecore.py plan
 uv run python scripts/deploy_assistant_context_homecore.py stage
+uv run python scripts/deploy_assistant_context_homecore.py backup-fixture-check
 uv run python scripts/deploy_assistant_context_homecore.py deploy
 ```
 
@@ -55,6 +56,10 @@ absent, or verifies the existing pair without printing either value. It refuses
 partial or inconsistent copies. The provider rollout creates a validated
 archive backup, adds only the assistant API files atop the pinned current
 Daythread image, and verifies the transcription module hashes remain unchanged.
+Before stopping Daythread, `backup-fixture-check` invokes the exact Compose backup
+override against an isolated synthetic archive with a 16 MiB `/tmp` and a SQLite
+fixture larger than 16 MiB. It verifies all Python/SQLite temporary paths resolve
+to the writable archive volume and that the live data volume is not mounted.
 The CA helper copies only the public root certificate from the active managed
 Caddy data volume. It checks the reviewed SHA-256 fingerprint and certificate
 identity before installing `/etc/homecompute/daythread-assistant-context-ca.crt`

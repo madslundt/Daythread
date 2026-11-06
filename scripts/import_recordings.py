@@ -3,8 +3,7 @@
 # ruff: noqa: UP017 -- datetime.UTC is unavailable on Python 3.10 laptops.
 """Upload finished audio to Daythread. Requires Python 3.10+, FFmpeg and lsof.
 Save DAYTHREAD_SERVER_URL, DAYTHREAD_PROFILE, DAYTHREAD_IMPORT_TOKEN, DAYTHREAD_IMPORT_FOLDER
-and optional SSL_CERT_FILE in .env. CLI > exported variables > .env. Originals are preserved.
-"""
+and optional SSL_CERT_FILE in .env. CLI > exported variables > .env. Originals are preserved."""
 
 from __future__ import annotations
 
@@ -104,15 +103,16 @@ def discover(folder: Path, parrot: bool, recursive: bool = False) -> list[Record
 
 
 def open_for_writing(paths: tuple[Path, ...]) -> bool:
-    """lsof access flags distinguish capture writers from read-only playback."""
+    """Check writer flags; suppress mount warnings while retaining target-file errors."""
     executable = shutil.which("lsof") or "/usr/sbin/lsof"
     try:
-        result = subprocess.run([executable, "-F", "a", "--", *map(str, paths)],
+        result = subprocess.run([executable, "-w", "-F", "a", "--", *map(str, paths)],
                                 capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError("Cannot check open files; install lsof before importing") from exc
     if result.returncode not in (0, 1) or (result.returncode == 1 and result.stderr.strip()):
-        raise ValueError("lsof could not check recording writers; retrying")
+        detail = result.stderr.decode(errors="replace").strip()[:1000]
+        raise ValueError(f"lsof check failed (exit {result.returncode}): {detail}")
     return any(line in (b"aw", b"au") for line in result.stdout.splitlines())
 
 

@@ -17,6 +17,9 @@ from pydantic import AwareDatetime, ValidationError
 
 from . import conversation_prep
 from .archive_export import install_archive_export
+from .assistant_context_api import PATH as ASSISTANT_CONTEXT_PATH
+from .assistant_context_api import ExportConfig
+from .assistant_context_api import create_router as assistant_context_router
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
 from .blob_storage import storage_from_settings
@@ -131,6 +134,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def profile_scope(request: Request, call_next):
         if not request.url.path.startswith("/v1/"):
             return await call_next(request)
+        # This integration authenticates and binds its own fixed archive. Let
+        # its route reject, rather than consume, any normal profile selector.
+        if request.url.path == ASSISTANT_CONTEXT_PATH:
+            return await call_next(request)
         headers = request.headers.getlist("x-omi-profile")
         query = request.query_params.getlist("profile_id")
         if request.url.path in ("/v1/profiles", "/v1/settings") or (
@@ -164,6 +171,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
 
     app.add_middleware(RedactForwardingToken)
+
+    app.include_router(
+        assistant_context_router(
+            lambda: app.state.profiles,
+            ExportConfig.from_environment(),
+        )
+    )
 
     def memory() -> Memory:
         return runtime().memory

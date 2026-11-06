@@ -88,13 +88,15 @@ import base64,hashlib,hmac,json,os,pathlib,pwd,secrets,shutil,ssl,stat,subproces
 p=json.load(sys.stdin); root=pathlib.Path('/home/mads/projects/omi')
 base=root/'releases'/p['base_release']; release=root/'releases'/p['release']; image='omi-local:'+p['release']
 container='omi-local-backend-1'
-def run(*args,timeout=1800): subprocess.run(args,check=True,timeout=timeout,stdout=subprocess.DEVNULL)
+def run(*args,timeout=1800,env=None): subprocess.run(args,check=True,timeout=timeout,stdout=subprocess.DEVNULL,env=env)
 def out(*args): return subprocess.check_output(args,text=True,timeout=30).strip()
 def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def compose(directory,*args):
  c=['docker','compose','-p','omi-local','--env-file',str(directory/'.env'),
     '-f',str(directory/'config/compose.yaml'),'-f',str(directory/'config/compose.home-core.yaml'),
-    '-f',str(directory/'config/compose.release.json'),'-f',str(directory/'config/compose.assistant-context.yaml')]
+    '-f',str(directory/'config/compose.release.json')]
+ overlay=directory/'config/compose.assistant-context.yaml'
+ if overlay.is_file(): c.extend(['-f',str(overlay)])
  run(*c,*args)
 def current(): return pathlib.Path(os.path.realpath(root/'current'))
 def asr_hashes():
@@ -306,7 +308,7 @@ def backup():
  if target.exists():
   if list(target.iterdir()): raise SystemExit('A prior backup artifact exists; preserve and review it')
  else: target.mkdir(mode=0o700,parents=False)
- remote='/data/.exports/.assistant-context-'+p['release']; script=remote+'/archive.py'
+ remote='/data/.exports/.assistant-context-'+p['release']+'-'+str(time.time_ns()); script=remote+'/archive.py'
  archive=target/'daythread.zip'
  backup_config=release/'config/compose.assistant-context-backup.yaml'
  if backup_config.exists(): raise SystemExit('A prior backup Compose artifact exists; preserve and review it')
@@ -326,7 +328,9 @@ def backup():
    '-f',str(release/'config/compose.yaml'),'-f',str(release/'config/compose.home-core.yaml'),
    '-f',str(release/'config/compose.release.json'),'-f',str(release/'config/compose.assistant-context.yaml'),
    '-f',str(backup_config)]
-  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code)
+  backup_env=os.environ.copy()
+  for name in ('TMPDIR','TEMP','TMP','SQLITE_TMPDIR'): backup_env[name]='/data/.exports'
+  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code,env=backup_env)
   run('docker','cp',container+':'+remote+'/daythread.zip',str(archive))
   with zipfile.ZipFile(archive) as z:
    if 'omi.sqlite3' not in z.namelist() or z.testzip() is not None:

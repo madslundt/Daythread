@@ -19,6 +19,10 @@ BASE_HASHES = {
     "transcription_filter": "2a22e5cb673608646b01a8550215cf181f868f55f38259d623606f343039aae6",
     "recording_transcription_worker":
         "daacbcd09be0dad768bce8b6b3e3a7abe48469d5de71c4a04c2dd79ba334a0ab",
+    "recording_transcription_client":
+        "7029301ca33dbc34bc2e54e1dcebd6d70d4e0810e17c9c1492c9f83f2785165e",
+    "recording_transcription_import":
+        "2f5abf59f84f18d2c00e7de94522c70a7b2a24dd22a7eb1bb4e87c1229b406a4",
 }
 COMPOSE_HASHES = {
     "compose.yaml": "6004405b5bfff9a3d1c25c647ae452af5f6470e1b2b5fd1151e1b873739f35df",
@@ -64,6 +68,11 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
             raise ValueError("Commit the reviewed source and helpers before deployment")
         for name in HELPERS:
             git(root, "ls-files", "--error-unmatch", name)
+        for name in FILES + HELPERS:
+            committed = subprocess.check_output(["git", "show", revision + ":" + name], cwd=root)
+            expected = hashes[Path(name).stem] if name in FILES else helpers[name]
+            if sha256(committed) != expected:
+                raise ValueError("Source changed while preparing the artifact; review and retry")
         published = {line.split()[0] for line in git(root, "ls-remote", "origin").splitlines()}
         if revision not in published:
             raise ValueError("Publish this source revision before deployment")
@@ -79,15 +88,22 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "stage", "deploy"])
+    parser.add_argument("command", choices=["plan", "stage", "deploy", "recover"])
     parser.add_argument("--host", default="home-core")
     parser.add_argument("--qualification", type=Path)
+    parser.add_argument("--release", help="Exact interrupted release, required for recover")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
         data = payload(root, args.command, args.qualification)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
+    if args.command == "recover":
+        if not re.fullmatch(r"20261106-transcription-[a-f0-9]{12}", args.release or ""):
+            parser.error("recover requires --release with the interrupted release name")
+        data["release"] = args.release
+    elif args.release:
+        parser.error("--release is only valid for recover")
     if args.command == "plan":
         print(json.dumps({k: v for k, v in data.items() if k != "files"}, indent=2))
         return

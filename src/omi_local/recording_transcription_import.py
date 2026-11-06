@@ -21,7 +21,7 @@ from uuid import UUID
 
 from .domain import stamp
 from .merged_recordings import Recording, load_recording
-from .recording_transcription_client import _spool_wav
+from .recording_transcription_client import UNKNOWN_NATIVE_TIMING, _spool_wav
 from .recording_transcription_store import (
     pipeline_fingerprint,
     recording_source_map,
@@ -172,10 +172,10 @@ def _validate_segments(variant: QualifiedVariant, duration: float) -> None:
             raise ImportRefused("native timing segment is malformed")
         start, end = item.get("start"), item.get("end")
         if start is None and end is None:
-            if item.get("timing_status") != "unknown_zero_duration":
+            if item.get("timing_status") not in UNKNOWN_NATIVE_TIMING:
                 raise ImportRefused("untimed native segment lacks its explicit reason")
         else:
-            if (item.get("timing_status") == "unknown_zero_duration"
+            if (item.get("timing_status") in UNKNOWN_NATIVE_TIMING
                     or not _number(start) or not _number(end) or start < prior_end
                     or end <= start or end > duration):
                 raise ImportRefused("native timing bounds are invalid")

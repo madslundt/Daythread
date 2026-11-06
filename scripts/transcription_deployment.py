@@ -1,22 +1,26 @@
 """Remote, narrowly scoped deployment implementation; invoked by the pinned CLI."""
 
 import base64
+import fcntl
 import hashlib
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path("/home/mads/projects/omi")
 CONTAINER = "omi-local-backend-1"
 SITE = "/opt/venv/lib/python3.15/site-packages/omi_local"
 MODULES = {"configuration", "settings", "transcription", "transcription_filter",
-           "recording_transcription_worker"}
+           "recording_transcription_worker", "recording_transcription_client",
+           "recording_transcription_import"}
 BUSY = {"queued", "running", "processing", "transcribing", "summarizing", "pending"}
 DATA = Path("/var/lib/docker/volumes/omi-local_omi-data/_data")
 SMOKE = r'''
@@ -48,11 +52,12 @@ print(json.dumps({'default_filter':False,'original_windows':'passed','mixed_alig
 
 
 def run(*args: str, **kwargs):
+    kwargs.setdefault("timeout", 180)
     return subprocess.run(args, check=True, **kwargs)
 
 
 def output(*args: str) -> str:
-    return subprocess.check_output(args, text=True).strip()
+    return subprocess.check_output(args, text=True, timeout=60).strip()
 
 
 def digest(path: Path) -> str:
@@ -63,6 +68,22 @@ def save(path: Path, value: dict) -> None:
     with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
         json.dump(value, stream, indent=2)
         stream.write("\n")
+
+
+def checkpoint(path: Path, receipt: dict, phase: str) -> None:
+    receipt["phase"] = phase
+    temporary = path.with_suffix(".tmp")
+    with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as stream:
+        json.dump(receipt, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def inspect() -> dict:
@@ -100,7 +121,8 @@ def compose(release: Path, *args: str, image: str) -> None:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as override:
         json.dump({"services": {"backend": {"image": image}}}, override)
         override.flush()
-        run(*command, "-f", override.name, *args)
+        run(*command, "-f", override.name, *args,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
 def stage(payload: dict) -> dict:
@@ -123,7 +145,10 @@ def stage(payload: dict) -> dict:
                    + '"\nUSER omi\n')
     (context / "Dockerfile").write_text(dockerfile)
     tag = "omi-local:" + payload["release"]
-    run("docker", "build", "--network=none", "--pull=false", "-t", tag, str(context))
+    # BuildKit treats a bare local config digest as a registry tag. The installed legacy
+    # builder supports FROM <exact local image ID>; fail rather than use a mutable tag.
+    run("docker", "build", "--network=none", "--pull=false", "-t", tag, str(context),
+        env=os.environ | {"DOCKER_BUILDKIT": "0"})
     image = output("docker", "image", "inspect", "--format", "{{.Id}}", tag)
     isolated = ["docker", "run", "--rm", "--network", "none", "--read-only",
                 "--tmpfs", "/tmp:size=16m", image]
@@ -178,7 +203,7 @@ def admission() -> dict:
 
 
 def backup(destination: Path) -> dict:
-    destination.mkdir(mode=0o700)
+    destination.mkdir(mode=0o700, exist_ok=True)
     hashes = {}
     for source in DATA.rglob("*.sqlite3"):
         target = destination / source.relative_to(DATA)
@@ -213,6 +238,57 @@ def ready(expected_image: str, expected_hashes: dict) -> None:
     raise RuntimeError("Backend did not become healthy")
 
 
+def rollback(receipt: dict, manifest: dict, path: Path) -> None:
+    """Recover code/configuration only; interrupted/newer user data is never restored."""
+    handlers = {sig: signal.signal(sig, signal.SIG_IGN)
+                for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    try:
+        checkpoint(path, receipt, "rolling_back")
+        base, release = Path(receipt["base_release"]), Path(receipt["release"])
+        if (ROOT / "current").resolve() not in (base, release):
+            raise RuntimeError("Current pointer belongs to another release; refusing recovery")
+        try:
+            current = inspect()
+        except subprocess.CalledProcessError:
+            current = None
+        if current and current["Image"] not in (receipt["base_image"], receipt["image_id"]):
+            raise RuntimeError("Running image belongs to another release; refusing recovery")
+        compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
+                image=receipt["base_image"])
+        ready(receipt["base_image"], manifest["baseline_hashes"])
+        if (ROOT / "current").resolve() == release:
+            temporary = ROOT / ("current.recover-" + release.name)
+            temporary.symlink_to(base)
+            temporary.replace(ROOT / "current")
+        receipt["status"] = "rolled_back"
+        checkpoint(path, receipt, "rolled_back")
+    except BaseException as error:
+        receipt.update(status="rollback_failed", rollback_error=type(error).__name__)
+        checkpoint(path, receipt, "recovery_required")
+        raise
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
+
+
+def recover(payload: dict) -> dict:
+    release = ROOT / "releases" / payload["release"]
+    manifest = json.loads((release / "config/transcription-overlay.json").read_text())
+    if any(manifest[key] != payload[key] for key in ("base_image", "base_release")):
+        raise RuntimeError("Recovery baseline differs; review the retained artifact")
+    path = ROOT / "backups" / payload["release"] / "deployment.json"
+    receipt = json.loads(path.read_text())
+    if (receipt["image_id"] != manifest["image_id"]
+            or receipt["base_image"] != payload["base_image"]
+            or receipt["base_release"] != str(ROOT / "releases" / payload["base_release"])
+            or receipt["release"] != str(release)):
+        raise RuntimeError("Recovery receipt identity differs")
+    if receipt["status"] in ("deployed", "rolled_back"):
+        raise RuntimeError("Transaction is complete; inspect before attempting another rollback")
+    rollback(receipt, manifest, path)
+    return {"status": "rolled_back", "receipt": str(path)}
+
+
 def deploy(payload: dict) -> dict:
     base = baseline(payload)
     release = ROOT / "releases" / payload["release"]
@@ -241,53 +317,81 @@ def deploy(payload: dict) -> dict:
                "source_revision": payload["source_revision"],
                "qualification": payload["qualification"], "before_jobs": before,
                "gateway_admission": gateway, "rollback_config": str(base / "config"),
-               "overlay_sha256": payload["overlay_sha256"]}
+               "overlay_sha256": payload["overlay_sha256"], "status": "in_progress"}
     # Recheck after the isolated image check and before stopping the real service.
     baseline(payload)
     require_idle(queue_snapshot(), admission())
+    saved.mkdir(mode=0o700)
+    path = saved / "deployment.json"
+    checkpoint(path, receipt, "prepared")
     try:
-        run("docker", "stop", "--time", "60", CONTAINER)
+        checkpoint(path, receipt, "stopping")
+        run("docker", "stop", "--time", "60", CONTAINER,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         stopped = inspect()
         if stopped["State"]["ExitCode"] != 0 or stopped["State"].get("OOMKilled"):
             raise RuntimeError("Backend did not stop gracefully")
         receipt["stopped_jobs"] = queue_snapshot()
+        require_idle(receipt["stopped_jobs"], gateway)
+        checkpoint(path, receipt, "backing_up")
         receipt["backup_hashes"] = backup(saved)
-        # No database rows/settings are rewritten, including jobs claimed during the stop race.
+        checkpoint(path, receipt, "starting")
         compose(release, "up", "-d", "--no-deps", "--no-build", "backend", image=image)
+        checkpoint(path, receipt, "verifying")
         ready(image, payload["file_hashes"])
         for name, expected in receipt["backup_hashes"].items():
             if name.endswith(".private-settings.json") and digest(DATA / name) != expected:
                 raise RuntimeError("Saved settings changed during restart")
         receipt["after_jobs"] = queue_snapshot()
+        if (ROOT / "current").resolve() != base:
+            raise RuntimeError("Current pointer changed; preserving conflicting release")
+        checkpoint(path, receipt, "switching_pointer")
         previous.symlink_to(base)
         temporary.symlink_to(release)
         temporary.replace(ROOT / "current")
         receipt["status"] = "deployed"
-    except Exception:
-        # Roll back only executable/configuration state. Never restore over newer user data.
-        compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
-                image=payload["base_image"])
-        ready(payload["base_image"], payload["baseline_hashes"])
-        receipt["status"] = "rolled_back"
-        saved.mkdir(mode=0o700, exist_ok=True)
-        save(saved / "deployment.json", receipt)
+        checkpoint(path, receipt, "complete")
+    except BaseException as error:
+        receipt["failure"] = type(error).__name__
+        rollback(receipt, manifest, path)
         raise
-    save(saved / "deployment.json", receipt)
     return {"status": "deployed", "release": str(release), "image_id": image,
             "receipt": str(saved / "deployment.json")}
 
 
+@contextmanager
+def deployment_lock():
+    lock = os.open(ROOT / ".transcription-deployment.lock",
+                   os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        if os.fstat(lock).st_uid != os.geteuid():
+            raise RuntimeError("Deployment lock has an unexpected owner")
+        os.fchmod(lock, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(lock)
+
+
 def main() -> None:
+    def interrupted(signum, _frame):
+        raise InterruptedError("Deployment interrupted by signal " + str(signum))
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, interrupted)
     payload = json.load(sys.stdin)
     if set(payload["files"]) != MODULES or set(payload["file_hashes"]) != MODULES:
-        raise ValueError("Only the five reviewed modules may be copied")
-    if payload["command"] == "stage":
-        result = stage(payload)
-    elif (payload["command"] == "deploy"
-          and (payload.get("qualification") or {}).get("status") == "qualified"):
-        result = deploy(payload)
-    else:
-        raise ValueError("Unsupported or unqualified deployment")
+        raise ValueError("Only the seven reviewed modules may be copied")
+    with deployment_lock():
+        if payload["command"] == "stage":
+            result = stage(payload)
+        elif (payload["command"] == "deploy"
+              and (payload.get("qualification") or {}).get("status") == "qualified"):
+            result = deploy(payload)
+        elif payload["command"] == "recover":
+            result = recover(payload)
+        else:
+            raise ValueError("Unsupported or unqualified deployment")
     print(json.dumps(result))
 
 

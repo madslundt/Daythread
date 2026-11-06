@@ -89,14 +89,14 @@ def artifact(tmp_path, monkeypatch):
     return payload, base, tmp_path / "releases/new", calls
 
 
-def test_stage_uses_immutable_parent_and_only_five_modules(artifact):
+def test_stage_uses_immutable_parent_and_only_reviewed_modules(artifact):
     payload, base, release, calls = artifact
     context = release / ".transcription-build"
     dockerfile = (context / "Dockerfile").read_text()
     assert dockerfile.startswith("FROM " + payload["base_image"] + "\n")
     expected_files = {n + ".py" for n in remote.MODULES} | {"Dockerfile"}
     assert {p.name for p in context.iterdir()} == expected_files
-    assert dockerfile.count("COPY ") == 5
+    assert dockerfile.count("COPY ") == len(remote.MODULES)
     assert calls[0][:4] == ("docker", "build", "--network=none", "--pull=false")
     original = json.loads((base / "config/compose.release.json").read_text())
     staged = json.loads((release / "config/compose.release.json").read_text())
@@ -109,12 +109,14 @@ def test_stage_uses_immutable_parent_and_only_five_modules(artifact):
 def deploy_mocks(monkeypatch, calls):
     monkeypatch.setattr(remote, "queue_snapshot", lambda: {"omi.sqlite3": {"audio": {"done": 1}}})
     monkeypatch.setattr(remote, "admission", lambda: {"active_requests": 0})
-    monkeypatch.setattr(remote, "inspect", lambda: {"State": {"ExitCode": 0, "OOMKilled": False}})
+    monkeypatch.setattr(remote, "inspect", lambda: {
+        "Image": "sha256:" + "b" * 64, "State": {"ExitCode": 0, "OOMKilled": False},
+    })
     monkeypatch.setattr(remote, "compose", lambda path, *args, **kwargs: calls.append(
         ("compose", path, args, kwargs)))
 
     def backup(path):
-        path.mkdir(mode=0o700)
+        path.mkdir(mode=0o700, exist_ok=True)
         calls.append(("backup", path))
         return {"omi.sqlite3": "database-hash"}
 
@@ -157,3 +159,95 @@ def test_success_switches_after_health_and_retains_rollback_receipt(artifact, mo
     assert (release.parent.parent / "previous.transcription").resolve() == base
     assert receipt["qualification"] == payload["qualification"]
     assert receipt["stopped_jobs"] == receipt["before_jobs"] == receipt["after_jobs"]
+
+
+def test_interrupted_stop_has_durable_receipt_then_recovers_exact_image(artifact, monkeypatch):
+    payload, base, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    monkeypatch.setattr(remote, "ready", lambda *_: None)
+    path = release.parent.parent / "backups/new/deployment.json"
+
+    def interrupted(*args, **kwargs):
+        assert json.loads(path.read_text())["phase"] == "stopping"
+        raise InterruptedError("simulated SSH loss")
+
+    monkeypatch.setattr(remote, "run", interrupted)
+    with pytest.raises(InterruptedError):
+        remote.deploy(payload)
+    receipt = json.loads(path.read_text())
+    assert receipt["status"] == "rolled_back" and receipt["failure"] == "InterruptedError"
+    assert (release.parent.parent / "current").resolve() == base
+    assert [call for call in calls if call[0] == "compose"][-1][3] == {
+        "image": payload["base_image"],
+    }
+
+
+def test_failed_rollback_is_recorded_and_explicit_recover_handles_stopped_backend(
+    artifact, monkeypatch,
+):
+    payload, base, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    monkeypatch.setattr(remote, "ready", lambda *_: None)
+
+    def interrupted(*args, **kwargs):
+        raise InterruptedError("interrupted stop")
+
+    def failed(*args, **kwargs):
+        raise RuntimeError("Docker temporarily unavailable")
+
+    monkeypatch.setattr(remote, "run", interrupted)
+    monkeypatch.setattr(remote, "compose", failed)
+    with pytest.raises(RuntimeError, match="Docker temporarily"):
+        remote.deploy(payload)
+    path = release.parent.parent / "backups/new/deployment.json"
+    receipt = json.loads(path.read_text())
+    assert receipt["status"] == "rollback_failed" and receipt["phase"] == "recovery_required"
+    assert receipt["failure"] == "InterruptedError" and receipt["rollback_error"] == "RuntimeError"
+    monkeypatch.setattr(remote, "compose", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(remote, "baseline", lambda _: pytest.fail("Recovery accepts stopped state"))
+    assert remote.recover(payload)["status"] == "rolled_back"
+    assert (release.parent.parent / "current").resolve() == base
+
+
+def test_conflicting_pointer_survives_switch_and_recovery(artifact, monkeypatch):
+    payload, base, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    current = release.parent.parent / "current"
+    newer = release.parent / "another-release"
+    newer.mkdir()
+
+    def ready(*_):
+        current.unlink()
+        current.symlink_to(newer)
+
+    monkeypatch.setattr(remote, "ready", ready)
+    with pytest.raises(RuntimeError, match="another release"):
+        remote.deploy(payload)
+    assert current.resolve() == newer
+    assert len([call for call in calls if call[0] == "compose"]) == 1
+    receipt = json.loads((release.parent.parent / "backups/new/deployment.json").read_text())
+    assert receipt["status"] == "rollback_failed"
+
+
+def test_job_claimed_during_stop_race_prevents_candidate_start(artifact, monkeypatch):
+    payload, base, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    snapshots = iter([{"omi.sqlite3": {}}] * 2 + [
+        {"omi.sqlite3": {"recording_transcription_jobs": {"processing": 1}}},
+    ])
+    monkeypatch.setattr(remote, "queue_snapshot", lambda: next(snapshots))
+    monkeypatch.setattr(remote, "ready", lambda *_: None)
+    with pytest.raises(RuntimeError, match="Durable work"):
+        remote.deploy(payload)
+    transitions = [call for call in calls if call[0] == "compose"]
+    assert len(transitions) == 1 and transitions[0][1] == base
+
+
+def test_concurrent_deployment_cannot_enter_mutation_window(tmp_path, monkeypatch):
+    monkeypatch.setattr(remote, "ROOT", tmp_path)
+    with remote.deployment_lock():
+        with pytest.raises(BlockingIOError):
+            with remote.deployment_lock():
+                pytest.fail("Second deployment entered the mutation window")
+    with remote.deployment_lock():
+        pass

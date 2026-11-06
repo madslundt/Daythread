@@ -13,6 +13,7 @@ from .merged_recordings import pcm
 
 SPOOL_DIR = ".recording-transcription-spool"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+UNKNOWN_NATIVE_TIMING = ("unknown_zero_duration", "unknown_out_of_bounds")
 DECODING_FIELDS = {
     "model": "whisper", "response_format": "verbose_json", "language": "auto",
     "max_context": "0", "max_len": "-1", "beam_size": "5", "best_of": "5",
@@ -130,7 +131,11 @@ def _validate_response(headers, payload, settings, duration):
             raise ValueError("invalid_response")
         start, end = item.get("start"), item.get("end")
         part_text = item.get("text")
-        if (
+        unknown = (start is None and end is None
+                   and item.get("timing_status") == "unknown_out_of_bounds")
+        if item.get("timing_status") == "unknown_out_of_bounds" and not unknown:
+            raise ValueError("invalid_segments")
+        if not isinstance(part_text, str) or not unknown and (
             isinstance(start, bool)
             or isinstance(end, bool)
             or not isinstance(start, (int, float))
@@ -141,13 +146,15 @@ def _validate_response(headers, payload, settings, duration):
             or end < start
             or start < 0
             or end > duration
-            or not isinstance(part_text, str)
         ):
             raise ValueError("invalid_segments")
-        last = end
+        if not unknown:
+            last = end
         exact_join.append(part_text)
         segment = {"start": start, "end": end, "text": part_text, "kind": "segment"}
-        if end == start:
+        if unknown:
+            segment["timing_status"] = "unknown_out_of_bounds"
+        elif end == start:
             # Keep exact words and character anchors, but do not invent a usable
             # time interval for a zero-duration native envelope.
             segment.update(
@@ -200,4 +207,7 @@ def _validate_response(headers, payload, settings, duration):
     for item in native:
         if "start_offset" not in item:
             item["start_offset"] = item["end_offset"] = None
+        if (item.get("timing_status") == "unknown_out_of_bounds"
+                and item["start_offset"] is None):
+            raise ValueError("invalid_segments")
     return text, native, provenance

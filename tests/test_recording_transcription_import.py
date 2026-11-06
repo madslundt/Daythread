@@ -232,12 +232,13 @@ def test_profile_path_requires_explicit_known_scope(tmp_path):
         profile_directory(tmp_path, "../default", {"default"})
 
 
-def test_unknown_zero_duration_native_keeps_text_but_no_word_times(app_recording, tmp_path):
+@pytest.mark.parametrize("timing_status", ["unknown_zero_duration", "unknown_out_of_bounds"])
+def test_unknown_native_time_keeps_text_but_no_word_times(app_recording, tmp_path, timing_status):
     _client, store, rid, _ids, settings, variant, expected, _source_db = (
         _fixture_variant(app_recording, tmp_path)
     )
     native = [dict(segment) for segment in variant.native_segments]
-    native[0].update(start=None, end=None, timing_status="unknown_zero_duration")
+    native[0].update(start=None, end=None, timing_status=timing_status)
     words = [dict(word) for word in variant.word_segments if word["start_offset"] >= 12]
     version = recording_transcription_result_version(
         variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
@@ -251,12 +252,15 @@ def test_unknown_zero_duration_native_keeps_text_but_no_word_times(app_recording
     assert [word["text"] for word in candidate.word_segments] == ["Igen"]
 
 
-def test_word_timing_is_rejected_inside_unknown_native_envelope(app_recording, tmp_path):
+@pytest.mark.parametrize("timing_status", ["unknown_zero_duration", "unknown_out_of_bounds"])
+def test_word_timing_is_rejected_inside_unknown_native_envelope(
+    app_recording, tmp_path, timing_status,
+):
     _client, store, rid, _ids, settings, variant, expected, _source_db = (
         _fixture_variant(app_recording, tmp_path)
     )
     native = [dict(segment) for segment in variant.native_segments]
-    native[0].update(start=None, end=None, timing_status="unknown_zero_duration")
+    native[0].update(start=None, end=None, timing_status=timing_status)
     version = recording_transcription_result_version(
         variant.input_fingerprint, variant.pipeline_fingerprint, variant.transcript,
         native, variant.word_segments, variant.provenance,
@@ -267,8 +271,8 @@ def test_word_timing_is_rejected_inside_unknown_native_envelope(app_recording, t
         validate_variant(candidate, load_recording(store, rid), settings, expected)
 
 
-@pytest.mark.parametrize("marker", [None, "other"])
-def test_null_native_times_require_explicit_zero_duration_marker(app_recording, tmp_path, marker):
+@pytest.mark.parametrize("marker", [None, "other", [], {}])
+def test_null_native_times_require_explicit_known_reason(app_recording, tmp_path, marker):
     _client, store, rid, _ids, settings, variant, expected, _source_db = (
         _fixture_variant(app_recording, tmp_path)
     )

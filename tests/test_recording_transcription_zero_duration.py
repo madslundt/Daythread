@@ -23,7 +23,8 @@ def _headers():
     }
 
 
-def test_response_preserves_exact_zero_duration_text_as_untimed_native_segment(app_recording):
+@pytest.mark.parametrize("timing_status", ["unknown_zero_duration", "unknown_out_of_bounds"])
+def test_response_preserves_exact_text_as_untimed_native_segment(app_recording, timing_status):
     client, _, _, _, _, _ = app_recording
     memory = client.app.state.memory
     pinned_settings(memory)
@@ -33,6 +34,8 @@ def test_response_preserves_exact_zero_duration_text_as_untimed_native_segment(a
         {"start": 0.2, "end": 0.2, "text": "unknown phrase", "start_offset": 7, "end_offset": 21},
         {"start": 0.2, "end": 0.4, "text": "after", "start_offset": 22, "end_offset": 27},
     ]
+    if timing_status == "unknown_out_of_bounds":
+        segments[1].update(start=None, end=None, timing_status=timing_status)
 
     result, native, _ = _validate_response(
         _headers(),
@@ -48,7 +51,7 @@ def test_response_preserves_exact_zero_duration_text_as_untimed_native_segment(a
         (None, None),
         (0.2, 0.4),
     ]
-    assert native[1]["timing_status"] == "unknown_zero_duration"
+    assert native[1]["timing_status"] == timing_status
     assert [(item["start_offset"], item["end_offset"]) for item in native] == [
         (0, 6),
         (7, 21),
@@ -67,6 +70,12 @@ def test_response_preserves_exact_zero_duration_text_as_untimed_native_segment(a
         ],
         [{"start": 0.0, "end": 1.1, "text": "word"}],
         [{"start": float("nan"), "end": 0.1, "text": "word"}],
+        [{"start": None, "end": None, "text": "word"}],
+        [{"start": None, "end": None, "text": "word", "timing_status": "other"}],
+        [{"start": None, "end": 0.2, "text": "word",
+          "timing_status": "unknown_out_of_bounds"}],
+        [{"start": 0.0, "end": 0.2, "text": "word",
+          "timing_status": "unknown_out_of_bounds"}],
     ],
 )
 def test_zero_duration_handling_does_not_admit_other_invalid_timings(app_recording, segments):
@@ -82,7 +91,22 @@ def test_zero_duration_handling_does_not_admit_other_invalid_timings(app_recordi
         )
 
 
-def test_unknown_native_time_stays_out_of_alignment_and_projection():
+def test_untimed_overrun_requires_verified_character_anchors(app_recording):
+    client, _, _, _, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    with pytest.raises(ValueError, match="invalid_segments"):
+        _validate_response(_headers(), {
+            "text": "actual words", "segments": [{
+                "text": "words", "start": None, "end": None,
+                "start_offset": 0, "end_offset": 5,
+                "timing_status": "unknown_out_of_bounds",
+            }],
+        }, memory.settings, 1.0)
+
+
+@pytest.mark.parametrize("timing_status", ["unknown_zero_duration", "unknown_out_of_bounds"])
+def test_unknown_native_time_stays_out_of_alignment_and_projection(timing_status):
     text = "first unknown last"
     audio_file = io.BytesIO()
     with wave.open(audio_file, "wb") as stream:
@@ -138,7 +162,7 @@ def test_unknown_native_time_stays_out_of_alignment_and_projection():
             "end_offset": 13,
             "text": "unknown",
             "kind": "segment",
-            "timing_status": "unknown_zero_duration",
+            "timing_status": timing_status,
         },
         {
             "start": 0.5,

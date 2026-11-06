@@ -404,7 +404,7 @@ assert tempfile.gettempdir()==expected
 probe=pathlib.Path(expected)/'.assistant-context-backup-temp-probe'
 probe.write_bytes(b'ok'); probe.unlink()
 from omi_local.store import Store
-Store('/data')
+Store(pathlib.Path('/data'))
 with sqlite3.connect('/data/omi.sqlite3') as db:
  db.execute('CREATE TABLE backup_fixture(payload BLOB NOT NULL)')
  db.execute('INSERT INTO backup_fixture VALUES(zeroblob(?))',(20*1024*1024,))

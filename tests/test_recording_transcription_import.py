@@ -12,6 +12,7 @@ from omi_local.recording_transcription_import import (
     ImportExpectations,
     ImportRefused,
     QualifiedVariant,
+    _validate_provenance,
     publish_variant,
     read_qualified_variant,
     target_variant_disposition,
@@ -288,4 +289,21 @@ def test_null_native_times_require_explicit_known_reason(app_recording, tmp_path
     expected = replace(expected, result_version=version)
     with pytest.raises(ImportRefused):
         validate_variant(candidate, load_recording(store, rid), settings, expected)
+
+
+@pytest.mark.parametrize("name,expected_key", [
+    ("recording_transcription_expected_homecompute_revision", "homecompute_source_sha"),
+    ("recording_transcription_expected_image_id", "service_image_id"),
+])
+def test_import_checks_optional_producer_pins_against_active_settings(
+    app_recording, tmp_path, name, expected_key,
+):
+    _, _, _, _, settings, variant, expected, _ = _fixture_variant(app_recording, tmp_path)
+    _validate_provenance(variant, expected, settings)
+    pin = getattr(expected, expected_key)
+    setattr(settings, name, pin)
+    _validate_provenance(variant, expected, settings)
+    setattr(settings, name, pin.replace("b", "d").replace("c", "d"))
+    with pytest.raises(ImportRefused, match="producer pins"):
+        _validate_provenance(variant, expected, settings)
 

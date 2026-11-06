@@ -145,6 +145,13 @@ def _validate_provenance(
         or expected.runtime_commit != settings.recording_transcription_expected_runtime_commit
     ):
         raise ImportRefused("expected model/runtime pins differ from active settings")
+    for configured, identity in (
+        (settings.recording_transcription_expected_homecompute_revision,
+         expected.homecompute_source_sha),
+        (settings.recording_transcription_expected_image_id, expected.service_image_id),
+    ):
+        if configured and configured != identity:
+            raise ImportRefused("expected producer pins differ from active settings")
     if not settings.recording_transcription_alignment_enabled:
         raise ImportRefused("whole-recording alignment is not enabled in active settings")
     if (not isinstance(variant.alignment_status, str)

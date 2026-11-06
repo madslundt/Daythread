@@ -399,6 +399,7 @@ def backup_fixture_check():
   code="""import json,os,pathlib,runpy,sqlite3,tempfile,zipfile
 expected='/data/.exports'
 assert all(os.environ.get(name)==expected for name in ('TMPDIR','TEMP','TMP','SQLITE_TMPDIR'))
+pathlib.Path(expected).mkdir(mode=0o700,parents=True,exist_ok=True)
 assert tempfile.gettempdir()==expected
 probe=pathlib.Path(expected)/'.assistant-context-backup-temp-probe'
 probe.write_bytes(b'ok'); probe.unlink()

@@ -149,6 +149,8 @@ def _validate_provenance(
         (settings.recording_transcription_expected_homecompute_revision,
          expected.homecompute_source_sha),
         (settings.recording_transcription_expected_image_id, expected.service_image_id),
+        (settings.recording_transcription_expected_runtime, expected.runtime),
+        (settings.recording_transcription_expected_device, provenance.get("device")),
     ):
         if configured and configured != identity:
             raise ImportRefused("expected producer pins differ from active settings")

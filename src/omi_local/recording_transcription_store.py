@@ -123,6 +123,8 @@ def pipeline_fingerprint(settings) -> str:
     producer = {key: configured for key, configured in (
         ("homecompute_revision", settings.recording_transcription_expected_homecompute_revision),
         ("image_id", settings.recording_transcription_expected_image_id),
+        ("runtime", settings.recording_transcription_expected_runtime),
+        ("device", settings.recording_transcription_expected_device),
     ) if configured}
     # Keep the legacy fingerprint when no new policy or producer pin is enabled.
     if producer:

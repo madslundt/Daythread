@@ -6,6 +6,71 @@ import pytest
 from recording_transcription_helpers import pinned_settings
 
 from omi_local.recording_transcription_client import _request, _validate_response
+from omi_local.recording_transcription_store import pipeline_fingerprint
+
+
+@pytest.mark.parametrize("name,header,pin", [
+    ("runtime", "x-homecompute-stt-runtime", "whisper.cpp"),
+    ("device", "x-homecompute-stt-device", "cuda"),
+])
+def test_whole_runtime_and_device_are_exact_pins(app_recording, name, header, pin):
+    client, *_ = app_recording
+    settings = client.app.state.memory.settings
+    pinned_settings(client.app.state.memory)
+    headers = {"x-homecompute-stt-model-sha256": "a" * 64,
+               "x-homecompute-stt-model-snapshot": "model-r1",
+               "x-homecompute-stt-runtime-commit": "1234567890ab",
+               "x-homecompute-stt-runtime": "whisper.cpp"}
+    payload = {"text": "Words.", "segments": [{"text": "Words.", "start": 0, "end": 1}]}
+    baseline = pipeline_fingerprint(settings)
+    setattr(settings, "recording_transcription_expected_" + name, pin)
+    assert pipeline_fingerprint(settings) != baseline
+    assert _validate_response(headers | {header: pin}, payload, settings, 1)[2][name] == pin
+    for changed in (None, "other"):
+        candidate = headers | {header: pin}
+        if changed is None:
+            del candidate[header]
+        else:
+            candidate[header] = changed
+        with pytest.raises(ValueError, match="provenance_mismatch"):
+            _validate_response(candidate, payload, settings, 1)
+
+
+def test_whole_timeout_bounds_total_stream_even_with_regular_progress(
+    app_recording, monkeypatch, tmp_path,
+):
+    client, *_ = app_recording
+    settings = client.app.state.memory.settings
+    settings.recording_transcription_timeout_seconds = 1
+    path = tmp_path / "synthetic.wav"
+    path.write_bytes(b"synthetic")
+    closed = []
+
+    class ProgressingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for _ in range(10):
+                await asyncio.sleep(0.2)
+                yield b" "
+
+        async def aclose(self):
+            closed.append(True)
+
+    async def respond(request):
+        await request.aread()
+        return httpx.Response(200, stream=ProgressingStream())
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr("omi_local.recording_transcription_client.httpx.AsyncClient",
+                        lambda **kwargs: original(
+                            transport=httpx.MockTransport(respond), **kwargs))
+
+    async def run():
+        async def request():
+            with pytest.raises(TimeoutError):
+                await _request(settings, path)
+        await asyncio.wait_for(request(), timeout=1.5)
+    asyncio.run(run())
+    assert closed == [True]
 
 
 def test_request_uses_cli_equivalent_decoding_without_a_prompt(

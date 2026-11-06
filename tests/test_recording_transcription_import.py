@@ -294,6 +294,7 @@ def test_null_native_times_require_explicit_known_reason(app_recording, tmp_path
 @pytest.mark.parametrize("name,expected_key", [
     ("recording_transcription_expected_homecompute_revision", "homecompute_source_sha"),
     ("recording_transcription_expected_image_id", "service_image_id"),
+    ("recording_transcription_expected_runtime", "runtime"),
 ])
 def test_import_checks_optional_producer_pins_against_active_settings(
     app_recording, tmp_path, name, expected_key,
@@ -303,7 +304,21 @@ def test_import_checks_optional_producer_pins_against_active_settings(
     pin = getattr(expected, expected_key)
     setattr(settings, name, pin)
     _validate_provenance(variant, expected, settings)
-    setattr(settings, name, pin.replace("b", "d").replace("c", "d"))
+    setattr(settings, name, pin + "-other")
     with pytest.raises(ImportRefused, match="producer pins"):
         _validate_provenance(variant, expected, settings)
+
+
+def test_import_requires_configured_device_in_actual_provenance(app_recording, tmp_path):
+    _, _, _, _, settings, variant, expected, _ = _fixture_variant(app_recording, tmp_path)
+    settings.recording_transcription_expected_device = "cuda"
+    with pytest.raises(ImportRefused, match="producer pins"):
+        _validate_provenance(variant, expected, settings)
+    for device in ("cpu", "cuda"):
+        candidate = replace(variant, provenance=variant.provenance | {"device": device})
+        if device == "cuda":
+            _validate_provenance(candidate, expected, settings)
+        else:
+            with pytest.raises(ImportRefused, match="producer pins"):
+                _validate_provenance(candidate, expected, settings)
 

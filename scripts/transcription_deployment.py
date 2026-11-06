@@ -31,7 +31,8 @@ CONTAINER = "omi-local-backend-1"
 SITE = "/opt/venv/lib/python3.15/site-packages/omi_local"
 MODULES = {"configuration", "settings", "transcription", "transcription_filter",
            "recording_transcription_worker", "recording_transcription_client",
-           "recording_transcription_import"}
+           "recording_transcription_import", "source_matching", "recording_transcription_store",
+           "stt_producer"}
 DATA = Path("/var/lib/docker/volumes/omi-local_omi-data/_data")
 QUALIFICATION_CHECKS = {"short_exact_repeat", "long_exact_repeat", "cross_history_repeat",
                         "request_provenance", "request_bounds", "admission_and_idle",
@@ -135,7 +136,8 @@ def inspect() -> dict:
 
 def installed(command: list[str]) -> dict:
     code = ("import pathlib,hashlib,json;root=pathlib.Path(" + repr(SITE) + ");"
-            "print(json.dumps({n:hashlib.sha256((root/(n+'.py')).read_bytes()).hexdigest()"
+            "print(json.dumps({n:(hashlib.sha256((root/(n+'.py')).read_bytes()).hexdigest()"
+            "if (root/(n+'.py')).exists() else None)"
             "for n in " + repr(sorted(MODULES)) + "}))")
     return json.loads(output(*command, "python", "-c", code))
 
@@ -447,7 +449,7 @@ def main() -> None:
         signal.signal(sig, interrupted)
     payload = json.load(sys.stdin)
     if set(payload["files"]) != MODULES or set(payload["file_hashes"]) != MODULES:
-        raise ValueError("Only the seven reviewed modules may be copied")
+        raise ValueError("Only the reviewed transcription modules may be copied")
     with deployment_lock():
         if payload["command"] == "stage":
             result = stage(payload)

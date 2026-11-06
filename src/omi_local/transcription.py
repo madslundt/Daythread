@@ -15,6 +15,7 @@ from .processing_progress import ProgressCallback
 from .settings import Settings, STTRoute
 from .speech_processing import enhance_audio
 from .stt_languages import language_code
+from .stt_producer import validate_producer_headers
 from .stt_result import transcription_result
 from .transcription_filter import FILTER_VERSION, filter_transcription_audio
 from .transcription_vocabulary import vocabulary_fields
@@ -404,6 +405,8 @@ class Transcription:
                     route = specialist
         result = self._transcription_result(payload, data)
         result["recognition"] = {"recognition_model": route.model}
+        if settings.stt_expected_producer:
+            result["recognition"]["producer"] = payload["_verified_producer"]
         if isinstance(detected, str):
             code = language_code(detected)
             if code and len(code) <= 32:
@@ -435,11 +438,17 @@ class Transcription:
             follow_redirects=False,
         )
         try:
+            producer = validate_producer_headers(response.headers, settings.stt_expected_producer)
+        except ValueError as exc:
+            raise InferenceError("STT producer provenance mismatch") from exc
+        try:
             payload = response.json()
         except ValueError as exc:
             raise InferenceError("Invalid STT response") from exc
         if not isinstance(payload, dict):
             raise InferenceError("Invalid STT response")
+        if settings.stt_expected_producer:
+            payload["_verified_producer"] = producer
         return payload
 
     _transcription_result = staticmethod(transcription_result)

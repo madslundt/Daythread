@@ -1,5 +1,6 @@
 """Bounded private WAV spooling and the pinned local CPP request contract."""
 
+import asyncio
 import json
 import math
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from .merged_recordings import pcm
+from .stt_producer import validate_producer_headers
 
 SPOOL_DIR = ".recording-transcription-spool"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
@@ -80,7 +82,10 @@ async def _request(settings, path: Path):
         if value:
             headers["Authorization"] = f"Bearer {value}"
     timeout = httpx.Timeout(settings.recording_transcription_timeout_seconds, connect=10, pool=10)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+    async with (
+        asyncio.timeout(settings.recording_transcription_timeout_seconds),
+        httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client,
+    ):
         with path.open("rb") as audio:
             async with client.stream(
                 "POST",
@@ -100,25 +105,21 @@ async def _request(settings, path: Path):
 
 def _validate_response(headers, payload, settings, duration):
     expected = {
-        "x-homecompute-stt-model-sha256": (settings.recording_transcription_expected_model_sha256),
-        "x-homecompute-stt-model-snapshot": (
-            settings.recording_transcription_expected_model_snapshot
-        ),
-        "x-homecompute-stt-runtime-commit": (
-            settings.recording_transcription_expected_runtime_commit
-        ),
+        "model_sha256": settings.recording_transcription_expected_model_sha256,
+        "snapshot": settings.recording_transcription_expected_model_snapshot,
+        "runtime_commit": settings.recording_transcription_expected_runtime_commit,
     }
     for name, configured in (
-        ("homecompute-revision", settings.recording_transcription_expected_homecompute_revision),
-        ("image-id", settings.recording_transcription_expected_image_id),
+        ("homecompute_revision", settings.recording_transcription_expected_homecompute_revision),
+        ("image_id", settings.recording_transcription_expected_image_id),
+        ("runtime", settings.recording_transcription_expected_runtime),
+        ("device", settings.recording_transcription_expected_device),
     ):
         if configured:
-            expected[f"x-homecompute-stt-{name}"] = configured
-    provenance = {key.removeprefix("x-homecompute-stt-"): headers.get(key) for key in expected}
+            expected[name] = configured
+    provenance = validate_producer_headers(headers, expected)
     provenance["runtime"] = headers.get("x-homecompute-stt-runtime")
-    if not provenance["runtime"] or any(
-        not value or headers.get(key) != value for key, value in expected.items()
-    ):
+    if not provenance["runtime"]:
         raise ValueError("provenance_mismatch")
     for name, pattern in (
         ("homecompute-revision", r"[0-9a-f]{40}"),

@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .domain import HintPolicy
 from .inference_errors import InferenceDisabled
 from .stt_languages import LANGUAGE_CODES, language_code
+from .stt_producer import producer_contract
 from .transcription_vocabulary import normalize_vocabulary
 
 LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
@@ -174,6 +175,7 @@ class Settings(BaseSettings):
     stt_model: str = "stt-danish"
     stt_vocabulary: list[str] = Field(default_factory=list)
     stt_language_candidates: list[str] = Field(default_factory=list, max_length=16)
+    stt_expected_producer: dict[str, str] = Field(default_factory=dict)
     stt_vocabulary_mode: VocabularyMode = "off"
     stt_preview_enabled: bool = False
     stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
@@ -201,6 +203,8 @@ class Settings(BaseSettings):
     recording_transcription_expected_image_id: str = Field(
         default="", pattern=r"^(?:sha256:[0-9a-f]{64})?$",
     )
+    recording_transcription_expected_runtime: str = Field(default="", max_length=200)
+    recording_transcription_expected_device: str = Field(default="", max_length=200)
     recording_transcription_max_seconds: int = Field(default=1200, ge=1, le=7200)
     recording_transcription_max_bytes: int = Field(
         default=40_000_000, ge=44, le=268_435_456,
@@ -351,6 +355,11 @@ class Settings(BaseSettings):
                 raise ValueError("Duplicate language candidate")
             candidates.append(normalized)
         return sorted(candidates)
+
+    @field_validator("stt_expected_producer", mode="before")
+    @classmethod
+    def valid_stt_expected_producer(cls, value):
+        return producer_contract(value)
 
     def stt_language_candidate_fields(self) -> dict[str, str]:
         if not self.stt_language_candidates:
@@ -602,6 +611,7 @@ DEPLOYMENT_FIELDS = {
     "managed_hosting", "background_processing_enabled", "database_url", "database_schema",
     "storage_bucket", "storage_region", "storage_prefix", "stt_enabled", "llm_enabled",
     "llm_busy_retry_enabled",
+    "stt_expected_producer",
 }
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
 

@@ -3,7 +3,10 @@
 import asyncio
 import io
 import wave
+from datetime import UTC, datetime
 from email.parser import BytesParser
+from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -11,11 +14,162 @@ from pydantic import ValidationError
 from recording_transcription_helpers import make_ready_variant, pinned_settings
 
 from omi_local.inference import Inference
+from omi_local.inference_errors import InferenceError
 from omi_local.recording_transcription_client import DECODING_FIELDS, _request, _validate_response
 from omi_local.recording_transcription_store import pipeline_fingerprint
 from omi_local.recording_transcription_worker import discover
 from omi_local.settings import Settings
 from omi_local.source_matching import recognition_contract
+from omi_local.store import Store
+from omi_local.worker import process_one
+
+PRODUCER = {
+    "model_sha256": "a" * 64, "snapshot": "large-v3-r1", "runtime": "whisper.cpp",
+    "runtime_commit": "1234567890ab", "homecompute_revision": "c" * 40,
+    "image_id": "sha256:" + "d" * 64, "device": "cuda",
+}
+PRODUCER_HEADERS = {
+    "x-homecompute-stt-model-sha256": "a" * 64,
+    "x-homecompute-stt-model-snapshot": "large-v3-r1",
+    "x-homecompute-stt-runtime": "whisper.cpp",
+    "x-homecompute-stt-runtime-commit": "1234567890ab",
+    "x-homecompute-stt-homecompute-revision": "c" * 40,
+    "x-homecompute-stt-image-id": "sha256:" + "d" * 64,
+    "x-homecompute-stt-device": "cuda",
+}
+
+
+def test_empty_producer_keeps_original_normal_recognition_contract():
+    assert recognition_contract(Settings(_env_file=None)) == (
+        "96b8175d68a89565e4ec5f66bad0e0aa1ed477acced1b6d09c6072ae1fdb1a34"
+    )
+    original = recognition_contract(Settings(_env_file=None, stt_expected_producer=PRODUCER))
+    for name, value in PRODUCER.items():
+        # A valid different identity for each component must fence normal cache reuse.
+        changed = ("b" * 64 if name == "model_sha256" else "b" * 40
+                   if name == "homecompute_revision" else "sha256:" + "b" * 64
+                   if name == "image_id" else "7654321" if name == "runtime_commit"
+                   else value + "-other")
+        settings = Settings(_env_file=None, stt_expected_producer=PRODUCER | {name: changed})
+        assert recognition_contract(settings) != original
+
+
+@pytest.mark.parametrize("contract", [None, [], "cuda", {"device": "cuda"},
+    PRODUCER | {"extra": "bad"}, PRODUCER | {"model_sha256": "latest"},
+    PRODUCER | {"runtime": " "}, PRODUCER | {"device": 7},
+    PRODUCER | {"snapshot": "bad\nheader"}, PRODUCER | {"image_id": "d" * 64}])
+def test_incomplete_or_invalid_normal_producer_contract_is_rejected(contract):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, stt_expected_producer=contract)
+
+
+def test_normal_producer_contract_is_operator_policy(app_recording):
+    client, *_ = app_recording
+    view = client.get("/v1/configuration").json()
+    assert "stt_expected_producer" not in view["values"]
+    assert all(field["key"] != "stt_expected_producer" for field in view["fields"])
+    changed = client.patch("/v1/configuration", json={
+        "revision": view["revision"], "changes": {"stt_expected_producer": PRODUCER},
+    })
+    assert changed.status_code == 422
+
+
+@pytest.mark.parametrize("header", PRODUCER_HEADERS)
+@pytest.mark.parametrize("missing", [False, True])
+def test_every_normal_producer_component_must_match_before_routing(tmp_path, header, missing):
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_expected_producer=PRODUCER,
+                        stt_routes={"da": {"model": "specialist"}}, stt_max_gain_db=0)
+    headers = PRODUCER_HEADERS.copy()
+    headers.pop(header) if missing else headers.update({header: "different"})
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, headers=headers,
+                              json={"text": "Must not be accepted", "language": "da"})
+
+    async def run():
+        output = io.BytesIO()
+        with wave.open(output, "wb") as audio:
+            audio.setparams((1, 2, 16000, 0, "NONE", "PCM"))
+            audio.writeframes(b"\xff\x01" * 16000)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            with pytest.raises(InferenceError, match="producer provenance mismatch"):
+                await Inference(settings, client).transcribe_result(output.getvalue())
+    asyncio.run(run())
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("bad_specialist", [False, True])
+def test_candidate_fields_and_producer_checks_cover_specialist_response(tmp_path, bad_specialist):
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_expected_producer=PRODUCER,
+                        stt_language_candidates=["da", "en"], stt_max_gain_db=0,
+                        stt_routes={"da": {"model": "specialist"}})
+    seen = []
+
+    def respond(request):
+        seen.append(fields(request))
+        assert seen[-1]["language_candidates"] == b"da,en"
+        headers = PRODUCER_HEADERS.copy()
+        if len(seen) == 2 and bad_specialist:
+            headers["x-homecompute-stt-device"] = "cpu"
+        return httpx.Response(200, headers=headers,
+                              json={"text": "English og dansk.", "language": "da"})
+
+    async def run():
+        output = io.BytesIO()
+        with wave.open(output, "wb") as audio:
+            audio.setparams((1, 2, 16000, 0, "NONE", "PCM"))
+            audio.writeframes(b"\xff\x01" * 16000)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            if bad_specialist:
+                with pytest.raises(InferenceError, match="producer provenance mismatch"):
+                    await Inference(settings, client).transcribe_result(output.getvalue())
+            else:
+                result = await Inference(settings, client).transcribe_result(output.getvalue())
+                receipt = result["processing"]["chunks"][0]["producer"]
+                assert receipt == {key.removeprefix("x-homecompute-stt-"): value
+                                   for key, value in PRODUCER_HEADERS.items()}
+    asyncio.run(run())
+    assert len(seen) == 2 and seen[-1]["model"] == b"specialist"
+
+
+def test_later_producer_mismatch_never_publishes_partial_or_reuses_old_contract(tmp_path):
+    settings = Settings(data_dir=tmp_path, _env_file=None, stt_expected_producer=PRODUCER,
+                        stt_max_gain_db=0, stt_filter_speech=False, stt_enhancement_mode="off",
+                        stt_boundary_search_seconds=0)
+    output = io.BytesIO()
+    with wave.open(output, "wb") as audio:
+        audio.setparams((1, 2, 16000, 0, "NONE", "PCM"))
+        audio.writeframes(b"\xff\x01" * (61 * 16000))
+    store = Store(tmp_path)
+    at = datetime(2026, 11, 7, tzinfo=UTC)
+    old_id, source_id = str(uuid4()), str(uuid4())
+    for key in (old_id, source_id):
+        store.ingest(key, "web", at, output.getvalue(), 61)
+    store.complete(old_id, "Cached older producer reading.", details={
+        "recognition_contract": recognition_contract(settings.model_copy(update={
+            "stt_expected_producer": {},
+        })),
+    })
+    seen = []
+
+    def respond(request):
+        seen.append(request)
+        headers = PRODUCER_HEADERS | ({"x-homecompute-stt-device": "cpu"}
+                                      if len(seen) == 2 else {})
+        return httpx.Response(200, headers=headers, json={"text": "First part only."})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            memory = SimpleNamespace(store=store, settings=settings,
+                                     inference=Inference(settings, client))
+            assert await process_one(memory)
+    asyncio.run(run())
+    assert len(seen) == 2
+    result = store.get_audio(source_id)
+    assert result["state"] == "queued" and not result["text"]
+    assert store.get_audio(old_id)["text"] == "Cached older producer reading."
 
 
 def fields(request):

@@ -105,6 +105,8 @@ def recognition_contract(settings) -> str:
               if key.startswith("stt_") and key not in {"stt_routes", "stt_vocabulary"}}
     if not fields.get("stt_language_candidates"):
         fields.pop("stt_language_candidates", None)
+    if not fields.get("stt_expected_producer"):
+        fields.pop("stt_expected_producer", None)
     fields["silence_threshold"] = settings.silence_threshold
     fields["speech_filter_version"] = FILTER_VERSION
     fields["language_routing_version"] = 2

@@ -173,6 +173,8 @@ DESCRIPTIONS = {
     "revision. Configured values must match the producer and distinguish new recording variants.",
     "recording_transcription_expected_image_id": "Optional exact producer image ID (sha256:...). "
     "Configured values must match the producer and distinguish new recording variants.",
+    "recording_transcription_expected_runtime": "Optional exact whole-recording runtime name.",
+    "recording_transcription_expected_device": "Optional exact whole-recording inference device.",
     "recording_transcription_max_seconds": "Maximum whole-file duration; up to 7200 seconds.",
     "recording_transcription_max_bytes": "Maximum assembled PCM WAV upload size, up to 256 MiB.",
     "recording_transcription_timeout_seconds": "Bounded long whole-file request timeout; up to "

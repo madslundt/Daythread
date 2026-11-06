@@ -12,24 +12,28 @@ from pathlib import Path
 
 from transcription_deployment import validate_qualification
 
-BASE_RELEASE = "20261106-parrot-settings-001ce3b355d5"
-BASE_IMAGE = "sha256:b7b3337407352af28655f5cd2cc5de16805be76290fc984b467250a076994d48"
+BASE_RELEASE = "20261106-assistant-context-a42957dd7359"
+BASE_IMAGE = "sha256:90e333fc0b326b8197db5692bcdb827c135e846cb74ae6d1652cedaab159073a"
 BASE_HASHES = {
-    "configuration": "6e335d2e3f4a27edaa92e7758c8dc30e439647e0ba6df7b7a815417e438481e1",
-    "settings": "149317c64766d610bf6e95471ec3ef35883dfb209dfbb5610f93da2ba2190e9a",
-    "transcription": "d1d5e11194e40b0ef2f08f1b61013f2405092858dbd1950246c15fff837a5af6",
-    "transcription_filter": "2a22e5cb673608646b01a8550215cf181f868f55f38259d623606f343039aae6",
+    "configuration": "31b4f703606dde5af358ffbac21601d7c7839f5665f4d3fd6af3f05dffc8627b",
+    "settings": "613174e00f2366d41094c94156378bc27496d65692f435b46390aa7d609bcb1e",
+    "transcription": "cfa62108d2b4e4debba2b9b54891c1b9c3c90f45fe60044bdaee634bead928f9",
+    "transcription_filter": "95495cef901345f7eee2c5990f8cca2eafccb8d98b525233b11ffb0ea05de44d",
     "recording_transcription_worker":
-        "daacbcd09be0dad768bce8b6b3e3a7abe48469d5de71c4a04c2dd79ba334a0ab",
+        "40cfee544f8781d30213b79d3534698046187e59ce8849046fc78e29fcd01a7d",
     "recording_transcription_client":
-        "7029301ca33dbc34bc2e54e1dcebd6d70d4e0810e17c9c1492c9f83f2785165e",
+        "d5fd7accff4a33475b4b6634b7aef5b29165f65380f43ec858d36e10b5d51578",
     "recording_transcription_import":
-        "2f5abf59f84f18d2c00e7de94522c70a7b2a24dd22a7eb1bb4e87c1229b406a4",
+        "20ce134eb343e80c54f79fcd7445c46e551feb8add3547166e377547b8b8a900",
+    "source_matching": "e7672eb0ab3878695710f493800a4e9c82c064fff8ac3debd2b38d6111108ecb",
+    "recording_transcription_store":
+        "c74ac2262f9a85ef6665e3b307f58aba6a148064b22f7c88697391f15f03dae7",
+    "stt_producer": None,
 }
 COMPOSE_HASHES = {
     "compose.yaml": "6004405b5bfff9a3d1c25c647ae452af5f6470e1b2b5fd1151e1b873739f35df",
     "compose.home-core.yaml": "2258c151ca8589c3daf5935572004e710a8b21665d373216178a6280f5090598",
-    "compose.release.json": "313f30956f2493f15884274ad54474cce4a70f31151911267c49f65f46129c1d",
+    "compose.release.json": "5ba444537a3ea57cfb07c79867bcf6bd9a5063490ca9d3afbd42ad44876e741a",
 }
 FILES = [f"src/omi_local/{name}.py" for name in BASE_HASHES]
 HELPERS = ["scripts/deploy_transcription_homecore.py", "scripts/transcription_deployment.py",

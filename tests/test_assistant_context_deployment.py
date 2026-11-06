@@ -15,6 +15,10 @@ def test_remote_program_compiles_and_checks_authenticated_metadata():
     compile(DEPLOYMENT.REMOTE, "assistant_context_remote", "exec")
     assert "OMI_ASSISTANT_CONTEXT_ENABLED':'true'" in DEPLOYMENT.REMOTE
     assert "Authenticated Daythread resolve metadata is invalid" in DEPLOYMENT.REMOTE
+    assert (
+        "Daythread container did not become healthy after authenticated route checks"
+        in DEPLOYMENT.REMOTE
+    )
     assert "SQLITE_TMPDIR" in DEPLOYMENT.REMOTE
     assert "if overlay.is_file()" in DEPLOYMENT.REMOTE
     assert "SQLITE_TMPDIR: /data/.exports" in DEPLOYMENT.REMOTE

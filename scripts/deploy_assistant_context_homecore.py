@@ -284,6 +284,12 @@ def authenticated_health():
   item=row.get('item')
   if isinstance(item,dict) and all(isinstance(item.get(key),str) for key in ('version_ref','source_ref','source_timestamp','modified_at')):
    resolve_versions+=1
+ deadline=time.monotonic()+60
+ while time.monotonic()<deadline:
+  info=json.loads(out('docker','inspect',container))[0]
+  if info['State'].get('Health',{}).get('Status')=='healthy': break
+  time.sleep(2)
+ else: raise SystemExit('Daythread container did not become healthy after authenticated route checks')
  info=json.loads(out('docker','inspect',container))[0]
  env=dict(item.split('=',1) for item in info['Config']['Env'] if '=' in item)
  expected={'OMI_ASSISTANT_CONTEXT_ENABLED':'true','OMI_ASSISTANT_CONTEXT_PROFILE_ID':'default',
@@ -292,7 +298,6 @@ def authenticated_health():
  mount=next((m for m in info['Mounts'] if m.get('Destination')==p['token_target']),None)
  if not mount or mount.get('Source')!=p['token_source'] or mount.get('RW') is not False:
   raise SystemExit('Installed provider token mount differs from source')
- if info['State']['Health']['Status']!='healthy': raise SystemExit('Daythread container is not healthy')
  if asr_hashes()!=p['asr_module_hashes']:
   raise SystemExit('Daythread transcription source hashes changed during provider rollout')
  return {'service':'healthy','export':'enabled','profile':'default','domain':'personal',

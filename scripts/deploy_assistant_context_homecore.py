@@ -6,6 +6,7 @@ import argparse
 import base64
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -36,6 +37,9 @@ FILES = [
 TOKEN_SOURCE = "/etc/homecompute/daythread-assistant-context-token"
 TOKEN_TARGET = "/run/secrets/daythread-assistant-context-token"
 COLLECTOR_SOURCE = "/var/lib/homecompute-assistant/daythread-export-token"
+CA_SOURCE = "/srv/state/control-plane/caddy-data/caddy/pki/authorities/local/root.crt"
+CA_TARGET = "/etc/homecompute/daythread-assistant-context-ca.crt"
+CA_SHA256 = "279cbaa0596ae3ca24c44da28ac658c557e3c2a8664f81d8d3c8d034c0753a56"
 
 
 def _sha256(value: bytes) -> str:
@@ -51,7 +55,7 @@ def make_payload(root: Path, command: str) -> dict:
     files = {name: (root / name).read_bytes() for name in FILES}
     hashes = {name: _sha256(value) for name, value in files.items()}
     digest = _sha256(json.dumps(hashes, sort_keys=True).encode())
-    if command in {"stage", "deploy", "credentials-apply"}:
+    if command in {"stage", "deploy", "credentials-apply", "ca-apply"}:
         if _git(root, "status", "--porcelain", "--", *FILES):
             raise ValueError("Commit the selected provider source before staging")
         if set(_git(root, "ls-files", "--", *FILES).splitlines()) != set(FILES):
@@ -73,11 +77,14 @@ def make_payload(root: Path, command: str) -> dict:
         "token_source": TOKEN_SOURCE,
         "token_target": TOKEN_TARGET,
         "collector_source": COLLECTOR_SOURCE,
+        "ca_source": CA_SOURCE,
+        "ca_target": CA_TARGET,
+        "ca_sha256": CA_SHA256,
     }
 
 
 REMOTE = r'''
-import base64,hashlib,hmac,json,os,pathlib,pwd,secrets,shutil,stat,subprocess,sys,time,urllib.error,urllib.request,zipfile
+import base64,hashlib,hmac,json,os,pathlib,pwd,secrets,shutil,ssl,stat,subprocess,sys,time,urllib.error,urllib.request,zipfile
 p=json.load(sys.stdin); root=pathlib.Path('/home/mads/projects/omi')
 base=root/'releases'/p['base_release']; release=root/'releases'/p['release']; image='omi-local:'+p['release']
 container='omi-local-backend-1'
@@ -175,33 +182,125 @@ def credential_apply():
   raise
  safe_token()
  print(json.dumps({'credentials':'created','provider_path':str(pairs[0][0]),'collector_path':str(pairs[1][0])},sort_keys=True))
-def disabled_health():
+def ca_metadata(value):
+ path=pathlib.Path(value); info=path.lstat()
+ if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_uid!=0:
+  raise SystemExit('Caddy CA certificate source is unsafe')
+ pem=path.read_text(encoding='ascii')
+ if 'PRIVATE KEY' in pem: raise SystemExit('Only the public Caddy CA certificate may be copied')
+ der=ssl.PEM_cert_to_DER_cert(pem); meta=ssl._ssl._test_decode_cert(str(path))
+ common_names=[item for rdn in meta.get('subject',()) for key,item in rdn if key=='commonName']
+ if meta.get('subject')!=meta.get('issuer') or common_names!=['Caddy Local Authority - 2026 ECC Root']:
+  raise SystemExit('Caddy CA subject or issuer differs from the approved root')
+ fingerprint=hashlib.sha256(der).hexdigest()
+ if fingerprint!=p['ca_sha256'] or ssl.cert_time_to_seconds(meta['notAfter'])<=time.time():
+  raise SystemExit('Caddy CA fingerprint or validity differs from the approved root')
+ return {'sha256':fingerprint,'subject':common_names[0],'issuer_matches_subject':True,
+         'not_after':meta['notAfter'],'subject_alt_name':meta.get('subjectAltName',[])}
+def ca_plan():
+ meta=ca_metadata(p['ca_source']); target=pathlib.Path(p['ca_target'])
+ try:
+  info=target.lstat()
+  if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1: raise SystemExit('Existing CA target is unsafe')
+  state='present-matching' if ca_metadata(target)['sha256']==meta['sha256'] else 'present-different'
+ except FileNotFoundError: state='absent'
+ print(json.dumps({'ca_source':p['ca_source'],'ca_target':p['ca_target'],'state':state,**meta},sort_keys=True))
+def ca_apply():
+ meta=ca_metadata(p['ca_source']); source=pathlib.Path(p['ca_source']); target=pathlib.Path(p['ca_target'])
+ parent=target.parent; info=parent.lstat()
+ if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_uid!=0:
+  raise SystemExit('CA target parent must remain root-owned')
+ try: existing=target.lstat()
+ except FileNotFoundError:
+  fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o444)
+  try:
+   os.fchown(fd,0,0); os.fchmod(fd,0o444)
+   with os.fdopen(fd,'wb') as stream:
+    stream.write(source.read_bytes()); stream.flush(); os.fsync(stream.fileno())
+  except BaseException:
+   target.unlink(missing_ok=True); raise
+  state='created'
+ else:
+  if not stat.S_ISREG(existing.st_mode) or existing.st_nlink!=1 or ca_metadata(target)['sha256']!=meta['sha256']:
+   raise SystemExit('Existing CA target differs; preserve and review it')
+  os.chown(target,0,0); os.chmod(target,0o444); state='consistent-existing'
+ print(json.dumps({'ca_target':p['ca_target'],'state':state,'sha256':meta['sha256']},sort_keys=True))
+def safe_ca():
+ path=pathlib.Path(p['ca_target']); info=path.lstat(); meta=ca_metadata(path)
+ if info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o444 or meta['sha256']!=p['ca_sha256']:
+  raise SystemExit('Installed Daythread CA projection is unsafe or mismatched')
+def authenticated_health():
+ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=p['ca_target'])))
  deadline=time.monotonic()+60
  while time.monotonic()<deadline:
   try:
-   with urllib.request.urlopen('http://192.168.30.122:8787/v1/status',timeout=4) as r:
+   with opener.open('https://daythread.home.arpa/v1/status',timeout=4) as r:
     if r.status==200: break
   except Exception: time.sleep(2)
  else: raise SystemExit('Daythread status health check failed')
- for method,path,data in [('GET','/v1/integrations/assistant-context',None),('POST','/v1/integrations/assistant-context/resolve',b'{}')]:
-  req=urllib.request.Request('http://192.168.30.122:8787'+path,data=data,method=method,
-      headers={'Content-Type':'application/json'} if data is not None else {})
+ token=pathlib.Path(p['token_source']).read_text(encoding='ascii').strip()
+ def authenticated(method,path,body=None):
+  headers={'Authorization':'Bearer '+token}
+  if body is not None: headers['Content-Type']='application/json'
+  request=urllib.request.Request('https://daythread.home.arpa'+path,
+      data=json.dumps(body,separators=(',',':')).encode() if body is not None else None,
+      headers=headers,method=method)
   try:
-   with urllib.request.urlopen(req,timeout=4) as r: status=r.status
-  except urllib.error.HTTPError as e: status=e.code
-  if status!=404: raise SystemExit('Disabled assistant-context route did not return 404')
+   with opener.open(request,timeout=12) as response:
+    if response.status!=200: raise SystemExit('Authenticated Daythread route check failed')
+    raw=response.read(131073)
+    if len(raw)>131072: raise SystemExit('Authenticated Daythread response exceeded its bound')
+    return response.headers, json.loads(raw)
+  except urllib.error.HTTPError:
+   raise SystemExit('Authenticated Daythread route check failed') from None
+ headers, page=authenticated('GET','/v1/integrations/assistant-context?limit=20')
+ if headers.get('Cache-Control')!='no-store' or not isinstance(page,dict) or page.get('source')!='daythread' or page.get('schema_version')!=1:
+  raise SystemExit('Authenticated Daythread export metadata is invalid')
+ items=page.get('items'); coverage=page.get('coverage')
+ if not isinstance(items,list) or len(items)>20 or not isinstance(coverage,dict):
+  raise SystemExit('Authenticated Daythread export page is invalid')
+ event_counts={}
+ object_ids=[]; versioned=0
+ for item in items:
+  if not isinstance(item,dict) or not isinstance(item.get('object_id'),str):
+   raise SystemExit('Authenticated Daythread export item metadata is invalid')
+  event=item.get('event_type'); event_counts[event]=event_counts.get(event,0)+1
+  object_ids.append(item['object_id'])
+  if all(isinstance(item.get(key),str) for key in ('version_ref','source_ref','source_timestamp','modified_at')):
+   versioned+=1
+ resolver_ids=object_ids or ['diary:2000-01-01']
+ _,resolved=authenticated('POST','/v1/integrations/assistant-context/resolve',{'object_ids':resolver_ids})
+ if not isinstance(resolved,dict): raise SystemExit('Authenticated Daythread resolve metadata is invalid')
+ results=resolved.get('results')
+ if resolved.get('schema_version')!=1 or resolved.get('source')!='daythread' or not isinstance(results,list) or len(results)!=len(resolver_ids):
+  raise SystemExit('Authenticated Daythread resolve metadata is invalid')
+ status_counts={}; resolve_versions=0
+ for row in results:
+  if not isinstance(row,dict) or row.get('status') not in {'valid','invalidated','expired-window','deleted'}:
+   raise SystemExit('Authenticated Daythread resolve status is invalid')
+  status=row['status']; status_counts[status]=status_counts.get(status,0)+1
+  item=row.get('item')
+  if isinstance(item,dict) and all(isinstance(item.get(key),str) for key in ('version_ref','source_ref','source_timestamp','modified_at')):
+   resolve_versions+=1
  info=json.loads(out('docker','inspect',container))[0]
  env=dict(item.split('=',1) for item in info['Config']['Env'] if '=' in item)
- expected={'OMI_ASSISTANT_CONTEXT_ENABLED':'false','OMI_ASSISTANT_CONTEXT_PROFILE_ID':'default',
-           'OMI_ASSISTANT_CONTEXT_DOMAIN':'','OMI_ASSISTANT_CONTEXT_TOKEN_FILE':p['token_target']}
- if any(env.get(k)!=v for k,v in expected.items()): raise SystemExit('Installed provider environment differs from disabled source')
+ expected={'OMI_ASSISTANT_CONTEXT_ENABLED':'true','OMI_ASSISTANT_CONTEXT_PROFILE_ID':'default',
+           'OMI_ASSISTANT_CONTEXT_DOMAIN':'personal','OMI_ASSISTANT_CONTEXT_TOKEN_FILE':p['token_target']}
+ if any(env.get(k)!=v for k,v in expected.items()): raise SystemExit('Installed provider environment differs from admitted source')
  mount=next((m for m in info['Mounts'] if m.get('Destination')==p['token_target']),None)
  if not mount or mount.get('Source')!=p['token_source'] or mount.get('RW') is not False:
   raise SystemExit('Installed provider token mount differs from source')
  if info['State']['Health']['Status']!='healthy': raise SystemExit('Daythread container is not healthy')
  if asr_hashes()!=p['asr_module_hashes']:
   raise SystemExit('Daythread transcription source hashes changed during provider rollout')
- return {'service':'healthy','export':'disabled','get_status':404,'resolve_status':404,'token_mount':'read-only'}
+ return {'service':'healthy','export':'enabled','profile':'default','domain':'personal',
+         'get_status':200,'get_item_count':len(items),'event_type_counts':event_counts,
+         'coverage_window_complete':coverage.get('window_complete'),
+         'coverage_deletion_complete':coverage.get('deletion_complete'),
+         'snapshot_consistent':page.get('snapshot_consistent'),'get_version_metadata_count':versioned,
+         'resolve_status':200,'resolve_status_counts':status_counts,
+         'resolve_version_metadata_count':resolve_versions,'resolver_used_synthetic_id':not object_ids,
+         'token_mount':'read-only'}
 def backup():
  target=root/'backups'/p['release']
  if target.exists():
@@ -209,22 +308,36 @@ def backup():
  else: target.mkdir(mode=0o700,parents=False)
  remote='/data/.exports/.assistant-context-'+p['release']; script=remote+'/archive.py'
  archive=target/'daythread.zip'
- check=("from pathlib import Path; import os,stat; root=Path('/data/.exports'); "
-        "root.mkdir(mode=0o700,exist_ok=True); i=root.lstat(); "
-        "assert stat.S_ISDIR(i.st_mode) and not stat.S_ISLNK(i.st_mode) and i.st_uid==os.geteuid() and stat.S_IMODE(i.st_mode)==0o700; "
-        "p=Path("+repr(remote)+"); assert not p.exists() and not p.is_symlink(); p.mkdir(mode=0o700)")
- run('docker','exec',container,'python','-c',check)
+ backup_config=release/'config/compose.assistant-context-backup.yaml'
+ if backup_config.exists(): raise SystemExit('A prior backup Compose artifact exists; preserve and review it')
+ backup_config.write_text('services:\n  backend:\n    volumes:\n      - type: bind\n'
+   '        source: '+json.dumps(str(release/'scripts/archive.py'))+'\n'
+   '        target: /tmp/daythread-archive.py\n        read_only: true\n'
+   '        bind:\n          create_host_path: false\n')
  try:
-  run('docker','cp',str(release/'scripts/archive.py'),container+':'+script)
-  run('docker','exec',container,'python',script,'backup',remote+'/daythread.zip','--data-dir','/data')
+  compose(release,'stop','--timeout','120','backend')
+  code=("from pathlib import Path; import os,stat; e=Path('/data/.exports'); e.mkdir(mode=0o700,exist_ok=True); i=e.lstat(); "
+        "assert stat.S_ISDIR(i.st_mode) and not stat.S_ISLNK(i.st_mode) and i.st_uid==os.geteuid() and stat.S_IMODE(i.st_mode)==0o700; "
+        "p=Path("+repr(remote)+"); assert not p.exists() and not p.is_symlink(); p.mkdir(mode=0o700); "
+        "import runpy,sys; sys.argv=['/tmp/daythread-archive.py','backup',"
+        +repr(remote+'/daythread.zip')+",'--data-dir','/data']; "
+        "runpy.run_path('/tmp/daythread-archive.py',run_name='__main__')")
+  config=['docker','compose','-p','omi-local','--env-file',str(release/'.env'),
+   '-f',str(release/'config/compose.yaml'),'-f',str(release/'config/compose.home-core.yaml'),
+   '-f',str(release/'config/compose.release.json'),'-f',str(release/'config/compose.assistant-context.yaml'),
+   '-f',str(backup_config)]
+  run(*config,'run','--rm','--no-deps','-T','--entrypoint','python','backend','-c',code)
   run('docker','cp',container+':'+remote+'/daythread.zip',str(archive))
   with zipfile.ZipFile(archive) as z:
    if 'omi.sqlite3' not in z.namelist() or z.testzip() is not None:
     raise SystemExit('Daythread backup archive validation failed')
   os.chmod(archive,0o600)
   result={'path':str(archive),'bytes':archive.stat().st_size,'sha256':digest(archive)}
- finally:
-  run('docker','exec',container,'rm','-rf',remote)
+ except BaseException:
+  backup_config.unlink(missing_ok=True)
+  compose(base,'up','-d','--no-deps','--no-build','backend')
+  raise
+ backup_config.unlink(missing_ok=True)
  return result
 def stage():
  if release.exists(): raise SystemExit('Assistant-context release already exists; preserve it')
@@ -262,14 +375,14 @@ def pointer(target,suffix):
 if p['command']=='plan':
  check_base()
  print(json.dumps({'active_release':p['base_release'],'active_image':p['base_image'],'candidate':p['release'],
-  'source_revision':p['revision'],'overlay_sha256':p['overlay_sha256'],'export':'disabled'},sort_keys=True))
+  'source_revision':p['revision'],'overlay_sha256':p['overlay_sha256'],'export':'enabled'},sort_keys=True))
 elif p['command']=='stage':
  check_base(); stage(); verify_stage()
- print(json.dumps({'staged_release':str(release),'source_revision':p['revision'],'export':'disabled'},sort_keys=True))
+ print(json.dumps({'staged_release':str(release),'source_revision':p['revision'],'export':'enabled'},sort_keys=True))
 elif p['command']=='deploy':
- check_base(); safe_token(); verify_stage(); saved=backup()
+ check_base(); safe_token(); safe_ca(); verify_stage(); saved=backup()
  try:
-  compose(release,'up','-d','--no-deps','--no-build','backend'); evidence=disabled_health()
+        compose(release,'up','-d','--no-deps','--no-build','backend'); evidence=authenticated_health()
  except BaseException:
   compose(base,'up','-d','--no-deps','--no-build','backend'); raise
  prior=root/('previous-assistant-context-'+p['release']); prior.symlink_to(base)
@@ -291,12 +404,14 @@ elif p['command']=='rollback':
  print(json.dumps({'rolled_back_to':p['base_release'],'backup_preserved':True},sort_keys=True))
 elif p['command']=='credentials-plan': credential_plan()
 elif p['command']=='credentials-apply': credential_apply()
+elif p['command']=='ca-plan': ca_plan()
+elif p['command']=='ca-apply': ca_apply()
 '''
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "stage", "deploy", "rollback", "credentials-plan", "credentials-apply"])
+    parser.add_argument("command", choices=["plan", "stage", "deploy", "rollback", "credentials-plan", "credentials-apply", "ca-plan", "ca-apply"])
     parser.add_argument("--host", default="home-core")
     parser.add_argument("--release", help="Exact assistant-context release name for rollback")
     args = parser.parse_args()
@@ -306,7 +421,7 @@ def main() -> None:
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
     if args.command == "rollback":
-        if not args.release or not args.release.startswith("20261106-assistant-context-"):
+        if not args.release or not re.fullmatch(r"20261106-assistant-context-[a-f0-9]{12}", args.release):
             parser.error("rollback requires --release with the exact assistant-context release name")
         payload["release"] = args.release
     elif args.release:

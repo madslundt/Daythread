@@ -1,11 +1,11 @@
-# This rollout installs the provider code but keeps its export disabled until
-# the selected profile is explicitly confirmed as personal-only.
+# The owner confirmed the default Daythread profile contains personal/household
+# data only; authentication and fixed-profile admission remain mandatory.
 services:
   backend:
     environment:
-      OMI_ASSISTANT_CONTEXT_ENABLED: "false"
+      OMI_ASSISTANT_CONTEXT_ENABLED: "true"
       OMI_ASSISTANT_CONTEXT_PROFILE_ID: default
-      OMI_ASSISTANT_CONTEXT_DOMAIN: ""
+      OMI_ASSISTANT_CONTEXT_DOMAIN: personal
       OMI_ASSISTANT_CONTEXT_TOKEN_FILE: /run/secrets/daythread-assistant-context-token
     volumes:
       - type: bind

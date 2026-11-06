@@ -11,13 +11,14 @@ DEPLOYMENT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DEPLOYMENT)
 
 
-def test_remote_program_compiles_and_keeps_export_disabled():
+def test_remote_program_compiles_and_checks_authenticated_metadata():
     compile(DEPLOYMENT.REMOTE, "assistant_context_remote", "exec")
-    assert "OMI_ASSISTANT_CONTEXT_ENABLED':'false'" in DEPLOYMENT.REMOTE
-    assert "Disabled assistant-context route did not return 404" in DEPLOYMENT.REMOTE
+    assert "OMI_ASSISTANT_CONTEXT_ENABLED':'true'" in DEPLOYMENT.REMOTE
+    assert "Authenticated Daythread resolve metadata is invalid" in DEPLOYMENT.REMOTE
     assert DEPLOYMENT.BASE_RELEASE == "20261106-transcription-fc4a4eeddd4f"
     assert "transcription source hashes changed during provider rollout" in DEPLOYMENT.REMOTE
     assert len(DEPLOYMENT.ASR_MODULE_HASHES) == 7
+    assert DEPLOYMENT.CA_SOURCE.endswith("/caddy/pki/authorities/local/root.crt")
 
 
 def test_deployment_payload_uses_exact_published_main(monkeypatch):
@@ -39,6 +40,7 @@ def test_deployment_payload_uses_exact_published_main(monkeypatch):
     assert payload["revision"] == revision
     assert payload["base_image"] == DEPLOYMENT.BASE_IMAGE
     assert payload["token_source"] == "/etc/homecompute/daythread-assistant-context-token"
+    assert payload["ca_target"] == "/etc/homecompute/daythread-assistant-context-ca.crt"
     assert payload["release"].startswith("20261106-assistant-context-")
 
 

@@ -29,20 +29,22 @@ credential is bound to the one selected profile. Requests carrying
 profile. If the configured profile is unavailable, the endpoint returns 404 and
 does not fall back to another profile.
 
-The provider overlay keeps export disabled and leaves the domain unset until
-the selected profile's data classification is confirmed. Daythread profiles
-store only an ID and display name; they do not distinguish personal from work
-recordings. Confirm the profile contains only admitted personal data before
-enabling export. A profile containing employer recordings must not be connected
-to the personal assistant. Work data requires the separate principal, domain
-and approval process in HomeCompute's personal-data contract; profile binding
-alone does not classify mixed recordings or grant work-data admission.
+The owner confirmed the `default` profile (`Mads`) contains personal/household
+data only. The home-core overlay fixes that profile and the `personal` domain;
+requests cannot select another profile. Daythread profiles store only an ID and
+display name, so this admission relies on the explicit owner classification. A
+profile containing employer recordings must not be connected to the personal
+assistant. Work data requires the separate principal, domain and approval
+process in HomeCompute's personal-data contract; profile binding alone does not
+classify mixed recordings or grant work-data admission.
 
 The guarded home-core helper owns credential provisioning and provider rollout:
 
 ```sh
 uv run python scripts/deploy_assistant_context_homecore.py credentials-plan
 uv run python scripts/deploy_assistant_context_homecore.py credentials-apply
+uv run python scripts/deploy_assistant_context_homecore.py ca-plan
+uv run python scripts/deploy_assistant_context_homecore.py ca-apply
 uv run python scripts/deploy_assistant_context_homecore.py plan
 uv run python scripts/deploy_assistant_context_homecore.py stage
 uv run python scripts/deploy_assistant_context_homecore.py deploy
@@ -50,11 +52,17 @@ uv run python scripts/deploy_assistant_context_homecore.py deploy
 
 Credential apply creates one external random token only when both copies are
 absent, or verifies the existing pair without printing either value. It refuses
-partial or inconsistent copies. The initial provider overlay explicitly keeps
-export disabled and its domain unset. Leave those declarations unchanged until
-the selected profile is confirmed personal-only. The provider rollout backs up
-the archive, adds only the assistant API files atop the pinned current Daythread
-image, and verifies the transcription module hashes remain unchanged. Roll back
+partial or inconsistent copies. The provider rollout creates a validated
+archive backup, adds only the assistant API files atop the pinned current
+Daythread image, and verifies the transcription module hashes remain unchanged.
+The CA helper copies only the public root certificate from the active managed
+Caddy data volume. It checks the reviewed SHA-256 fingerprint and certificate
+identity before installing `/etc/homecompute/daythread-assistant-context-ca.crt`
+as root-owned mode `0444`; it never reads or copies a private key. HTTPS checks
+use only this explicit CA file, bypass proxies, and never weaken TLS validation.
+The current reviewed root is `Caddy Local Authority - 2026 ECC Root`,
+fingerprint `279cbaa0596ae3ca24c44da28ac658c557e3c2a8664f81d8d3c8d034c0753a56`.
+Roll back
 with the exact release name printed by `plan` or `deploy`:
 
 ```sh
@@ -99,11 +107,11 @@ is false.
 HomeCompute must use a fixed operator-configured HTTPS hostname and an
 externally provisioned token file. No model or request may choose the host,
 profile, or credential. The HomeCompute client accepts only
-`daythread.home.arpa` or `daythread.<tailnet-label>.ts.net`, uses the system TLS
-trust store, disables proxy use and redirects, and bounds each response. A
-private CA must be installed in the host trust store before use; the connector
-does not accept an arbitrary CA path. Keep the endpoint on a trusted private
-network and leave it disabled until that path is configured.
+`daythread.home.arpa` or `daythread.<tailnet-label>.ts.net`, disables proxy use
+and redirects, and bounds each response. On home-core, project the approved
+public Caddy root certificate to the source-owned connector CA setting; the
+connector does not accept an arbitrary CA path. Keep the endpoint on a trusted
+private network and disabled until its source configuration is deployed.
 
 The 30-day snapshot retains only the latest diary version per day and current
 eligible commitment versions modified in that window. The resolver makes

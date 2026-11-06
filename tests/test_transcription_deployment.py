@@ -63,22 +63,18 @@ def test_failed_required_check_cannot_qualify(tmp_path, check):
         cli.qualification(path)
 
 
-@pytest.mark.parametrize("admission", [{}, {"active_requests": True}, {"active_requests": 1}])
-def test_unknown_or_active_gateway_refuses_deployment(admission):
-    with pytest.raises(RuntimeError, match="Gateway"):
-        remote.require_idle({"archive.sqlite3": {}}, admission)
-
-
-@pytest.mark.parametrize("state", sorted(remote.BUSY))
+@pytest.mark.parametrize("state", ["queued", "running", "processing", "transcribing",
+                                  "summarizing", "pending", "working", "sending", "leased"])
 def test_durable_active_or_waiting_work_is_not_cancelled(state):
     with pytest.raises(RuntimeError, match="recording_transcription_jobs"):
-        remote.require_idle({"archive.sqlite3": {"recording_transcription_jobs": {state: 1}}},
-                            {"active_requests": 0})
+        remote.require_restartable({
+            "archive.sqlite3": {"recording_transcription_jobs": {state: 1}},
+        })
 
 
 def test_completed_and_blocked_work_is_preserved():
     snapshot = {"archive.sqlite3": {"recording_transcription_jobs": {"blocked": 5, "ready": 3}}}
-    remote.require_idle(snapshot, {"active_requests": 0})
+    remote.require_restartable(snapshot)
     assert snapshot["archive.sqlite3"]["recording_transcription_jobs"] == {"blocked": 5, "ready": 3}
 
 
@@ -164,7 +160,8 @@ def deploy_mocks(monkeypatch, calls):
     monkeypatch.setattr(remote, "queue_snapshot", lambda: {"omi.sqlite3": {"audio": {"done": 1}}})
     monkeypatch.setattr(remote, "admission", lambda: {"active_requests": 0})
     monkeypatch.setattr(remote, "inspect", lambda: {
-        "Image": "sha256:" + "b" * 64, "State": {"ExitCode": 0, "OOMKilled": False},
+        "Id": "old", "Image": "sha256:" + "b" * 64,
+        "State": {"Running": False, "ExitCode": 0, "OOMKilled": False},
     })
     monkeypatch.setattr(remote, "compose", lambda path, *args, **kwargs: calls.append(
         ("compose", path, args, kwargs)))
@@ -200,6 +197,7 @@ def test_failed_health_rolls_back_exact_image_without_restoring_database(artifac
 def test_success_switches_after_health_and_retains_rollback_receipt(artifact, monkeypatch):
     payload, base, release, calls = artifact
     deploy_mocks(monkeypatch, calls)
+    monkeypatch.setattr(remote, "admission", lambda: {"active_requests": 2})
 
     def ready(image, hashes):
         assert (release.parent.parent / "current").resolve() == base
@@ -213,6 +211,7 @@ def test_success_switches_after_health_and_retains_rollback_receipt(artifact, mo
     assert (release.parent.parent / "previous.transcription").resolve() == base
     assert receipt["qualification"] == payload["qualification"]
     assert receipt["stopped_jobs"] == receipt["before_jobs"] == receipt["after_jobs"]
+    assert receipt["gateway_admission"]["active_requests"] == 2
 
 
 def test_interrupted_stop_has_durable_receipt_then_recovers_exact_image(artifact, monkeypatch):
@@ -305,3 +304,35 @@ def test_concurrent_deployment_cannot_enter_mutation_window(tmp_path, monkeypatc
                 pytest.fail("Second deployment entered the mutation window")
     with remote.deployment_lock():
         pass
+
+
+def test_foreground_shutdown_timeout_never_recreates_or_force_kills(artifact, monkeypatch):
+    payload, base, release, calls = artifact
+    deploy_mocks(monkeypatch, calls)
+    monkeypatch.setattr(remote, "inspect", lambda: {
+        "Id": "old", "Image": payload["base_image"], "State": {"Running": True},
+    })
+    monkeypatch.setattr(remote, "wait_for_shutdown", lambda *_: (_ for _ in ()).throw(
+        remote.ShutdownPending("still draining")))
+    with pytest.raises(remote.ShutdownPending):
+        remote.deploy(payload)
+    assert (release.parent.parent / "current").resolve() == base
+    assert not [call for call in calls if call[0] == "compose"]
+    assert ("docker", "kill", "--signal=SIGTERM", "omi-local-backend-1") in calls
+    receipt = json.loads((release.parent.parent / "backups/new/deployment.json").read_text())
+    assert receipt["status"] == "shutdown_pending"
+    with pytest.raises(remote.ShutdownPending):
+        remote.recover(payload)
+    assert not [call for call in calls if call[0] == "compose"]
+
+
+def test_remote_program_bundles_the_reviewed_shutdown_helper():
+    root = Path(__file__).resolve().parents[1]
+    prior = sys.modules.get("transcription_shutdown")
+    try:
+        scope = {"__name__": "deployment_review"}
+        exec(compile(cli.remote_program(root), "remote_deployment", "exec"), scope)
+        assert scope["wait_for_shutdown"].__module__ == "transcription_shutdown"
+        assert "scripts/transcription_shutdown.py" in cli.HELPERS
+    finally:
+        sys.modules["transcription_shutdown"] = prior

@@ -16,13 +16,21 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from transcription_shutdown import (
+    ShutdownPending,
+    inbox_snapshot,
+    merge_inbox_snapshots,
+    require_restartable,
+    verify_shutdown_runtime,
+    wait_for_shutdown,
+)
+
 ROOT = Path("/home/mads/projects/omi")
 CONTAINER = "omi-local-backend-1"
 SITE = "/opt/venv/lib/python3.15/site-packages/omi_local"
 MODULES = {"configuration", "settings", "transcription", "transcription_filter",
            "recording_transcription_worker", "recording_transcription_client",
            "recording_transcription_import"}
-BUSY = {"queued", "running", "processing", "transcribing", "summarizing", "pending"}
 DATA = Path("/var/lib/docker/volumes/omi-local_omi-data/_data")
 QUALIFICATION_CHECKS = {"short_exact_repeat", "long_exact_repeat", "cross_history_repeat",
                         "request_provenance", "request_bounds", "admission_and_idle",
@@ -143,6 +151,7 @@ def baseline(payload: dict) -> Path:
             raise RuntimeError("Baseline compose configuration changed")
     if installed(["docker", "exec", CONTAINER]) != payload["baseline_hashes"]:
         raise RuntimeError("Installed baseline modules changed")
+    verify_shutdown_runtime(current, output, CONTAINER)
     return base
 
 
@@ -219,15 +228,6 @@ def queue_snapshot() -> dict:
     return result
 
 
-def require_idle(snapshot: dict, admission: dict) -> None:
-    if type(admission.get("active_requests")) is not int or admission["active_requests"] != 0:
-        raise RuntimeError("Gateway has active or unknown requests; retry after it drains")
-    for tables in snapshot.values():
-        for table, states in tables.items():
-            if any(states.get(state, 0) for state in BUSY):
-                raise RuntimeError("Durable work is pending/active in " + table + "; retry later")
-
-
 def admission() -> dict:
     code = ("import json,ssl,urllib.request;"
             "c=ssl.create_default_context(cafile='/etc/omi/gateway-root.crt');"
@@ -288,6 +288,12 @@ def rollback(receipt: dict, manifest: dict, path: Path) -> None:
             current = None
         if current and current["Image"] not in (receipt["base_image"], receipt["image_id"]):
             raise RuntimeError("Running image belongs to another release; refusing recovery")
+        if current and current["State"].get("Running", False):
+            run("docker", "kill", "--signal=SIGTERM", CONTAINER,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            current = wait_for_shutdown(inspect, current["Id"])
+            if current["State"].get("ExitCode") != 0 or current["State"].get("OOMKilled"):
+                raise RuntimeError("Recovery shutdown was not graceful")
         compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
                 image=receipt["base_image"])
         ready(receipt["base_image"], manifest["baseline_hashes"])
@@ -341,7 +347,7 @@ def deploy(payload: dict) -> dict:
         raise RuntimeError("Staged image source changed")
     before = queue_snapshot()
     gateway = admission()
-    require_idle(before, gateway)
+    require_restartable(before)
     saved = ROOT / "backups" / payload["release"]
     if saved.exists():
         raise RuntimeError("A deployment receipt already exists; inspect before retrying")
@@ -354,22 +360,26 @@ def deploy(payload: dict) -> dict:
                "source_revision": payload["source_revision"],
                "qualification": payload["qualification"], "before_jobs": before,
                "gateway_admission": gateway, "rollback_config": str(base / "config"),
+               "inbox_before": inbox_snapshot(DATA), "container_id": inspect().get("Id"),
                "overlay_sha256": payload["overlay_sha256"], "status": "in_progress"}
     # Recheck after the isolated image check and before stopping the real service.
     baseline(payload)
-    require_idle(queue_snapshot(), admission())
+    require_restartable(queue_snapshot())
     saved.mkdir(mode=0o700)
     path = saved / "deployment.json"
     checkpoint(path, receipt, "prepared")
     try:
         checkpoint(path, receipt, "stopping")
-        run("docker", "stop", "--time", "60", CONTAINER,
+        run("docker", "kill", "--signal=SIGTERM", CONTAINER,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        stopped = inspect()
+        stopped = wait_for_shutdown(inspect, receipt["container_id"])
         if stopped["State"]["ExitCode"] != 0 or stopped["State"].get("OOMKilled"):
             raise RuntimeError("Backend did not stop gracefully")
         receipt["stopped_jobs"] = queue_snapshot()
-        require_idle(receipt["stopped_jobs"], gateway)
+        require_restartable(receipt["stopped_jobs"])
+        receipt["inbox_retained"] = merge_inbox_snapshots(
+            receipt["inbox_before"], inbox_snapshot(DATA),
+        )
         checkpoint(path, receipt, "backing_up")
         receipt["backup_hashes"] = backup(saved)
         checkpoint(path, receipt, "starting")
@@ -380,6 +390,7 @@ def deploy(payload: dict) -> dict:
             if name.endswith(".private-settings.json") and digest(DATA / name) != expected:
                 raise RuntimeError("Saved settings changed during restart")
         receipt["after_jobs"] = queue_snapshot()
+        receipt["inbox_after"] = inbox_snapshot(DATA, receipt["inbox_retained"])
         if (ROOT / "current").resolve() != base:
             raise RuntimeError("Current pointer changed; preserving conflicting release")
         checkpoint(path, receipt, "switching_pointer")
@@ -388,6 +399,10 @@ def deploy(payload: dict) -> dict:
         temporary.replace(ROOT / "current")
         receipt["status"] = "deployed"
         checkpoint(path, receipt, "complete")
+    except ShutdownPending:
+        receipt["status"] = "shutdown_pending"
+        checkpoint(path, receipt, "shutdown_pending")
+        raise
     except BaseException as error:
         receipt["failure"] = type(error).__name__
         rollback(receipt, manifest, path)

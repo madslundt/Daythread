@@ -32,7 +32,8 @@ COMPOSE_HASHES = {
     "compose.release.json": "313f30956f2493f15884274ad54474cce4a70f31151911267c49f65f46129c1d",
 }
 FILES = [f"src/omi_local/{name}.py" for name in BASE_HASHES]
-HELPERS = ["scripts/deploy_transcription_homecore.py", "scripts/transcription_deployment.py"]
+HELPERS = ["scripts/deploy_transcription_homecore.py", "scripts/transcription_deployment.py",
+           "scripts/transcription_shutdown.py"]
 
 
 def sha256(data: bytes) -> str:
@@ -84,6 +85,15 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
     }
 
 
+def remote_program(root: Path) -> str:
+    # Bundle the reviewed helper in memory; no remote imports from mutable working copies.
+    source = (root / "scripts/transcription_shutdown.py").read_text()
+    return ("import sys,types\n_shutdown=types.ModuleType('transcription_shutdown')\n"
+            + "exec(" + repr(source) + ",_shutdown.__dict__)\n"
+            + "sys.modules['transcription_shutdown']=_shutdown\n"
+            + (root / "scripts/transcription_deployment.py").read_text())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["plan", "stage", "deploy", "recover"])
@@ -105,7 +115,7 @@ def main() -> None:
     if args.command == "plan":
         print(json.dumps({k: v for k, v in data.items() if k != "files"}, indent=2))
         return
-    remote = (root / "scripts/transcription_deployment.py").read_text()
+    remote = remote_program(root)
     subprocess.run(
         ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", args.host,
          "sudo -n python3 -c " + shlex.quote(remote)],

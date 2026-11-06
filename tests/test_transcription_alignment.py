@@ -43,6 +43,59 @@ def ramp_wav(seconds: int) -> bytes:
 
 
 @pytest.mark.anyio
+async def test_mixed_language_keeps_native_anchors_without_forcing_word_alignment():
+    text = "Hi hej"
+    native = [{"start": 0.1, "end": 0.9, "text": text,
+               "start_offset": 0, "end_offset": len(text), "kind": "segment"}]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: pytest.fail("A mixed transcript must not use a monolingual aligner"),
+    )) as client:
+        inference = Inference(Settings(
+            alignment_enabled=True, alignment_language="da", stt_max_gain_db=0,
+            stt_filter_speech=False, stt_enhancement_mode="off", _env_file=None,
+        ), client)
+
+        async def recognize(*_args, **_kwargs):
+            return {"text": text, "segments": native,
+                    "recognition": {"detected_language": "mixed"}}
+
+        inference._transcribe_chunk = recognize
+        result = await inference.transcribe_result(wav(3000))
+
+    assert result["text"] == text
+    assert result["segments"] == native
+    assert result["processing"]["alignment"] == {
+        "status": "partial", "model": None, "languages": ["mixed"],
+    }
+
+
+@pytest.mark.anyio
+async def test_mixed_part_does_not_prevent_alignment_of_a_known_language_part():
+    calls = []
+
+    async def reply(request):
+        calls.append(request)
+        assert b'\r\n\r\nen\r\n' in request.content
+        return httpx.Response(200, json={
+            "status": "aligned", "language": "en", "model": "fixture@1",
+            "segments": [{"text": "Hello", "start": 0.1, "end": 0.8,
+                          "start_offset": 0, "end_offset": 5}],
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as client:
+        inference = Inference(Settings(_env_file=None), client)
+        fragments, status = await inference._align_chunks(
+            [(0.0, wav(3000), "Hi hej", "mixed", 0),
+             (2.0, wav(3000), "Hello", "en", 7)], inference.settings, 2,
+        )
+    assert len(calls) == 1
+    assert status == {"status": "partial", "model": "fixture@1",
+                      "languages": ["en", "mixed"]}
+    assert fragments == [{"text": "Hello", "start": 2.1, "end": 2.8,
+                          "start_offset": 7, "end_offset": 12, "kind": "word"}]
+
+
+@pytest.mark.anyio
 async def test_filtered_span_offsets_are_restored_without_changing_recognition(monkeypatch):
     audio_a, audio_b = wav(4000), wav(5000)
     monkeypatch.setattr(transcription, "filter_transcription_audio", lambda *args, **kwargs: {

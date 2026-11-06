@@ -202,6 +202,12 @@ class Transcription:
                     native_segments = part[5] if len(part) > 5 else []
                     language = language or settings.alignment_language
                     languages.add(language)
+                    if language == "mixed":
+                        # A monolingual aligner cannot refine the entire mixed part.
+                        # Preserve its native anchors until per-window languages are used.
+                        if overall == "aligned":
+                            overall = "partial"
+                        continue
                     duration = (alignment_source_duration(audio) if native_segments
                                 else wav_duration(audio))
                     jobs = []

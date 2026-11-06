@@ -23,6 +23,7 @@ from .recording_transcription_store import (
     source_fingerprint,
 )
 from .source_matching import MANUAL_UPLOAD_SQL
+from .stt_languages import language_code
 
 logger = logging.getLogger(__name__)
 
@@ -230,11 +231,15 @@ async def process_one(memory) -> bool:
         text, native, provenance = _validate_response(headers, payload, settings, frames / 16000)
         words, alignment = [], {"status": "disabled", "model": None}
         if settings.recording_transcription_alignment_enabled and native:
+            detected = payload.get("language")
+            language = language_code(detected) if isinstance(detected, str) else None
+            if language and len(language) > 32:
+                language = None
             _set_state(store, rid, source, pipeline, "processing", phase="aligning")
             audio_bytes = path.read_bytes()
             try:
                 words, alignment = await memory.inference._align_chunks(
-                    [(0, audio_bytes, text, None, 0, native)],
+                    [(0, audio_bytes, text, language, 0, native)],
                     settings,
                     settings.alignment_timeout_seconds,
                 )

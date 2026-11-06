@@ -72,7 +72,8 @@ def test_recording_worker_uses_only_its_own_alignment_switch(
                 "x-homecompute-stt-runtime-commit": "1234567890ab",
                 "x-homecompute-stt-runtime": "whisper.cpp-r1",
             },
-            {"text": text, "segments": [{"start": 0.0, "end": 1.0, "text": text}]},
+            {"text": text, "language": " English ",
+             "segments": [{"start": 0.0, "end": 1.0, "text": text}]},
         )
 
     async def fake_align(parts, passed_settings, budget):
@@ -101,12 +102,61 @@ def test_recording_worker_uses_only_its_own_alignment_switch(
         parts, passed_settings, budget = calls[0]
         assert passed_settings is settings and budget == settings.alignment_timeout_seconds
         assert len(parts) == 1 and parts[0][2] == "alpha beta"
+        assert parts[0][3] == "en"
         assert parts[0][5][0]["kind"] == "segment"
         assert row["alignment_status"] == "aligned"
         assert [word["text"] for word in json.loads(row["word_segments"])] == ["alpha", "beta"]
     else:
         assert row["alignment_status"] == "disabled"
         assert json.loads(row["word_segments"]) == []
+
+
+def test_mixed_recording_retains_native_text_without_monolingual_alignment(
+    app_recording, monkeypatch,
+):
+    client, store, rid, _, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    settings = memory.settings
+    settings.recording_transcription_alignment_enabled = True
+    settings.alignment_language = "da"
+    recording = load_recording(store, rid)
+    store.enqueue_recording_transcription(
+        rid, source_fingerprint(recording), pipeline_fingerprint(settings), len(recording.rows),
+    )
+    text = "Hello. Hej."
+
+    async def fake_request(_settings, _path):
+        return {
+            "x-homecompute-stt-model-sha256": "a" * 64,
+            "x-homecompute-stt-model-snapshot": "model-r1",
+            "x-homecompute-stt-runtime-commit": "1234567890ab",
+            "x-homecompute-stt-runtime": "whisper.cpp-r1",
+        }, {
+            "text": text, "language": "mixed",
+            "segments": [{"start": 0.0, "end": 1.0, "text": text,
+                          "start_offset": 0, "end_offset": len(text)}],
+        }
+
+    async def unexpected_alignment(*_args, **_kwargs):
+        pytest.fail("A mixed recording must not be forced through the Danish aligner")
+
+    monkeypatch.setattr("omi_local.recording_transcription_worker._request", fake_request)
+    monkeypatch.setattr(memory.inference.client, "post", unexpected_alignment)
+    assert asyncio.run(process_one(memory))
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT state,transcript,native_segments,word_segments,alignment_status "
+            "FROM recording_transcription_jobs WHERE recording_id=?", (rid,),
+        ).fetchone()
+    assert row["state"] == "ready"
+    assert row["transcript"] == text
+    assert json.loads(row["native_segments"])[0] == {
+        "start": 0.0, "end": 1.0, "text": text, "kind": "segment",
+        "start_offset": 0, "end_offset": len(text),
+    }
+    assert json.loads(row["word_segments"]) == []
+    assert row["alignment_status"] == "partial"
 
 
 def test_recording_fingerprint_v3_uses_independent_alignment_switches():

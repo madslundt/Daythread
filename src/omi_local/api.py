@@ -447,6 +447,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with settings_lock:
             return configuration.view(config)
 
+    @app.get("/v1/configuration/parrot")
+    def get_parrot_configuration(response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        with settings_lock:
+            return {"enabled": config.parrot_webhook_enabled,
+                    "secret": config.parrot_webhook_secret.get_secret_value(),
+                    "revision": configuration.revision}
+
     def preview_connection(changes: dict) -> Settings:
         with settings_lock:
             return configuration.prepare(config, changes)

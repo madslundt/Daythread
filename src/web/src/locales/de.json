@@ -3256,5 +3256,9 @@
   "Show signing secret": "Signaturgeheimnis anzeigen",
   "Hide signing secret": "Signaturgeheimnis verbergen",
   "Copy this secret into Parrot, then save these settings.": "Dieses Geheimnis in Parrot kopieren und dann diese Einstellungen speichern.",
-  "Could not copy the signing secret. Show it and copy it manually.": "Das Signaturgeheimnis konnte nicht kopiert werden. Anzeigen und manuell kopieren."
+  "Could not copy the signing secret. Show it and copy it manually.": "Das Signaturgeheimnis konnte nicht kopiert werden. Anzeigen und manuell kopieren.",
+  "Webhook URL": "Webhook-URL",
+  "Copy webhook URL": "Webhook-URL kopieren",
+  "Could not copy the webhook URL. Select it and copy it manually.": "Die Webhook-URL konnte nicht kopiert werden. Markieren und manuell kopieren.",
+  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Signaturgeheimnis gespeichert. Beim Speichern eines anderen Geheimnisses wird das alte sofort ungültig."
 }

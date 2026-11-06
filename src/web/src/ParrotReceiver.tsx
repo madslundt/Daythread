@@ -5,33 +5,38 @@ import { t } from "./i18n";
 import { ErrorState, Loading, Notice } from "./UI";
 import { useResource } from "./useResource";
 import { copySummary } from "./CopySummary";
+import { profileResourceUrl } from "./profiles";
+
+export type ParrotSettings = { enabled: boolean; secret: string; revision: string };
 
 export function generateParrotSecret(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
-  onSaved: () => void; refreshRevision?: number;
+export function ParrotReceiver({ onSaved, refreshRevision = 0, profileSelected = false }: {
+  onSaved: () => void; refreshRevision?: number; profileSelected?: boolean;
 }) {
-  const resource = useResource<ConfigurationData>("/v1/configuration");
+  const resource = useResource<ParrotSettings>("/v1/configuration/parrot");
   const [baseline, setBaseline] = useState(resource.data);
-  const [enabled, setEnabled] = useState(Boolean(resource.data?.values.parrot_webhook_enabled));
-  const [secret, setSecret] = useState("");
+  const [enabled, setEnabled] = useState(Boolean(resource.data?.enabled));
+  const [secret, setSecret] = useState(resource.data?.secret || "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState("");
   const previousRefresh = useRef(refreshRevision);
-  const configured = Boolean(baseline?.secrets.parrot_webhook_secret);
-  const dirty = Boolean(baseline && (enabled !== baseline.values.parrot_webhook_enabled || secret));
+  const configured = Boolean(baseline?.secret);
+  const dirty = Boolean(baseline && (enabled !== baseline.enabled || secret !== baseline.secret));
+  const webhookUrl = `${typeof window === "undefined" ? "" : window.location.origin}${profileResourceUrl("/v1/integrations/parrot/webhook")}`;
 
-  function load(data: ConfigurationData) {
+  function load(data: ParrotSettings) {
     setBaseline(data);
-    setEnabled(Boolean(data.values.parrot_webhook_enabled));
-    setSecret("");
+    setEnabled(data.enabled);
+    setSecret(data.secret);
     setShowSecret(false);
     setCopied(false);
     setConflict(false);
@@ -60,20 +65,21 @@ export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (!baseline || busy || resource.loading || conflict || !dirty || (enabled && !configured && !secret.trim())) return;
+    if (!baseline || busy || resource.loading || conflict || !dirty || (enabled && !secret.trim())) return;
     setBusy(true);
     setError("");
     setSaved(false);
     const changes: Record<string, unknown> = {};
-    if (enabled !== baseline.values.parrot_webhook_enabled) changes.parrot_webhook_enabled = enabled;
-    // Empty means keep the write-only secret; toggling the receiver must never clear it.
-    if (secret) changes.parrot_webhook_secret = secret;
+    if (enabled !== baseline.enabled) changes.parrot_webhook_enabled = enabled;
+    if (secret !== baseline.secret) changes.parrot_webhook_secret = secret;
     try {
       const result = await request<ConfigurationData>("/v1/configuration", {
         method: "PATCH", body: JSON.stringify({ revision: baseline.revision, changes }),
       });
-      load(result);
-      resource.setData(result);
+      const settings = { revision: result.revision,
+        enabled: Boolean(result.values.parrot_webhook_enabled), secret };
+      load(settings);
+      resource.setData(settings);
       setSaved(true);
       onSaved();
     } catch (error) {
@@ -82,11 +88,22 @@ export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
     } finally { setBusy(false); }
   }
 
+  const receiverAddress = profileSelected ? <div className="setting-field">
+    <span><label htmlFor="parrot-webhook-url">{t("Webhook URL")}</label></span>
+    <input id="parrot-webhook-url" type="url" readOnly value={webhookUrl}
+      aria-describedby="parrot-webhook-url-hint" />
+    <small id="parrot-webhook-url-hint">{t("Paste this address into Parrot using an HTTPS origin reachable from your Mac. The address selects this archive profile.")}</small>
+    <button type="button" className="text-button" onClick={async () => {
+      try { await copySummary(webhookUrl); setCopiedUrl(webhookUrl); }
+      catch { setError(t("Could not copy the webhook URL. Select it and copy it manually.")); }
+    }}>{copiedUrl === webhookUrl ? t("Copied") : t("Copy webhook URL")}</button>
+  </div> : <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p>;
+
   return <>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {!baseline && resource.loading ? <Loading>{t("Loading server settings…")}</Loading> : null}
     {baseline ? <form onSubmit={save} aria-label={t("Save Parrot settings")} aria-busy={busy}>
-      <p className="caption" role="status">{t("Receiver:")}{" "}{baseline.values.parrot_webhook_enabled
+      <p className="caption" role="status">{t("Receiver:")}{" "}{baseline.enabled
         ? configured ? t("enabled; waiting for deliveries") : t("missing signing secret") : t("disabled")}</p>
       <fieldset disabled={busy || resource.loading || Boolean(resource.error) || conflict}>
         <div className="settings-grid">
@@ -101,12 +118,12 @@ export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
           <div className="setting-field">
             <span id="parrot-secret-label"><label htmlFor="parrot-signing-secret">{t("Parrot webhook secret")}</label></span>
             <input id="parrot-signing-secret" aria-labelledby="parrot-secret-label" type={showSecret ? "text" : "password"} autoComplete="new-password" spellCheck={false}
-              autoCapitalize="none" maxLength={4096} required={enabled && !configured} value={secret}
+              autoCapitalize="none" maxLength={4096} required={enabled} value={secret}
               aria-describedby="parrot-secret-hint" onChange={(event) => {
                 setSecret(event.target.value); setSaved(false); setError(""); setCopied(false);
               }} />
             <small id="parrot-secret-hint">{configured
-              ? t("Signing secret saved. Leave blank to keep it, or enter a replacement.")
+              ? t("Saved signing secret. Saving a different secret immediately revokes the old one.")
               : t("Enter the same signing secret used in Parrot.")}</small>
             <div className="button-row">
               <button type="button" className="text-button" onClick={() => {
@@ -122,16 +139,17 @@ export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
                 </button>
               </> : null}
             </div>
-            {secret ? <small role="status">{t("Copy this secret into Parrot, then save these settings.")}</small> : null}
+            {secret && secret !== baseline.secret ? <small role="status">{t("Copy this secret into Parrot, then save these settings.")}</small> : null}
           </div>
         </div>
       </fieldset>
       <p className="caption">{t("These settings apply to all profiles. The webhook address below selects the destination profile.")}</p>
+      {receiverAddress}
       {error ? <ErrorState message={error} /> : null}
       {conflict ? <ErrorState message={t("Server settings changed while you were editing. Your edits are still here. Discard changes to load the current settings before making further changes.")} /> : null}
       {saved ? <Notice tone="success">{t("Parrot settings saved. Changes apply immediately.")}</Notice> : null}
       <div className="button-row">
-        <button type="submit" className="button" disabled={busy || resource.loading || Boolean(resource.error) || conflict || !dirty || (enabled && !configured && !secret.trim())}>
+        <button type="submit" className="button" disabled={busy || resource.loading || Boolean(resource.error) || conflict || !dirty || (enabled && !secret.trim())}>
           {busy ? t("Saving…") : t("Save Parrot settings")}
         </button>
         {dirty || conflict ? <button type="button" className="text-button" disabled={busy || resource.loading} onClick={() => {
@@ -139,5 +157,6 @@ export function ParrotReceiver({ onSaved, refreshRevision = 0 }: {
         }}>{t("Discard changes")}</button> : null}
       </div>
     </form> : null}
+    {!baseline ? receiverAddress : null}
   </>;
 }

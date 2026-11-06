@@ -3256,5 +3256,9 @@
   "Show signing secret": "Show signing secret",
   "Hide signing secret": "Hide signing secret",
   "Copy this secret into Parrot, then save these settings.": "Copy this secret into Parrot, then save these settings.",
-  "Could not copy the signing secret. Show it and copy it manually.": "Could not copy the signing secret. Show it and copy it manually."
+  "Could not copy the signing secret. Show it and copy it manually.": "Could not copy the signing secret. Show it and copy it manually.",
+  "Webhook URL": "Webhook URL",
+  "Copy webhook URL": "Copy webhook URL",
+  "Could not copy the webhook URL. Select it and copy it manually.": "Could not copy the webhook URL. Select it and copy it manually.",
+  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Saved signing secret. Saving a different secret immediately revokes the old one."
 }

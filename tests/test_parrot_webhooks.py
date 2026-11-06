@@ -200,3 +200,33 @@ def test_disabled_and_unconfigured_receiver_and_private_configuration(tmp_path):
         assert SECRET not in client.get("/v1/settings").text
     with TestClient(create_app(settings)) as client:
         assert send(client).json()["existing"] == 1
+
+
+def test_saved_secret_is_available_only_in_dedicated_uncached_settings(client):
+    response = client.get("/v1/configuration/parrot")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "enabled": True, "secret": SECRET,
+        "revision": client.get("/v1/configuration").json()["revision"],
+    }
+    assert SECRET not in client.get("/v1/configuration").text
+    assert SECRET not in client.get("/v1/vendors").text
+
+
+def test_rotating_secret_immediately_revokes_old_signatures_and_survives_restart(settings):
+    replacement = "replacement-signing-secret-for-test"
+    payload = {"event": "test", "sent_at": stamp(utc_now())}
+    with TestClient(create_app(settings)) as client:
+        revision = client.get("/v1/configuration").json()["revision"]
+        response = client.patch("/v1/configuration", json={"revision": revision,
+            "changes": {"parrot_webhook_secret": replacement}})
+        assert response.status_code == 200 and replacement not in response.text
+        assert send(client, payload, secret=SECRET).status_code == 401
+        assert send(client, payload, secret=replacement).status_code == 200
+        assert client.get("/v1/configuration/parrot").json()["secret"] == replacement
+        assert client.get("/v1/transcripts").json()["total"] == 0
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/configuration/parrot").json()["secret"] == replacement
+        assert send(client, payload, secret=SECRET).status_code == 401
+        assert send(client, payload, secret=replacement).status_code == 200

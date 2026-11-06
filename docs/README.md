@@ -168,8 +168,10 @@ This API supplies **transcripts only**. Imported sources have no original audio 
 In web **Settings → Recording & devices → Parrot**, enable **Parrot webhook enabled**
 and enter a **Parrot webhook secret**, or use **Generate signing secret** and **Copy signing secret**.
 Use the same secret in Parrot, then click **Save Parrot settings**. Changes apply immediately;
-leaving the secret blank preserves the saved secret. Copy the selected
-profile's receiver address into Parrot's webhook settings, using an HTTPS origin reachable
+the saved secret remains masked in the field and can be revealed or copied after reloading.
+Saving a different secret immediately revokes the previous one; update Parrot to match.
+Use **Copy webhook URL** to copy the selected profile's receiver address into Parrot's settings,
+using an HTTPS origin reachable
 from the Mac running Parrot. The route is `POST /v1/integrations/parrot/webhook`; its
 `profile_id` query parameter chooses the destination archive. Server settings and the secret
 are shared across profiles. Keep the archive private; Parrot can reach a private HTTPS
@@ -194,7 +196,9 @@ when Parrot's file date is unsuitable.
 [Parrot's imported-file date logic](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Services/RecordingManager.swift#L657).
 Imports use `source_kind=parrot_export` and have no playable audio. The receiver is disabled
 by default; equivalent initial environment settings are `OMI_PARROT_WEBHOOK_ENABLED` and
-`OMI_PARROT_WEBHOOK_SECRET`. Secrets remain in private server configuration and are excluded
+`OMI_PARROT_WEBHOOK_SECRET`. The Parrot settings screen reads its saved secret through a
+dedicated, uncached settings endpoint; general configuration reads still redact it.
+Secrets remain in private server configuration and are excluded
 from archive exports. [Parrot's official connections guide](https://openparrot.app/help/connections.html)
 and [the verified 0.29.10 sender contract](https://github.com/turantekin/Parrot/blob/c3510636a699584e0c2b03a439fe5e999e22f901/Parrot/Services/Integrations.swift).
 

@@ -5,7 +5,6 @@ import { useResource } from "./useResource";
 import { ErrorState, Loading, Notice } from "./UI";
 import { TranscriptExportImport } from "./TranscriptExportImport";
 import type { Vendor } from "./vendors";
-import { profileResourceUrl } from "./profiles";
 import { ParrotReceiver } from "./ParrotReceiver";
 
 type ImportResult = {
@@ -66,11 +65,7 @@ export function VendorConnection({ vendor, onSaved, onConfigure, profileSelected
       {vendor.setup_url ? <a className="text-link" href={vendor.setup_url} target="_blank" rel="noreferrer">{t("Device setup and export instructions")}</a> : null}
       {vendor.capabilities.includes("file_upload") ? <p className="caption">{t("Use Upload recordings on Today and choose this brand to keep its source information.")}</p> : null}
       {webhook ? <>
-        <ParrotReceiver onSaved={onSaved} refreshRevision={refreshRevision} />
-        {profileSelected ? <>
-          <p className="caption">{t("Paste this address into Parrot using an HTTPS origin reachable from your Mac. The address selects this archive profile.")}</p>
-          <code style={{ overflowWrap: "anywhere" }}>{`${typeof window === "undefined" ? "" : window.location.origin}${profileResourceUrl("/v1/integrations/parrot/webhook")}`}</code>
-        </> : <p className="caption">{t("Choose a profile in Settings → Account & profiles to import conversations.")}</p>}
+        <ParrotReceiver onSaved={onSaved} refreshRevision={refreshRevision} profileSelected={profileSelected} />
         <p className="caption">{t("In Parrot, enable Send after every call and Include the full transcript, save the signing secret, then Send Test. Test events add no recordings. Audio is not included.")}</p>
       </> : null}
       {cloud ? <>

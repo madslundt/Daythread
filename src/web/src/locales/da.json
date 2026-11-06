@@ -3256,5 +3256,9 @@
   "Show signing secret": "Vis signeringshemmelighed",
   "Hide signing secret": "Skjul signeringshemmelighed",
   "Copy this secret into Parrot, then save these settings.": "Kopiér denne hemmelighed til Parrot, og gem derefter disse indstillinger.",
-  "Could not copy the signing secret. Show it and copy it manually.": "Signeringshemmeligheden kunne ikke kopieres. Vis den, og kopiér den manuelt."
+  "Could not copy the signing secret. Show it and copy it manually.": "Signeringshemmeligheden kunne ikke kopieres. Vis den, og kopiér den manuelt.",
+  "Webhook URL": "Webhook-URL",
+  "Copy webhook URL": "Kopiér webhook-URL",
+  "Could not copy the webhook URL. Select it and copy it manually.": "Webhook-URL’en kunne ikke kopieres. Markér den, og kopiér den manuelt.",
+  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Signeringshemmeligheden er gemt. Hvis du gemmer en anden hemmelighed, bliver den gamle straks ugyldig."
 }

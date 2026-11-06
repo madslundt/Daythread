@@ -87,6 +87,9 @@ DESCRIPTIONS = {
     "capture_health_quiet_end_hour": "Quiet hours end (0–23) in the archive time zone.",
     "stt_vocabulary": "Names and terms to help transcription, one per line. Up to 100 terms, "
     "80 characters each and 2000 characters total. Applies to future processing in this archive.",
+    "stt_language_candidates": "Optional expected languages for normal and whole-recording "
+    "transcription. Use up to 16 codes, such as da and en, one per line. Empty keeps unrestricted "
+    "automatic detection. Requires a compatible backend; existing transcripts are preserved.",
     "stt_vocabulary_mode": "Disabled sends no hints. Whisper prompt sends comma-separated terms "
     "as prompt; JSON keyterms sends a JSON array as keyterms. Choose only a format your "
     "transcription endpoint supports. Language routes can override this choice.",
@@ -166,6 +169,10 @@ DESCRIPTIONS = {
     "recording_transcription_expected_model_snapshot": "Expected immutable model snapshot "
     "identifier.",
     "recording_transcription_expected_runtime_commit": "Expected immutable runtime commit.",
+    "recording_transcription_expected_homecompute_revision": "Optional exact HomeCompute source "
+    "revision. Configured values must match the producer and distinguish new recording variants.",
+    "recording_transcription_expected_image_id": "Optional exact producer image ID (sha256:...). "
+    "Configured values must match the producer and distinguish new recording variants.",
     "recording_transcription_max_seconds": "Maximum whole-file duration; up to 7200 seconds.",
     "recording_transcription_max_bytes": "Maximum assembled PCM WAV upload size, up to 256 MiB.",
     "recording_transcription_timeout_seconds": "Bounded long whole-file request timeout; up to "
@@ -276,7 +283,7 @@ def descriptors() -> list[dict]:
             kind = "secret"
         elif key in ROUTE_FIELDS:
             kind = "routes"
-        elif key == "stt_vocabulary":
+        elif key in {"stt_vocabulary", "stt_language_candidates"}:
             kind = "terms"
         title = key.replace("_", " ").capitalize()
         for word in ("Stt", "Llm", "Api", "Omi"):
@@ -292,6 +299,7 @@ def descriptors() -> list[dict]:
             "stt_api_key": "Transcription API key",
             "stt_model": "Transcription model",
             "stt_vocabulary": "Transcription vocabulary",
+            "stt_language_candidates": "Expected transcription languages",
             "stt_vocabulary_mode": "Vocabulary format",
             "stt_preview_enabled": "Provisional transcription preview",
             "summary_template": "Summary template",

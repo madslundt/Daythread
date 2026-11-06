@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .domain import HintPolicy
 from .inference_errors import InferenceDisabled
-from .stt_languages import language_code
+from .stt_languages import LANGUAGE_CODES, language_code
 from .transcription_vocabulary import normalize_vocabulary
 
 LLMTask = Literal["chat", "summary", "extraction", "preparation", "weekly", "retrieval"]
@@ -173,6 +173,7 @@ class Settings(BaseSettings):
     apns_topic: str = Field(default="", max_length=200, pattern=r"^[A-Za-z0-9.-]*$")
     stt_model: str = "stt-danish"
     stt_vocabulary: list[str] = Field(default_factory=list)
+    stt_language_candidates: list[str] = Field(default_factory=list, max_length=16)
     stt_vocabulary_mode: VocabularyMode = "off"
     stt_preview_enabled: bool = False
     stt_chunk_seconds: int = Field(default=30, ge=1, le=120)
@@ -193,6 +194,12 @@ class Settings(BaseSettings):
     recording_transcription_expected_model_snapshot: str = Field(default="", max_length=200)
     recording_transcription_expected_runtime_commit: str = Field(
         default="", pattern=r"^(?:[0-9a-f]{7,40})?$",
+    )
+    recording_transcription_expected_homecompute_revision: str = Field(
+        default="", pattern=r"^(?:[0-9a-f]{40})?$",
+    )
+    recording_transcription_expected_image_id: str = Field(
+        default="", pattern=r"^(?:sha256:[0-9a-f]{64})?$",
     )
     recording_transcription_max_seconds: int = Field(default=1200, ge=1, le=7200)
     recording_transcription_max_bytes: int = Field(
@@ -328,6 +335,27 @@ class Settings(BaseSettings):
     @classmethod
     def valid_stt_vocabulary(cls, value):
         return normalize_vocabulary(value)
+
+    @field_validator("stt_language_candidates", mode="before")
+    @classmethod
+    def valid_stt_language_candidates(cls, value):
+        if not isinstance(value, list) or len(value) > 16:
+            raise ValueError("Use a list of up to 16 supported language codes")
+        candidates = []
+        supported = set(LANGUAGE_CODES.values())
+        for code in value:
+            if not isinstance(code, str) or code.strip().lower() not in supported:
+                raise ValueError("Use supported language codes, such as da or en")
+            normalized = code.strip().lower()
+            if normalized in candidates:
+                raise ValueError("Duplicate language candidate")
+            candidates.append(normalized)
+        return sorted(candidates)
+
+    def stt_language_candidate_fields(self) -> dict[str, str]:
+        if not self.stt_language_candidates:
+            return {}
+        return {"language_candidates": ",".join(self.stt_language_candidates)}
 
     @field_validator("stt_routes", mode="before")
     @classmethod

@@ -103,6 +103,8 @@ def manual_upload(row: dict) -> bool:
 def recognition_contract(settings) -> str:
     fields = {key: value for key, value in settings.model_dump(mode="json").items()
               if key.startswith("stt_") and key not in {"stt_routes", "stt_vocabulary"}}
+    if not fields.get("stt_language_candidates"):
+        fields.pop("stt_language_candidates", None)
     fields["silence_threshold"] = settings.silence_threshold
     fields["speech_filter_version"] = FILTER_VERSION
     fields["language_routing_version"] = 2

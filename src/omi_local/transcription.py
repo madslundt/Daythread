@@ -424,6 +424,7 @@ class Transcription:
             ),
         }
         fields.update(vocabulary_fields(route.vocabulary_mode, settings.stt_vocabulary))
+        fields.update(settings.stt_language_candidate_fields())
         token = route.token.get_secret_value()
         response = await self.post(
             "stt",

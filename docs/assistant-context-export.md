@@ -123,3 +123,33 @@ eligible commitment versions modified in that window. The resolver makes
 retention and deletion changes discoverable for known IDs without treating a
 partial or moving snapshot as a delete feed. It does not enumerate IDs the
 collector has never observed.
+
+## Home-core deployment receipt — 2026-11-06
+
+Daythread source revision `18d9eb6d8d3e36c1160dbc42c2a23698dbf2b96d` is deployed
+as release `20261106-assistant-context-a42957dd7359`. The image ID is
+`sha256:90e333fc0b326b8197db5692bcdb827c135e846cb74ae6d1652cedaab159073a`; it
+was built atop transcription release `20261106-transcription-fc4a4eeddd4f` and
+image `sha256:f212a9d6bbe931c13d8ae89f786853f14e23cd71973f06b7d1d82251c7010b6f`.
+All seven pinned transcription module hashes matched after rollout. Daythread
+container health and `/v1/status` returned healthy/200.
+
+The validated pre-deploy archive is
+`/home/mads/projects/omi/backups/20261106-assistant-context-a42957dd7359/daythread.zip`
+(363,612,671 bytes; SHA-256
+`690fef1192f18ccee77107e61e2e7bc98ab9173e8bd5931fb5f23a250232b07d`). The
+provider is enabled for the owner-classified personal-only `default` profile.
+Its fixed host is `daythread.home.arpa`; the collector token file is
+`/var/lib/homecompute-assistant/daythread-export-token` and its explicit CA file
+is `/etc/homecompute/daythread-assistant-context-ca.crt`. The CA was copied from
+the managed Caddy root at
+`/srv/state/control-plane/caddy-data/caddy/pki/authorities/local/root.crt` and
+matched SHA-256
+`279cbaa0596ae3ca24c44da28ac658c557e3c2a8664f81d8d3c8d034c0753a56`.
+
+Authenticated metadata-only verification returned GET 200 with 11 eligible
+items and 11 version-metadata records; window coverage was complete, deletion
+coverage remained false, and the snapshot was consistent. Resolver POST returned
+200 with 11 valid results and 11 version-metadata records. No item payloads or
+identifiers were included in the verification receipt. HomeCompute ingestion
+remains gated pending its separate recovery check.

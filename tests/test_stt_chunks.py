@@ -97,6 +97,31 @@ async def test_configured_request_duration_is_used(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_supported_120_second_context_submits_every_original_frame_once(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path, _env_file=None, stt_chunk_seconds=120, stt_filter_speech=False,
+        stt_max_gain_db=0, stt_enhancement_mode="off",
+    )
+    data = recording(120)
+    submitted = []
+
+    def handler(request):
+        message = BytesParser().parsebytes(
+            f"Content-Type: {request.headers['content-type']}\r\n\r\n".encode()
+            + request.content
+        )
+        submitted.extend(part.get_payload(decode=True) for part in message.get_payload()
+                         if part.get_param("name", header="content-disposition") == "file")
+        return httpx.Response(200, json={"text": "One complete reading."})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await Inference(settings, client).transcribe_result(data)
+    assert submitted == [data]
+    assert result["text"] == "One complete reading."
+    assert len(result["processing"]["chunks"]) == 1
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("fail_part", [None, 3])
 async def test_worker_transcribes_105_second_upload_atomically(tmp_path, fail_part):
     settings = Settings(

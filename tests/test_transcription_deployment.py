@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -141,6 +142,30 @@ def test_stage_uses_immutable_parent_and_only_reviewed_modules(artifact):
     manifest = json.loads((release / "config/transcription-overlay.json").read_text())
     assert manifest["qualification"] == payload["qualification"]
     assert (release.parent.parent / "current").resolve() == base
+
+
+def test_overlay_packages_producer_validation_and_both_cache_contracts():
+    root = Path(__file__).resolve().parents[1]
+    payload = cli.payload(root, "plan")
+    assert set(payload["files"]) == remote.MODULES == set(cli.BASE_HASHES)
+    for name in ("source_matching", "recording_transcription_store", "stt_producer"):
+        raw = (root / "src/omi_local" / (name + ".py")).read_bytes()
+        assert base64.b64decode(payload["files"][name]) == raw
+        assert payload["file_hashes"][name] == hashlib.sha256(raw).hexdigest()
+
+
+def test_installed_hashes_distinguish_absent_baseline_module(tmp_path, monkeypatch):
+    monkeypatch.setattr(remote, "SITE", str(tmp_path))
+    raw = b"# installed legacy module\n"
+    (tmp_path / "source_matching.py").write_bytes(raw)
+    monkeypatch.setattr(remote, "output", lambda *args: subprocess.check_output(
+        [sys.executable, "-c", args[-1]], text=True).strip())
+    observed = remote.installed(["local-test"])
+    assert set(observed) == remote.MODULES
+    assert observed["source_matching"] == hashlib.sha256(raw).hexdigest()
+    assert observed["stt_producer"] is None
+    (tmp_path / "stt_producer.py").write_bytes(b"# unexpected existing helper\n")
+    assert remote.installed(["local-test"])["stt_producer"] is not None
 
 
 def test_stage_rejects_generic_qualification_before_baseline(monkeypatch):
@@ -329,14 +354,19 @@ def test_foreground_shutdown_timeout_never_recreates_or_force_kills(artifact, mo
 
 def test_remote_program_bundles_the_reviewed_shutdown_helper():
     root = Path(__file__).resolve().parents[1]
-    prior = sys.modules.get("transcription_shutdown")
+    names = ("transcription_shutdown", "transcription_profile", "transcription_qualification")
+    prior = {name: sys.modules.get(name) for name in names}
     try:
         scope = {"__name__": "deployment_review"}
         exec(compile(cli.remote_program(root), "remote_deployment", "exec"), scope)
         assert scope["wait_for_shutdown"].__module__ == "transcription_shutdown"
         assert "scripts/transcription_shutdown.py" in cli.HELPERS
     finally:
-        sys.modules["transcription_shutdown"] = prior
+        for name, module in prior.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 @pytest.mark.parametrize("rollback", [False, True])

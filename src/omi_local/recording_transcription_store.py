@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .domain import stamp, utc_now
 from .merged_recordings import Recording
-from .recording_transcription_client import DECODING_FIELDS
+from .recording_transcription_client import recording_decoding_fields
 
 if TYPE_CHECKING:
     from .recording_transcription_selection import RecordingTranscriptSelection
@@ -101,7 +101,7 @@ def pipeline_fingerprint(settings) -> str:
         "model_sha256": settings.recording_transcription_expected_model_sha256,
         "model_snapshot": settings.recording_transcription_expected_model_snapshot,
         "runtime_commit": settings.recording_transcription_expected_runtime_commit,
-        "decoding": DECODING_FIELDS,
+        "decoding": recording_decoding_fields(settings),
         "prompt": None,
         "timeout_seconds": settings.recording_transcription_timeout_seconds,
         "max_seconds": settings.recording_transcription_max_seconds,
@@ -120,6 +120,15 @@ def pipeline_fingerprint(settings) -> str:
             if settings.recording_transcription_alignment_enabled else None
         ),
     }
+    producer = {key: configured for key, configured in (
+        ("homecompute_revision", settings.recording_transcription_expected_homecompute_revision),
+        ("image_id", settings.recording_transcription_expected_image_id),
+        ("runtime", settings.recording_transcription_expected_runtime),
+        ("device", settings.recording_transcription_expected_device),
+    ) if configured}
+    # Keep the legacy fingerprint when no new policy or producer pin is enabled.
+    if producer:
+        value["producer"] = producer
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()

@@ -11,29 +11,38 @@ import subprocess
 from pathlib import Path
 
 from transcription_deployment import validate_qualification
+from transcription_qualification import verify_source_hashes
 
-BASE_RELEASE = "20261106-parrot-settings-001ce3b355d5"
-BASE_IMAGE = "sha256:b7b3337407352af28655f5cd2cc5de16805be76290fc984b467250a076994d48"
+BASE_RELEASE = "20261106-assistant-context-a42957dd7359"
+BASE_IMAGE = "sha256:90e333fc0b326b8197db5692bcdb827c135e846cb74ae6d1652cedaab159073a"
 BASE_HASHES = {
-    "configuration": "6e335d2e3f4a27edaa92e7758c8dc30e439647e0ba6df7b7a815417e438481e1",
-    "settings": "149317c64766d610bf6e95471ec3ef35883dfb209dfbb5610f93da2ba2190e9a",
-    "transcription": "d1d5e11194e40b0ef2f08f1b61013f2405092858dbd1950246c15fff837a5af6",
-    "transcription_filter": "2a22e5cb673608646b01a8550215cf181f868f55f38259d623606f343039aae6",
+    "configuration": "31b4f703606dde5af358ffbac21601d7c7839f5665f4d3fd6af3f05dffc8627b",
+    "settings": "613174e00f2366d41094c94156378bc27496d65692f435b46390aa7d609bcb1e",
+    "transcription": "cfa62108d2b4e4debba2b9b54891c1b9c3c90f45fe60044bdaee634bead928f9",
+    "transcription_filter": "95495cef901345f7eee2c5990f8cca2eafccb8d98b525233b11ffb0ea05de44d",
     "recording_transcription_worker":
-        "daacbcd09be0dad768bce8b6b3e3a7abe48469d5de71c4a04c2dd79ba334a0ab",
+        "40cfee544f8781d30213b79d3534698046187e59ce8849046fc78e29fcd01a7d",
     "recording_transcription_client":
-        "7029301ca33dbc34bc2e54e1dcebd6d70d4e0810e17c9c1492c9f83f2785165e",
+        "d5fd7accff4a33475b4b6634b7aef5b29165f65380f43ec858d36e10b5d51578",
     "recording_transcription_import":
-        "2f5abf59f84f18d2c00e7de94522c70a7b2a24dd22a7eb1bb4e87c1229b406a4",
+        "20ce134eb343e80c54f79fcd7445c46e551feb8add3547166e377547b8b8a900",
+    "source_matching": "e7672eb0ab3878695710f493800a4e9c82c064fff8ac3debd2b38d6111108ecb",
+    "recording_transcription_store":
+        "c74ac2262f9a85ef6665e3b307f58aba6a148064b22f7c88697391f15f03dae7",
+    "stt_producer": None,
 }
 COMPOSE_HASHES = {
     "compose.yaml": "6004405b5bfff9a3d1c25c647ae452af5f6470e1b2b5fd1151e1b873739f35df",
     "compose.home-core.yaml": "2258c151ca8589c3daf5935572004e710a8b21665d373216178a6280f5090598",
-    "compose.release.json": "313f30956f2493f15884274ad54474cce4a70f31151911267c49f65f46129c1d",
+    "compose.release.json": "5ba444537a3ea57cfb07c79867bcf6bd9a5063490ca9d3afbd42ad44876e741a",
+    "compose.assistant-context.yaml":
+        "ef1cdcfa376dbe8f1d2cf2ecdc99595059ed9718d4e6ff3fa6c113b7223c2d22",
 }
+ENV_SHA256 = "c7609dac6e18b370ccb64494124926c13cb00f52c497a28b444f5c9d8713ad6b"
 FILES = [f"src/omi_local/{name}.py" for name in BASE_HASHES]
 HELPERS = ["scripts/deploy_transcription_homecore.py", "scripts/transcription_deployment.py",
-           "scripts/transcription_shutdown.py"]
+           "scripts/transcription_shutdown.py", "scripts/transcription_qualification.py",
+           "scripts/transcription_profile.py"]
 
 
 def sha256(data: bytes) -> str:
@@ -58,7 +67,16 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
     files = {name: (root / name).read_bytes() for name in FILES}
     hashes = {Path(name).stem: sha256(value) for name, value in files.items()}
     helpers = {name: sha256((root / name).read_bytes()) for name in HELPERS}
-    digest = sha256(json.dumps({"modules": hashes, "helpers": helpers}, sort_keys=True).encode())
+    qualified = qualification(receipt) if receipt else None
+    artifact = {"modules": hashes, "helpers": helpers}
+    if qualified:
+        asr = {name: sha256((root / ("scripts/evaluate_audio.py" if name == "evaluate_audio"
+                          else "src/omi_local/" + name + ".py")).read_bytes())
+               for name in qualified.get("qualified_asr_hashes", {})}
+        verify_source_hashes(qualified, hashes, asr if asr else None)
+        if qualified["status"] == "qualified_transcription_foundation":
+            artifact["qualification"] = qualified
+    digest = sha256(json.dumps(artifact, sort_keys=True).encode())
     revision = git(root, "rev-parse", "HEAD")
     if command in {"stage", "deploy"} and receipt is None:
         raise ValueError("--qualification is required for staging and deployment")
@@ -77,21 +95,23 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
             raise ValueError("Publish this source revision before deployment")
     return {
         "command": command, "base_release": BASE_RELEASE, "base_image": BASE_IMAGE,
-        "baseline_hashes": BASE_HASHES, "compose_hashes": COMPOSE_HASHES,
+        "baseline_hashes": BASE_HASHES, "compose_hashes": COMPOSE_HASHES, "env_sha256": ENV_SHA256,
         "release": "20261106-transcription-" + digest[:12], "overlay_sha256": digest,
         "source_revision": revision, "file_hashes": hashes, "helper_hashes": helpers,
         "files": {Path(name).stem: base64.b64encode(data).decode() for name, data in files.items()},
-        "qualification": qualification(receipt) if receipt else None,
+        "qualification": qualified,
     }
 
 
 def remote_program(root: Path) -> str:
     # Bundle the reviewed helper in memory; no remote imports from mutable working copies.
-    source = (root / "scripts/transcription_shutdown.py").read_text()
-    return ("import sys,types\n_shutdown=types.ModuleType('transcription_shutdown')\n"
-            + "exec(" + repr(source) + ",_shutdown.__dict__)\n"
-            + "sys.modules['transcription_shutdown']=_shutdown\n"
-            + (root / "scripts/transcription_deployment.py").read_text())
+    modules = ("transcription_qualification", "transcription_profile", "transcription_shutdown")
+    program = "import sys,types\n"
+    for name in modules:
+        source = (root / "scripts" / (name + ".py")).read_text()
+        program += ("_module=types.ModuleType(" + repr(name) + ");sys.modules[" + repr(name)
+                    + "]=_module;exec(" + repr(source) + ",_module.__dict__)\n")
+    return program + (root / "scripts/transcription_deployment.py").read_text()
 
 
 def main() -> None:

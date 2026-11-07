@@ -16,6 +16,13 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from transcription_profile import apply_profile, restore_profile, stage_profile, verify_profile
+from transcription_qualification import (
+    digest_value,
+    runtime_asr_hashes,
+    validate_foundation,
+    verify_source_hashes,
+)
 from transcription_shutdown import (
     ShutdownPending,
     inbox_snapshot,
@@ -70,6 +77,11 @@ print(json.dumps({'default_filter':False,'original_windows':'passed','mixed_alig
 def validate_qualification(value: dict, *, require_digest: bool = False) -> dict:
     """Keep repeatability acceptance distinct from unresolved recognition accuracy."""
     value = value if isinstance(value, dict) else {}
+    if value.get("status") == "qualified_transcription_foundation":
+        result = validate_foundation(value, QUALIFICATION_CHECKS, MODULES)
+        if require_digest and not digest_value(value.get("receipt_sha256")):
+            raise ValueError("The original qualification receipt digest is required")
+        return result
     checks, limitations = value.get("checks"), value.get("accuracy_limitations")
     identified = all(isinstance(value.get(key), str) and re.fullmatch(pattern, value[key])
                      for key, pattern in (("source_revision", r"[a-f0-9]{40}"),
@@ -134,11 +146,11 @@ def inspect() -> dict:
     return json.loads(output("docker", "inspect", CONTAINER))[0]
 
 
-def installed(command: list[str]) -> dict:
+def installed(command: list[str], names=None) -> dict:
     code = ("import pathlib,hashlib,json;root=pathlib.Path(" + repr(SITE) + ");"
             "print(json.dumps({n:(hashlib.sha256((root/(n+'.py')).read_bytes()).hexdigest()"
             "if (root/(n+'.py')).exists() else None)"
-            "for n in " + repr(sorted(MODULES)) + "}))")
+            "for n in " + repr(sorted(MODULES if names is None else names)) + "}))")
     return json.loads(output(*command, "python", "-c", code))
 
 
@@ -149,6 +161,8 @@ def baseline(payload: dict) -> Path:
             or current["Config"]["Image"] != "omi-local:" + payload["base_release"]
             or current["State"]["Status"] != "running"):
         raise RuntimeError("Current release/image changed; no deployment action performed")
+    if digest(base / ".env") != payload["env_sha256"]:
+        raise RuntimeError("Baseline release environment changed")
     for name, expected in payload["compose_hashes"].items():
         if digest(base / "config" / name) != expected:
             raise RuntimeError("Baseline compose configuration changed")
@@ -160,7 +174,9 @@ def baseline(payload: dict) -> Path:
 
 def compose(release: Path, *args: str, image: str) -> None:
     files = ["compose.yaml", "compose.home-core.yaml", "compose.release.json"]
-    command = ["docker", "compose", "-p", "omi-local"]
+    command = ["docker", "compose", "-p", "omi-local", "--env-file", str(release / ".env")]
+    if (release / "config/compose.assistant-context.yaml").is_file():
+        files.append("compose.assistant-context.yaml")
     for name in files:
         command.extend(["-f", str(release / "config" / name)])
     # Pin the running/rollback image even if an old release still uses a mutable tag.
@@ -173,6 +189,7 @@ def compose(release: Path, *args: str, image: str) -> None:
 
 def stage(payload: dict) -> dict:
     validate_qualification(payload.get("qualification"), require_digest=True)
+    verify_source_hashes(payload["qualification"], payload["file_hashes"])
     base = baseline(payload)
     release = ROOT / "releases" / payload["release"]
     if release.exists():
@@ -201,16 +218,23 @@ def stage(payload: dict) -> dict:
                 "--tmpfs", "/tmp:size=16m", image]
     if installed(isolated) != payload["file_hashes"]:
         raise RuntimeError("Built image does not contain the reviewed source")
+    asr = runtime_asr_hashes(payload["qualification"])
+    if asr and installed(isolated, names=asr) != asr:
+        raise RuntimeError("Built image qualified ASR source differs")
     smoke = json.loads(output(*isolated, "python", "-c", SMOKE))
     config_path = release / "config/compose.release.json"
     config = json.loads(config_path.read_text())
+    settings_change = None
+    if payload["qualification"]["status"] == "qualified_transcription_foundation":
+        settings_change = stage_profile(payload["qualification"], config, release, inspect(), DATA)
     config["services"]["backend"]["image"] = image
     config["services"]["backend"]["build"] = {
         "context": "../.transcription-build", "dockerfile": "Dockerfile",
     }
     config_path.write_text(json.dumps(config, indent=2) + "\n")
     manifest = {k: v for k, v in payload.items() if k not in ("files", "command")}
-    manifest.update(image_id=image, smoke=smoke, compose_sha256=digest(config_path))
+    manifest.update(image_id=image, smoke=smoke, compose_sha256=digest(config_path),
+                    settings_change=settings_change)
     save(release / "config/transcription-overlay.json", manifest)
     return {"status": "staged", "release": str(release), "image_id": image, "smoke": smoke}
 
@@ -303,6 +327,8 @@ def rollback(receipt: dict, manifest: dict, path: Path) -> None:
                 raise RuntimeError("Recovery shutdown was not graceful")
         receipt["speaker_retained"] = speaker_snapshot(DATA, receipt["speaker_retained"])
         checkpoint(path, receipt, "rolling_back")
+        restore_profile(DATA, path.parent, manifest.get("settings_change"),
+                        context=(base, manifest))
         compose(base, "up", "-d", "--no-deps", "--no-build", "backend",
                 image=receipt["base_image"])
         ready(receipt["base_image"], manifest["baseline_hashes"])
@@ -345,6 +371,7 @@ def recover(payload: dict) -> dict:
 
 def deploy(payload: dict) -> dict:
     validate_qualification(payload.get("qualification"), require_digest=True)
+    verify_source_hashes(payload["qualification"], payload["file_hashes"])
     base = baseline(payload)
     release = ROOT / "releases" / payload["release"]
     manifest = json.loads((release / "config/transcription-overlay.json").read_text())
@@ -397,11 +424,17 @@ def deploy(payload: dict) -> dict:
         receipt["speaker_retained"] = speaker_snapshot(DATA, receipt["speaker_before"])
         checkpoint(path, receipt, "backing_up")
         receipt["backup_hashes"] = backup(saved)
+        apply_profile(DATA, release, saved, manifest.get("settings_change"))
         checkpoint(path, receipt, "starting")
         compose(release, "up", "-d", "--no-deps", "--no-build", "backend", image=image)
         checkpoint(path, receipt, "verifying")
         ready(image, payload["file_hashes"])
+        verify_profile(payload["qualification"], output, CONTAINER)
+        receipt["profile_verified"] = bool(manifest.get("settings_change"))
         for name, expected in receipt["backup_hashes"].items():
+            change = manifest.get("settings_change")
+            if change and name == change["relative_path"]:
+                expected = change["after_sha256"]
             if name.endswith(".private-settings.json") and digest(DATA / name) != expected:
                 raise RuntimeError("Saved settings changed during restart")
         receipt["after_jobs"] = queue_snapshot()

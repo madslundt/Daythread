@@ -612,6 +612,13 @@ DEPLOYMENT_FIELDS = {
     "storage_bucket", "storage_region", "storage_prefix", "stt_enabled", "llm_enabled",
     "llm_busy_retry_enabled",
     "stt_expected_producer",
+    "recording_transcription_expected_model_sha256",
+    "recording_transcription_expected_model_snapshot",
+    "recording_transcription_expected_runtime_commit",
+    "recording_transcription_expected_homecompute_revision",
+    "recording_transcription_expected_image_id",
+    "recording_transcription_expected_runtime",
+    "recording_transcription_expected_device",
 }
 RETENTION_FIELDS = {"audio_retention_days", "transcript_retention_days"}
 

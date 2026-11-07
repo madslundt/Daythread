@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from transcription_deployment import validate_qualification
+from transcription_qualification import verify_source_hashes
 
 BASE_RELEASE = "20261106-assistant-context-a42957dd7359"
 BASE_IMAGE = "sha256:90e333fc0b326b8197db5692bcdb827c135e846cb74ae6d1652cedaab159073a"
@@ -34,10 +35,14 @@ COMPOSE_HASHES = {
     "compose.yaml": "6004405b5bfff9a3d1c25c647ae452af5f6470e1b2b5fd1151e1b873739f35df",
     "compose.home-core.yaml": "2258c151ca8589c3daf5935572004e710a8b21665d373216178a6280f5090598",
     "compose.release.json": "5ba444537a3ea57cfb07c79867bcf6bd9a5063490ca9d3afbd42ad44876e741a",
+    "compose.assistant-context.yaml":
+        "ef1cdcfa376dbe8f1d2cf2ecdc99595059ed9718d4e6ff3fa6c113b7223c2d22",
 }
+ENV_SHA256 = "c7609dac6e18b370ccb64494124926c13cb00f52c497a28b444f5c9d8713ad6b"
 FILES = [f"src/omi_local/{name}.py" for name in BASE_HASHES]
 HELPERS = ["scripts/deploy_transcription_homecore.py", "scripts/transcription_deployment.py",
-           "scripts/transcription_shutdown.py"]
+           "scripts/transcription_shutdown.py", "scripts/transcription_qualification.py",
+           "scripts/transcription_profile.py"]
 
 
 def sha256(data: bytes) -> str:
@@ -62,7 +67,16 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
     files = {name: (root / name).read_bytes() for name in FILES}
     hashes = {Path(name).stem: sha256(value) for name, value in files.items()}
     helpers = {name: sha256((root / name).read_bytes()) for name in HELPERS}
-    digest = sha256(json.dumps({"modules": hashes, "helpers": helpers}, sort_keys=True).encode())
+    qualified = qualification(receipt) if receipt else None
+    artifact = {"modules": hashes, "helpers": helpers}
+    if qualified:
+        asr = {name: sha256((root / ("scripts/evaluate_audio.py" if name == "evaluate_audio"
+                          else "src/omi_local/" + name + ".py")).read_bytes())
+               for name in qualified.get("qualified_asr_hashes", {})}
+        verify_source_hashes(qualified, hashes, asr if asr else None)
+        if qualified["status"] == "qualified_transcription_foundation":
+            artifact["qualification"] = qualified
+    digest = sha256(json.dumps(artifact, sort_keys=True).encode())
     revision = git(root, "rev-parse", "HEAD")
     if command in {"stage", "deploy"} and receipt is None:
         raise ValueError("--qualification is required for staging and deployment")
@@ -81,21 +95,23 @@ def payload(root: Path, command: str, receipt: Path | None = None) -> dict:
             raise ValueError("Publish this source revision before deployment")
     return {
         "command": command, "base_release": BASE_RELEASE, "base_image": BASE_IMAGE,
-        "baseline_hashes": BASE_HASHES, "compose_hashes": COMPOSE_HASHES,
+        "baseline_hashes": BASE_HASHES, "compose_hashes": COMPOSE_HASHES, "env_sha256": ENV_SHA256,
         "release": "20261106-transcription-" + digest[:12], "overlay_sha256": digest,
         "source_revision": revision, "file_hashes": hashes, "helper_hashes": helpers,
         "files": {Path(name).stem: base64.b64encode(data).decode() for name, data in files.items()},
-        "qualification": qualification(receipt) if receipt else None,
+        "qualification": qualified,
     }
 
 
 def remote_program(root: Path) -> str:
     # Bundle the reviewed helper in memory; no remote imports from mutable working copies.
-    source = (root / "scripts/transcription_shutdown.py").read_text()
-    return ("import sys,types\n_shutdown=types.ModuleType('transcription_shutdown')\n"
-            + "exec(" + repr(source) + ",_shutdown.__dict__)\n"
-            + "sys.modules['transcription_shutdown']=_shutdown\n"
-            + (root / "scripts/transcription_deployment.py").read_text())
+    modules = ("transcription_qualification", "transcription_profile", "transcription_shutdown")
+    program = "import sys,types\n"
+    for name in modules:
+        source = (root / "scripts" / (name + ".py")).read_text()
+        program += ("_module=types.ModuleType(" + repr(name) + ");sys.modules[" + repr(name)
+                    + "]=_module;exec(" + repr(source) + ",_module.__dict__)\n")
+    return program + (root / "scripts/transcription_deployment.py").read_text()
 
 
 def main() -> None:

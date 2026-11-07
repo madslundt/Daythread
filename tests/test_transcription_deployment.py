@@ -354,14 +354,19 @@ def test_foreground_shutdown_timeout_never_recreates_or_force_kills(artifact, mo
 
 def test_remote_program_bundles_the_reviewed_shutdown_helper():
     root = Path(__file__).resolve().parents[1]
-    prior = sys.modules.get("transcription_shutdown")
+    names = ("transcription_shutdown", "transcription_profile", "transcription_qualification")
+    prior = {name: sys.modules.get(name) for name in names}
     try:
         scope = {"__name__": "deployment_review"}
         exec(compile(cli.remote_program(root), "remote_deployment", "exec"), scope)
         assert scope["wait_for_shutdown"].__module__ == "transcription_shutdown"
         assert "scripts/transcription_shutdown.py" in cli.HELPERS
     finally:
-        sys.modules["transcription_shutdown"] = prior
+        for name, module in prior.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 @pytest.mark.parametrize("rollback", [False, True])

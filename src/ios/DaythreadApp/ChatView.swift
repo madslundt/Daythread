@@ -55,10 +55,11 @@ struct ChatView: View {
     @FocusState private var focused: Bool
     private enum ChatSheet: String, Identifiable { case history, scope; var id: String { rawValue } }
 
-    init(initialScope: ChatScope? = nil, initialQuestion: String = "", initialSessionID: String? = nil) {
+    init(initialScope: ChatScope? = nil, initialQuestion: String = "", initialSessionID: String? = nil, chooseDateRange: Bool = false) {
         self.initialScope = initialScope
         self.initialQuestion = String(initialQuestion.prefix(2000))
         self.initialSessionID = initialSessionID
+        if chooseDateRange { _sheet = State(initialValue: .scope) }
     }
 
     private var cacheKey: String { model.archiveIdentity + ".chat" + (initialScope.map { "." + $0.cacheSuffix } ?? "") }

@@ -188,6 +188,7 @@ private struct RecordingChapterPassage: View {
     @State private var error: String?
     @State private var refresh = UUID()
     @State private var loading = true
+    @State private var transcriptOpen = false
     private var identity: String {
         model.archiveIdentity + model.archiveRevision + part["source_id"].text
         + part["transcript_version"].text + String(part["start_offset"].integer) + refresh.uuidString
@@ -211,8 +212,13 @@ private struct RecordingChapterPassage: View {
                 if source["audio_available"] != .bool(false) && source["audio_availability"].text != "missing" {
                     RecordingAudioPlayer(playback: playback, retry: { refresh = UUID() })
                 }
-                SourceTranscriptView(source: source, editing: false,
-                    startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer)
+                if !section["summary"].text.isEmpty { Text(section["summary"].text).textSelection(.enabled) }
+                DisclosureGroup(L10n.text("Transcript"), isExpanded: $transcriptOpen) {
+                    if transcriptOpen {
+                        SourceTranscriptView(source: source, editing: false,
+                            startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer)
+                    }
+                }
                 Button { selected = SourceSelection(source: source) } label: {
                     Label(L10n.text("Full recording & tools"), systemImage: "waveform")
                 }.buttonStyle(.borderless)

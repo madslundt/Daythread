@@ -13,53 +13,53 @@ describe("recording topic sections", () => {
     ended_at: "2026-10-16T21:12:00Z", state: "done",
     text: "☕️ Cocoa. Omi recorder. 🚗 Tesla Roadster.",
     sections: [
-      { title: "Cocoa", start_offset: 0, end_offset: 10 },
-      { title: "Omi recorder", start_offset: 10, end_offset: 24 },
-      { title: "Tesla Roadster", start_offset: 24, end_offset: 41 },
+      { title: "Cocoa", start_offset: 0, end_offset: 10, summary: "The group preferred dark chocolate." },
+      { title: "Omi recorder", start_offset: 10, end_offset: 24, summary: "The recorder arrives on Friday." },
+      { title: "Tesla Roadster", start_offset: 24, end_offset: 41, summary: "No test drive date was agreed." },
     ],
   };
-  it("renders three titled sections with exact original text, including emoji", () => {
-    const html = renderToStaticMarkup(<RecordingSections source={source} />);
-    expect(html).toContain("3 topic sections");
-    expect(html.match(/<details>/g)).toHaveLength(3);
-    expect(html).toContain("☕️ Cocoa.");
-    expect(html).toContain("🚗 Tesla Roadster.");
+  it("renders every topic summary without opening its transcript", () => {
+    const html = renderToStaticMarkup(<RecordingSections source={source} compact />);
+    expect(html).toContain("The group preferred dark chocolate.");
+    expect(html).toContain("The recorder arrives on Friday.");
+    expect(html).toContain("No test drive date was agreed.");
+    expect(html).not.toContain("☕️ Cocoa.");
     expect(html).toContain("Omi recorder");
   });
-  it("reveals the transcript below playback without another disclosure, followed by optional topics", () => {
+  it("puts the topics between playback and the collapsed full transcript", () => {
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[source]} />);
     expect(html).toContain("2 min · 3 topics");
-    expect(html.indexOf("<audio")).toBeLessThan(html.indexOf('class="transcript-translation"'));
-    expect(html.indexOf('class="transcript-translation"')).toBeLessThan(html.indexOf('class="recording-sections"'));
-    expect(html).not.toContain('<details class="recording-disclosure recording-transcript"');
+    expect(html.indexOf("<audio")).toBeLessThan(html.indexOf('class="recording-sections"'));
+    expect(html.indexOf('class="recording-sections"')).toBeLessThan(html.indexOf("Full transcript"));
+    expect(html).not.toContain('class="transcript-translation"');
     expect(html).toContain('<details class="recording-disclosure recording-utilities">');
-    expect(html).toContain("Correct transcript");
+    expect(html).not.toContain("Correct transcript");
     expect(html).toContain("Delete recording");
     expect(html).not.toContain('aria-label="Speakers"');
   });
-  it("reveals the transcript directly for recordings without topics and for search matches", () => {
+  it("offers the transcript even for recordings without topics and for search matches", () => {
     for (const value of [{ ...source, sections: [] }, { ...source, matches: [{ text: "Cocoa", start_offset: 0, end_offset: 10, timing: "recording" }] }]) {
       const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[value]} />);
-      expect(html).toContain('class="transcript-translation"');
-      expect(html).not.toContain('<details class="recording-disclosure recording-transcript"');
+      expect(html).toContain("<summary>Full transcript</summary>");
+      expect(html).not.toContain('class="transcript-translation"');
     }
   });
-  it("preserves the existing source presentation outside the timeline", () => {
+  it("also leads with summaries outside the timeline", () => {
     const html = renderToStaticMarkup(<SourceList expanded timezone="UTC" sources={[source]} />);
-    expect(html).not.toContain("recording-disclosure");
-    expect(html).toContain("3 topic sections");
+    expect(html).toContain("The recorder arrives on Friday.");
+    expect(html).toContain("<summary>Full transcript</summary>");
   });
   it("shows repeated uploads once with access to each original time and transcript", () => {
     const alternative: Source = {
       ...source, id: "reupload", started_at: "2026-10-16T21:17:00Z",
-      ended_at: "2026-10-16T21:19:00Z", text: "Another transcript reading", sections: [],
+      ended_at: "2026-10-16T21:19:00Z", text: "Another transcript reading", title: "Original reupload", sections: [],
     };
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC"
       sources={[{ ...source, alternate_sources: [alternative] }]} />);
     expect(html.match(/class="source-row source-row-compact"/g)).toHaveLength(1);
     expect(html).toContain("2 uploads");
     expect(html).toContain("Other uploads of this recording (1)");
-    expect(html).toContain("Another transcript reading");
+    expect(html).toContain("Original reupload");
     expect(html).toContain("21:17");
     expect(html).toContain('id="source-alternate-reupload"');
   });

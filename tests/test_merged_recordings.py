@@ -32,7 +32,7 @@ def recording(tmp_path):
                          audio.getvalue(), 2, source_kind="manual_upload", source_id="meeting.wav",
                          source_metadata={"recording_id": recording_id, "part_index": index,
                                           "part_count": 3})
-            store.complete(key, text)
+            store.complete(key, text, [{"text": text, "start": 0.25, "end": 1.5}])
             ids.append(key)
             samples.append(pcm)
         split = texts[1].index("Garden")
@@ -81,6 +81,8 @@ def test_combines_complete_transcript_and_topics_with_global_offsets(recording):
     assert response.headers["cache-control"] == "no-store"
     result = response.json()
     assert result["text"] == "\n".join(texts)
+    assert [turn["text"] for turn in result["transcript_turns"]] == texts
+    assert [turn["start"] for turn in result["transcript_turns"]] == [0.25, 2.25, 4.25]
     assert result["state"] == "done" and result["audio_available"]
     assert [section["title"] for section in result["sections"]] == ["Launch", "Garden"]
     assert result["sections"][1]["start_offset"] == result["text"].index("Garden")

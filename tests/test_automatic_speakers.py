@@ -115,6 +115,12 @@ def test_projection_keeps_unaligned_words_and_marks_turn_crossings_unknown(clien
     assert pieces[-1]["text"] == " beta gamma"
     assert pieces[-1]["attribution"] == "unknown"
     assert [(piece["start_offset"], piece["end_offset"]) for piece in pieces] == [(0, 5), (5, 16)]
+    displayed = client.get(f"/v1/transcripts/{keys[0]}").json()["transcript_turns"]
+    assert "".join(turn["text"] for turn in displayed) == "alpha beta gamma"
+    assert displayed[0]["speaker_label"] == pieces[0]["speaker_label"]
+    assert displayed[0]["start"] == 0.1
+    assert displayed[-1]["attribution"] == "unknown"
+    assert "speaker_label" not in displayed[-1]
 
 
 def test_conversation_audio_clock_clips_parts_and_does_not_count_capture_gaps():

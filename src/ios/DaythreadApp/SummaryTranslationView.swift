@@ -6,6 +6,7 @@ struct RecapOverviewDisclosure<Content: View>: View {
     let text: String
     @Binding var expanded: Bool
     let identifier: String
+    var expandLabel: String? = nil
     @ViewBuilder let content: () -> Content
 
     private var preview: String {
@@ -25,7 +26,7 @@ struct RecapOverviewDisclosure<Content: View>: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
             } label: {
-                Label(expanded ? L10n.text("Collapse recap") : L10n.text("Expand recap"),
+                Label(expanded ? L10n.text("Collapse recap") : expandLabel ?? L10n.text("Expand recap"),
                     systemImage: expanded ? "chevron.up" : "chevron.down")
             }.buttonStyle(.borderless)
                 .accessibilityValue(expanded ? L10n.text("Expanded") : L10n.text("Collapsed"))

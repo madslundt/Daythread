@@ -9,6 +9,8 @@ import { playbackTime } from "./recordingWaveform";
 import { useRecordingSeek } from "./useRecordingSeek";
 import { groupTopicRuns } from "./topicOccurrences";
 import { RecordingTopicList } from "./RecordingTopicList";
+import { RecordingTranscript, TranscriptTurns, turnsInRange } from "./RecordingTranscript";
+import type { TranscriptTurn } from "./types";
 
 export type CombinedRecording = {
   id: string; title: string; started_at: string; ended_at: string;
@@ -18,6 +20,7 @@ export type CombinedRecording = {
   interruptions?: { position_seconds: number; gap_seconds: number; previous_end: string; next_start: string }[];
   text: string | null; transcript_version: string;
   recording_summary?: string | null;
+  transcript_turns?: TranscriptTurn[];
   recording_transcription?: { state: string; version?: string | null; text?: string | null };
   transcript_selection?: {
     state: "unselected" | "selected" | "stale";
@@ -31,7 +34,7 @@ export type CombinedRecording = {
       }[] } } | null;
   };
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
-    start_seconds?: number; end_seconds?: number; start_estimated?: boolean }[];
+    start_seconds?: number; end_seconds?: number; start_estimated?: boolean; summary?: string }[];
 };
 
 export function MergedRecording({ recordingID, timezone, archive }: { recordingID: string; timezone?: string; archive?: boolean }) {
@@ -54,6 +57,8 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const occurrences = useMemo(() => topics.flatMap((topic) => topic.occurrences.map((sections, index) => ({
     ...sections[0], id: `${sections[0].chapter_id}:${sections[0].start_offset}`,
     end_offset: sections.at(-1)!.end_offset, end_seconds: sections.at(-1)!.end_seconds,
+    summary: sections.every((section) => section.summary)
+      ? [...new Set(sections.map((section) => section.summary))].join("\n\n") : undefined,
     occurrenceNumber: index + 1, occurrenceCount: topic.occurrences.length,
   }))), [topics]);
   const [selectedTopic, setSelectedTopic] = useState("");
@@ -81,14 +86,11 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
   const showingSelected = typeof selectedText === "string";
   const speakerEvidence = showingSelected ? selection?.transcript?.speaker_evidence : undefined;
-  const selectionKey = `${selection?.state || ""}:${selection?.result_version || ""}:${selection?.selection_version ?? ""}`;
-  const [speakerEvidenceViewFor, setSpeakerEvidenceViewFor] = useState<string | null>(null);
-  const showSpeakerEvidence = speakerEvidenceViewFor === selectionKey;
   const speakerRuns = useMemo(
     () => compactSpeakerEvidence(speakerEvidence?.utterances || []), [speakerEvidence],
   );
   const hasSpeakerEvidence = speakerEvidence?.state === "ready"
-    && speakerRuns.some((run) => run.attribution === "attributed" || run.attribution === "overlap");
+    && speakerRuns.map((run) => run.text).join("") === selectedText;
   const displayedText = showingSelected ? selectedText : recording.text;
   const originalText = Array.from(recording.text || "");
   async function chooseTranscript(resultVersion: string | null) {
@@ -149,47 +151,26 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       <h3>{t("Recording summary")}</h3><p className="transcript-text">{recording.recording_summary}</p>
       {showingSelected ? <p className="caption">{t("Based on the original part transcripts.")}</p> : null}
     </section> : null}
-    {topic && occurrences.length > 1 ? <div className="recording-sections">
+    {topic ? <div className="recording-sections">
       <h3>{showingSelected ? t("Chapters in the original transcript") : t("Chapters")}</h3>
       <RecordingTopicList topics={topics.map((group) => ({ key: group.key, title: group.title,
         occurrences: group.occurrences.map(([section]) => ({ id: `${section.chapter_id}:${section.start_offset}`,
-          label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated })) }))}
+          label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated,
+          summary: occurrences.find((item) => item.chapter_id === section.chapter_id && item.start_offset === section.start_offset)?.summary })) }))}
         selected={topic.id} onSelect={selectTopic} />
-      <p className="transcript-text" aria-live="polite">{originalText.slice(topic.start_offset, topic.end_offset).join("")}</p>
+      {occurrences.length > 1 ? <RecordingTranscript label={t("Transcript")}>
+        <div aria-live="polite"><TranscriptTurns text={originalText.slice(topic.start_offset, topic.end_offset).join("")}
+          turns={turnsInRange(recording.text || "", recording.transcript_turns, topic)}
+          onSeek={recording.audio_available ? playback.seekTo : undefined} /></div>
+      </RecordingTranscript> : null}
     </div> : null}
-    {displayedText !== null ? showingSelected ? <>
-      {hasSpeakerEvidence ? <button type="button" className="text-button recording-speaker-view-toggle"
-        aria-expanded={showSpeakerEvidence} aria-controls={`recording-transcript-view-${recording.id}`}
-        onClick={() => setSpeakerEvidenceViewFor(showSpeakerEvidence ? null : selectionKey)}>
-        {t(showSpeakerEvidence ? "Show readable transcript" : "Show speakers and timestamps")}
-      </button> : null}
-      <div id={`recording-transcript-view-${recording.id}`}>
-        {showSpeakerEvidence && hasSpeakerEvidence ? <div className="transcript-text recording-attributed-transcript">
-          {speakerRuns.map((run, index) => {
-            const hasSpokenText = /[\p{L}\p{N}]/u.test(run.text);
-            return <span className="recording-attributed-run" key={`${index}:${run.attribution}:${run.speaker_id || "unknown"}`}>
-              {hasSpokenText ? <span className="caption recording-speaker-label">{run.attribution === "attributed"
-                ? run.speaker_name || run.speaker_label || t("Unknown speaker")
-                : run.attribution === "overlap" ? t("Overlapping speech") : t("Unknown speaker")}</span> : null}
-              {hasSpokenText && run.start !== null && run.start !== undefined
-                ? <button type="button" className="caption recording-speaker-time text-link"
-                  aria-label={`${t("Playback position")} ${playbackTime(run.start)}`}
-                  disabled={!recording.audio_available}
-                  onClick={() => playback.seekTo(run.start ?? undefined)}>{playbackTime(run.start)}</button> : null}
-              <span>{run.text}</span>
-            </span>;
-          })}
-        </div> : <p className="transcript-text">{displayedText}</p>}
-      </div>
-      {recording.text !== null ? <details className="recording-disclosure">
-        <summary>{t("Original part transcripts")}</summary>
-        <p className="transcript-text">{recording.text}</p>
-      </details> : null}
-    </> : occurrences.length > 1 ? <details className="recording-disclosure">
-      <summary>{t("Full transcript")}</summary>
-      <p className="transcript-text">{recording.text}</p>
-    </details> : <p className="transcript-text">{recording.text}</p>
-      : <p className="caption" role="status">{recording.state === "expired"
+    {displayedText !== null ? <RecordingTranscript>
+      <TranscriptTurns text={displayedText} turns={showingSelected ? hasSpeakerEvidence ? speakerRuns : undefined : recording.transcript_turns}
+        onSeek={recording.audio_available ? playback.seekTo : undefined} />
+      {showingSelected && recording.text !== null ? <RecordingTranscript label={t("Original part transcripts")}>
+        <TranscriptTurns text={recording.text} turns={recording.transcript_turns} onSeek={recording.audio_available ? playback.seekTo : undefined} />
+      </RecordingTranscript> : null}
+    </RecordingTranscript> : <p className="caption" role="status">{recording.state === "expired"
         ? t("Transcript unavailable after retention.") : t("This recording is waiting for transcription.")}</p>}
     {recording.text !== null && recording.state === "processing"
       ? <p className="caption" role="status">{t("Processing audio")}</p> : null}

@@ -9,6 +9,7 @@ import { useResource } from "./useResource";
 import type { Source } from "./types";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { groupTopicRuns } from "./topicOccurrences";
+import { RecordingTranscript } from "./RecordingTranscript";
 
 export type RecordingChapter = {
   id: string; title: string; started_at: string;
@@ -106,7 +107,10 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect, audioRef, initia
     <p className="caption">{timeLabel(source.started_at, timezone)}</p>
     {source.audio_available !== false && source.audio_availability !== "missing"
       ? <RecordingAudioPlayer src={audio} label={section.title} audioRef={audioRef} initialSpeed={initialSpeed} /> : null}
-    <TranscriptPassage source={source} section={section} />
+    {section.summary ? <p className="transcript-text">{section.summary}</p> : null}
+    <RecordingTranscript label={t("Transcript")}>
+      <TranscriptPassage source={source} section={section} />
+    </RecordingTranscript>
     <details onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);
     }}>

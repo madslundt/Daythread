@@ -7,6 +7,7 @@ import {
 } from "./transcriptTranslationRequests";
 import { ErrorState } from "./UI";
 import type { Source } from "./types";
+import { SourceTranscriptTurns } from "./RecordingTranscript";
 
 export function TranscriptPassage({ source, section }: {
   source: Source; section: { start_offset: number; end_offset: number };
@@ -21,7 +22,9 @@ export function TranscriptPassage({ source, section }: {
   // Without a source version there is no safe way to translate saved offsets.
   if (!source.transcript_version) return <p className="transcript-text">{original}</p>;
   return <TranscriptTranslation key={`${source.id}:${source.transcript_version}:${section.start_offset}:${section.end_offset}`}
-    sourceId={source.id} original={original} passage={{ ...section, transcript_version: source.transcript_version }} />;
+    sourceId={source.id} original={original} passage={{ ...section, transcript_version: source.transcript_version }}
+    renderText={(text, translated) => translated ? <p className="transcript-text">{text}</p>
+      : <SourceTranscriptTurns source={source} text={text} range={section} />} />;
 }
 
 export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText, renderFollowing }: {

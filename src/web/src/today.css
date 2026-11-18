@@ -425,5 +425,17 @@
 .day-recap-overview-heading > button { min-height: 44px; }
 .day-recap-prose { max-width: 75ch; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .day-recap-topic-link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.day-main .day-filters { margin: 0; padding: 0; border: 0; }
+.day-jump-links, .day-chat-scopes, .day-chat-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.day-jump-links .text-button, .day-generate-summary { min-height: 44px; }
+.day-chat { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; margin: 12px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); }
+.day-chat .day-chat-heading h2 { font: 600 15px/1.4 var(--font-display); margin: 0; }
+.day-chat-heading > svg { color: var(--accent); }
+.day-chat-scopes .button { min-height: 44px; white-space: normal; text-align: start; }
+.day-chat > p { flex: 1 0 100%; margin: 0; }
+.day-read-recap { margin: 16px 0; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+.day-read-recap > summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.day-read-recap .prose { max-width: 75ch; overflow-wrap: anywhere; padding-bottom: 10px; }
+#day-topics, #day-entries { scroll-margin-top: 80px; }
 .recap-summary-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-width: 75ch; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .recap-summary-toggle { min-height: 44px; margin-top: 6px; }

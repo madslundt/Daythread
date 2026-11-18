@@ -460,11 +460,13 @@ class Store(
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def get_audio(self, audio_id: str) -> dict | None:
-        with self.connect() as db:
-            db.execute("BEGIN")
-            row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
-            return decorate_locations(db, decorate_tags(db, [dict(row)]))[0] if row else None
+    def get_audio(self, audio_id: str, db=None) -> dict | None:
+        if db is None:
+            with self.connect() as connection:
+                connection.execute("BEGIN")
+                return self.get_audio(audio_id, connection)
+        row = db.execute("SELECT * FROM audio WHERE id=?", (audio_id,)).fetchone()
+        return decorate_locations(db, decorate_tags(db, [dict(row)]))[0] if row else None
 
     def get_audio_many(self, audio_ids: list[str]) -> dict[str, dict]:
         if not audio_ids:

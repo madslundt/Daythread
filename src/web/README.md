@@ -30,7 +30,15 @@ Settings → Connections lists recording brands from the server vendor catalog. 
 
 The UI shows empty, queued, failure, and model-unavailable states from the actual API. Recaps, chats, original audio, and correction history always come from home-core. Rewind audio uses the exact same end timestamp as its summary request. Gesture hints do not crop recordings, and the UI observes the configured flag cooldown.
 
-Today shows recording activity above the recap, including recordings waiting to upload,
+Today starts with the saved **Day summary**, or the introduction from the detailed recap if no
+separate summary has been generated. **Read the detailed recap** opens the long-form view;
+**Topics** lets you search and open individual subjects, and **Day entries** jumps to the
+chronological list of conversations, voice notes, and transcript imports. Those entries and
+their topics remain available before a day summary is ready. **Ask Daythread** opens Chat for
+the selected day, its Monday–Sunday week, or an editable date range beginning on the selected
+day. Chat uses the full chosen period, independently of Today’s tag and location filters.
+
+Today shows recording activity alongside the day content, including recordings waiting to upload,
 server queue and processing counts, transcription stages and chunk progress, and queued or
 active AI tasks (summaries, recording topics and translations). These counts cover the selected
 profile across days. Live Omi or phone recording requires a fresh companion report with recent
@@ -53,8 +61,10 @@ transcribed selection, including uploaded files with empty parts; omitted audio 
 playback interruptions.
 
 After transcription, the backend generates a descriptive recording title and topic sections using
-the local summary model. Open a recording in Today to read its full transcript directly below
-the audio player. Optional titled topics below the transcript expand to their original passages.
+the local summary model. Open a recording to see the topic summaries first, including stated
+decisions, key details, and follow-ups. Open **Full transcript** to read the original text.
+When speaker evidence is available, each turn has a label. **Show timestamps** reveals the
+available offsets, which jump to the matching audio when the recording can be played.
 Recording playback matches the iPhone controls: an audio-derived, seekable waveform,
 elapsed/total time, play/pause, 15-second skips, and speed adjustments from 0.5× to 2×
 in 0.25× steps. Dragging the waveform pauses playback and resumes it on release.

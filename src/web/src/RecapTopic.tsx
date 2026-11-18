@@ -12,6 +12,7 @@ import { useResource } from "./useResource";
 type Props = {
   title: string; parts: RecapPart[]; sources: Source[]; timezone: string;
   displayTitle?: string; displayParts?: RecapPart[]; inline?: boolean;
+  entrySummary?: string;
   onCorrect: () => void; compact: boolean;
   day?: string; expanded?: boolean; onExplore?: () => void;
   originalPassages?: OriginalRecapPassage[];
@@ -20,7 +21,7 @@ type Props = {
   onChat?: (scope: ChatScope, question?: string) => void;
 };
 
-export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, evidencePassages, onFocus }: Props) {
+export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, entrySummary, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, evidencePassages, onFocus }: Props) {
   const [showEvidence, setShowEvidence] = useState(false);
   const passageId = useId();
   const text = recapTopicText(parts);
@@ -38,7 +39,8 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   const body = <>
     {displayText ? displayParts.some((part) => part.kind === "heading") ? <RecapSubtopics parts={displayParts} />
       : inline ? <div className="recap-topic-summary"><RichText text={displayText} headingLevel={4} /></div> : <RecapSummary text={displayText} /> : null}
-    {originalText ? <><p className="caption">{t("Original passages")}</p><RecapSummary text={originalText} /></> : null}
+    {entrySummary ? <div className="recap-topic-summary"><RichText text={entrySummary} headingLevel={4} /></div>
+      : originalText ? <><p className="caption">{t("Original passages")}</p><RecapSummary text={originalText} /></> : null}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
         t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: heading }))}>

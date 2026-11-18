@@ -8,6 +8,7 @@ import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { groupTopicRuns } from "./topicOccurrences";
 import { RecordingTopicList } from "./RecordingTopicList";
 import { playbackTime } from "./recordingWaveform";
+import { RecordingTranscript } from "./RecordingTranscript";
 
 export function RecordingSections({ source, compact = false, onSeek, selectedOffset, onSelectOffset }: {
   source: Source; compact?: boolean; onSeek?: (seconds?: number) => void;
@@ -29,19 +30,24 @@ function CompactTopics({ source, onSeek, selectedOffset, onSelectOffset }: {
   const topics = groupTopicRuns(source.sections || [], (section) => section.title,
     (left, right) => left.end_offset === right.start_offset);
   const spans = topics.flatMap((topic) => topic.occurrences.map((sections) => ({ ...sections[0],
-    end_offset: sections.at(-1)!.end_offset, end_seconds: sections.at(-1)!.end_seconds })));
+    end_offset: sections.at(-1)!.end_offset, end_seconds: sections.at(-1)!.end_seconds,
+    summary: sections.every((section) => section.summary)
+      ? [...new Set(sections.map((section) => section.summary))].join("\n\n") : undefined })));
   const active = spans.find((span) => span.start_offset === (selectedOffset ?? selected)) || spans[0];
   return <div className="recording-sections">
     <h3>{t("Topics")}</h3>
     <RecordingTopicList topics={topics.map((topic) => ({ key: topic.key, title: topic.title,
       occurrences: topic.occurrences.map(([section]) => ({ id: String(section.start_offset),
-        label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds) })) }))}
+        label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds),
+        summary: spans.find((span) => span.start_offset === section.start_offset)?.summary })) }))}
       selected={active ? String(active.start_offset) : undefined} onSelect={(id) => {
         const span = spans.find((span) => String(span.start_offset) === id);
         if (!span) return;
-        setSelected(span.start_offset); onSelectOffset?.(span.start_offset); onSeek?.(span.start_seconds ?? 0);
+        setSelected(span.start_offset); onSelectOffset?.(span.start_offset); onSeek?.(span.start_seconds);
       }} />
-    {active ? <TranscriptPassage source={source} section={active} /> : null}
+    {active ? <RecordingTranscript label={t("Transcript")}>
+      <TranscriptPassage source={source} section={active} />
+    </RecordingTranscript> : null}
   </div>;
 }
 
@@ -53,12 +59,13 @@ function RecordingSection({ source, section, index, compact, onSeek }: {
   return <details onToggle={(event) => {
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
-    <summary onClick={() => onSeek?.(section.start_seconds ?? 0)}>{compact ? <><span>{section.title}</span><Icon name="chevron-right" size={14} /></> : <><span className="caption">{index + 1}.</span> {section.title}</>}</summary>
+    <summary onClick={() => onSeek?.(section.start_seconds)}>{compact ? <><span>{section.title}</span><Icon name="chevron-right" size={14} /></> : <><span className="caption">{index + 1}.</span> {section.title}</>}</summary>
+    {section.summary ? <p className="recording-topic-summary transcript-text">{section.summary}</p> : null}
     {open && !onSeek && section.start_seconds !== undefined && source.audio_available !== false && source.audio_availability !== "missing"
       ? <RecordingAudioPlayer label={section.title}
         src={`${audioUrl(source.id)}#t=${section.start_seconds},${section.end_seconds}`} /> : null}
-    {open ? <TranscriptPassage source={source} section={section} /> : <p className="transcript-text">
-      {Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("")}
-    </p>}
+    {open ? <RecordingTranscript label={t("Transcript")}>
+      <TranscriptPassage source={source} section={section} />
+    </RecordingTranscript> : null}
   </details>;
 }

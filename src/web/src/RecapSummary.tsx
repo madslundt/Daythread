@@ -10,17 +10,17 @@ export function recapPreview(text: string): string {
   return plain.slice(0, 240).replace(/\s+\S*$/, "") + "…";
 }
 
-export function RecapSummary({ outputId, text, renderContent, children }: {
-  outputId?: string; text: string; renderContent: (text: string) => ReactNode; children?: ReactNode;
+export function RecapSummary({ outputId, text, renderContent, children, expandLabel }: {
+  outputId?: string; text: string; renderContent: (text: string) => ReactNode; children?: ReactNode; expandLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
-  return <RecapSummaryView {...{ outputId, text, renderContent, children, expanded, id }}
+  return <RecapSummaryView {...{ outputId, text, renderContent, children, expandLabel, expanded, id }}
     onToggle={() => setExpanded((value) => !value)} />;
 }
 
-export function RecapSummaryView({ outputId, text, renderContent, children, expanded, id, onToggle }: {
-  outputId?: string; text: string; renderContent: (text: string) => ReactNode; children?: ReactNode;
+export function RecapSummaryView({ outputId, text, renderContent, children, expandLabel, expanded, id, onToggle }: {
+  outputId?: string; text: string; renderContent: (text: string) => ReactNode; children?: ReactNode; expandLabel?: string;
   expanded: boolean; id: string; onToggle: () => void;
 }) {
   return <div className="recap-summary-disclosure">
@@ -30,6 +30,6 @@ export function RecapSummaryView({ outputId, text, renderContent, children, expa
       {expanded ? children : null}
     </div>
     <button type="button" className="text-button recap-summary-toggle" aria-expanded={expanded}
-      aria-controls={id} onClick={onToggle}>{expanded ? t("Collapse recap") : t("Expand recap")}</button>
+      aria-controls={id} onClick={onToggle}>{expanded ? t("Collapse recap") : expandLabel ?? t("Expand recap")}</button>
   </div>;
 }

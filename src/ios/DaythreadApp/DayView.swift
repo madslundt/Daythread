@@ -9,7 +9,7 @@ struct DayView: View {
     private let selection: Binding<Date?>?
     private var selectedDateBinding: Binding<Date?> { selection ?? $localSelectedDate }
     private var selectedDate: Date? { selectedDateBinding.wrappedValue }
-    private enum Destination: Hashable { case rewind, chat(String), questions(String) }
+    private enum Destination: Hashable { case rewind, chat(String), chatWeek(String, String), chatRange(String), questions(String) }
     @State private var destination: Destination?
     private enum Sheet: Identifiable {
         case importAudio, filters, source(SourceSelection)
@@ -52,7 +52,9 @@ struct DayView: View {
     @State private var contentLanguageScope = ""
     @State private var requestedTopic: RecapTopicRequest?
     @State private var preparedTopicRequestID: UUID?
+    @State private var readingRecap = false
     private static let topicListAnchor = "day.recap.topics"
+    private static let entriesAnchor = "day.entries"
 
     init(date: Date? = nil, filters: DayFilterScope = .init(), topicTitle: String? = nil, selection: Binding<Date?>? = nil) {
         _localSelectedDate = State(initialValue: date)
@@ -86,10 +88,6 @@ struct DayView: View {
         List {
             Section {
                 DayCalendarPicker(selectedDate: selectedDateBinding)
-                if diary.dayKey(day) == diary.dayKey(model.now) { CaptureGlance() }
-                Button { destination = .questions(dayKey) } label: {
-                    Label(L10n.text("Questions"), systemImage: "questionmark.bubble")
-                }.accessibilityIdentifier("day.questions")
             }
             if filters.isFiltered {
                 DayFilterSection(scope: filters, tags: tags, zones: zones, open: { sheet = .filters }, clear: { tagID = ""; zoneID = "" })
@@ -133,11 +131,15 @@ struct DayView: View {
                 }
             } header: {
                 HStack {
-                    Text(L10n.text("Recordings"))
+                    Text(L10n.text("Day entries"))
                     if loadedRecordingKey == cacheKey && total > 0 { Text("\(total)").monospacedDigit() }
-                }
+                }.id(Self.entriesAnchor)
             }
             Section {
+                if dayKey == diary.dayKey(model.now) { CaptureGlance() }
+                Button { destination = .questions(dayKey) } label: {
+                    Label(L10n.text("Questions"), systemImage: "questionmark.bubble")
+                }.accessibilityIdentifier("day.questions")
                 DisclosureGroup(L10n.text("Follow through")) {
                     InboxLink()
                     NavigationLink { LabelsView() } label: { Label(L10n.text("People & projects"), systemImage: "person.2") }
@@ -171,10 +173,6 @@ struct DayView: View {
                 Menu {
                     Button { sheet = .filters } label: { Label(L10n.text("Filters"), systemImage: "line.3.horizontal.decrease") }
                         .accessibilityIdentifier("day.filters")
-                    if !filters.isFiltered {
-                        Button { destination = .chat(dayKey) } label: { Label(L10n.text("Ask your day"), systemImage: "bubble.left.and.bubble.right") }
-                            .accessibilityIdentifier("day.chat")
-                    }
                     if model.canRewind {
                         Button { model.checkpoint(); destination = .rewind } label: { Label(L10n.text("Rewind"), systemImage: "gobackward.10") }
                             .accessibilityIdentifier("day.rewind")
@@ -187,7 +185,9 @@ struct DayView: View {
         .navigationDestination(item: $destination) { value in
             switch value {
             case .rewind: RewindView()
-            case .chat(let selectedDay): ChatView(initialScope: .day(selectedDay)).id(selectedDay)
+             case .chat(let selectedDay): ChatView(initialScope: .day(selectedDay)).id(selectedDay)
+            case .chatWeek(let start, let end): ChatView(initialScope: .range(start, end)).id(start + end)
+            case .chatRange(let day): ChatView(initialScope: .range(day, day), chooseDateRange: true).id(day)
             case .questions(let selectedDay): DayQuestionsView(day: selectedDay).id(model.archiveIdentity + selectedDay)
             }
         }
@@ -207,8 +207,8 @@ struct DayView: View {
             _ = await (zones, tags)
         }
         .onChange(of: model.archiveIdentity) { _, _ in zones = []; zoneID = ""; tags = []; tagID = ""; tagRevision = ""; requestedTopic = nil }
-        .onChange(of: dayKey) { _, _ in requestedTopic = nil }
-        .onChange(of: filters.identity) { _, _ in requestedTopic = nil }
+        .onChange(of: dayKey) { _, _ in requestedTopic = nil; readingRecap = false }
+        .onChange(of: filters.identity) { _, _ in requestedTopic = nil; readingRecap = false }
         .task(id: cacheKey) {
             if !query.isEmpty { do { try await Task.sleep(for: .milliseconds(300)) } catch { return } }
             await load()
@@ -231,15 +231,25 @@ struct DayView: View {
         .onDisappear { requestID = UUID() }
     }
 
-    private func recapSection(scroll: ScrollViewProxy) -> some View {
+    @ViewBuilder private func recapSection(scroll: ScrollViewProxy) -> some View {
         let recap = currentRecap
         let focusedScope = scopeKey
-        let hasContent = !recap["summary"].text.isEmpty || recap["sources"].array.contains(where: { !$0["sections"].array.isEmpty })
-        return Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day recap")) {
+        let summary = recap["summary"].text
+        let recapTopics = RecapTranslationMapping.original(summary, day: dayKey).topics
+        let hasTopics = recapTopics.contains { $0.original.title != nil } ||
+            !RecapOriginalTopics.topics(sources: recap["sources"].array.map(\.originalTopicSource)).isEmpty
+        let hasContent = !summary.isEmpty || hasTopics
+        let introduction = recapTopics.filter { $0.original.title == nil }.map(\.original.text).joined(separator: "\n\n")
+        Section(filters.isFiltered ? L10n.text("Filtered recap") : L10n.text("Day summary")) {
             if !filters.isFiltered {
-                DayRecapOverview(day: dayKey, onTopic: { requestedTopic = RecapTopicRequest(title: $0) })
+                DayRecapOverview(day: dayKey, onTopic: { requestedTopic = RecapTopicRequest(title: $0) },
+                    introduction: introduction, hasDetailedRecap: !summary.isEmpty)
                     .id(model.archiveIdentity + model.archiveRevision + dayKey)
             }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 24) { dayJumps(scroll: scroll, hasTopics: hasTopics) }
+                VStack(alignment: .leading, spacing: 10) { dayJumps(scroll: scroll, hasTopics: hasTopics) }
+            }.buttonStyle(.borderless)
             ErrorNote(message: loadedScope == scopeKey ? recapError : nil)
             if loadedScope == scopeKey && recapError != nil { Button(L10n.text("Retry recap")) { Task { await retryRecap() } } }
             if recap["generation_state"].text == "failed" {
@@ -251,8 +261,23 @@ struct DayView: View {
                 ProgressView(filters.isFiltered ? L10n.text("Loading filtered recap…") : L10n.text("Bringing your day together…"))
             }
             if !hasContent && ["queued", "running"].contains(recap["generation_state"].text) { ProgressView(L10n.text("Preparing a recap for the selected filters…")) }
-            if hasContent {
-                Text(L10n.text("Topics")).font(.headline)
+            if !summary.isEmpty {
+                DisclosureGroup(L10n.text("Read the detailed recap"), isExpanded: $readingRecap) {
+                    if readingRecap {
+                        if filters.isFiltered { detailedRecapText(summary) }
+                        else { SummaryTranslationView(output: recap, renderedContent: { translation, showing in
+                            detailedRecapText(showing ? translation?["text"].text ?? summary : summary)
+                        }) }
+                    }
+                }
+            } else if !hasContent && recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text),
+                      filters.isFiltered || recapEmptyMessage != L10n.text("No recap yet") {
+                Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        chatSection
+        if hasTopics {
+            Section(L10n.text("Topics")) {
                 RecapContentView(recap: recap, day: dayKey, onCorrect: { Task { await reloadMembership() } }, emptyMessage: recapEmptyMessage, filters: filters,
                     onFocusChange: { value in if scopeKey == focusedScope { recapFocus = value; recapFocusScope = focusedScope } },
                     onContentLanguageChange: { value in if scopeKey == focusedScope { contentLanguage = value; contentLanguageScope = focusedScope } },
@@ -261,14 +286,15 @@ struct DayView: View {
                         guard scopeKey == focusedScope else { return }
                         withAnimation(.easeInOut(duration: 0.2)) { scroll.scrollTo(id, anchor: .top) }
                         requestedTopic = nil; preparedTopicRequestID = nil
-                    })
+                    }, todayView: true)
                     .id(scopeKey + recap["scope_fingerprint"].text + recap["output_id"].text + recap["summary"].text)
                     .id(Self.topicListAnchor)
-            } else if recap != .null && recapError == nil && !["queued", "running", "failed"].contains(recap["generation_state"].text) {
-                Text(recapEmptyMessage).font(.subheadline).foregroundStyle(.secondary)
             }
-            if recap != .null {
+        }
+        if recap != .null {
+            Section {
                 DisclosureGroup(L10n.text("About this recap")) {
+                    if !filters.isFiltered { RecapTemplateControl(day: dayKey, onGenerated: { Task { await reloadMembership() } }) }
                     if !filters.isFiltered && !recap["summary"].text.isEmpty {
                         NavigationLink { RecapHistoryView(day: dayKey) } label: { Label(L10n.text("Saved versions & export"), systemImage: "clock.arrow.circlepath") }
                     }
@@ -284,6 +310,37 @@ struct DayView: View {
                         EvidenceFeedbackView(outputID: recap["output_id"].text, evidence: recap["evidence"], outputText: recap["summary"].text)
                     }
                 }.font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder private func dayJumps(scroll: ScrollViewProxy, hasTopics: Bool) -> some View {
+        if hasTopics {
+            Button(L10n.text("Topics")) { scroll.scrollTo(Self.topicListAnchor, anchor: .top) }
+        }
+        Button(L10n.text("Day entries")) { scroll.scrollTo(Self.entriesAnchor, anchor: .top) }
+    }
+
+    private func detailedRecapText(_ text: String) -> some View {
+        ChatMarkdownText(content: RecapPresentation.readingText(text))
+            .environment(\.openURL, OpenURLAction { _ in .discarded })
+    }
+
+    private var chatSection: some View {
+        let week = diary.dateRange(for: .week, containing: day)
+        return Section(L10n.text("Ask Daythread")) {
+            Button { destination = .chat(dayKey) } label: {
+                Label(L10n.text("This day"), systemImage: "bubble.left.and.bubble.right")
+            }.accessibilityIdentifier("day.chat").accessibilityLabel(L10n.text("Chat with this day"))
+            Button { destination = .chatWeek(diary.dayKey(week.lowerBound), diary.dayKey(week.upperBound)) } label: {
+                Label(L10n.text("This week"), systemImage: "calendar")
+            }.accessibilityLabel(L10n.text("Chat with this week"))
+            Button { destination = .chatRange(dayKey) } label: {
+                Label(L10n.text("Date range"), systemImage: "calendar.badge.clock")
+            }.accessibilityLabel(L10n.text("Chat with a date range"))
+            if filters.isFiltered {
+                Text(L10n.text("Chat uses all entries in the chosen period, regardless of these filters."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

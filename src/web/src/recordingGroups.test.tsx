@@ -37,7 +37,8 @@ describe("compact recording sessions", () => {
     const html = renderToStaticMarkup(<SessionSources group={group}
       day="2026-10-16" query="café & plans" zoneID="home" tagID="friends" timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("First few seconds. The conversation continues.");
+    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain("First few seconds. The conversation continues.");
     expect(html).not.toContain("Next recordings");
     expect(html).toContain("Full recording &amp; tools");
     expect(html).toContain("/v1/recording-groups/group/audio?day=2026-10-16&amp;q=caf%C3%A9+%26+plans&amp;zone_id=home&amp;tag_id=friends&amp;version=current&amp;profile_id=default");
@@ -68,8 +69,9 @@ describe("compact recording sessions", () => {
     const html = renderToStaticMarkup(<SessionSources group={parrot} archive
       day="2026-10-16" query="" timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("Remote speaker.");
-    expect(html).toContain("Local speaker.");
+    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain("Remote speaker.");
+    expect(html).not.toContain("Local speaker.");
     expect(html).toContain("Original part recordings");
     expect(html).toContain("Recording audio is incomplete");
     expect(html).toContain("/v1/recording-groups/group/audio?day=2026-10-16&amp;q=&amp;archive=true&amp;version=mix");
@@ -108,7 +110,8 @@ describe("compact recording sessions", () => {
     }, loading: false, error: "", refresh: vi.fn(), setData: vi.fn() });
     const html = renderToStaticMarkup(<RecordingChapterContent chapter={chapter} timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("First passage in the same subject.");
+    expect(html).toContain("<summary>Transcript</summary>");
+    expect(html).not.toContain("First passage in the same subject.");
     expect(html).toContain(">Previous</button>");
     expect(html).toContain(">Next</button>");
     expect(useResource).toHaveBeenCalledExactlyOnceWith("/v1/transcripts/part-0");

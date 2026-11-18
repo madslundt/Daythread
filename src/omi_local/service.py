@@ -29,18 +29,20 @@ from .source_provenance import public_metadata
 from .speakers import Speakers
 from .store import Store
 from .summary_filter import NO_CONTENT
+from .transcript_turns import transcript_turns
 from .usage import UsageLedger
 from .vendor_catalog import vendor_definition
 from .vendor_imports import transcript_import
 from .voices import Voices
 
 
-def public_source(row: dict) -> dict:
+def public_source(row: dict, *, attributed: list[dict] | None = None) -> dict:
     result = {
         key: row[key] for key in ("id", "device_id", "started_at", "ended_at", "state", "text")
     }
     result["audio_available"] = bool(row.get("audio_available", True))
     result["segments"] = json.loads(row.get("segments", "[]"))
+    result["transcript_turns"] = transcript_turns(row, attributed)
     result["source_version"] = row.get("source_version", "")
     result["source_kind"] = row.get("source_kind", "")
     result["source_id"] = row.get("source_id", "")
@@ -71,7 +73,9 @@ def public_source(row: dict) -> dict:
     result["title"] = topics.get("title")
     if topics.get("summary_sources") == 1:
         result["recording_summary"] = topics.get("recording_summary")
-    result["sections"] = topics.get("sections", [])
+    result["sections"] = [section if topics.get("summary_sources") == 1 else {
+        key: value for key, value in section.items() if key != "summary"
+    } for section in topics.get("sections", [])]
     for key in (
         "received_at",
         "processing_started_at",

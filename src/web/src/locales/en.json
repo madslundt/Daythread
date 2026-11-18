@@ -1,4 +1,6 @@
 {
+  "Show timestamps": "Show timestamps",
+  "Speaker {value0}": "Speaker {value0}",
   ", recordings available": ", recordings available",
   "Archive": "Archive",
   "Archive view": "Archive view",
@@ -3288,5 +3290,18 @@
   "Webhook URL": "Webhook URL",
   "Copy webhook URL": "Copy webhook URL",
   "Could not copy the webhook URL. Select it and copy it manually.": "Could not copy the webhook URL. Select it and copy it manually.",
-  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Saved signing secret. Saving a different secret immediately revokes the old one."
+  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Saved signing secret. Saving a different secret immediately revokes the old one.",
+  "Ask Daythread": "Ask Daythread",
+  "This day": "This day",
+  "Chat with this week": "Chat with this week",
+  "Chat with a date range": "Chat with a date range",
+  "Chat uses all entries in the chosen period, regardless of these filters.": "Chat uses all entries in the chosen period, regardless of these filters.",
+  "Day entries": "Day entries",
+  "Read the detailed recap": "Read the detailed recap",
+  "Read day summary": "Read day summary",
+  "No day summary yet": "No day summary yet",
+  "Generate day summary": "Generate day summary",
+  "Quick rewind uses the whole day.": "Quick rewind uses the whole day.",
+  "{value0} entry": "{value0} entry",
+  "{value0} entries": "{value0} entries"
 }

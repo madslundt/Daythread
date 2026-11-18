@@ -7,12 +7,12 @@ extension JSONValue {
               transcriptVersion: self["transcript_version"].text, text: self["text"].text,
               sections: self["sections"].array.map {
                 .init(title: $0["title"].text, chapterID: $0["chapter_id"].text,
-                      start: $0["start_offset"].integer, end: $0["end_offset"].integer)
+                      start: $0["start_offset"].integer, end: $0["end_offset"].integer, summary: $0["summary"].text)
               })
     }
 }
 
-/// These are original section titles and passages, with no generated recap prose.
+/// These topics come from the saved entry chapters, independently of the day recap.
 struct RecapOriginalTopicRow: View {
     let topic: RecapOriginalTopics.Topic
     let day: String
@@ -20,6 +20,7 @@ struct RecapOriginalTopicRow: View {
     var displayTitle: String? = nil
     var filters = DayFilterScope()
     var scopeFingerprint = ""
+    var showSummary = false
     @Binding var expanded: Bool
     let onFocus: (RecapTopicFocus) -> Void
     @Environment(AppModel.self) private var model
@@ -38,12 +39,18 @@ struct RecapOriginalTopicRow: View {
         }.joined() + refresh.uuidString + String(describing: phase)
     }
     private var verifiedSources: [JSONValue] { validatedKey == key ? sources : [] }
+    private var summary: String {
+        var seen = Set<String>()
+        return topic.parts.map(\.summary).filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n\n")
+    }
 
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
-            RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title, preview: L10n.text("Original passages"), expanded: $expanded)
+            RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title,
+                preview: showSummary && !summary.isEmpty ? summary : L10n.text("Original passages"), expanded: $expanded)
             if expanded {
+                if showSummary && !summary.isEmpty { Text(summary).textSelection(.enabled) }
                 if loading { ProgressView(L10n.text("Checking original evidence…")) }
                 ErrorNote(message: error)
                 if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }

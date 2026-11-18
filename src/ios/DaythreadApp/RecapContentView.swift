@@ -23,6 +23,7 @@ struct RecapContentView: View {
     var onContentLanguageChange: ((String?) -> Void)? = nil
     var requestedTopic: RecapTopicRequest? = nil
     var onTopicOpened: ((String) -> Void)? = nil
+    var todayView = false
     @State private var openedRequestID: UUID?
     @State private var scrolledRequestID: UUID?
     @State private var query = ""
@@ -41,7 +42,7 @@ struct RecapContentView: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 18) {
-            if !effectiveFilters.isFiltered {
+            if !effectiveFilters.isFiltered && !todayView {
                 RecapTemplateControl(day: day, onGenerated: onCorrect)
             }
             if !effectiveFilters.isFiltered && !recap["summary"].text.isEmpty {
@@ -49,7 +50,7 @@ struct RecapContentView: View {
                     topicList(translation: translation, showingTranslation: showing)
                 })
             } else { topicList(translation: nil, showingTranslation: false) }
-            if !effectiveFilters.isFiltered {
+            if !effectiveFilters.isFiltered && !todayView {
                 NavigationLink { ChatView(initialScope: .day(day)) } label: {
                     Label(L10n.text("Ask about this day"), systemImage: "bubble.left.and.bubble.right")
                 }
@@ -74,7 +75,7 @@ struct RecapContentView: View {
         return RecapTopicsContent(original: original, translated: translated, showingTranslation: showingTranslation,
             mappingUnavailable: translation != nil && translated == nil, originals: originalTopics,
             contentLanguage: showingTranslation ? translation?["language"].text : nil,
-            recap: recap, day: day, filters: effectiveFilters, emptyMessage: emptyMessage,
+            recap: recap, day: day, filters: effectiveFilters, emptyMessage: emptyMessage, todayView: todayView,
             query: Binding(get: { query }, set: { query = $0; select(nil, title: "") }), browsingRecordings: $browsingRecordings,
             showingAllTopics: $showingAllTopics, expandedID: expandedID, requestedTopic: requestedTopic, onSelect: select, onCorrect: onCorrect,
             onFocus: { focus in if expandedID == focus.id { onFocusChange?(focus) } })
@@ -113,6 +114,7 @@ private struct RecapTopicsContent: View {
     let day: String
     let filters: DayFilterScope
     let emptyMessage: String?
+    let todayView: Bool
     @Binding var query: String
     @Binding var browsingRecordings: Bool
     @Binding var showingAllTopics: Bool
@@ -128,11 +130,14 @@ private struct RecapTopicsContent: View {
     @Environment(AppModel.self) private var model
     @Environment(\.locale) private var interfaceLocale
     private let topicOverviewLimit = 5
+    private var hasRecapTopics: Bool { !todayView || original.topics.contains { $0.original.title != nil } }
+    private var showingEntryTopics: Bool { browsingRecordings || !hasRecapTopics }
     private var searching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var matchingTopics: [RecapTranslationMapping.Topic] {
-        guard !browsingRecordings else { return [] }
+        guard !showingEntryTopics else { return [] }
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return original.topics.filter { topic in
+            if todayView && topic.original.title == nil { return false }
             let display = translated?.topics.first { $0.id == topic.id }?.display
             let text = (topic.original.title ?? "") + " " + topic.original.text + " " + (display?.title ?? "") + " " + (display?.text ?? "")
             return topic.id == expandedID || search.isEmpty || text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive]) != nil
@@ -142,7 +147,7 @@ private struct RecapTopicsContent: View {
         showingAllTopics || searching ? matchingTopics : Array(matchingTopics.prefix(topicOverviewLimit))
     }
     private var followUps: [RecapPresentation.Group] { showingTranslation ? translated?.followUps ?? original.followUps : original.followUps }
-    private var labels: [DisplayTranslations.Label] { browsingRecordings ? originals.compactMap(\.displayLabel) : [] }
+    private var labels: [DisplayTranslations.Label] { showingEntryTopics ? originals.compactMap(\.displayLabel) : [] }
     private var labelsKey: String {
         model.archiveIdentity + model.archiveRevision + filters.identity + recap["scope_fingerprint"].text + labelsRefresh.uuidString + DisplayTranslations.identity(language: contentLanguage, labels: labels)
     }
@@ -151,10 +156,10 @@ private struct RecapTopicsContent: View {
         topic.displayLabel.flatMap { labelValues[$0.reference] } ?? topic.title
     }
     private var visibleOriginals: [RecapOriginalTopics.Topic] {
-        guard browsingRecordings else { return [] }
+        guard showingEntryTopics else { return [] }
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return originals.filter { topic in
-            let text = topic.title + " " + originalTitle(topic) + " " + topic.parts.map(\.quote).joined(separator: " ")
+            let text = topic.title + " " + originalTitle(topic) + " " + topic.parts.map { $0.summary + " " + $0.quote }.joined(separator: " ")
             return "original:" + topic.id == expandedID || search.isEmpty || text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
     }
@@ -173,7 +178,7 @@ private struct RecapTopicsContent: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 14) {
-            if !originals.isEmpty {
+            if !originals.isEmpty && hasRecapTopics {
                 Button {
                     browsingRecordings.toggle(); showingAllTopics = false; query = ""; select(nil, title: "")
                 } label: {
@@ -181,7 +186,7 @@ private struct RecapTopicsContent: View {
                           systemImage: browsingRecordings ? "chevron.left" : "magnifyingglass")
                 }.accessibilityIdentifier("recap.browseTopics")
             }
-            TextField(browsingRecordings ? L10n.text("Find a topic in this day") : L10n.text("Search recap topics"), text: $query).textFieldStyle(.roundedBorder)
+            TextField(showingEntryTopics ? L10n.text("Find a topic in this day") : L10n.text("Search recap topics"), text: $query).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("recap.topicSearch")
             if labelState.isLoading(key: labelsKey, language: contentLanguage, labels: labels) { ProgressView(L10n.text("Translating…")) }
             if let error = labelState.error(for: labelsKey) {
@@ -191,7 +196,7 @@ private struct RecapTopicsContent: View {
             if mappingUnavailable {
                 Text(L10n.text("Update this translation to keep the recap’s topics and layout.")).font(.caption).foregroundStyle(.secondary)
             }
-            if recap["summary"].text.isEmpty && !browsingRecordings {
+            if recap["summary"].text.isEmpty && !showingEntryTopics {
                 Text(emptyMessage ?? L10n.text("No useful recap content in transcribed recordings yet. Your recordings remain available.")).font(.subheadline).foregroundStyle(.secondary)
             }
             if visibleTopics.isEmpty && visibleOriginals.isEmpty && !query.isEmpty {
@@ -215,24 +220,25 @@ private struct RecapTopicsContent: View {
                     }
                 Divider()
             }
-            if !browsingRecordings && !searching && matchingTopics.count > topicOverviewLimit {
+            if (!showingEntryTopics || todayView) && !searching && (showingEntryTopics ? visibleOriginals.count : matchingTopics.count) > topicOverviewLimit {
                 Button(showingAllTopics ? L10n.text("Show fewer topics") : L10n.text("Show all topics")) {
                     showingAllTopics.toggle()
-                    if !showingAllTopics, let expandedID,
-                       !matchingTopics.prefix(topicOverviewLimit).contains(where: { $0.id == expandedID }) {
+                    let firstIDs = showingEntryTopics ? visibleOriginals.prefix(topicOverviewLimit).map { "original:" + $0.id }
+                        : matchingTopics.prefix(topicOverviewLimit).map(\.id)
+                    if !showingAllTopics, let expandedID, !firstIDs.contains(expandedID) {
                         select(nil, title: "")
                     }
                 }.accessibilityIdentifier("recap.showAllTopics")
                     .accessibilityValue(showingAllTopics ? L10n.text("Expanded") : L10n.text("Collapsed"))
             }
-            ForEach(visibleOriginals) { topic in
+            ForEach(todayView && !showingAllTopics && !searching ? Array(visibleOriginals.prefix(topicOverviewLimit)) : visibleOriginals) { topic in
                 RecapOriginalTopicRow(topic: topic, day: day, onCorrect: onCorrect, displayTitle: originalTitle(topic), filters: filters,
-                    scopeFingerprint: recap["scope_fingerprint"].text,
+                    scopeFingerprint: recap["scope_fingerprint"].text, showSummary: todayView,
                     expanded: Binding(get: { expandedID == "original:" + topic.id }, set: { select($0 ? "original:" + topic.id : nil, title: topic.title) }),
                     onFocus: acceptFocus)
                 Divider()
             }
-            if !browsingRecordings && !followUps.isEmpty {
+            if !showingEntryTopics && !followUps.isEmpty {
                 DisclosureGroup(L10n.text("Follow-ups mentioned in the recap"), isExpanded: $showingFollowUps) {
                     ForEach(Array(followUps.enumerated()), id: \.offset) { _, group in Text(.init(group.text)).textSelection(.enabled) }
                     Text(L10n.text("Review and manage these in the overview below.")).font(.caption).foregroundStyle(.secondary)
@@ -268,6 +274,8 @@ struct RecapDisclosureStyle: DisclosureGroupStyle {
 struct DayRecapOverview: View {
     let day: String
     let onTopic: (String) -> Void
+    var introduction = ""
+    var hasDetailedRecap = false
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var phase
     @Environment(\.locale) private var interfaceLocale
@@ -283,7 +291,7 @@ struct DayRecapOverview: View {
             if !overview["summary"].text.isEmpty {
                 SummaryTranslationView(output: overview, languageLabel: L10n.source("Recap language"), renderedContent: { translation, showing in
                     let text = showing ? translation?["text"].text ?? overview["summary"].text : overview["summary"].text
-                    RecapOverviewDisclosure(text: text, expanded: $expanded, identifier: "recap.overview") {
+                    RecapOverviewDisclosure(text: text, expanded: $expanded, identifier: "recap.overview", expandLabel: L10n.text("Read day summary")) {
                         overviewText(text)
                     }
                 })
@@ -293,9 +301,10 @@ struct DayRecapOverview: View {
                     Text(L10n.text("New recordings are available. Generate again to include them."))
                         .font(.caption).foregroundStyle(Theme.accent)
                 }
-            } else if overview["can_generate"] == .bool(true) {
-                Text(L10n.text("Get a recap of this day in up to 5 minutes of reading. It is saved for later."))
-                    .font(.subheadline).foregroundStyle(.secondary)
+            } else if !introduction.isEmpty {
+                overviewText(RecapPresentation.readingText(introduction))
+            } else if overview != .null && !hasDetailedRecap {
+                Text(L10n.text("No day summary yet")).font(.subheadline).foregroundStyle(.secondary)
             }
             ErrorNote(message: error)
             if error != nil && overview == .null {
@@ -305,7 +314,7 @@ struct DayRecapOverview: View {
                 ProgressView(L10n.text("Generating day recap…"))
                     .accessibilityIdentifier("recap.overview.generating")
             } else if overview["can_generate"] == .bool(true) {
-                Button(overview["summary"].text.isEmpty ? L10n.text("Recap") : L10n.text("Generate again")) {
+                Button(overview["summary"].text.isEmpty ? L10n.text("Generate day summary") : L10n.text("Generate again")) {
                     operation = Task { await generate() }
                 }.accessibilityIdentifier("recap.overview.generate")
             }

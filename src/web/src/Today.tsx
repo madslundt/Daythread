@@ -4,7 +4,7 @@ import { t } from "./i18n";
 import { ImportanceButton } from "./Importance";
 import { useEffect, useState } from "react";
 import { allDayFilters, dayFilterKey, dayFiltersForProfile, hasDayFilters, rememberDayFilters, type DayFilters } from "./dayFilters";
-import { localDay, timeLabel } from "./format";
+import { dateRangeForShortcut, localDay, timeLabel } from "./format";
 import { CaptureStatus, RecordingActivity } from "./CaptureStatus";
 export { CaptureStatus } from "./CaptureStatus";
 import { Icon } from "./Icon";
@@ -54,7 +54,6 @@ export function Today({
   return (
     <div className="day-layout">
       <div className="day-main">
-        {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
         <section className="day-filters" aria-label={t("Day filters")}>
           <div className="day-filter-heading">
             <button type="button" className="text-button" aria-expanded={filtersOpen} aria-controls="day-filter-options" onClick={() => setFiltersOpen(!filtersOpen)}>
@@ -73,7 +72,8 @@ export function Today({
           </div>
           {filtered ? <p className="caption" role="status">{t("Only recordings matching every selected filter are included.")}</p> : null}
         </section>
-        <RecapSection key={`recap-${scopeKey}`} day={day} timezone={timezone} status={status} statusError={statusError} onUpload={onUpload} onChat={onChat} filters={filters} compact />
+        <RecapSection key={`recap-${scopeKey}`} day={day} timezone={timezone} status={status} statusError={statusError}
+          onChat={onChat} filters={filters} compact todayView chatShortcuts={<DayChat day={day} filtered={filtered} onChat={onChat} />} />
         <TranscriptTimeline
           key={`timeline-${scopeKey}`}
           day={day}
@@ -82,20 +82,17 @@ export function Today({
           onUpload={onUpload}
           onChat={onChat}
           filters={filters}
+          todayView
         />
       </div>
       <aside className="day-rail" aria-label={t("Day tools and capture")}>
-        {filtered ? <p className="caption day-whole-day-tools">{t("Chat and quick rewind use the whole day.")}</p> : null}
+        {day === localDay(timezone) ? <RecordingActivity status={status} error={statusError} /> : null}
+        {filtered ? <p className="caption day-whole-day-tools">{t("Quick rewind uses the whole day.")}</p> : null}
         <details className="day-utility"><summary><Icon name="rewind" size={18} />{t("Quick rewind")}<Icon name="chevron-right" size={14} /></summary>
           <QuickRewind historical={day !== localDay(timezone)} onRewind={onRewind} />
         </details>
         <section className="day-tools">
           <h2>{t("Day tools")}</h2>
-          <button className="day-tool" onClick={() => onChat({ kind: "day", day })}>
-            <Icon name="chat" size={19} />
-            <span>{t("Chat with this day")}</span>
-            <Icon name="chevron-right" size={15} />
-          </button>
           <button className="day-tool" onClick={onPrepare}>
             <Icon name="people" size={19} />
             <span>{t("Prepare for a conversation")}</span>
@@ -108,6 +105,27 @@ export function Today({
       </aside>
     </div>
   );
+}
+
+export function dayChatScopes(day: string) {
+  return {
+    day: { kind: "day", day },
+    week: { kind: "range", ...dateRangeForShortcut("this_week", day) },
+    range: { kind: "range", start_day: day, end_day: day },
+  } satisfies Record<string, ChatScope>;
+}
+
+function DayChat({ day, filtered, onChat }: { day: string; filtered: boolean; onChat: (scope: ChatScope) => void }) {
+  const scopes = dayChatScopes(day);
+  return <section className="day-chat" aria-labelledby="day-chat-heading">
+    <div className="day-chat-heading"><Icon name="chat" size={19} /><h2 id="day-chat-heading">{t("Ask Daythread")}</h2></div>
+    <div className="day-chat-scopes">
+      <button type="button" className="button small" aria-label={t("Chat with this day")} onClick={() => onChat(scopes.day)}>{t("This day")}</button>
+      <button type="button" className="button small" aria-label={t("Chat with this week")} onClick={() => onChat(scopes.week)}>{t("This week")}</button>
+      <button type="button" className="button small" aria-label={t("Chat with a date range")} onClick={() => onChat(scopes.range)}>{t("Date range")}</button>
+    </div>
+    {filtered ? <p className="caption">{t("Chat uses all entries in the chosen period, regardless of these filters.")}</p> : null}
+  </section>;
 }
 
 export function QuickRewind({ historical, onRewind }: { historical: boolean; onRewind: (minutes: number, localTime?: string) => void }) {
@@ -148,6 +166,7 @@ export function TranscriptTimeline({
   onChat,
   filters = allDayFilters,
   archive = false,
+  todayView = false,
   onRewindAt,
 }: {
   day: string;
@@ -157,6 +176,7 @@ export function TranscriptTimeline({
   onChat: (scope: ChatScope) => void;
   filters?: DayFilters;
   archive?: boolean;
+  todayView?: boolean;
   onRewindAt?: (end: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -193,8 +213,10 @@ export function TranscriptTimeline({
     <section className="timeline-section">
       <div className="section-heading">
         <div className="timeline-title">
-          <h2>{archive ? t("Recordings") : t("Timeline")}</h2>
-          {resource.data ? <span className="caption">{resource.data.total} {t("groups")}</span> : null}
+          <h2 id={todayView ? "day-entries" : undefined} tabIndex={todayView ? -1 : undefined}>{todayView ? t("Day entries") : archive ? t("Recordings") : t("Timeline")}</h2>
+          {resource.data ? <span className="caption">{todayView
+            ? t(resource.data.total === 1 ? "{value0} entry" : "{value0} entries", { value0: resource.data.total })
+            : <>{resource.data.total} {t("groups")}</>}</span> : null}
         </div>
         {resource.data?.total ? (
           <button className="text-button" onClick={onUpload}>

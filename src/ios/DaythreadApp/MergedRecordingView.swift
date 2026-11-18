@@ -86,6 +86,8 @@ struct MergedRecordingContentView: View {
     @State private var selectionBusy = false
     @State private var selectionError: String?
     @State private var selectionOperation: Task<Void, Never>?
+    @State private var transcriptOpen = false
+    @State private var originalsOpen = false
 
     private var topics: [JSONValue] { recording["sections"].array }
     private var topicIndex: Int { topics.firstIndex { $0["chapter_id"].text == selectedTopic } ?? 0 }
@@ -126,9 +128,9 @@ struct MergedRecordingContentView: View {
         } ?? value
     }
 
-    private func playbackTime(_ value: Double) -> String {
-        let seconds = max(0, Int(value))
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    private var seek: ((Double) -> Void)? {
+        guard recording["audio_available"] == .bool(true) else { return nil }
+        return { playback.seek(to: $0) }
     }
 
     private func chooseTranscript(_ resultVersion: String?) {
@@ -175,6 +177,14 @@ struct MergedRecordingContentView: View {
                      : L10n.text("Audio expired under retention; transcript remains available."))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if !recording["recording_summary"].text.isEmpty {
+                Text(L10n.text("Recording summary")).font(.headline).accessibilityAddTraits(.isHeader)
+                Text(recording["recording_summary"].text).textSelection(.enabled)
+                if selectedTranscript != nil {
+                    Text(L10n.text("Based on the original part transcripts.")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !topics.isEmpty { topicSummaries }
             if let text = selectedTranscript {
                 HStack {
                     Text(L10n.text("Using selected full-recording transcript"))
@@ -186,29 +196,16 @@ struct MergedRecordingContentView: View {
                 }
                 if selectionBusy { ProgressView() }
                 if let selectionError { ErrorNote(message: selectionError) }
-                if let speakerUtterances {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(speakerUtterances.enumerated()), id: \.offset) { _, utterance in
-                            VStack(alignment: .leading, spacing: 2) {
-                                if utterance.text.rangeOfCharacter(from: .alphanumerics) != nil {
-                                    Text(speakerLabel(utterance))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    if let start = utterance.start {
-                                        Button(playbackTime(start)) { playback.seek(to: start) }
-                                            .disabled(recording["audio_available"] != .bool(true))
-                                            .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-                                    }
+                DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
+                    if transcriptOpen {
+                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek)
+                        if case .string(let original) = recording["text"] {
+                            DisclosureGroup(L10n.text("Original part transcripts"), isExpanded: $originalsOpen) {
+                                if originalsOpen {
+                                    RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array, onSeek: seek)
                                 }
-                                Text(utterance.text).textSelection(.enabled)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
-                    }
-                } else {
-                    Text(text).textSelection(.enabled)
-                }
-                if case .string(let original) = recording["text"] {
-                    DisclosureGroup(L10n.text("Original part transcripts")) {
-                        Text(original).textSelection(.enabled)
                     }
                 }
             } else {
@@ -229,8 +226,13 @@ struct MergedRecordingContentView: View {
                 }
                 if selectionBusy { ProgressView() }
                 if let selectionError { ErrorNote(message: selectionError) }
-                if case .string(let text) = recording["text"] { originalTopicsAndTranscript(text) }
-                else {
+                if case .string(let text) = recording["text"] {
+                    DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
+                        if transcriptOpen {
+                            RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array, onSeek: seek)
+                        }
+                    }
+                } else {
                     Text(recording["state"].text == "expired"
                          ? L10n.text("Transcript expired under your retention policy.")
                          : L10n.text("Processing audio"))
@@ -264,44 +266,29 @@ struct MergedRecordingContentView: View {
         .onDisappear { playback.close(); selectionOperation?.cancel() }
     }
 
-    private func originalTopicsAndTranscript(_ text: String) -> some View {
-        Group {
-            if !topics.isEmpty {
-                Picker(L10n.text("Topics"), selection: Binding(get: { topicIndex }, set: selectTopic)) {
-                    ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
-                        Text(topic["title"].text).tag(index)
-                    }
-                }
-                HStack {
-                    Button(L10n.text("Previous")) { selectTopic(topicIndex - 1) }
-                        .disabled(topicIndex == 0)
-                    Spacer()
-                    Text("\(topicIndex + 1) / \(topics.count)").font(.caption.monospacedDigit())
-                    Spacer()
-                    Button(L10n.text("Next")) { selectTopic(topicIndex + 1) }
-                        .disabled(topicIndex == topics.count - 1)
-                }
-                let section = topics[topicIndex]
-                Text(String(String.UnicodeScalarView(text.unicodeScalars
-                    .dropFirst(section["start_offset"].integer)
-                    .prefix(max(0, section["end_offset"].integer - section["start_offset"].integer)))))
-                    .textSelection(.enabled)
-            }
-            if recording["sections"].array.isEmpty {
-                Text(text).textSelection(.enabled)
-            } else {
-                DisclosureGroup(L10n.text("Full transcript")) {
-                    Text(text).textSelection(.enabled)
+    private var topicSummaries: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(selectedTranscript == nil ? L10n.text("Topics") : L10n.text("Chapters in the original transcript"))
+                .font(.headline).accessibilityAddTraits(.isHeader)
+            ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
+                VStack(alignment: .leading, spacing: 5) {
+                    if seek != nil, case .number = topic["start_seconds"] {
+                        Button { selectTopic(index) } label: {
+                            Label(topic["title"].text, systemImage: index == topicIndex ? "play.circle.fill" : "play.circle")
+                        }.buttonStyle(.borderless)
+                    } else { Text(topic["title"].text).font(.subheadline.weight(.semibold)) }
+                    if !topic["summary"].text.isEmpty { Text(topic["summary"].text).textSelection(.enabled) }
                 }
             }
         }
     }
 
-    private func speakerLabel(_ utterance: RecordingSpeakerUtterance) -> String {
-        switch utterance.attribution {
-        case "attributed": utterance.speakerName ?? utterance.speakerLabel ?? L10n.text("Unknown speaker")
-        case "overlap": L10n.text("Overlapping speech")
-        default: L10n.text("Unknown speaker")
+    private var selectedTurns: [JSONValue] {
+        (speakerUtterances ?? []).map { turn in
+            .object(["text": .string(turn.text), "attribution": .string(turn.attribution),
+                     "speaker_name": turn.speakerName.map(JSONValue.string) ?? .null,
+                     "speaker_label": turn.speakerLabel.map(JSONValue.string) ?? .null,
+                     "start": turn.start.map(JSONValue.number) ?? .null])
         }
     }
 }

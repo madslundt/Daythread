@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { compactSpeakerEvidence, MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
 import { RecordingGroups } from "./RecordingGroups";
 import { createRecordingSeekController } from "./useRecordingSeek";
+import { TranscriptTurns } from "./RecordingTranscript";
 
 const recording: CombinedRecording = {
   id: "uploaded-file", title: "Launch and garden", started_at: "2026-10-16T09:00:00Z",
@@ -10,8 +11,8 @@ const recording: CombinedRecording = {
   audio_available: true, text: "☕ Launch continues across upload parts. Garden plans.",
   transcript_version: "current",
   sections: [
-    { title: "Launch", chapter_id: "launch", start_offset: 0, end_offset: 40, start_seconds: 0 },
-    { title: "Garden", chapter_id: "garden", start_offset: 40, end_offset: 53, start_seconds: 1600 },
+    { title: "Launch", chapter_id: "launch", start_offset: 0, end_offset: 40, start_seconds: 0, summary: "Release stays on Friday." },
+    { title: "Garden", chapter_id: "garden", start_offset: 40, end_offset: 53, start_seconds: 1600, summary: "Water the roses tomorrow." },
   ],
 };
 
@@ -25,7 +26,8 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("09:00:04");
     expect(html).toContain("09:00:06");
     expect(html).toContain("Processing audio");
-    expect(html).toContain(recording.text);
+    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain(recording.text);
     expect(html.match(/<audio /g)).toHaveLength(1);
   });
   it("lists a returning topic once and counts adjacent passages as one recording", () => {
@@ -44,7 +46,9 @@ describe("combined uploaded recording", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={recording} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
     expect(html).toContain("01:06:00");
-    expect(html).toContain("☕ Launch continues across upload parts. Garden plans.");
+    expect(html).toContain("Release stays on Friday.");
+    expect(html).toContain("Water the roses tomorrow.");
+    expect(html).not.toContain(recording.text!);
     expect(html).toContain("/v1/recordings/uploaded-file/audio");
     expect(html).toContain("Download archived audio");
     expect(html).not.toContain("/v1/audio/");
@@ -93,9 +97,9 @@ describe("combined uploaded recording", () => {
         transcript: { text: "Whole selected transcript.", version: "variant-v1" } },
     }} />);
     expect(html).toContain("Using selected full-recording transcript");
-    expect(html).toContain("Whole selected transcript.");
-    expect(html).toContain("Original part transcripts");
-    expect(html).toContain("Launch continues across upload parts.");
+    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain("Whole selected transcript.");
+    expect(html).not.toContain("Launch continues across upload parts.");
     expect(html).toContain("Chapters in the original transcript");
     expect(html).toContain('class="recording-player-bookmarks"');
     expect(html).not.toContain("Use full-recording transcript");
@@ -122,15 +126,24 @@ describe("combined uploaded recording", () => {
           },
         },
     }}} />);
-    expect(html).toContain("Show speakers and timestamps");
-    expect(html).toContain(canonical);
-    expect(html.match(/Hello there\./g)).toHaveLength(1);
+    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain(canonical);
     expect(html).not.toContain("Rae");
     expect(html).not.toContain("recording-speaker-label");
     expect(html).not.toContain("recording-speaker-time");
     expect(html).toContain('class="recording-topic-bookmarks"');
     expect(html).toContain("Chapters in the original transcript");
-    expect(html).toContain("Original part transcripts");
+  });
+  it("labels each turn and offers timestamps separately, off by default", () => {
+    const html = renderToStaticMarkup(<TranscriptTurns text="Hello. Hi. Thanks." turns={[
+      { text: "Hello.", start_offset: 0, end_offset: 6, speaker_number: 1, start: 0 },
+      { text: "Hi.", start_offset: 7, end_offset: 10, speaker_name: "Rae", start: 2 },
+      { text: "Thanks.", start_offset: 11, end_offset: 18, speaker_number: 1, start: 4 },
+    ]} />);
+    expect(html.match(/Speaker 1/g)).toHaveLength(2);
+    expect(html).toContain("Rae");
+    expect(html).toContain("Show timestamps");
+    expect(html).not.toContain("00:02");
   });
   it("coalesces same-speaker whitespace but never absorbs unknown spoken words", () => {
     const canonical = "Hello there. Missing words.";
@@ -186,7 +199,7 @@ describe("combined uploaded recording", () => {
       transcript_selection: { state: "stale", selection_version: 2, result_version: "old" },
     }} />);
     expect(html).toContain("The selected transcript is out of date.");
-    expect(html).toContain(recording.text!);
+    expect(html).toContain("<summary>Full transcript</summary>");
     expect(html).not.toContain("old transcript text");
   });
 });

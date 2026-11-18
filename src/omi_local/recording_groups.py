@@ -141,7 +141,7 @@ def tracks_overlap(left: list[dict], right: list[dict]) -> bool:
 
 def recording_groups(
     store, start, end, query, limit, offset, group_id=None, zone_id=None, tag_id=None,
-    playback=False, archive=False,
+    playback=False, archive=False, speaker_evidence=None,
 ):
     filters, args = ["1=1"], []
     if not archive or query:
@@ -238,7 +238,9 @@ def recording_groups(
                 return recording
             return {"items": sources(members[offset:offset + limit]), "total": len(members),
                     "chapters": [] if group.get("parallel_tracks") else chapter_navigation(members),
-                    "recording": recording.snapshot()}
+                    "recording": recording.snapshot(
+                        attributed=speaker_evidence(rows, db) if speaker_evidence else None,
+                    )}
         items = []
         for group in groups[offset:offset + limit]:
             members = group["members"]

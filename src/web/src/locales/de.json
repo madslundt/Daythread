@@ -1,4 +1,6 @@
 {
+  "Show timestamps": "Zeitstempel anzeigen",
+  "Speaker {value0}": "Sprecher {value0}",
   ", recordings available": ", Aufnahmen verfügbar",
   "Archive": "Archiv",
   "Archive view": "Archivansicht",
@@ -3288,5 +3290,18 @@
   "Webhook URL": "Webhook-URL",
   "Copy webhook URL": "Webhook-URL kopieren",
   "Could not copy the webhook URL. Select it and copy it manually.": "Die Webhook-URL konnte nicht kopiert werden. Markieren und manuell kopieren.",
-  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Signaturgeheimnis gespeichert. Beim Speichern eines anderen Geheimnisses wird das alte sofort ungültig."
+  "Saved signing secret. Saving a different secret immediately revokes the old one.": "Signaturgeheimnis gespeichert. Beim Speichern eines anderen Geheimnisses wird das alte sofort ungültig.",
+  "Ask Daythread": "Daythread fragen",
+  "This day": "Dieser Tag",
+  "Chat with this week": "Über diese Woche chatten",
+  "Chat with a date range": "Über einen Zeitraum chatten",
+  "Chat uses all entries in the chosen period, regardless of these filters.": "Der Chat verwendet alle Einträge im gewählten Zeitraum, unabhängig von diesen Filtern.",
+  "Day entries": "Tageseinträge",
+  "Read the detailed recap": "Ausführlichen Rückblick lesen",
+  "Read day summary": "Tageszusammenfassung lesen",
+  "No day summary yet": "Noch keine Tageszusammenfassung",
+  "Generate day summary": "Tageszusammenfassung erstellen",
+  "Quick rewind uses the whole day.": "Der Schnellrücklauf umfasst den ganzen Tag.",
+  "{value0} entry": "{value0} Eintrag",
+  "{value0} entries": "{value0} Einträge"
 }

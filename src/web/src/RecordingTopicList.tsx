@@ -1,6 +1,6 @@
 import { t } from "./i18n";
 
-export type TopicBookmark = { id: string; label: string; estimated?: boolean };
+export type TopicBookmark = { id: string; label: string; estimated?: boolean; summary?: string };
 export type RecordingTopic = { key: string; title: string; occurrences: TopicBookmark[] };
 
 export function RecordingTopicList({ topics, selected, onSelect }: {
@@ -25,6 +25,8 @@ export function RecordingTopicList({ topics, selected, onSelect }: {
             {occurrence.label}{occurrence.estimated ? ` ${t("· estimated times")}` : ""}
           </button>)}
         </div> : null}
+        {[...new Set(topic.occurrences.map((occurrence) => occurrence.summary).filter(Boolean))].map((summary) =>
+          <p className="recording-topic-summary transcript-text" key={summary}>{summary}</p>)}
       </li>;
     })}
   </ol>;

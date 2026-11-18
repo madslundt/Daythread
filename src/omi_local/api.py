@@ -699,13 +699,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tag_id: UUID | None = None,
         archive: bool = False,
     ) -> dict:
-        start, end = memory().day_window(day)
+        from .transcript_turns import saved_speaker_turns
+
+        app_memory = memory()
+        start, end = app_memory.day_window(day)
         try:
             return recording_groups(
-                memory().store, start, end, q, limit, offset, group_id=str(group_id),
+                app_memory.store, start, end, q, limit, offset, group_id=str(group_id),
                 zone_id=str(zone_id) if zone_id else None,
                 tag_id=str(tag_id) if tag_id else None,
                 archive=archive,
+                speaker_evidence=lambda rows, db: saved_speaker_turns(app_memory, rows, db),
             )
         except KeyError as exc:
             raise HTTPException(404, "Recording group unavailable") from exc
@@ -730,11 +734,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/transcripts/{audio_id}")
     def transcript(audio_id: UUID, response: Response) -> dict:
-        row = memory().store.get_audio(str(audio_id))
-        if row is None:
-            raise HTTPException(404, "Transcript not found")
+        from .transcript_turns import saved_speaker_turns
+
+        app_memory = memory()
+        with app_memory.store.connect() as db:
+            db.execute("BEGIN")
+            row = app_memory.store.get_audio(str(audio_id), db)
+            if row is None:
+                raise HTTPException(404, "Transcript not found")
+            attributed = saved_speaker_turns(app_memory, [row], db).get(str(audio_id))
         response.headers["Cache-Control"] = "no-store"
-        return public_source(row)
+        return public_source(row, attributed=attributed)
 
     @app.patch("/v1/transcripts/{audio_id}")
     def correct_transcript(audio_id: UUID, body: TranscriptCorrection) -> dict:

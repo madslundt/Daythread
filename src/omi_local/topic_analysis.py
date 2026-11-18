@@ -7,11 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
+# Sent only to the model during repair and to the diagnostic log.
+_MISSING_TOPIC_SUMMARY = "Every section must include a nonempty topic summary"
+
 
 class Topic(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     title: str = Field(min_length=1, max_length=160)
     start_quote: str = Field(min_length=1, max_length=300)
+    summary: str = Field(default="", max_length=2000)
 
 
 class Analysis(BaseModel):
@@ -52,8 +56,9 @@ def repair_reason(error: ValueError) -> str:
 
 async def generate_analysis(model, task: str, excerpt: str) -> tuple[Analysis, list[int]]:
     request = task
+    structured = hasattr(model, "generate_structured_json")
     for attempt in range(2):
-        if hasattr(model, "generate_structured_json"):
+        if structured:
             raw = await model.generate_structured_json(
                 request, excerpt, Analysis.model_json_schema(),
             )
@@ -61,6 +66,8 @@ async def generate_analysis(model, task: str, excerpt: str) -> tuple[Analysis, l
             raw = await model.generate_json(request, excerpt)
         try:
             result = Analysis.model_validate_json(raw)
+            if structured and any(not topic.summary for topic in result.sections):
+                raise ValueError(_MISSING_TOPIC_SUMMARY)
             return result, topic_offsets(result, excerpt)
         except ValueError as error:
             if attempt:
@@ -71,7 +78,8 @@ async def generate_analysis(model, task: str, excerpt: str) -> tuple[Analysis, l
                 + repair_reason(error)
                 + ". Return the complete JSON object, with no extra fields or Markdown. "
                 "Every title must contain 1–160 characters, sections must contain 1–24 items, "
-                "and each start_quote must contain 1–300 characters copied exactly from the "
+                "each topic summary must be at most 2000 characters, and each start_quote must "
+                "contain 1–300 characters copied exactly from the "
                 "excerpt. The first quote must begin at the start of the excerpt; later quotes "
                 "must be unique and in transcript order. Keep the fewest useful topics."
             )

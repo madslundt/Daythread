@@ -20,9 +20,12 @@ TEXT = (
 OUTPUT = {
     "title": "Kakao, Omi og Tesla Roadster",
     "sections": [
-        {"title": "Kakao med chili", "start_quote": "Vi taler om kakao"},
-        {"title": "Omi og dagens recap", "start_quote": "Jeg har bestilt en OMI"},
-        {"title": "Tesla Roadster", "start_quote": "Let's turn to English"},
+        {"title": "Kakao med chili", "start_quote": "Vi taler om kakao",
+         "summary": "Kakao med chili blev ikke anbefalet."},
+        {"title": "Omi og dagens recap", "start_quote": "Jeg har bestilt en OMI",
+         "summary": "En Omi blev bestilt til at optage lyd og give resuméer."},
+        {"title": "Tesla Roadster", "start_quote": "Let's turn to English",
+         "summary": "The Tesla Roadster was discussed in English."},
     ],
 }
 
@@ -69,6 +72,7 @@ def test_backfill_generates_three_titled_sections_without_changing_original(reco
     result = client.get(f"/v1/transcripts/{key}").json()
     assert result["title"] == OUTPUT["title"]
     assert [s["title"] for s in result["sections"]] == [s["title"] for s in OUTPUT["sections"]]
+    assert [s["summary"] for s in result["sections"]] == [s["summary"] for s in OUTPUT["sections"]]
     assert "".join(TEXT[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == TEXT
     assert result["sections"][1]["start_offset"] == TEXT.index("Jeg har")
     assert result["text"] == TEXT
@@ -433,7 +437,7 @@ def test_analysis_windows_keep_a_subject_even_when_its_title_changes(recording):
             return json.dumps({
                 "title": f"Project review {self.calls}", "continues_previous": self.calls > 1,
                 "sections": [{"title": f"Project review {self.calls}",
-                              "start_quote": evidence[:100]}],
+                              "start_quote": evidence[:100], "summary": f"Detail {self.calls}."}],
             })
 
     memory.inference = ContinuingSubject()
@@ -441,6 +445,9 @@ def test_analysis_windows_keep_a_subject_even_when_its_title_changes(recording):
     result = client.get(f"/v1/transcripts/{key}").json()
     assert len(result["sections"]) == 1
     assert result["sections"][0]["end_offset"] == len(text)
+    assert result["sections"][0]["summary"] == "\n\n".join(
+        f"Detail {number}." for number in range(1, memory.inference.calls + 1)
+    )
     assert memory.inference.calls > 1
 
 

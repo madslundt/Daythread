@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 
 from .blob_storage import audio_is_present
 from .source_matching import MANUAL_UPLOAD_SQL
+from .transcript_turns import saved_speaker_turns, transcript_turns
 
 if TYPE_CHECKING:
     from .service import Memory
@@ -66,6 +67,14 @@ class Recording:
         return sum(self.frames)
 
     @property
+    def playback_starts(self) -> list[float]:
+        seconds, starts = 0, []
+        for frames in self.frames:
+            starts.append(seconds)
+            seconds += frames / 16000
+        return starts
+
+    @property
     def audio_etag(self) -> str:
         return '"' + hashlib.sha256(json.dumps([
             (row["id"], row["digest"]) for row in self.rows
@@ -86,17 +95,22 @@ class Recording:
             if cursor >= stop:
                 break
 
-    def snapshot(self, *, partial: bool = False) -> dict:
+    def snapshot(self, *, partial: bool = False, attributed: dict | None = None) -> dict:
         ready = self.complete and all(row["state"] == "done" for row in self.rows)
         metadata = json.loads(self.rows[0]["source_metadata"])
         texts = [row["text"] or "" for row in self.rows if (row["text"] or "").strip()
                  and (not partial or row["state"] == "done")]
         merged_text = "\n".join(texts)
         details = [json.loads(row["topic_details"] or "{}") for row in self.rows]
-        sections, offset, seconds = [], 0, 0
+        sections, turns, offset = [], [], 0
+        attributed = attributed or {}
+        context_counts = Counter(
+            detail.get("context") for row, detail in zip(self.rows, details)
+            if (row["text"] or "").strip() and (not partial or row["state"] == "done")
+        )
         analyzed = ready and all(detail.get("sections") for row, detail in zip(self.rows, details)
                                  if (row["text"] or "").strip())
-        for row, detail, frames in zip(self.rows, details, self.frames):
+        for row, detail, seconds in zip(self.rows, details, self.playback_starts):
             text = row["text"] or ""
             if text.strip():
                 if analyzed:
@@ -107,6 +121,9 @@ class Recording:
                         span = {"title": section["title"], "chapter_id": chapter,
                                 "start_offset": offset + section["start_offset"],
                                 "end_offset": offset + section["end_offset"]}
+                        if (section.get("summary") and detail.get("summary_sources")
+                                == context_counts[detail.get("context")]):
+                            span["summary"] = section["summary"]
                         for key in ("start_seconds", "end_seconds"):
                             if key in section:
                                 span[key] = seconds + section[key]
@@ -124,13 +141,29 @@ class Recording:
                         else:
                             sections.append(span)
                 if not partial or row["state"] == "done":
+                    source_turns = transcript_turns(row, attributed.get(row["id"])) or [
+                        {"text": text, "start_offset": 0, "end_offset": len(text)},
+                    ]
+                    for turn in source_turns:
+                        position = {"start": seconds + turn["start"]} if "start" in turn else {}
+                        turns.append({**turn, **position,
+                                      "start_offset": offset + turn["start_offset"],
+                                      "end_offset": offset + turn["end_offset"]})
                     offset += len(text) + 1
-            seconds += frames / 16000
         if len(sections) > 5:
             # Stream analysis runs in bounded work windows, not one chapter per window.
-            sections = [sections[index * len(sections) // 5] for index in range(5)]
-            for section in sections:
+            boundaries = [index * len(sections) // 5 for index in range(5)] + [len(sections)]
+            broad = []
+            for start, end in zip(boundaries[:-1], boundaries[1:]):
+                section = sections[start]
+                summaries = [item.get("summary") for item in sections[start:end]]
+                if all(summaries):
+                    section["summary"] = "\n\n".join(dict.fromkeys(summaries))
+                else:
+                    section.pop("summary", None)
                 section.pop("end_seconds", None)
+                broad.append(section)
+            sections = broad
         for index, section in enumerate(sections):
             section["end_offset"] = (sections[index + 1]["start_offset"]
                                      if index + 1 < len(sections) else len(merged_text))
@@ -142,7 +175,6 @@ class Recording:
                         else "missing")
         digests = [detail for row, detail in zip(self.rows, details) if (row["text"] or "").strip()]
         summary = None
-        context_counts = Counter(detail.get("context") for detail in digests)
         if ready and digests and all(
             detail.get("recording_summary") and detail.get("summary_sources")
             == context_counts[detail.get("context")] for detail in digests
@@ -155,8 +187,9 @@ class Recording:
             "ended_at": metadata.get("recording_ended_at", self.rows[-1]["ended_at"]),
             "state": ("done" if ready else "expired"
                       if any(row["state"] == "expired" for row in self.rows) else "processing"),
-            "duration_seconds": seconds,
+            "duration_seconds": self.playback_frames / 16000,
             "text": merged_text if ready or (partial and texts) else None, "sections": sections,
+            "transcript_turns": turns if ready or (partial and texts) else [],
             "recording_summary": summary,
             "audio_available": available, "audio_availability": availability,
             "transcript_version": version,
@@ -278,7 +311,9 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
         with app.store.connect() as db:
             db.execute("BEGIN")
             current = load_recording(app.store, str(recording_id), db)
-            value = current.snapshot(partial=archive)
+            value = current.snapshot(
+                partial=archive, attributed=saved_speaker_turns(app, current.rows, db),
+            )
             value["recording_transcription"] = app.store.recording_transcription_view(
                 current, app.settings, db,
             )

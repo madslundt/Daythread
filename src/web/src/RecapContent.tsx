@@ -15,6 +15,7 @@ type Props = {
   translatedText?: string; translationStructure?: SummaryTranslationStructure;
   onChat?: (scope: ChatScope, question?: string) => void;
   onCorrect: () => void; compact?: boolean;
+  todayView?: boolean;
   onFocus?: (focus?: RecapFocus) => void;
   emptyMessage?: string;
   topicRequest?: { title: string; request: number };
@@ -23,7 +24,7 @@ type Props = {
 type TopicRow = RecapBrowserTopic & { displayTitle: string; displayParts: RecapTopicGroup["parts"]; followups?: boolean };
 const topicOverviewLimit = 5;
 
-export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, onFocus, emptyMessage, topicRequest }: Props) {
+export function RecapContent({ text, translatedText, translationStructure, day, version, sources, timezone, onChat, onCorrect, compact = false, todayView = false, onFocus, emptyMessage, topicRequest }: Props) {
   const [query, setQuery] = useState("");
   const [browsingRecordings, setBrowsingRecordings] = useState(false);
   const [showingAllTopics, setShowingAllTopics] = useState(false);
@@ -48,20 +49,22 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
   const display = useMemo(() => translatedText === undefined ? undefined
     : recapTranslationDisplay(text, translatedText, translationStructure), [text, translatedText, translationStructure]);
   const recordingTopics = useMemo(() => recapBrowserTopics([], sources), [sources]);
+  const hasRecapTopics = !todayView || recapTopics(recapParts(text), day).topics.length > 0;
+  const showingEntryTopics = browsingRecordings || !hasRecapTopics;
   const canonicalRows = useMemo(() => {
-    if (browsingRecordings) return recordingTopics.map((topic): TopicRow => ({ ...topic,
+    if (showingEntryTopics) return recordingTopics.map((topic): TopicRow => ({ ...topic,
       displayTitle: topic.title, displayParts: topic.parts }));
     const parts = recapParts(text);
     const original = recapTopics(parts, day);
     const translated = display === undefined ? original : recapTopics(parts, day, recapParts(text, display));
     const topics: TopicRow[] = recapBrowserTopics(original.topics, sources).filter((topic) => !topic.originalPassages).map((topic, index) => ({ ...topic,
       displayTitle: translated.topics[index]?.title || topic.title, displayParts: translated.topics[index]?.parts || topic.parts }));
-    if (original.introduction.length) topics.unshift({ id: "recap:introduction", title: source("Day recap"), parts: original.introduction,
+    if (!todayView && original.introduction.length) topics.unshift({ id: "recap:introduction", title: source("Day recap"), parts: original.introduction,
       displayTitle: t("Day recap"), displayParts: translated.introduction });
     if (original.followups.length) topics.push({ id: "recap:followups", title: source("Follow-ups mentioned in the recap"), parts: original.followups,
       displayTitle: t("Follow-ups mentioned in the recap"), displayParts: translated.followups, followups: true });
     return topics;
-  }, [text, display, day, sources, language, browsingRecordings, recordingTopics]);
+  }, [text, display, day, sources, language, showingEntryTopics, recordingTopics, todayView]);
   const labels = useDisplayTranslations(canonicalRows.map(originalTopicTranslation).filter((item): item is DisplayTranslationInput => !!item), `${day}:${version}`);
   const rows = useMemo(() => canonicalRows.map((topic) => {
     const input = originalTopicTranslation(topic);
@@ -75,9 +78,9 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     if (active && !active.originalPassages) onFocus?.({ ...topicFocus(active, sources), displayTitle: active.displayTitle });
   }, [active, sources, onFocus]);
   const normalized = query.normalize("NFKC").toLocaleLowerCase().trim();
-  const matching = rows.filter((topic) => `${topic.displayTitle}\n${recapTopicText(topic.displayParts)}\n${topic.title}\n${recapTopicText(topic.parts)}\n${topic.originalPassages?.map((passage) => passage.text).join("\n") || ""}`
+  const matching = rows.filter((topic) => `${topic.displayTitle}\n${recapTopicText(topic.displayParts)}\n${topic.title}\n${recapTopicText(topic.parts)}\n${topic.originalPassages?.map(({ text, section }) => `${section.summary || ""}\n${text}`).join("\n") || ""}`
     .normalize("NFKC").toLocaleLowerCase().includes(normalized));
-  const limitedOverview = !browsingRecordings && !normalized;
+  const limitedOverview = (!showingEntryTopics || todayView) && !normalized;
   const visible = limitedOverview && !showingAllTopics ? matching.slice(0, topicOverviewLimit) : matching;
   function toggle(topic: RecapBrowserTopic) {
     const next = selected === topic.id ? undefined : topic.id;
@@ -86,12 +89,13 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
     onFocus?.(!next ? undefined : { ...(topic.originalPassages ? { title: topic.title, basis: "original" as const, passages: [] } : topicFocus(topic, sources)), displayTitle });
   }
   return <div ref={workspace} className={`recap-workspace ${compact ? "recap-reading-view" : ""}`}>
+    {todayView ? <h3 id="day-topics" tabIndex={-1}>{t("Topics")}</h3> : null}
     {translatedText !== undefined && display === undefined ? <p className="caption recap-translation-warning" role="status">
       {t("Update this translation to keep the recap’s topics and layout.")}
     </p> : null}
-    {!text.trim() && !browsingRecordings ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
+    {!text.trim() && !showingEntryTopics ? <p className="caption">{emptyMessage || t("No useful recap content in transcribed recordings yet. Your recordings remain available.")}</p> : null}
     <div className="recap-topic-browser">
-      {recordingTopics.length ? <button type="button" className="text-button" aria-pressed={browsingRecordings}
+      {recordingTopics.length && hasRecapTopics ? <button type="button" className="text-button" aria-pressed={browsingRecordings}
         onClick={() => { setBrowsingRecordings((value) => !value); setShowingAllTopics(false); setQuery(""); setSelected(undefined); onFocus?.(undefined); }}>
         <Icon name={browsingRecordings ? "chevron-left" : "search"} size={16} />
         {browsingRecordings ? t("Back to daily recap") : t("Browse all topics")}
@@ -100,13 +104,13 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
         <Icon name="search" size={17} />
         <input id={`${id}-search`} type="search" value={query} onChange={(event) => {
           setQuery(event.target.value); setSelected(undefined); onFocus?.(undefined);
-        }} placeholder={browsingRecordings ? t("Find a topic in this day") : t("Search recap topics")}
-          aria-label={browsingRecordings ? t("Find a topic in this day") : t("Search recap topics")} />
+        }} placeholder={showingEntryTopics ? t("Find a topic in this day") : t("Search recap topics")}
+          aria-label={showingEntryTopics ? t("Find a topic in this day") : t("Search recap topics")} />
       </label>
       <DisplayTranslationStatus value={labels} />
       <div id={`${id}-topics`} className="recap-topic-list">
         {visible.map((topic) => <RecapTopicRow key={topic.id} topic={topic} expanded={selected === topic.id} onToggle={() => toggle(topic)}
-          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} />)}
+          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} todayView={todayView} />)}
       </div>
       {limitedOverview && matching.length > topicOverviewLimit ? <button type="button" className="text-button"
         aria-expanded={showingAllTopics} aria-controls={`${id}-topics`} onClick={() => {
@@ -117,7 +121,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
         }}>{showingAllTopics ? t("Show fewer topics") : t("Show all topics")}</button> : null}
       {!visible.length && normalized ? <p className="recap-topic-empty">{t("No topics match. Try another word, or ask about this day.")}</p> : null}
       <div className="recap-overview-actions">
-        {onChat ? <button className="text-button" onClick={() => onChat({ kind: "day", day }, query.trim()
+        {onChat && (!todayView || query.trim()) ? <button className="text-button" onClick={() => onChat({ kind: "day", day }, query.trim()
           ? t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: query.trim() }) : undefined)}>
           <Icon name="chat" size={16} />{t("Ask about this day")}
         </button> : null}
@@ -130,20 +134,21 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
 // A controlled row keeps its siblings visible while one canonical topic owns the focus.
 export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
   topic: TopicRow; expanded: boolean; onToggle: () => void;
-} & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus">) {
+} & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus" | "todayView">) {
   const id = useId();
-  const preview = (recapTopicText(topic.displayParts) || originalRecapText(topic.originalPassages, props.sources)).replace(/\*\*/g, "");
+  const entrySummary = props.todayView ? [...new Set(topic.originalPassages?.flatMap(({ section }) => section.summary || []) || [])].join("\n\n") : "";
+  const preview = (recapTopicText(topic.displayParts) || entrySummary || (!props.todayView ? originalRecapText(topic.originalPassages, props.sources) : "")).replace(/\*\*/g, "");
   return <article className="recap-topic-row" data-topic-id={topic.id}>
     <h3><button type="button" className="recap-topic-option" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
       <span><strong><InlineText text={topic.displayTitle} /></strong>{!expanded ? <>
-        {topic.originalPassages ? <small className="caption">{t("Original passages")}</small> : null}
+        {topic.originalPassages && !entrySummary ? <small className="caption">{t("Original passages")}</small> : null}
         <span>{preview}</span>
       </> : null}</span>
       <Icon name="chevron-right" size={16} />
     </button></h3>
     <div id={id} hidden={!expanded}>
       {expanded ? <>
-        <RecapTopic {...topic} {...props} compact={false} expanded inline />
+        <RecapTopic {...topic} {...props} entrySummary={entrySummary} compact={false} expanded inline />
         {topic.followups ? <p className="caption">{t("Review and manage these in the overview below.")}</p> : null}
       </> : null}
     </div>

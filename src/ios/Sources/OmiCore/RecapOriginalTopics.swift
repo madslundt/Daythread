@@ -7,8 +7,9 @@ public enum RecapOriginalTopics {
         public let chapterID: String
         public let start: Int
         public let end: Int
-        public init(title: String, chapterID: String = "", start: Int, end: Int) {
-            self.title = title; self.chapterID = chapterID; self.start = start; self.end = end
+        public let summary: String
+        public init(title: String, chapterID: String = "", start: Int, end: Int, summary: String = "") {
+            self.title = title; self.chapterID = chapterID; self.start = start; self.end = end; self.summary = summary
         }
     }
     public struct Source: Sendable {
@@ -32,6 +33,7 @@ public enum RecapOriginalTopics {
         public let start: Int
         public let end: Int
         public let quote: String
+        public let summary: String
     }
     public struct Topic: Identifiable, Equatable, Sendable {
         public let id: String
@@ -48,7 +50,8 @@ public enum RecapOriginalTopics {
                       let quote = passage(scalars, start: section.start, end: section.end),
                       !covered.contains(where: { $0.contains(sourceID: source.id, start: section.start, end: section.end) }) else { continue }
                 let part = Part(sourceID: source.id, sourceVersion: source.sourceVersion, transcriptVersion: source.transcriptVersion,
-                                title: section.title, chapterID: section.chapterID, start: section.start, end: section.end, quote: quote)
+                                title: section.title, chapterID: section.chapterID, start: section.start, end: section.end,
+                                quote: quote, summary: section.summary)
                 let id = section.chapterID.isEmpty ? part.id : "chapter:" + section.chapterID
                 if let index = topics.firstIndex(where: { $0.id == id }) {
                     if !topics[index].parts.contains(where: { $0.id == part.id }) { topics[index].parts.append(part) }

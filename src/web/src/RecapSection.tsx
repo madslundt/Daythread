@@ -6,7 +6,7 @@ import { profileResourceUrl } from "./profiles";
 import { dateTimeLabel, timeLabel } from "./format";
 import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { ActionPoints } from "./ActionPoints";
-import { recapBrowserTopics, type RecapFocus } from "./recapItems";
+import { recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, type RecapFocus } from "./recapItems";
 import { DayRecapOverview } from "./DayRecapOverview";
 import { SourceList } from "./SourceList";
 import { RecapContent } from "./RecapContent";
@@ -31,6 +31,8 @@ export function RecapSection({
   compact = false,
   archive = false,
   filters = allDayFilters,
+  todayView = false,
+  chatShortcuts,
 }: {
   day: string;
   timezone: string;
@@ -41,6 +43,8 @@ export function RecapSection({
   compact?: boolean;
   archive?: boolean;
   filters?: DayFilters;
+  todayView?: boolean;
+  chatShortcuts?: ReactNode;
 }) {
   const filtered = hasDayFilters(filters);
   const query = new URLSearchParams(dayFilterParams(filters)).toString();
@@ -69,6 +73,7 @@ export function RecapSection({
   const summarizing = !statusError && Number.isFinite(statusAt) && Date.now() - statusAt <= 120_000 &&
     (status?.generation?.stages.summarizing || 0) > 0;
   const [showVersions, setShowVersions] = useState(false);
+  const [readingRecap, setReadingRecap] = useState(false);
   const [focus, setFocus] = useState<RecapFocus>();
   const [topicRequest, setTopicRequest] = useState<{ title: string; request: number }>();
   useEffect(() => {
@@ -84,6 +89,9 @@ export function RecapSection({
   const version = recap.data?.output_id || recap.data?.generated_at || "unversioned";
   const sources = recap.data?.sources || emptySources;
   const hasOriginalTopics = recapBrowserTopics([], sources).length > 0;
+  const parsedRecap = todayView ? recapTopics(recapParts(summary), day) : undefined;
+  const hasTopics = hasOriginalTopics || Boolean(parsedRecap ? parsedRecap.topics.length : summary);
+  const introduction = parsedRecap ? recapTopicText(parsedRecap.introduction, true) : "";
   useEffect(() => { setFocus(undefined); }, [day, recap.data?.summary, recap.data?.output_id]);
   useEffect(() => {
     window.addEventListener("omi:archive-changed", recap.refresh);
@@ -97,16 +105,28 @@ export function RecapSection({
   if (archive && !summary && !hasOriginalTopics && !recap.error) return null;
   return (
     <section className="recap-section">
-      {!filtered ? <RecapTemplateControl key={`template-${day}`} day={day} onGenerated={recap.refresh} /> : null}
+      {!filtered && !todayView ? <RecapTemplateControl key={`template-${day}`} day={day} onGenerated={recap.refresh} /> : null}
       <div className="section-heading">
         <div>
-          <h2>{filtered ? t("Filtered recap") : t("Day recap")}</h2>
+          <h2>{filtered ? t("Filtered recap") : todayView ? t("Day summary") : t("Day recap")}</h2>
         </div>
       </div>
+      {todayView ? <div className="day-jump-links">
+        {hasTopics ? <JumpTo target="day-topics">{t("Topics")}</JumpTo> : null}
+        <JumpTo target="day-entries">{t("Day entries")}</JumpTo>
+      </div> : null}
       {!filtered ? <DayRecapOverview key={day} day={day} timezone={timezone} onTopic={(title) => {
         setTopicRequest((previous) => ({ title, request: (previous?.request || 0) + 1 }));
-      }} /> : null}
-      {!filtered && (summary || hasOriginalTopics) ? <h3>{t("Topics")}</h3> : null}
+      }} todayView={todayView} introduction={introduction} hasDetailedRecap={Boolean(summary)} /> : null}
+      {chatShortcuts}
+      {todayView && summary ? <details className="day-read-recap" onToggle={(event) => {
+        if (event.target === event.currentTarget) setReadingRecap(event.currentTarget.open);
+      }}>
+        <summary>{t("Read the detailed recap")}</summary>
+        {readingRecap ? <SummaryTranslation outputId={filtered ? undefined : recap.data?.output_id} original={summary}
+          renderContent={(text) => <RichText text={recapReadingText(text)} />} /> : null}
+      </details> : null}
+      {!todayView && !filtered && hasTopics ? <h3>{t("Topics")}</h3> : null}
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
       {filtered && recap.data?.generation_state === "failed" ? <ErrorState
         message={retryError || recap.data.generation_error || t("The filtered recap could not be generated.")}
@@ -122,7 +142,7 @@ export function RecapSection({
         <Loading>{filtered ? t("Loading filtered recap…") : t("Loading recap…")}</Loading>
       ) : recap.data && (recap.data.summary || hasOriginalTopics) ? (
         <div className="recap-content">
-          {!filtered && recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}
+          {todayView && !hasTopics ? overview() : !filtered && recap.data.summary ? <SummaryTranslation outputId={recap.data.output_id} original={recap.data.summary}
             renderFollowing={overview}
             renderContent={(displayText, translated, translation, language) => <DisplayTranslationLanguage value={language}><RecapContent
                 key={`${day}:${version}:${summary}`}
@@ -136,15 +156,16 @@ export function RecapSection({
                 onCorrect={recap.refresh}
                 onChat={scopedChat}
                 onFocus={setFocus}
-                compact={compact}
-                topicRequest={topicRequest}
+                 compact={compact}
+                 todayView={todayView}
+                 topicRequest={topicRequest}
               /></DisplayTranslationLanguage>
             } /> : <RecapContent
             key={`${day}:${dayFilterKey(filters)}:${recap.data.output_id || recap.data.generated_at || "originals"}:${recap.data.summary || ""}`}
             text={recap.data.summary || ""} day={day} version={recap.data.output_id || "originals"}
             sources={sources} timezone={timezone} onCorrect={recap.refresh} onChat={scopedChat}
-            onFocus={setFocus} compact={compact} topicRequest={topicRequest} emptyMessage={filtered ? filteredMessage : undefined} />}
-          {filtered || !recap.data.summary ? overview() : null}
+            onFocus={setFocus} compact={compact} todayView={todayView} topicRequest={topicRequest} emptyMessage={filtered ? filteredMessage : undefined} />}
+          {(!todayView || hasTopics) && (filtered || !recap.data.summary) ? overview() : null}
           {recap.data.pending_chunks ? (
             <p className="caption">
               {recap.data.pending_chunks} {t("recording(s) were awaiting transcription when generated. This recap updates automatically to include later evidence.")}{" "}</p>
@@ -193,7 +214,9 @@ export function RecapSection({
             <SourceList sources={recap.data.sources} timezone={timezone} onCorrect={recap.refresh} />
           </details> : null}
         </div>
-      ) : filtered ? recap.error ? null : <p className="caption recap-filtered-empty">{filteredMessage}</p> : (
+      ) : filtered ? recap.error ? null : <p className="caption recap-filtered-empty">{filteredMessage}</p> : todayView ? (
+        <p className="caption" role="status">{emptyRecapMessage(recap.data, summarizing)}</p>
+      ) : (
         <div className="recap-empty">
           <span className="empty-symbol"><Icon name="diary" size={25} /></span>
           {compact ? <div>
@@ -210,8 +233,17 @@ export function RecapSection({
       {compact && !filtered && !recap.data?.summary ? <CompletenessDetails value={recap.data?.completeness} /> : null}
       {(!filtered || recap.data) && !recap.data?.summary && !hasOriginalTopics ? <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} filters={filters}
         focus={focus && recap.data?.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={scopedChat} /> : null}
+      {!filtered && todayView ? <RecapTemplateControl key={`template-${day}`} day={day} onGenerated={recap.refresh} /> : null}
     </section>
   );
+}
+
+function JumpTo({ target, children }: { target: string; children: ReactNode }) {
+  return <button type="button" className="text-button" onClick={() => {
+    const heading = document.getElementById(target);
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: "start" });
+  }}>{children}<Icon name="chevron-right" size={14} /></button>;
 }
 
 function emptyRecapMessage(recap?: Recap, summarizing = false): string {

@@ -14,6 +14,7 @@ import { TranscriptionReview } from "./TranscriptionReview";
 import { TranscriptTranslation } from "./TranscriptTranslation";
 import { Speakers } from "./Speakers";
 import { RecordingSections } from "./RecordingSections";
+import { RecordingTranscript, SourceTranscriptTurns, TranscriptTurns } from "./RecordingTranscript";
 import { Icon } from "./Icon";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { useRecordingSeek } from "./useRecordingSeek";
@@ -200,12 +201,12 @@ function SourceRow({
               label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
               audioRef={topicPlayback.audioRef} onReady={topicPlayback.onReady}
               bookmarks={compact ? groupTopicRuns(currentSource.sections || [], (section) => section.title,
-                (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.map(([section]) => ({
-                label: section.title + (section.start_seconds === undefined ? ` ${t("· estimated times")}` : ""),
-                seconds: section.start_seconds ?? 0, onSelect: () => {
-                  setSelectedTopicOffset(section.start_offset); topicPlayback.seekTo(section.start_seconds ?? 0);
+                (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.flatMap(([section]) => section.start_seconds === undefined ? [] : [{
+                label: section.title,
+                seconds: section.start_seconds, onSelect: () => {
+                  setSelectedTopicOffset(section.start_offset); topicPlayback.seekTo(section.start_seconds);
                 },
-              }))) : undefined}
+              }])) : undefined}
             />
             {!compact ? <a
               className="text-link caption"
@@ -238,9 +239,9 @@ function SourceRow({
         </span>
         <span className="source-overview">
           <span className="source-preview">
-            {currentSource.title || (saved === undefined ? source.matches?.[0]?.text : undefined) || text ||
+            {currentSource.title || (saved === undefined ? source.matches?.[0]?.text : undefined) ||
               (source.state === "done"
-                ? t("No transcript text")
+                ? t(text ? "Recording" : "No transcript text")
                 : t("Recording · {value0}", { value0: statusLabel(source.state) }))}
           </span>
           {compact ? <span className="source-glance">
@@ -315,6 +316,8 @@ function SourceRow({
           <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
         {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
+        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo}
+          selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
         <div className={compact ? "recording-transcript" : undefined}>
         {editing ? (
           <div className="transcript-editor">
@@ -345,34 +348,28 @@ function SourceRow({
               {t("Corrections update search, invalidate saved recaps and weekly reviews, and require dependent decision evidence to be reviewed.")}{" "}</p>
           </div>
         ) : (
-          <>
-            {!compact ? <RecordingSections source={currentSource} /> : null}
-            {open && text ? <TranscriptTranslation
+          text ? <RecordingTranscript>
+            <TranscriptTranslation
               key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
               sourceId={source.id} original={text}
-            /> : <p className="transcript-text">
-              {text ||
-                (source.state === "done"
+              renderText={(value, translated) => translated ? <TranscriptTurns text={value} /> : <SourceTranscriptTurns
+                text={value} source={currentSource}
+                onSeek={source.audio_available !== false && source.audio_availability !== "missing" ? topicPlayback.seekTo : undefined} />}
+            />
+            {source.state === "done" ? <button className="text-button" onClick={() => {
+              setDraft(text); setEditing(true);
+            }}>{t("Correct transcript")}</button> : null}
+          </RecordingTranscript> : <p className="transcript-text">
+              {source.state === "done"
                   ? t("Processing completed without transcript text; this does not prove no speech occurred.")
                   : source.state === "expired"
                     ? t("Transcript unavailable after retention.")
                     : source.state === "blocked"
                       ? t("Transcription blocked. Resolve the problem and retry.")
-                      : t("This recording is waiting for transcription."))}
-            </p>}
-            {source.state === "done" ? <button
-              className="text-button"
-              onClick={() => {
-                setDraft(text || "");
-                setEditing(true);
-              }}
-            >
-              {t("Correct transcript")}{" "}</button> : null}
-          </>
+                      : t("This recording is waiting for transcription.")}
+            </p>
         )}
         </div>
-        {compact && !editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo}
-          selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
         <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
           setDraft(text || "");
           setEditing(true);

@@ -6,6 +6,7 @@ struct SourceTranscriptView: View {
     let editing: Bool
     var startOffset: Int? = nil
     var endOffset: Int? = nil
+    var onSeek: ((Double) -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var translation: JSONValue = .null
@@ -58,8 +59,12 @@ struct SourceTranscriptView: View {
                 Text(showingTranslation ? L10n.text("Showing the \(languageName) translation. The original transcription is preserved.") : L10n.text("Showing the original transcription. A \(languageName) translation is available."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Text(showingTranslation && hasTranslation ? translation["text"].text : originalText)
-                .textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
+            if showingTranslation && hasTranslation {
+                Text(translation["text"].text).textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
+            } else {
+                RecordingTranscriptTurns(text: originalText, turns: originalTurns, onSeek: onSeek)
+                    .accessibilityIdentifier("source.transcriptText")
+            }
             if !source["text"].text.isEmpty && !originalText.isEmpty {
                 DisclosureGroup(L10n.text("Translate")) {
                     if loaded {
@@ -115,6 +120,23 @@ struct SourceTranscriptView: View {
         }
         if !source["text"].text.isEmpty { return source["text"].text }
         return L10n.text("No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)")
+    }
+
+    private var originalTurns: [JSONValue] {
+        let turns = source["transcript_turns"].array
+        guard let startOffset, let endOffset else { return turns }
+        let scalars = Array(source["text"].text.unicodeScalars)
+        return turns.compactMap { turn in
+            let start = turn["start_offset"].integer, end = turn["end_offset"].integer
+            let left = max(startOffset, start), right = min(endOffset, end)
+            guard left >= 0, right <= scalars.count, left < right,
+                  case .object(var values) = turn else { return nil }
+            if left != start || right != end {
+                values["text"] = .string(String(String.UnicodeScalarView(scalars[left..<right])))
+                if left != start { values["start"] = nil }
+            }
+            return .object(values)
+        }
     }
 
     private func invalidate() {
@@ -204,7 +226,7 @@ struct SourceTranscriptTopicsView: View {
     let source: JSONValue
     let editing: Bool
     var onPlayTopic: ((Double) -> Void)? = nil
-    @State private var expandedTopics: Set<Int> = []
+    @State private var transcriptOpen = false
 
     private var sections: [JSONValue] {
         let length = source["text"].text.unicodeScalars.count
@@ -217,28 +239,66 @@ struct SourceTranscriptTopicsView: View {
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        SourceTranscriptView(source: source, editing: editing)
-        if !sections.isEmpty {
-            DisclosureGroup(L10n.text("Topics")) {
-                ForEach(Array(sections.enumerated()), id: \.element["start_offset"].integer) { _, section in
-                    let start = section["start_offset"].integer
-                    DisclosureGroup(isExpanded: Binding(
-                        get: { expandedTopics.contains(start) },
-                        set: { expanded in
-                            if expanded { expandedTopics.insert(start) }
-                            else { expandedTopics.remove(start) }
-                        }
-                    )) {
-                        if expandedTopics.contains(start) {
-                            if let onPlayTopic, case .number(let seconds) = section["start_seconds"] {
-                                Button { onPlayTopic(seconds) } label: { Label(L10n.text("Listen"), systemImage: "play.fill") }
-                                    .buttonStyle(.borderless)
+        if !source["recording_summary"].text.isEmpty {
+            Text(source["recording_summary"].text).textSelection(.enabled)
+        }
+        ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+            VStack(alignment: .leading, spacing: 6) {
+                Text(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text)
+                    .font(.headline).accessibilityAddTraits(.isHeader)
+                if !section["summary"].text.isEmpty { Text(section["summary"].text).textSelection(.enabled) }
+                if let onPlayTopic, case .number(let seconds) = section["start_seconds"] {
+                    Button { onPlayTopic(seconds) } label: { Label(L10n.text("Listen"), systemImage: "play.fill") }
+                        .buttonStyle(.borderless)
+                }
+            }
+        }
+        if source["text"].text.isEmpty {
+            SourceTranscriptView(source: source, editing: editing)
+        } else {
+            DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
+                if transcriptOpen { SourceTranscriptView(source: source, editing: editing, onSeek: onPlayTopic) }
+            }
+        }
+    }
+}
+
+struct RecordingTranscriptTurns: View {
+    let text: String
+    let turns: [JSONValue]
+    var onSeek: ((Double) -> Void)? = nil
+    @State private var showTimes = false
+
+    private func label(_ turn: JSONValue) -> String {
+        if turn["attribution"].text == "overlap" { return L10n.text("Overlapping speech") }
+        for key in ["speaker_name", "speaker_label"] where !turn[key].text.isEmpty { return turn[key].text }
+        if case .number = turn["speaker_number"] { return L10n.text("Speaker \(turn["speaker_number"].integer)") }
+        return L10n.text("Unknown speaker")
+    }
+
+    var body: some View {
+        if turns.isEmpty {
+            Text(text).textSelection(.enabled)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                if turns.contains(where: { if case .number = $0["start"] { true } else { false } }) {
+                    Toggle(L10n.text("Show timestamps"), isOn: $showTimes)
+                }
+                ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+                    if !turn["text"].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(label(turn)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                if showTimes, case .number(let start) = turn["start"] {
+                                    let seconds = Int(start)
+                                    let time = String(format: "%02d:%02d", seconds / 60, seconds % 60)
+                                    if let onSeek {
+                                        Button(time) { onSeek(start) }.buttonStyle(.borderless).font(.caption.monospacedDigit())
+                                    } else { Text(time).font(.caption.monospacedDigit()) }
+                                }
                             }
-                            SourceTranscriptView(source: source, editing: editing,
-                                                 startOffset: start, endOffset: section["end_offset"].integer)
+                            Text(turn["text"].text).textSelection(.enabled)
                         }
-                    } label: {
-                        Text(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text)
                     }
                 }
             }

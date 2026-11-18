@@ -1,3 +1,9 @@
+export type TranscriptTurn = {
+  text: string; start?: number | null; start_offset: number; end_offset: number;
+  speaker_name?: string | null; speaker_label?: string | null;
+  speaker_number?: number; attribution?: string;
+};
+
 export type Source = {
   reference_type?: "recording_transcription";
   recording_id?: string;
@@ -18,8 +24,9 @@ export type Source = {
   text: string | null;
   title?: string | null;
   recording_summary?: string | null;
+  transcript_turns?: TranscriptTurn[];
   sections?: { title: string; start_offset: number; end_offset: number;
-    chapter_id?: string; start_seconds?: number; end_seconds?: number }[];
+    chapter_id?: string; start_seconds?: number; end_seconds?: number; summary?: string }[];
   important?: boolean;
   audio_available?: boolean;
   source_kind?: string;

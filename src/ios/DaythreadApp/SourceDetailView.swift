@@ -42,7 +42,7 @@ struct SourceDetail: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section(L10n.text("Transcript")) {
+                Section(L10n.text("Recording summary")) {
                     SourceTranscriptTopicsView(source: evidence, editing: editing, onPlayTopic: canLoadAudio ? { seconds in
                         audio.seek(to: seconds)
                         if !audio.playing { audio.togglePlayback() }

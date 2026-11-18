@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from .blob_storage import audio_is_present
 from .merged_recordings import Recording, audio_response, pcm, recording_waveform
+from .transcript_turns import saved_speaker_turns
 
 if TYPE_CHECKING:
     from .store import Store
@@ -25,8 +26,8 @@ class SessionRecording(Recording):
         # A session represents its scoped rows and exposes any interruptions.
         return True
 
-    def snapshot(self) -> dict:
-        result = super().snapshot(partial=True)
+    def snapshot(self, *, attributed: dict | None = None) -> dict:
+        result = super().snapshot(partial=True, attributed=attributed)
         interruptions, seconds = [], 0
         for index, (row, frames) in enumerate(zip(self.rows, self.frames)):
             if index:
@@ -71,6 +72,10 @@ class ParallelTrackRecording(SessionRecording):
     def playback_frames(self) -> int:
         return max(start + count for start, count, _ in self.tracks)
 
+    @property
+    def playback_starts(self) -> list[float]:
+        return [start / 16000 for start, _, _ in self.tracks]
+
     @cached_property
     def mixed_audio_version(self) -> str:
         return hashlib.sha256(json.dumps([
@@ -82,12 +87,16 @@ class ParallelTrackRecording(SessionRecording):
     def audio_etag(self) -> str:
         return f'"{self.mixed_audio_version}"'
 
-    def snapshot(self) -> dict:
-        result = Recording.snapshot(self, partial=True)
+    def snapshot(self, *, attributed: dict | None = None) -> dict:
+        result = Recording.snapshot(self, partial=True, attributed=attributed)
+        # Capture tracks can overlap; transcript order is not playback order.
+        for section in result["sections"]:
+            for key in ("start_seconds", "end_seconds", "start_estimated"):
+                section.pop(key, None)
         result.update(ended_at=max(row["ended_at"] for row in self.rows),
                       started_at=self.rows[0]["started_at"],
                       duration_seconds=self.playback_frames / 16000,
-                      interruptions=[], sections=[], recording_summary=None,
+                      interruptions=[],
                       audio_version=self.mixed_audio_version,
                       title=result["title"] or "Recording session")
         if self.audio_available and len(self.available_tracks) < len(self.tracks):
@@ -151,7 +160,8 @@ def session_recording_routes(memory: Callable) -> APIRouter:
         archive: bool = False,
     ) -> dict:
         response.headers["Cache-Control"] = "no-store"
-        return load(group_id, day, q, zone_id, tag_id, archive=archive).snapshot()
+        current = load(group_id, day, q, zone_id, tag_id, archive=archive)
+        return current.snapshot(attributed=saved_speaker_turns(memory(), current.rows))
 
     @router.api_route("/{group_id}/audio", methods=["GET", "HEAD"])
     def audio(

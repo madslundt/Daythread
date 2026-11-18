@@ -140,7 +140,8 @@ describe("combined uploaded recording", () => {
       { text: "Hi.", start_offset: 7, end_offset: 10, speaker_name: "Rae", start: 2 },
       { text: "Thanks.", start_offset: 11, end_offset: 18, speaker_number: 1, start: 4 },
     ]} />);
-    expect(html.match(/>Speaker A<\/span>/g)).toHaveLength(3); // Two turns and the filter label.
+    expect(html.match(/>Speaker A<\/span>/g)).toHaveLength(2);
+    expect(html).toContain('aria-pressed="true">Speaker A</button>');
     expect(html).toContain("Rae");
     expect(html).toContain("Show timestamps");
     expect(html).not.toContain("00:02");

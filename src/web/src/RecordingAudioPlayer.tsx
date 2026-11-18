@@ -8,6 +8,7 @@ import "./recordingAudioPlayer.css";
 type Props = {
   src: string;
   waveformSrc?: string;
+  showWaveform?: boolean;
   label?: string;
   active?: boolean;
   durationHint?: number;
@@ -25,7 +26,7 @@ export function RecordingAudioPlayer(props: Props) {
   return <Player key={props.src} {...props} />;
 }
 
-function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1, bookmarks, skipIntervals }: Props) {
+function Player({ src, waveformSrc, showWaveform = true, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1, bookmarks, skipIntervals }: Props) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const scrubbing = useRef(false);
   const resumeAfterScrub = useRef(false);
@@ -52,6 +53,7 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
   useEffect(() => {
     const element = audio.current;
     if (!active) { element?.pause(); return; }
+    if (!showWaveform) return;
     const controller = new AbortController();
     setWaveformState("loading");
     void (async () => {
@@ -91,7 +93,7 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
       }
     })();
     return () => { controller.abort(); element?.pause(); };
-  }, [active, src, waveformSrc, retry, start, requestedEnd]);
+  }, [active, src, waveformSrc, showWaveform, retry, start, requestedEnd]);
 
   useEffect(() => {
     const element = audio.current;
@@ -171,7 +173,7 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
       onLoadedMetadata={(event) => {
         const element = event.currentTarget;
         const knownDuration = Number.isFinite(element.duration) ? element.duration
-          : Number.isFinite(clipEnd.current) ? clipEnd.current : duration;
+          : Number.isFinite(clipEnd.current) ? clipEnd.current : Number.isFinite(requestedEnd) ? requestedEnd : duration;
         if (!knownDuration) return;
         clipEnd.current = Math.max(start, Math.min(knownDuration, requestedEnd));
         setDuration(clipEnd.current - start);
@@ -195,7 +197,7 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
       onEnded={() => { setPlaying(false); setPosition(duration); }}
       onError={() => { setReady(false); setPlaying(false); setError(t("Unable to play recording.")); onError?.(); }} />
     <div className="recording-player-time"><span>{playbackTime(position)}</span><span> / {playbackTime(duration)}</span></div>
-    <div className="recording-player-waveform">
+    {showWaveform ? <div className="recording-player-waveform">
       {waveformState === "ready" ? <svg viewBox="0 0 800 64" preserveAspectRatio="none" aria-hidden="true">
         {peaks.map((peak, index) => {
           const height = Math.max(1, peak * 64);
@@ -220,7 +222,7 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
           resumeAfterScrub.current = playing;
           audio.current?.pause();
         }} onPointerUp={finishScrubbing} onPointerCancel={finishScrubbing} onLostPointerCapture={finishScrubbing} />
-    </div>
+    </div> : null}
     {duration > 0 && bookmarks?.length ? <div className="recording-player-bookmarks" role="group" aria-label={t("Topics")}>
       {bookmarks.filter((bookmark) => Number.isFinite(bookmark.seconds) && bookmark.seconds >= 0 && bookmark.seconds <= duration)
         .map((bookmark, index) => <button key={`${bookmark.seconds}:${index}`} type="button"

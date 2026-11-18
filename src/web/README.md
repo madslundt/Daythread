@@ -67,10 +67,14 @@ decisions, key details, and follow-ups. Choose **Topic transcript** to read
 just that passage, or open **Full transcript** to read the entire original text. Use
 **Listen from this topic** to seek without changing what you are reading.
 
-In a transcript, use **Filter speakers** to hide their turns and skip audio where
-the speaker's timing is known. Unassigned or overlapping audio may still play.
+In a transcript, select a speaker label above the text to hide or show their turns.
+All speakers are shown by default. Playback skips hidden speech where timing is known;
+unassigned or overlapping audio may still play.
 Only speaker labels are colored; identical names share a color and a filter.
-Use **Edit speaker** to rename an identified speaker without changing the original transcript.
+Use the pencil next to a speaker label to rename that speaker without changing the original
+transcript. The pencil above the text previews the first timed passage for that speaker in
+the topic; the pencil in the transcript previews that row. Use **Previous passage** and
+**Next passage** to hear the same speaker elsewhere in the recording when audio is available.
 Detected speakers are renamed across their conversation; imported or numbered speaker edits
 apply to that recording part only. Clear the name to return to the original label.
 When speaker evidence is available, each turn has a label. **Show timestamps** reveals the

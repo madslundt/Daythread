@@ -56,14 +56,17 @@
 [data-speaker-color="9"] { --speaker-ink: #526d13; --speaker-dark: #b8d982; }
 :root[data-theme="dark"] .recording-speaker-label[data-speaker-color] { color: var(--speaker-dark); }
 .recording-speaker-filters { margin-block: 8px; }
-.recording-transcript-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 18px; }
-.recording-edit-speaker { min-height: 44px; }
+.recording-speaker-list { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.recording-speaker-chip { display: inline-flex; align-items: center; min-width: 0; }
+.recording-speaker-chip > button.recording-speaker-label { border: 1px solid var(--line); min-height: 44px; }
+.recording-speaker-chip > button[aria-pressed="false"] { background: transparent; text-decoration: line-through; }
+.recording-attributed-run .recording-edit-speaker { vertical-align: middle; }
+.recording-speaker-dialog { max-height: calc(100% - 32px); overflow: auto; }
 .recording-speaker-editor { display: grid; gap: 14px; }
 .recording-speaker-editor label { display: grid; gap: 5px; }
 .recording-speaker-editor input, .recording-speaker-editor select { width: 100%; min-width: 0; }
-.recording-speaker-filters > summary { cursor: pointer; font-size: 13px; }
-.recording-speaker-filters [role="group"] { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.recording-speaker-filters label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.recording-speaker-preview { min-width: 0; }
+.recording-speaker-preview > p.caption { margin: 0 0 8px; overflow-wrap: anywhere; }
 .recording-speaker-time { margin-inline-start: 10px; font-variant-numeric: tabular-nums; }
 .recording-timestamp-option { display: inline-flex; align-items: center; gap: 6px; }
 .topic-reading { margin: 6px 0 14px; }

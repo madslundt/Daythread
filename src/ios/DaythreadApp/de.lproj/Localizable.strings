@@ -479,6 +479,10 @@
 "Edit profile" = "Profil bearbeiten";
 "Edit record and evidence" = "Datensatz und Beweise bearbeiten";
 "Edit speaker" = "Sprecher bearbeiten";
+"Edit speaker: {value0}" = "Sprecher bearbeiten: {value0}";
+"Previous passage" = "Vorheriger Abschnitt";
+"Next passage" = "Nächster Abschnitt";
+"No audio preview for this passage." = "Für diesen Abschnitt ist keine Hörprobe verfügbar.";
 "Edited evidence must remain after the predecessor" = "Bearbeitete Beweise müssen nach dem Vorgänger verbleiben";
 "Edited evidence must remain before the successor" = "Bearbeitete Beweise müssen vor dem Nachfolger verbleiben";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Das Bearbeiten von Namen oder Sprechern entfernt gespeicherte Stimmbeispiele aus diesem Gespräch. Bestätigen Sie sie nach der Korrektur der Sprecher erneut.";

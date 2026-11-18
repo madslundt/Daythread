@@ -65,6 +65,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const topic = occurrences.find((section) => section.id === selectedTopic);
   const base = resourceBase || `/v1/recordings/${encodeURIComponent(recording.id)}`;
   const url = (suffix: string) => profileResourceUrl(`${base}/${suffix}${resourceQuery}`);
+  const previewSrc = recording.audio_available ? url("audio") : undefined;
   const boundaryTime = (value: string) => new Date(value).toLocaleTimeString(displayLocale(), { timeZone: timezone, hour12: false });
   const selection = recording.transcript_selection;
   const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
@@ -152,6 +153,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
           <TopicReading summary={topic.summary ? <p className="transcript-text">{topic.summary}</p> : null}
             transcript={(visible) => visible ? <TranscriptTurns text={originalText.slice(topic.start_offset, topic.end_offset).join("")}
               turns={turnsInRange(recording.text || "", recording.transcript_turns, topic)} reading={originalReading}
+              allTurns={recording.transcript_turns} previewSrc={previewSrc}
               onSeek={recording.audio_available ? playback.seekTo : undefined} /> : null} />
           {recording.audio_available && topic.start_seconds !== undefined ? <button type="button" className="text-button"
             onClick={() => playback.seekTo(topic.start_seconds)}>{t("Listen from this topic")}</button> : null}
@@ -159,10 +161,10 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     </div> : null}
     {displayedText !== null ? <RecordingTranscript>
       <TranscriptTurns text={displayedText} turns={showingSelected ? hasSpeakerEvidence ? speakerRuns : undefined : recording.transcript_turns}
-        reading={showingSelected ? selectedReading : originalReading}
+        reading={showingSelected ? selectedReading : originalReading} previewSrc={previewSrc}
         onSeek={recording.audio_available ? playback.seekTo : undefined} />
       {showingSelected && recording.text !== null ? <RecordingTranscript label={t("Original part transcripts")}>
-        <TranscriptTurns text={recording.text} turns={recording.transcript_turns} reading={originalReading}
+        <TranscriptTurns text={recording.text} turns={recording.transcript_turns} reading={originalReading} previewSrc={previewSrc}
           onSeek={recording.audio_available ? playback.seekTo : undefined} />
       </RecordingTranscript> : null}
     </RecordingTranscript> : <p className="caption" role="status">{recording.state === "expired"

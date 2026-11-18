@@ -204,12 +204,13 @@ struct MergedRecordingContentView: View {
                 if let selectionError { ErrorNote(message: selectionError) }
                 DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                     if transcriptOpen {
-                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek, speakerReading: selectedReading)
+                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek, speakerReading: selectedReading,
+                            previewPlayback: seek == nil ? nil : playback)
                         if case .string(let original) = recording["text"] {
                             DisclosureGroup(L10n.text("Original part transcripts"), isExpanded: $originalsOpen) {
                                 if originalsOpen {
                                     RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array,
-                                        onSeek: seek, speakerReading: originalReading)
+                                        onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
                                 }
                             }
                         }
@@ -237,7 +238,7 @@ struct MergedRecordingContentView: View {
                     DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                         if transcriptOpen {
                             RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array,
-                                onSeek: seek, speakerReading: originalReading)
+                                onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
                         }
                     }
                 } else {
@@ -295,12 +296,13 @@ struct MergedRecordingContentView: View {
 
     @ViewBuilder private func topicTranscript(_ topic: JSONValue) -> some View {
         let text = recording["text"].text
+        let turns = recording["transcript_turns"].array
         let scalars = text.unicodeScalars
         let start = topic["start_offset"].integer, end = topic["end_offset"].integer
         if start >= 0, end > start, end <= scalars.count {
             RecordingTranscriptTurns(text: String(String.UnicodeScalarView(scalars.dropFirst(start).prefix(end - start))),
-                turns: RecordingTranscriptTurns.passageTurns(text: text, turns: recording["transcript_turns"].array,
-                    start: start, end: end), onSeek: seek, speakerReading: originalReading)
+                turns: RecordingTranscriptTurns.passageTurns(text: text, turns: turns, start: start, end: end),
+                onSeek: seek, speakerReading: originalReading, allTurns: turns, previewPlayback: seek == nil ? nil : playback)
         }
     }
 

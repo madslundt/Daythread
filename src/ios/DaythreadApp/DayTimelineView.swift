@@ -221,7 +221,7 @@ private struct RecordingChapterPassage: View {
                 } transcript: {
                     SourceTranscriptView(source: source, editing: false,
                         startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer,
-                        speakerReading: speakerReading)
+                        speakerReading: speakerReading, previewPlayback: canPlay ? playback : nil)
                 }
                 Button { selected = SourceSelection(source: source) } label: {
                     Label(L10n.text("Full recording & tools"), systemImage: "waveform")

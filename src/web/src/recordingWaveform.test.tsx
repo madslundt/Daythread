@@ -38,4 +38,10 @@ describe("recording playback presentation", () => {
     expect(html).toContain('preload="none"');
     expect(html).not.toContain(" controls");
   });
+  it("renders a bounded speaker preview without the full recording waveform", () => {
+    const html = renderToStaticMarkup(<RecordingAudioPlayer src="/recording.wav#t=6.025,8.019" showWaveform={false} />);
+    expect(html).toContain('src="/recording.wav#t=6.025,8.019"');
+    expect(html).toContain('aria-label="Play original audio"');
+    expect(html).not.toContain('type="range"');
+  });
 });

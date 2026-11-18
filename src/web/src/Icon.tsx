@@ -28,6 +28,7 @@ export type IconName =
   | "plus"
   | "pause"
   | "play"
+  | "pencil"
   | "refresh";
 const paths: Record<IconName, string> = {
   filter: "M4 6h16M7 12h10M10 18h4",
@@ -59,6 +60,7 @@ const paths: Record<IconName, string> = {
   plus: "M12 4v16M4 12h16",
   pause: "M8 4v16M16 4v16",
   play: "m7 3 14 9-14 9V3Z",
+  pencil: "m15 5 4 4M4 20l4-1 13-13-4-4L4 15l-1 5Z",
   refresh:
     "M21 8V3m0 5h-5M3 16v5m0-5h5M3 8a9 9 0 0 1 15-4l3 4M3 16l3 4a9 9 0 0 0 15-4",
 };

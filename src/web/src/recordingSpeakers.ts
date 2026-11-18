@@ -9,7 +9,7 @@ function assignedName(turn: TranscriptTurn) {
   return name && (turn.speaker_id || turn.speaker_name_is_custom || !/^Speaker (?:\d+|[A-Z]+)$/.test(name)) ? name : undefined;
 }
 
-function speakerIdentity(turn: TranscriptTurn): string | undefined {
+export function speakerIdentity(turn: TranscriptTurn): string | undefined {
   if (turn.attribution === "unknown" || turn.attribution === "overlap") return;
   if (turn.speaker_edit) return JSON.stringify([turn.speaker_edit.kind, turn.speaker_edit.scope_id, turn.speaker_edit.id]);
   if (turn.speaker_id) return `id:${turn.speaker_id}`;
@@ -33,6 +33,22 @@ export function speakersInPassage(turns: readonly TranscriptTurn[], speakers: Re
     seen.add(identity);
     return [{ identity, speaker, edit: turn.speaker_edit, sample: Array.from(turn.text.trim().replace(/\s+/g, " ")).slice(0, 60).join("") }];
   });
+}
+
+export function speakerPassages(turns: readonly TranscriptTurn[], identity: string) {
+  return turns.flatMap((turn) => {
+    if (speakerIdentity(turn) !== identity || !turn.text.trim() || !validStart(turn)) return [];
+    // When only a start is known, offer a short preview rather than playing the rest of the recording.
+    const end = Math.min(timed(turn) ? turn.end : turn.start + 8, turn.part_end ?? Infinity);
+    return end > turn.start ? [{ offset: turn.start_offset, start: turn.start, end, text: turn.text }] : [];
+  }).sort((a, b) => a.offset - b.offset);
+}
+
+export function initialSpeakerPassage(passages: ReturnType<typeof speakerPassages>, shown: readonly TranscriptTurn[], row?: TranscriptTurn) {
+  if (row) return validStart(row) ? passages.findIndex((passage) => passage.offset === row.start_offset) : -1;
+  const offsets = new Set(shown.filter(validStart).map((turn) => turn.start_offset));
+  const first = passages.findIndex((passage) => offsets.has(passage.offset));
+  return first === -1 && passages.length ? 0 : first;
 }
 
 function letterFor(index: number): string {

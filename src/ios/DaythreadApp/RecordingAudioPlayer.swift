@@ -37,6 +37,7 @@ final class RecordingPlayback {
     @ObservationIgnored private var scrubbing = false
     @ObservationIgnored private var resumeAfterScrub = false
     @ObservationIgnored private var skipIntervals: [RecordingSkipInterval] = []
+    @ObservationIgnored private var preview: RecordingSkipInterval?
 
     private var player: AVAudioPlayer? {
         guard let fileURL, model?.player?.url == fileURL else { return nil }
@@ -121,6 +122,35 @@ final class RecordingPlayback {
 
     func skip(_ seconds: TimeInterval) { seek(to: position + seconds) }
 
+    func togglePreview(_ passage: RecordingSkipInterval) {
+        guard ready, let fileURL, let model, passage.start < duration else { return }
+        guard model.microphone.active == nil else {
+            error = L10n.text("Stop recording before playing audio."); return
+        }
+        error = nil
+        if preview == passage, player?.isPlaying == true {
+            player?.pause(); playing = false
+            return
+        }
+        let resume = preview == passage && position >= passage.start && position < min(duration, passage.end)
+        preview = passage
+        position = resume ? position : passage.start
+        model.play(fileURL, startAt: position, rate: Float(speed))
+        playing = player?.isPlaying == true
+        if !playing { error = model.error ?? L10n.text("Unable to play recording.") }
+    }
+
+    func isPreviewPlaying(_ passage: RecordingSkipInterval) -> Bool {
+        playing && preview == passage
+    }
+
+    func endPreview() {
+        guard preview != nil else { return }
+        preview = nil
+        if player != nil { model?.stopPlayback() }
+        playing = false
+    }
+
     func setSkipIntervals(_ intervals: [RecordingSkipInterval]) {
         skipIntervals = intervals
         _ = updatePosition()
@@ -148,7 +178,7 @@ final class RecordingPlayback {
         if player != nil { model?.stopPlayback() }
         if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
         fileURL = nil; ready = false; playing = false; loading = false
-        scrubbing = false; resumeAfterScrub = false
+        scrubbing = false; resumeAfterScrub = false; preview = nil
     }
 
     private func nextSkip(at seconds: Double) -> RecordingSkipInterval? {
@@ -165,6 +195,13 @@ final class RecordingPlayback {
         guard !scrubbing else { return 0.2 }
         if let player {
             position = min(duration, max(0, player.currentTime)); playing = player.isPlaying
+            if let preview {
+                let end = min(preview.end, duration)
+                if playing && position >= end {
+                    player.pause(); player.currentTime = end; position = end; playing = false
+                }
+                return playing ? min(0.2, max(0.01, (end - position) / speed)) : 0.2
+            }
             if playing, let span = nextSkip(at: position) {
                 if span.start <= position { seek(to: span.end) }
                 if let next = nextSkip(at: position) { return min(0.2, max(0.01, (next.start - position) / speed)) }

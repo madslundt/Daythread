@@ -9,6 +9,7 @@ struct SourceTranscriptView: View {
     var endOffset: Int? = nil
     var onSeek: ((Double) -> Void)? = nil
     var speakerReading: RecordingSpeakerReading? = nil
+    var previewPlayback: RecordingPlayback? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var translation: JSONValue = .null
@@ -67,7 +68,7 @@ struct SourceTranscriptView: View {
                 Text(translation["text"].text).textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
             } else {
                 RecordingTranscriptTurns(text: originalText, turns: originalTurns, onSeek: onSeek,
-                    speakerReading: speakerReading, allTurns: fullTurns, canEditSpeakers: !editing)
+                    speakerReading: speakerReading, allTurns: fullTurns, canEditSpeakers: !editing, previewPlayback: previewPlayback)
                     .accessibilityIdentifier("source.transcriptText")
             }
             if !filtering && !source["text"].text.isEmpty && !originalText.isEmpty {
@@ -234,6 +235,7 @@ struct SourceTranscriptTopicsView: View {
     let editing: Bool
     var onPlayTopic: ((Double) -> Void)? = nil
     var speakerReading: RecordingSpeakerReading? = nil
+    var previewPlayback: RecordingPlayback? = nil
     @State private var transcriptOpen = false
     @State private var openTopic: Int?
 
@@ -260,7 +262,8 @@ struct SourceTranscriptTopicsView: View {
                         TopicSummaryText(text: section["summary"].text)
                     } transcript: {
                         SourceTranscriptView(source: source, editing: false, startOffset: start,
-                            endOffset: section["end_offset"].integer, onSeek: onPlayTopic, speakerReading: speakerReading)
+                            endOffset: section["end_offset"].integer, onSeek: onPlayTopic, speakerReading: speakerReading,
+                            previewPlayback: previewPlayback)
                     }
                     if let onPlayTopic, case .number(let seconds) = section["start_seconds"] {
                         Button { onPlayTopic(seconds) } label: { Label(L10n.text("Listen from this topic"), systemImage: "play.fill") }
@@ -274,7 +277,8 @@ struct SourceTranscriptTopicsView: View {
         } else {
             DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                 if transcriptOpen {
-                    SourceTranscriptView(source: source, editing: editing, onSeek: onPlayTopic, speakerReading: speakerReading)
+                    SourceTranscriptView(source: source, editing: editing, onSeek: onPlayTopic, speakerReading: speakerReading,
+                        previewPlayback: previewPlayback)
                 }
             }
         }
@@ -337,10 +341,10 @@ struct RecordingTranscriptTurns: View {
     var speakerReading: RecordingSpeakerReading? = nil
     var allTurns: [JSONValue]? = nil
     var canEditSpeakers = true
+    var previewPlayback: RecordingPlayback? = nil
     @State private var showTimes = false
     @State private var filters = RecordingSpeakerFilters()
-    @State private var filterOpen = false
-    @State private var editingSpeaker = false
+    @State private var editingSpeaker: TranscriptSpeakerSelection?
     @Environment(\.colorScheme) private var colorScheme
 
     static func passageTurns(text: String, turns: [JSONValue], start: Int, end: Int) -> [JSONValue] {
@@ -363,33 +367,36 @@ struct RecordingTranscriptTurns: View {
         let reading = speakerReading ?? RecordingSpeakerReading(turns: allTurns ?? turns, scope: "transcript", filters: filters)
         let visible = turns.filter { !reading.hides($0) && $0.hasSpokenText }
         let editable = canEditSpeakers ? editableSpeakers(reading) : []
+        let byIdentity = Dictionary(uniqueKeysWithValues: editable.map { ($0.id, $0) })
+        let topicKeys = Set(turns.filter(\.hasSpokenText).compactMap(\.recordingSpeakerKey))
+        let topicSpeakers = reading.speakers.filter { topicKeys.contains($0.id) }
         if turns.isEmpty {
             Text(text).textSelection(.enabled)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                if !reading.speakers.isEmpty {
-                    DisclosureGroup(isExpanded: $filterOpen) {
-                        ForEach(reading.speakers) { speaker in
-                            Toggle(isOn: Binding(get: { !reading.excluded.contains(speaker.id) },
-                                set: { _ in reading.toggle(speaker.id) })) {
-                                speakerBadge(speaker.label, color: speaker.color(dark: colorScheme == .dark))
+                if !topicSpeakers.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(topicSpeakers) { speaker in
+                            let included = !reading.excluded.contains(speaker.id)
+                            let entries = editable.filter { $0.speaker.id == speaker.id }
+                            HStack(spacing: 4) {
+                                Button { reading.toggle(speaker.id) } label: {
+                                    Label {
+                                        Text(speaker.label).strikethrough(!included)
+                                    } icon: {
+                                        Image(systemName: included ? "checkmark.circle.fill" : "circle")
+                                    }.font(.subheadline.weight(.bold)).foregroundStyle(speaker.color(dark: colorScheme == .dark))
+                                        .padding(.horizontal, 8).frame(minHeight: 44)
+                                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                                }.buttonStyle(.plain).accessibilityAddTraits(included ? .isSelected : [])
+                                if !entries.isEmpty { editButton(speaker, entries: entries) }
                             }
                         }
-                    } label: {
-                        HStack {
-                            Text(L10n.text("Filter speakers"))
-                            if !reading.excluded.isEmpty { Text("(\(reading.excluded.count))").foregroundStyle(.secondary) }
-                        }
-                    }
+                    }.accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Filter speakers"))
                     if reading.incomplete {
                         Text(L10n.text("Some hidden speech will still play if its timing is unclear or it overlaps other audio."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                }
-                if !editable.isEmpty {
-                    Button { editingSpeaker = true } label: {
-                        Label(L10n.text("Edit speaker"), systemImage: "pencil")
-                    }.buttonStyle(.borderless).accessibilityIdentifier("transcript.editSpeaker")
                 }
                 if visible.contains(where: { $0["start"].seconds != nil }) {
                     Toggle(L10n.text("Show timestamps"), isOn: $showTimes)
@@ -405,6 +412,9 @@ struct RecordingTranscriptTurns: View {
                             speakerBadge(speaker?.label ?? (turn["attribution"].text == "overlap"
                                 ? L10n.text("Overlapping speech") : L10n.text("Unassigned speech")),
                                 color: speaker?.color(dark: colorScheme == .dark) ?? .secondary)
+                            if let speaker, let identity = turn.recordingSpeakerIdentity, let entry = byIdentity[identity] {
+                                editButton(speaker, entries: [entry], row: turn)
+                            }
                             if showTimes, let start = turn["start"].seconds, start < Double(Int.max) {
                                 let seconds = Int(start)
                                 let time = String(format: "%02d:%02d", seconds / 60, seconds % 60)
@@ -416,10 +426,8 @@ struct RecordingTranscriptTurns: View {
                         Text(turn["text"].text).textSelection(.enabled)
                     }
                 }
-            }.sheet(isPresented: $editingSpeaker) {
-                if let first = editable.first {
-                    TranscriptSpeakerEditor(entries: editable, first: first)
-                }
+            }.sheet(item: $editingSpeaker) { selection in
+                TranscriptSpeakerEditor(selection: selection, turns: turns, allTurns: allTurns ?? turns, playback: previewPlayback)
             }
         }
     }
@@ -428,6 +436,12 @@ struct RecordingTranscriptTurns: View {
         Text(title).font(.subheadline.weight(.bold)).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func editButton(_ speaker: RecordingSpeakerReading.Speaker, entries: [TranscriptEditableSpeaker], row: JSONValue? = nil) -> some View {
+        Button { editingSpeaker = TranscriptSpeakerSelection(entries: entries, row: row) } label: {
+            Image(systemName: "pencil").frame(minWidth: 44, minHeight: 44)
+        }.buttonStyle(.borderless).accessibilityLabel(L10n.text("Edit speaker: \(speaker.label)"))
     }
 
     private func editableSpeakers(_ reading: RecordingSpeakerReading) -> [TranscriptEditableSpeaker] {
@@ -450,9 +464,45 @@ private struct TranscriptEditableSpeaker: Identifiable {
     let sample: String
 }
 
-private struct TranscriptSpeakerEditor: View {
+private struct TranscriptSpeakerSelection: Identifiable {
+    let id = UUID()
     let entries: [TranscriptEditableSpeaker]
+    let row: JSONValue?
+}
+
+private struct TranscriptSpeakerPassage {
+    let offset: Int
+    let interval: RecordingSkipInterval
+    let text: String
+
+    static func forSpeaker(_ identity: String, in turns: [JSONValue]) -> [Self] {
+        turns.compactMap { turn in
+            guard turn.recordingSpeakerIdentity == identity, turn.hasSpokenText,
+                  let start = turn["start"].seconds else { return nil }
+            let end = min(turn.speakerAudioInterval?.end ?? start + 8, turn["part_end"].seconds ?? .infinity)
+            guard end > start else { return nil }
+            return Self(offset: turn.transcriptStartOffset, interval: .init(start: start, end: end), text: turn["text"].text)
+        }.sorted { $0.offset < $1.offset }
+    }
+
+    static func initial(in passages: [Self], shown: [JSONValue], row: JSONValue?) -> Int? {
+        if let row {
+            guard row["start"].seconds != nil else { return nil }
+            return passages.firstIndex { $0.offset == row.transcriptStartOffset }
+        }
+        let offsets = Set(shown.filter { $0["start"].seconds != nil }.map(\.transcriptStartOffset))
+        return passages.firstIndex { offsets.contains($0.offset) } ?? passages.indices.first
+    }
+}
+
+private struct TranscriptSpeakerEditor: View {
+    let selection: TranscriptSpeakerSelection
+    let turns: [JSONValue]
+    let allTurns: [JSONValue]
+    let playback: RecordingPlayback?
     @State private var target: TranscriptEditableSpeaker
+    @State private var passages: [TranscriptSpeakerPassage]
+    @State private var passageIndex: Int?
     @State private var name: String
     @State private var busy = false
     @State private var error: String?
@@ -461,26 +511,38 @@ private struct TranscriptSpeakerEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var interfaceLocale
 
-    init(entries: [TranscriptEditableSpeaker], first: TranscriptEditableSpeaker) {
-        self.entries = entries
+    init(selection: TranscriptSpeakerSelection, turns: [JSONValue], allTurns: [JSONValue], playback: RecordingPlayback?) {
+        self.selection = selection; self.turns = turns; self.allTurns = allTurns; self.playback = playback
+        let first = selection.entries[0]
+        let passages = TranscriptSpeakerPassage.forSpeaker(first.id, in: allTurns)
         _target = State(initialValue: first)
         _name = State(initialValue: first.speaker.name ?? "")
+        _passages = State(initialValue: passages)
+        _passageIndex = State(initialValue: TranscriptSpeakerPassage.initial(in: passages, shown: turns, row: selection.row))
     }
 
     var body: some View {
         let _ = interfaceLocale
         NavigationStack {
             Form {
-                Picker(L10n.text("Speaker"), selection: Binding(get: { target.id }, set: { id in
-                    guard let entry = entries.first(where: { $0.id == id }) else { return }
-                    target = entry; name = entry.speaker.name ?? ""; error = nil; conflict = false
-                })) {
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        let repeated = entries.contains { $0.id != entry.id && $0.speaker.id == entry.speaker.id }
-                        Text(repeated ? "\(index + 1). \(entry.speaker.label) – \(entry.sample)" : entry.speaker.label).tag(entry.id)
-                    }
-                }.disabled(busy)
+                if selection.entries.count > 1 {
+                    Picker(L10n.text("Speaker"), selection: Binding(get: { target.id }, set: { id in
+                        guard let entry = selection.entries.first(where: { $0.id == id }) else { return }
+                        playback?.endPreview()
+                        target = entry; name = entry.speaker.name ?? ""; error = nil; conflict = false
+                        let updated = TranscriptSpeakerPassage.forSpeaker(entry.id, in: allTurns)
+                        passages = updated
+                        passageIndex = TranscriptSpeakerPassage.initial(in: updated, shown: turns, row: nil)
+                    })) {
+                        ForEach(Array(selection.entries.enumerated()), id: \.element.id) { index, entry in
+                            Text("\(index + 1). \(entry.speaker.label) – \(entry.sample)").tag(entry.id)
+                        }
+                    }.disabled(busy)
+                } else {
+                    Text(target.speaker.label).font(.subheadline.bold())
+                }
                 TextField(L10n.text("Name"), text: $name).disabled(busy)
+                previewSection
                 ErrorNote(message: error)
                 if busy { ProgressView() }
             }
@@ -494,7 +556,51 @@ private struct TranscriptSpeakerEditor: View {
                         .disabled(busy || conflict || name.unicodeScalars.count > 200)
                 }
             }
-        }.interactiveDismissDisabled(busy)
+        }.interactiveDismissDisabled(busy).onDisappear { playback?.endPreview() }
+    }
+
+    @ViewBuilder private var previewSection: some View {
+        if let playback, !passages.isEmpty {
+            let previous = passageIndex.map { $0 - 1 } ?? selection.row.flatMap { row in
+                passages.lastIndex { $0.offset < row.transcriptStartOffset }
+            }
+            let next = passageIndex.map { $0 + 1 } ?? selection.row.flatMap { row in
+                passages.firstIndex { $0.offset > row.transcriptStartOffset }
+            }
+            Section {
+                if let passageIndex, passages.indices.contains(passageIndex) {
+                    let passage = passages[passageIndex]
+                    Text(passage.text).font(.caption)
+                    if playback.loading {
+                        ProgressView(L10n.text("Loading audio…"))
+                    } else if playback.ready, passage.interval.start < playback.duration {
+                        Button {
+                            playback.togglePreview(passage.interval)
+                        } label: {
+                            Label(playback.isPreviewPlaying(passage.interval) ? L10n.text("Pause playback") : L10n.text("Play original audio"),
+                                systemImage: playback.isPreviewPlaying(passage.interval) ? "pause.fill" : "play.fill")
+                        }.buttonStyle(.borderless)
+                    } else {
+                        Text(L10n.text("No audio preview for this passage.")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    ErrorNote(message: playback.error)
+                } else {
+                    Text(L10n.text("No audio preview for this passage.")).font(.caption).foregroundStyle(.secondary)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack { passageButton(L10n.text("Previous passage"), index: previous); passageButton(L10n.text("Next passage"), index: next) }
+                    VStack(alignment: .leading) { passageButton(L10n.text("Previous passage"), index: previous); passageButton(L10n.text("Next passage"), index: next) }
+                }
+            }
+        } else {
+            Text(L10n.text("No audio preview for this passage.")).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func passageButton(_ title: String, index: Int?) -> some View {
+        Button(title) {
+            playback?.endPreview(); passageIndex = index
+        }.buttonStyle(.borderless).disabled(index.map { !passages.indices.contains($0) } ?? true)
     }
 
     @MainActor private func save() async {

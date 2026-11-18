@@ -49,7 +49,7 @@ struct SourceDetail: View {
                     SourceTranscriptTopicsView(source: evidence, editing: editing, onPlayTopic: canLoadAudio ? { seconds in
                         audio.seek(to: seconds)
                         if !audio.playing { audio.togglePlayback() }
-                    } : nil, speakerReading: speakerReading)
+                    } : nil, speakerReading: speakerReading, previewPlayback: canLoadAudio ? audio : nil)
                 }
                 Section {
                     DisclosureGroup(L10n.text("Transcript correction")) {

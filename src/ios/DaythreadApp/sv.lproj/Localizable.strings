@@ -479,6 +479,10 @@
 "Edit profile" = "Redigera profil";
 "Edit record and evidence" = "Redigera post och bevis";
 "Edit speaker" = "Redigera talare";
+"Edit speaker: {value0}" = "Redigera talare: {value0}";
+"Previous passage" = "Föregående avsnitt";
+"Next passage" = "Nästa avsnitt";
+"No audio preview for this passage." = "Ingen ljudförhandsvisning för det här avsnittet.";
 "Edited evidence must remain after the predecessor" = "Redigerat bevis måste finnas kvar efter föregångaren";
 "Edited evidence must remain before the successor" = "Redigerat bevis måste finnas kvar innan efterträdaren";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Redigering av namn eller talbyten tar bort sparade röstexempel från denna konversation. Bekräfta dem igen efter att ha rättat talarna.";

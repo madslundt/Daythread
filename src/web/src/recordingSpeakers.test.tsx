@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TranscriptTurns, turnsInRange } from "./RecordingTranscript";
-import { nextSpeakerSkip, recordingSpeakers, speakerKey, speakersInPassage, speakerSkipPlan } from "./recordingSpeakers";
+import { initialSpeakerPassage, nextSpeakerSkip, recordingSpeakers, speakerIdentity, speakerKey, speakerPassages, speakersInPassage, speakerSkipPlan } from "./recordingSpeakers";
 import type { TranscriptTurn } from "./types";
 
 const turn = (fields: Partial<TranscriptTurn>): TranscriptTurn => ({ text: "Speech.", start_offset: 0, end_offset: 7, ...fields });
@@ -28,6 +28,8 @@ describe("speaker filters", () => {
     expect(html).toContain('data-speaker-color="1">Speaker B</span>');
     expect(html).toContain('recording-speaker-label">Unassigned speech</span>');
     expect(html).not.toContain('caption recording-speaker-label" data-speaker-color="0"');
+    expect(html).not.toContain('aria-pressed="true">Speaker A');
+    expect(html).toContain('aria-pressed="true">Speaker B');
   });
 
   it("keeps edit targets separate when names share a filter and preserves letters on rename", () => {
@@ -42,8 +44,25 @@ describe("speaker filters", () => {
     expect(speakers.get(speakerKey(c)!)?.letter).toBe("C");
     expect(speakersInPassage(turns, speakers).map(({ edit }) => edit.id)).toEqual(["a", "b", "c"]);
     const html = renderToStaticMarkup(<TranscriptTurns text="Speech." turns={turns} />);
-    expect(html.match(/>Edit speaker<\/button>/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Edit speaker: Speaker A"/g)).toHaveLength(4);
+    expect(html.match(/aria-label="Edit speaker: Speaker C"/g)).toHaveLength(2);
     expect(html).not.toContain("<dialog");
+  });
+
+  it("starts at the first timed turn in a topic or the clicked row and navigates only that speaker's passages", () => {
+    const speaker = { speaker_name: "Rae", speaker_edit: { kind: "transcript" as const, scope_id: "one", id: "a", version: "v1" } };
+    const first = turn({ ...speaker, start: 0, end: 2 });
+    const other = turn({ ...speaker, speaker_edit: { ...speaker.speaker_edit, scope_id: "two" }, start: 3, end: 5, start_offset: 8 });
+    const selected = turn({ ...speaker, start: 6, end: 7, start_offset: 16 });
+    const untimed = turn({ ...speaker, start_offset: 24 });
+    const last = turn({ ...speaker, start: 11, part_end: 14, start_offset: 32 });
+    const missingAudio = turn({ ...speaker, start: 20, end: 21, part_end: 20, start_offset: 40 });
+    const passages = speakerPassages([last, untimed, selected, other, first, missingAudio], speakerIdentity(first)!);
+    expect(passages.map(({ offset, start, end }) => [offset, start, end])).toEqual([[0, 0, 2], [16, 6, 7], [32, 11, 14]]);
+    expect(initialSpeakerPassage(passages, [selected, last])).toBe(1);
+    expect(initialSpeakerPassage(passages, [selected, last], last)).toBe(2);
+    expect(initialSpeakerPassage(passages, [selected, last], untimed)).toBe(-1);
+    expect(initialSpeakerPassage(passages, [untimed])).toBe(0);
   });
 
   it("skips timed speech without cutting through kept or overlapping audio", () => {

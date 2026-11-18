@@ -1,10 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { ApiError, errorMessage, request } from "./api";
+import { ApiError, audioUrl, errorMessage, recordingAudioUrl, request } from "./api";
+import { Icon } from "./Icon";
 import { t } from "./i18n";
+import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { playbackTime } from "./recordingWaveform";
 import type { Source, TranscriptTurn } from "./types";
 import { useResource } from "./useResource";
-import { recordingSpeakers, speakerKey, speakersInPassage, speakerSkipPlan, turnIsExcluded, type Speaker } from "./recordingSpeakers";
+import { initialSpeakerPassage, recordingSpeakers, speakerIdentity, speakerKey, speakerPassages, speakersInPassage, speakerSkipPlan, turnIsExcluded, type Speaker } from "./recordingSpeakers";
 
 const noTurns: TranscriptTurn[] = [];
 const noExclusions: ReadonlySet<string> = new Set();
@@ -73,7 +75,9 @@ export function SourceTranscriptTurns({ source, text, onSeek, range, reading, fu
 }) {
   const fetched = useSourceTurns(source, loadDetail && source.reference_type !== "recording_transcription");
   const turns = fullTurns ?? fetched;
-  return <TranscriptTurns text={text} onSeek={onSeek} reading={reading} allTurns={turns} turns={range
+  const previewSrc = source.audio_available === false || source.audio_availability === "missing" ? undefined
+    : source.reference_type === "recording_transcription" ? recordingAudioUrl(source.recording_id || source.id) : audioUrl(source.id);
+  return <TranscriptTurns text={text} onSeek={onSeek} reading={reading} allTurns={turns} previewSrc={previewSrc} turns={range
     ? turnsInRange(source.text || "", turns, range) : turns} />;
 }
 
@@ -97,10 +101,19 @@ function speakerLabel(speaker: Speaker) {
 }
 
 type EditableSpeakers = ReturnType<typeof speakersInPassage>;
+type SpeakerEditSelection = { entries: EditableSpeakers; row?: TranscriptTurn };
 
-function SpeakerEditor({ entries, onClose }: { entries: EditableSpeakers; onClose: () => void }) {
+function SpeakerEditor({ selection: { entries, row }, turns, allTurns, previewSrc, onClose }: {
+  selection: SpeakerEditSelection; turns: TranscriptTurn[]; allTurns: TranscriptTurn[]; previewSrc?: string; onClose: () => void;
+}) {
   const [target, setTarget] = useState(entries[0]);
   const [name, setName] = useState(target.speaker.name ?? "");
+  const passages = useMemo(() => speakerPassages(allTurns, target.identity), [allTurns, target.identity]);
+  const [passageIndex, setPassageIndex] = useState(() => initialSpeakerPassage(passages, turns, row));
+  const passage = passages[passageIndex];
+  const followingRow = row ? passages.findIndex(({ offset }) => offset >= row.start_offset) : -1;
+  const previous = passage ? passageIndex - 1 : followingRow === -1 ? passages.length - 1 : followingRow - 1;
+  const next = passage ? passageIndex + 1 : row ? passages.findIndex(({ offset }) => offset > row.start_offset) : -1;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -136,14 +149,17 @@ function SpeakerEditor({ entries, onClose }: { entries: EditableSpeakers; onClos
       if (!controller.signal.aborted) setBusy(false);
     }
   }
-  return <dialog ref={dialog} className="profile-dialog" aria-labelledby={title} onCancel={(event) => {
+  return <dialog ref={dialog} className="profile-dialog recording-speaker-dialog" aria-labelledby={title} onCancel={(event) => {
     event.preventDefault(); if (!busy) onClose();
   }}>
     <form className="recording-speaker-editor" onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <h2 id={title}>{t("Edit speaker")}</h2>
-      <label>{t("Speaker")}<select value={target.identity} disabled={busy} onChange={(event) => {
+      {entries.length > 1 ? <label>{t("Speaker")}<select value={target.identity} disabled={busy} onChange={(event) => {
         const entry = entries.find((item) => item.identity === event.target.value);
-        if (entry) { setTarget(entry); setName(entry.speaker.name ?? ""); setError(""); }
+        if (entry) {
+          setTarget(entry); setName(entry.speaker.name ?? ""); setError("");
+          setPassageIndex(initialSpeakerPassage(speakerPassages(allTurns, entry.identity), turns));
+        }
       }}>
         {entries.map((entry, index) => {
           const label = speakerLabel(entry.speaker);
@@ -152,8 +168,19 @@ function SpeakerEditor({ entries, onClose }: { entries: EditableSpeakers; onClos
             {repeated ? `${index + 1}. ${label} — ${entry.sample}` : label}
           </option>;
         })}
-      </select></label>
+      </select></label> : <span className="recording-speaker-label" data-speaker-color={target.speaker.color}>{speakerLabel(target.speaker)}</span>}
       <label>{t("Name")}<input value={name} maxLength={200} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
+      <div className="recording-speaker-preview">
+        {previewSrc && passage ? <>
+          <p className="caption" aria-live="polite">{playbackTime(passage.start)} · {passage.text}</p>
+          <RecordingAudioPlayer key={`${target.identity}:${passage.offset}`} src={`${previewSrc}#t=${passage.start.toFixed(6)},${passage.end.toFixed(6)}`}
+            label={speakerLabel(target.speaker)} showWaveform={false} />
+        </> : <p className="caption" role="status">{t("No audio preview for this passage.")}</p>}
+        {previewSrc && passages.length > 0 ? <div className="button-row">
+          <button className="button small" type="button" disabled={previous < 0} onClick={() => setPassageIndex(previous)}>{t("Previous passage")}</button>
+          <button className="button small" type="button" disabled={next < 0 || next >= passages.length} onClick={() => setPassageIndex(next)}>{t("Next passage")}</button>
+        </div> : null}
+      </div>
       {error || stale ? <p className="caption" role="alert">{error || t("Speaker assignments or evidence changed; reload and retry")}</p> : null}
       <div className="button-row">
         <button className="button" type="button" onClick={onClose} disabled={busy}>{t("Cancel")}</button>
@@ -163,35 +190,43 @@ function SpeakerEditor({ entries, onClose }: { entries: EditableSpeakers; onClos
   </dialog>;
 }
 
-export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSeek, reading }: {
-  text: string; turns?: TranscriptTurn[]; allTurns?: TranscriptTurn[]; onSeek?: (seconds: number) => void; reading?: SpeakerReading;
+export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSeek, reading, previewSrc }: {
+  text: string; turns?: TranscriptTurn[]; allTurns?: TranscriptTurn[]; onSeek?: (seconds: number) => void; reading?: SpeakerReading; previewSrc?: string;
 }) {
   const [showTimes, setShowTimes] = useState(false);
-  const [editingSpeaker, setEditingSpeaker] = useState(false);
+  const [editingSpeaker, setEditingSpeaker] = useState<{ key: string; row?: TranscriptTurn }>();
   const filters = useSpeakerFilters();
   const local = useSpeakerReading(reading ? undefined : allTurns, text, filters, false);
   const { speakers, excluded, toggle, incomplete } = reading ?? local;
-  if (!turns.length) return <p className="transcript-text">{text}</p>;
   const visible = turns.filter((turn) => !turnIsExcluded(turn, excluded));
   const hasTimes = visible.some((turn) => turn.start != null);
-  const editable = speakersInPassage(turns, speakers);
+  const { topicSpeakers, editable, editableByIdentity } = useMemo(() => {
+    const keys = new Set(turns.filter((turn) => turn.text.trim()).map(speakerKey));
+    const editable = speakersInPassage(turns, speakers);
+    return { topicSpeakers: [...speakers.values()].filter((speaker) => keys.has(speaker.key)), editable,
+      editableByIdentity: new Map(editable.map((entry) => [entry.identity, entry])) };
+  }, [turns, speakers]);
+  const rowEntry = editingSpeaker?.row && editableByIdentity.get(speakerIdentity(editingSpeaker.row) ?? "");
+  const entries = rowEntry ? [rowEntry] : editable.filter((entry) => entry.speaker.key === editingSpeaker?.key);
+  function editButton(speaker: Speaker, row?: TranscriptTurn) {
+    const label = t("Edit speaker: {value0}", { value0: speakerLabel(speaker) });
+    return <button className="icon-button recording-edit-speaker" type="button" aria-label={label} title={label}
+      onClick={() => setEditingSpeaker({ key: speaker.key, row })}><Icon name="pencil" size={15} /></button>;
+  }
+  if (!turns.length) return <p className="transcript-text">{text}</p>;
   return <>
-    <div className="recording-transcript-controls">
-    {speakers.size ? <details className="recording-speaker-filters">
-      <summary>{t("Filter speakers")}{excluded.size ? ` (${excluded.size})` : ""}</summary>
-      <div role="group" aria-label={t("Filter speakers")}>
-        {[...speakers.values()].map((speaker) => <label key={speaker.key}>
-          <input type="checkbox" checked={!excluded.has(speaker.key)} onChange={() => toggle(speaker.key)} />
-          <span className="recording-speaker-label" data-speaker-color={speaker.color}>{speakerLabel(speaker)}</span>
-        </label>)}
+    {topicSpeakers.length ? <div className="recording-speaker-filters">
+      <div role="group" aria-label={t("Filter speakers")} className="recording-speaker-list">
+        {topicSpeakers.map((speaker) => <span className="recording-speaker-chip" key={speaker.key}>
+          <button type="button" className="recording-speaker-label" data-speaker-color={speaker.color}
+            aria-pressed={!excluded.has(speaker.key)} onClick={() => toggle(speaker.key)}>{speakerLabel(speaker)}</button>
+          {editable.some((entry) => entry.speaker.key === speaker.key) ? editButton(speaker) : null}
+        </span>)}
       </div>
       {incomplete ? <p className="caption" role="status">{t("Some hidden speech will still play if its timing is unclear or it overlaps other audio.")}</p> : null}
-    </details> : null}
-    {editable.length ? <button className="text-button recording-edit-speaker" type="button" onClick={() => setEditingSpeaker(true)}>
-      {t("Edit speaker")}
-    </button> : null}
-    </div>
-    {editingSpeaker && editable.length ? <SpeakerEditor entries={editable} onClose={() => setEditingSpeaker(false)} /> : null}
+    </div> : null}
+    {editingSpeaker && entries.length ? <SpeakerEditor selection={{ entries, row: editingSpeaker.row }} turns={turns}
+      allTurns={allTurns} previewSrc={previewSrc} onClose={() => setEditingSpeaker(undefined)} /> : null}
     {hasTimes ? <label className="caption recording-timestamp-option">
       <input type="checkbox" checked={showTimes} onChange={(event) => setShowTimes(event.target.checked)} />
       {t("Show timestamps")}
@@ -202,6 +237,7 @@ export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSee
         return <div className="recording-attributed-run" key={turn.start_offset}>
           <span className="caption recording-speaker-label" data-speaker-color={speaker?.color}>{speaker ? speakerLabel(speaker)
             : turn.attribution === "overlap" ? t("Overlapping speech") : t("Unassigned speech")}</span>
+          {speaker && editableByIdentity.has(speakerIdentity(turn) ?? "") ? editButton(speaker, turn) : null}
           {showTimes && turn.start != null ? onSeek
             ? <button type="button" className="caption recording-speaker-time text-link"
               aria-label={`${t("Playback position")} ${playbackTime(turn.start)}`}

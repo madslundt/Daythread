@@ -479,6 +479,10 @@
 "Edit profile" = "Editar perfil";
 "Edit record and evidence" = "Editar el registro y las pruebas";
 "Edit speaker" = "Editar hablante";
+"Edit speaker: {value0}" = "Editar hablante: {value0}";
+"Previous passage" = "Fragmento anterior";
+"Next passage" = "Fragmento siguiente";
+"No audio preview for this passage." = "No hay una vista previa de audio para este fragmento.";
 "Edited evidence must remain after the predecessor" = "La evidencia editada debe permanecer después del predecesor";
 "Edited evidence must remain before the successor" = "La evidencia editada debe permanecer antes del sucesor";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Editar nombres o turnos elimina los ejemplos de voz guardados de esta conversación. Confírmalos de nuevo después de corregir los hablantes.";

@@ -479,6 +479,10 @@
 "Edit profile" = "Rediger profil";
 "Edit record and evidence" = "Rediger registrering og bevis";
 "Edit speaker" = "Rediger taler";
+"Edit speaker: {value0}" = "Rediger taler: {value0}";
+"Previous passage" = "Forrige passage";
+"Next passage" = "Næste passage";
+"No audio preview for this passage." = "Der er ingen lyd til denne passage.";
 "Edited evidence must remain after the predecessor" = "Redigeret bevis skal forblive efter forgængeren.";
 "Edited evidence must remain before the successor" = "Redigeret bevis skal forblive før efterfølgeren.";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Redigering af navne eller taleafsnit fjerner gemte stemmeeksempler fra denne samtale. Bekræft dem igen, når du har rettet talerne.";

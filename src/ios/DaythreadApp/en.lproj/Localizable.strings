@@ -479,6 +479,10 @@
 "Edit profile" = "Edit profile";
 "Edit record and evidence" = "Edit record and evidence";
 "Edit speaker" = "Edit speaker";
+"Edit speaker: {value0}" = "Edit speaker: {value0}";
+"Previous passage" = "Previous passage";
+"Next passage" = "Next passage";
+"No audio preview for this passage." = "No audio preview for this passage.";
 "Edited evidence must remain after the predecessor" = "Edited evidence must remain after the predecessor";
 "Edited evidence must remain before the successor" = "Edited evidence must remain before the successor";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers.";

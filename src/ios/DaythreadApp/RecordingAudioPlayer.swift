@@ -137,6 +137,12 @@ final class RecordingPlayback {
 
     func skip(_ seconds: TimeInterval) { seek(to: position + seconds) }
 
+    func pauseForPreview() {
+        pendingBookmark = nil
+        player?.pause()
+        playing = false
+    }
+
     func togglePreview(_ passage: RecordingSkipInterval) {
         guard ready, let fileURL, let model, passage.start < duration else { return }
         guard model.microphone.active == nil else {

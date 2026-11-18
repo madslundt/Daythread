@@ -385,6 +385,9 @@ struct RecordingTranscriptTurns: View {
                   case .object(var values) = turn else { return nil }
             if left != turnStart || right != turnEnd {
                 values["text"] = .string(String(String.UnicodeScalarView(scalars[left..<right])))
+                values["start_offset"] = .number(Double(left))
+                values["end_offset"] = .number(Double(right))
+                values["original_start_offset"] = .number(Double(turn.previewStartOffset))
                 if left != turnStart { values["start"] = nil }
                 if right != turnEnd { values["end"] = nil }
             }
@@ -512,20 +515,25 @@ private struct TranscriptSpeakerPassage {
     let text: String
 
     static func forSpeaker(_ identity: String, in turns: [JSONValue]) -> [Self] {
-        turns.compactMap { turn in
-            guard turn.recordingSpeakerIdentity == identity, turn.hasSpokenText,
-                  let start = turn["start"].seconds else { return nil }
-            let end = min(turn.speakerAudioInterval?.end ?? start + 8, turn["part_end"].seconds ?? .infinity)
-            guard end > start else { return nil }
-            return Self(offset: turn.transcriptStartOffset, interval: .init(start: start, end: end), text: turn["text"].text)
-        }.sorted { ($0.interval.start, $0.offset) < ($1.interval.start, $1.offset) }
+        var nextStarts: [String: Double] = [:], passages: [Self] = []
+        for turn in turnsInPlaybackOrder(turns).reversed() {
+            guard turn.hasSpokenText, let start = turn["start"].seconds else { continue }
+            let part = turn["source_part"].text
+            let next = nextStarts.updateValue(start, forKey: part)
+            guard turn.recordingSpeakerIdentity == identity else { continue }
+            let end = min(turn.speakerAudioInterval?.end ?? min(start + 8, next ?? .infinity),
+                turn["part_end"].seconds ?? .infinity)
+            guard end > start else { continue }
+            passages.append(Self(offset: turn.transcriptStartOffset, interval: .init(start: start, end: end), text: turn["text"].text))
+        }
+        return Array(passages.reversed())
     }
 
     static func initial(in passages: [Self], shown: [JSONValue], row: JSONValue?) -> Int? {
         if let row {
-            return passages.firstIndex { $0.offset == row.transcriptStartOffset } ?? passages.indices.first
+            return passages.firstIndex { $0.offset == row.previewStartOffset }
         }
-        let offsets = Set(shown.filter { $0["start"].seconds != nil }.map(\.transcriptStartOffset))
+        let offsets = Set(shown.map(\.previewStartOffset))
         return passages.firstIndex { offsets.contains($0.offset) } ?? passages.indices.first
     }
 }
@@ -591,16 +599,18 @@ private struct TranscriptSpeakerEditor: View {
                         .disabled(busy || conflict || name.unicodeScalars.count > 200)
                 }
             }
-        }.interactiveDismissDisabled(busy).onDisappear { playback?.endPreview() }
+        }.interactiveDismissDisabled(busy)
+            .onAppear { playback?.pauseForPreview() }
+            .onDisappear { playback?.endPreview() }
     }
 
     @ViewBuilder private var previewSection: some View {
         if let playback, !passages.isEmpty {
             let previous = passageIndex.map { $0 - 1 } ?? selection.row.flatMap { row in
-                passages.lastIndex { $0.offset < row.transcriptStartOffset }
+                passages.lastIndex { $0.offset < row.previewStartOffset }
             }
             let next = passageIndex.map { $0 + 1 } ?? selection.row.flatMap { row in
-                passages.firstIndex { $0.offset > row.transcriptStartOffset }
+                passages.firstIndex { $0.offset > row.previewStartOffset }
             }
             Section {
                 if let passageIndex, passages.indices.contains(passageIndex) {
@@ -672,6 +682,10 @@ extension JSONValue {
 private extension JSONValue {
     var hasSpokenText: Bool { !self["text"].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var transcriptStartOffset: Int { self["start_offset"].integer }
+    var previewStartOffset: Int {
+        if case .number = self["original_start_offset"] { return self["original_start_offset"].integer }
+        return transcriptStartOffset
+    }
     var assignedSpeakerName: String? {
         let name = self["speaker_name"].text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }

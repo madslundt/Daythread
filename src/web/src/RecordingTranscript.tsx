@@ -91,6 +91,7 @@ export function turnsInRange(text: string, turns: TranscriptTurn[] | undefined, 
     if (left >= right) return [];
     if (left === turn.start_offset && right === turn.end_offset) return [turn];
     return [{ ...turn, text: original.slice(left, right).join(""), start_offset: left,
+      original_start_offset: turn.original_start_offset ?? turn.start_offset,
       end_offset: right, start: left === turn.start_offset ? turn.start : undefined,
       end: right === turn.end_offset ? turn.end : undefined }];
   });
@@ -111,9 +112,10 @@ function SpeakerEditor({ selection: { entries, row }, turns, allTurns, previewSr
   const passages = useMemo(() => speakerPassages(allTurns, target.identity), [allTurns, target.identity]);
   const [passageIndex, setPassageIndex] = useState(() => initialSpeakerPassage(passages, turns, row));
   const passage = passages[passageIndex];
-  const followingRow = row ? passages.findIndex(({ offset }) => offset >= row.start_offset) : -1;
-  const previous = passage ? passageIndex - 1 : followingRow === -1 ? passages.length - 1 : followingRow - 1;
-  const next = passage ? passageIndex + 1 : row ? passages.findIndex(({ offset }) => offset > row.start_offset) : -1;
+  const rowOffset = row?.original_start_offset ?? row?.start_offset;
+  const previous = passage ? passageIndex - 1 : passages.reduce((index, { offset }, i) =>
+    rowOffset != null && offset < rowOffset ? i : index, -1);
+  const next = passage ? passageIndex + 1 : passages.findIndex(({ offset }) => rowOffset != null && offset > rowOffset);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -121,6 +123,7 @@ function SpeakerEditor({ selection: { entries, row }, turns, allTurns, previewSr
   const title = useId();
   useEffect(() => {
     const element = dialog.current;
+    document.querySelectorAll("audio").forEach((audio) => { if (!audio.paused) audio.pause(); });
     element?.showModal();
     return () => { operation.current?.abort(); element?.close(); };
   }, []);

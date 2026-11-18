@@ -21,6 +21,17 @@ def test_repeated_speaker_label_and_start_only_import_timestamps():
     assert all("end" not in turn for turn in turns)
 
 
+def test_speaker_grouped_segments_keep_times_and_original_text_offsets():
+    text = "Rae: Hello.\nRae: Thanks.\nLee: Hi."
+    turns = transcript_turns(row(text, [
+        {"text": "Hello.", "speaker_name": "Rae", "start": 0, "end": 1},
+        {"text": "Thanks.", "speaker_name": "Rae", "start": 4, "end": 6},
+        {"text": "Hi.", "speaker_name": "Lee", "start": 2, "end": 3},
+    ]))
+    assert [(t["start"], t["end"]) for t in turns] == [(0, 1), (4, 6), (2, 3)]
+    assert "\n".join(text[t["start_offset"]:t["end_offset"]] for t in turns) == text
+
+
 def test_unknown_speakers_keep_their_text_without_attribution_or_made_up_times():
     turns = transcript_turns(row("One. Two. One again.", [
         {"text": "One.", "speaker_id": 17, "start": 0},

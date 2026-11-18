@@ -37,21 +37,26 @@ export function speakersInPassage(turns: readonly TranscriptTurn[], speakers: Re
 }
 
 export function speakerPassages(turns: readonly TranscriptTurn[], identity: string) {
-  return turns.flatMap((turn) => {
-    if (speakerIdentity(turn) !== identity || !turn.text.trim() || !validStart(turn)) return [];
-    // When only a start is known, offer a short preview rather than playing the rest of the recording.
-    const end = Math.min(timed(turn) ? turn.end : turn.start + 8, turn.part_end ?? Infinity);
-    return end > turn.start ? [{ offset: turn.start_offset, start: turn.start, end, text: turn.text }] : [];
-  }).sort((a, b) => a.start - b.start || a.offset - b.offset);
+  // Bound a start-only preview by the next timed turn in the same audio part.
+  const nextStarts = new Map<string, number>();
+  const passages = [];
+  const ordered = turnsInPlaybackOrder(turns);
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const turn = ordered[i];
+    if (!turn.text.trim() || !validStart(turn)) continue;
+    const part = turn.source_part ?? "";
+    const next = nextStarts.get(part);
+    nextStarts.set(part, turn.start);
+    if (speakerIdentity(turn) !== identity) continue;
+    const end = Math.min(timed(turn) ? turn.end : Math.min(turn.start + 8, next ?? Infinity), turn.part_end ?? Infinity);
+    if (end > turn.start) passages.push({ offset: turn.start_offset, start: turn.start, end, text: turn.text });
+  }
+  return passages.reverse();
 }
 
 export function initialSpeakerPassage(passages: ReturnType<typeof speakerPassages>, shown: readonly TranscriptTurn[], row?: TranscriptTurn) {
-  if (row && validStart(row)) {
-    const clicked = passages.findIndex((passage) => passage.offset === row.start_offset);
-    if (clicked !== -1) return clicked;
-  }
-  if (row) return passages.length ? 0 : -1;
-  const offsets = new Set(shown.filter(validStart).map((turn) => turn.start_offset));
+  if (row) return passages.findIndex((passage) => passage.offset === (row.original_start_offset ?? row.start_offset));
+  const offsets = new Set(shown.map((turn) => turn.original_start_offset ?? turn.start_offset));
   const first = passages.findIndex((passage) => offsets.has(passage.offset));
   return first === -1 && passages.length ? 0 : first;
 }

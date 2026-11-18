@@ -70,8 +70,12 @@ def _segment_turns(row: dict, text: str) -> list[dict]:
         if has_identity:
             turn["speaker_number"] = speakers.setdefault(identity, len(speakers) + 1)
         timestamp, end = segment.get("start"), segment.get("end")
-        if _valid_seconds(timestamp, duration) and previous <= timestamp:
-            turn["start"] = previous = timestamp
+        # Speaker-grouped exports may jump backwards in time. Keep real turn
+        # times so clients can interleave them without reordering stored text.
+        if (_valid_seconds(timestamp, duration)
+                and (previous <= timestamp or name or label or has_identity)):
+            turn["start"] = timestamp
+            previous = max(previous, timestamp)
             if _valid_seconds(end, duration) and timestamp < end:
                 turn["end"] = end
         # Unattributed word alignment is not a sequence of speaker changes.

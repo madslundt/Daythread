@@ -116,8 +116,27 @@ describe("speaker filters", () => {
     expect(passages.map(({ offset, start, end }) => [offset, start, end])).toEqual([[0, 0, 2], [38, 6, 7], [32, 11, 14]]);
     expect(initialSpeakerPassage(passages, [selected, last])).toBe(1);
     expect(initialSpeakerPassage(passages, [selected, last], last)).toBe(2);
-    expect(initialSpeakerPassage(passages, [selected, last], untimed)).toBe(0);
+    expect(initialSpeakerPassage(passages, [selected, last], untimed)).toBe(-1);
     expect(initialSpeakerPassage(passages, [untimed])).toBe(0);
+  });
+
+  it("loads the matching original clip when a topic clips the start of a later turn", () => {
+    const turns = [turn({ start: 0, end: 2, speaker_number: 1 }),
+      turn({ start: 3, end: 4, start_offset: 8, end_offset: 15, speaker_number: 2 }),
+      turn({ start: 6, end: 8, start_offset: 16, end_offset: 23, speaker_number: 1 })];
+    const shown = turnsInRange("Speech. Speech. Speech.", turns, { start_offset: 18, end_offset: 23 })!;
+    const passages = speakerPassages(turns, speakerIdentity(turns[0])!);
+    expect(shown[0].start).toBeUndefined();
+    expect(initialSpeakerPassage(passages, shown)).toBe(1);
+    expect(initialSpeakerPassage(passages, shown, shown[0])).toBe(1);
+  });
+
+  it("does not play into the next speaker when the selected turn has no end time", () => {
+    const first = turn({ start: 1, speaker_number: 1 });
+    const last = turn({ start: 7, end: 8, speaker_number: 1, start_offset: 8 });
+    const reply = turn({ start: 3, end: 5, speaker_number: 2, start_offset: 16 });
+    expect(speakerPassages([first, last, reply], speakerIdentity(first)!).map(({ start, end }) => [start, end]))
+      .toEqual([[1, 3], [7, 8]]);
   });
 
   it("skips timed speech without cutting through kept or overlapping audio", () => {

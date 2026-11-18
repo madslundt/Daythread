@@ -14,8 +14,7 @@ from .merged_recordings import Recording, audio_response, recording_waveform
 class SessionRecording(Recording):
     @property
     def complete(self) -> bool:
-        # A timeline session contains only its scoped, transcribed parts. Missing
-        # or quiet parts remain in the archive and appear as playback interruptions.
+        # A session represents its scoped rows and exposes any interruptions.
         return True
 
     def snapshot(self) -> dict:
@@ -46,7 +45,7 @@ class SessionRecording(Recording):
 def session_recording_routes(memory: Callable) -> APIRouter:
     router = APIRouter(prefix="/v1/recording-groups")
 
-    def load(group_id, day, q, zone_id, tag_id, version=None):
+    def load(group_id, day, q, zone_id, tag_id, version=None, *, archive=False):
         from .recording_groups import recording_groups
 
         start, end = memory().day_window(day)
@@ -54,7 +53,7 @@ def session_recording_routes(memory: Callable) -> APIRouter:
             result = recording_groups(
                 memory().store, start, end, q, 1, 0, group_id=str(group_id),
                 zone_id=str(zone_id) if zone_id else None,
-                tag_id=str(tag_id) if tag_id else None, playback=True,
+                tag_id=str(tag_id) if tag_id else None, playback=True, archive=archive,
             )
             if version and result.snapshot()["audio_version"] != version:
                 raise HTTPException(
@@ -69,9 +68,10 @@ def session_recording_routes(memory: Callable) -> APIRouter:
         group_id: UUID, day: date, response: Response,
         q: str = Query(default="", max_length=200),
         zone_id: UUID | None = None, tag_id: UUID | None = None,
+        archive: bool = False,
     ) -> dict:
         response.headers["Cache-Control"] = "no-store"
-        return load(group_id, day, q, zone_id, tag_id).snapshot()
+        return load(group_id, day, q, zone_id, tag_id, archive=archive).snapshot()
 
     @router.api_route("/{group_id}/audio", methods=["GET", "HEAD"])
     def audio(
@@ -79,8 +79,9 @@ def session_recording_routes(memory: Callable) -> APIRouter:
         q: str = Query(default="", max_length=200),
         zone_id: UUID | None = None, tag_id: UUID | None = None,
         version: str | None = Query(default=None, max_length=64),
+        archive: bool = False,
     ) -> Response:
-        recording = load(group_id, day, q, zone_id, tag_id, version)
+        recording = load(group_id, day, q, zone_id, tag_id, version, archive=archive)
         return audio_response(memory().store, recording, request)
 
     @router.get("/{group_id}/waveform")
@@ -88,8 +89,9 @@ def session_recording_routes(memory: Callable) -> APIRouter:
         group_id: UUID, day: date, q: str = Query(default="", max_length=200),
         zone_id: UUID | None = None, tag_id: UUID | None = None,
         version: str | None = Query(default=None, max_length=64),
+        archive: bool = False,
     ) -> dict:
-        recording = load(group_id, day, q, zone_id, tag_id, version)
+        recording = load(group_id, day, q, zone_id, tag_id, version, archive=archive)
         return recording_waveform(memory().store, recording)
 
     return router

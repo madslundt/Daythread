@@ -8,6 +8,7 @@ import struct
 import sys
 import wave
 from array import array
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -97,8 +98,14 @@ class Recording:
                                 sections[-1]["end_seconds"] = span["end_seconds"]
                         else:
                             sections.append(span)
-                offset += len(text) + 1
+                if not partial or row["state"] == "done":
+                    offset += len(text) + 1
             seconds += frames / 16000
+        if len(sections) > 5:
+            # Stream analysis runs in bounded work windows, not one chapter per window.
+            sections = [sections[index * len(sections) // 5] for index in range(5)]
+            for section in sections:
+                section.pop("end_seconds", None)
         for index, section in enumerate(sections):
             section["end_offset"] = (sections[index + 1]["start_offset"]
                                      if index + 1 < len(sections) else len(merged_text))
@@ -108,6 +115,14 @@ class Recording:
         availability = ("available" if available else "incomplete" if not self.complete
                         else "removed" if any(not row["audio_available"] for row in self.rows)
                         else "missing")
+        digests = [detail for row, detail in zip(self.rows, details) if (row["text"] or "").strip()]
+        summary = None
+        context_counts = Counter(detail.get("context") for detail in digests)
+        if ready and digests and all(
+            detail.get("recording_summary") and detail.get("summary_sources")
+            == context_counts[detail.get("context")] for detail in digests
+        ):
+            summary = "\n\n".join(dict.fromkeys(detail["recording_summary"] for detail in digests))
         return {
             "id": self.id, "title": next((detail["title"] for detail in details
                                           if detail.get("title")), self.rows[0]["source_id"]),
@@ -117,6 +132,7 @@ class Recording:
                       if any(row["state"] == "expired" for row in self.rows) else "processing"),
             "duration_seconds": seconds,
             "text": merged_text if ready or (partial and texts) else None, "sections": sections,
+            "recording_summary": summary,
             "audio_available": available, "audio_availability": availability,
             "transcript_version": version,
         }
@@ -243,13 +259,13 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
     router = APIRouter(prefix="/v1/recordings")
 
     @router.get("/{recording_id}")
-    def recording(recording_id: UUID, response: Response) -> dict:
+    def recording(recording_id: UUID, response: Response, archive: bool = False) -> dict:
         response.headers["Cache-Control"] = "no-store"
         app = memory()
         with app.store.connect() as db:
             db.execute("BEGIN")
             current = load_recording(app.store, str(recording_id), db)
-            value = current.snapshot()
+            value = current.snapshot(partial=archive)
             value["recording_transcription"] = app.store.recording_transcription_view(
                 current, app.settings, db,
             )

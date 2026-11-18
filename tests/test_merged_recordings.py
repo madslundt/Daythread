@@ -153,6 +153,38 @@ def test_missing_part_does_not_publish_a_partial_recording_as_complete(recording
     assert client.get(f"/v1/recordings/{recording_id}/audio").status_code == 409
 
 
+def test_archive_shows_surviving_multipart_transcripts_without_claiming_completeness(recording):
+    client, store, recording_id, ids, texts, _ = recording
+    with store.connect() as db:
+        db.execute("UPDATE audio SET state='expired',text=NULL,audio_available=0 WHERE id=?",
+                   (ids[1],))
+    path = f"/v1/recordings/{recording_id}"
+    assert client.get(path).json()["text"] is None
+    partial = client.get(path, params={"archive": "true"}).json()
+    assert partial["state"] == "expired"
+    assert partial["text"] == "\n".join([texts[0], texts[2]])
+    assert partial["sections"] == [] and partial["recording_summary"] is None
+    assert not partial["audio_available"]
+
+
+def test_archive_keeps_distinct_multipart_uploads_with_a_shared_part(recording):
+    client, store, recording_id, ids, _, _ = recording
+    other_id, other_part = str(uuid4()), str(uuid4())
+    at = datetime(2026, 10, 16, 10, tzinfo=UTC)
+    store.ingest(other_part, "manual-web", at, store.read_audio(ids[0]), 2,
+                 source_kind="manual_upload", source_id="other.wav", source_metadata={
+                     "recording_id": other_id, "part_index": 0, "part_count": 2,
+                 })
+    store.complete(other_part, "Different recording with a shared intro.")
+    response = client.get("/v1/recording-groups?day=2026-10-16&archive=true").json()
+    assert [group["recording_id"] for group in response["items"]] == [recording_id, other_id]
+    for group, originals in zip(response["items"], [ids, [other_part]], strict=True):
+        parts = client.get(f"/v1/recording-groups/{group['id']}/sources", params={
+            "day": "2026-10-16", "archive": "true",
+        }).json()
+        assert [part["id"] for part in parts["items"]] == originals
+
+
 def test_corrections_and_audio_retention_are_reflected_without_a_stale_merged_copy(recording):
     client, store, recording_id, ids, texts, _ = recording
     before = client.get(f"/v1/recordings/{recording_id}").json()

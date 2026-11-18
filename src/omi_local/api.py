@@ -2,7 +2,7 @@ import asyncio
 import json
 from calendar import monthrange
 from contextlib import asynccontextmanager, suppress
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
@@ -22,9 +22,10 @@ from .assistant_context_api import ExportConfig
 from .assistant_context_api import create_router as assistant_context_router
 from .audio import render_window
 from .audio_forwarding import RedactForwardingToken, forwarding_routes
-from .blob_storage import storage_from_settings
+from .blob_storage import audio_is_present, storage_from_settings
 from .calendar_prep import calendar_prep_routes
 from .chat_context import ChatContextError, generation_error
+from .chat_jobs import SCOPE_FIELDS
 from .configuration import RESTART_FIELDS, Configuration
 from .conversation_tags import conversation_tag_routes
 from .decision_api import decision_routes
@@ -49,6 +50,7 @@ from .domain import (
     wav_duration,
 )
 from .generation_jobs import generation_routes
+from .hybrid import excerpt
 from .importance import router as importance_router
 from .inbox_api import inbox_router
 from .inference import InferenceError
@@ -70,6 +72,7 @@ from .recording_locations import recording_location_routes
 from .recording_uploads import recording_upload_routes
 from .reprocessing import reprocessing_routes
 from .retrieval import DateScopeError
+from .semantic_metadata import segment_metadata
 from .service import Memory, public_source
 from .session_recordings import session_recording_routes
 from .settings import RUNTIME_FIELDS, Settings, public_settings, validate_setting_changes
@@ -678,12 +681,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
         zone_id: UUID | None = None,
         tag_id: UUID | None = None,
+        archive: bool = False,
     ) -> dict:
         start, end = memory().day_window(day)
         return recording_groups(
             memory().store, start, end, q, limit, offset,
             zone_id=str(zone_id) if zone_id else None,
             tag_id=str(tag_id) if tag_id else None,
+            archive=archive,
         )
 
     @app.get("/v1/recording-groups/{group_id}/sources")
@@ -692,6 +697,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=30, ge=1, le=200), offset: int = Query(default=0, ge=0),
         zone_id: UUID | None = None,
         tag_id: UUID | None = None,
+        archive: bool = False,
     ) -> dict:
         start, end = memory().day_window(day)
         try:
@@ -699,6 +705,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 memory().store, start, end, q, limit, offset, group_id=str(group_id),
                 zone_id=str(zone_id) if zone_id else None,
                 tag_id=str(tag_id) if tag_id else None,
+                archive=archive,
             )
         except KeyError as exc:
             raise HTTPException(404, "Recording group unavailable") from exc
@@ -787,8 +794,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1/rewind")
     async def rewind(body: RewindRequest) -> dict:
         end = body.end or utc_now()
+        if body.day is not None and body.local_time is not None:
+            zone = ZoneInfo(memory().settings.timezone)
+            wall_time = datetime.combine(body.day, body.local_time)
+            end = wall_time.replace(tzinfo=zone).astimezone(UTC)
+            # A repeated clock time uses its first occurrence; a skipped time is invalid.
+            if end.astimezone(zone).replace(tzinfo=None) != wall_time:
+                raise HTTPException(422, "This time does not exist on the selected day")
         return await memory().window(
-            end - timedelta(minutes=body.minutes),
+            end.astimezone(UTC) - timedelta(minutes=body.minutes),
             end,
             f"a rewind of the last {body.minutes} minutes",
             body.summarize,
@@ -800,7 +814,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         minutes: Annotated[int, Query(ge=1, le=60)] = 10, end: AwareDatetime | None = None
     ) -> Response:
         stop = end or utc_now()
-        start = stop - timedelta(minutes=minutes)
+        start = stop.astimezone(UTC) - timedelta(minutes=minutes)
         rows = [row for row in memory().store.window(start, stop) if row["audio_available"]]
         if not rows:
             raise HTTPException(404, "No audio captured in this window")
@@ -823,18 +837,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.get("/v1/calendar")
-    def calendar(month: Annotated[str, Query(pattern=r"^[0-9]{4}-[0-9]{2}$")]) -> dict:
+    def calendar(
+        month: Annotated[str, Query(pattern=r"^[0-9]{4}-[0-9]{2}$")], archive: bool = False,
+    ) -> dict:
         try:
             start = date.fromisoformat(f"{month}-01")
         except ValueError as exc:
             raise HTTPException(422, "Use a valid month in YYYY-MM format") from exc
         end = start.replace(day=monthrange(start.year, start.month)[1])
+        runtime = memory()
+        summaries = set(runtime.store.summary_days(start, end))
+        if archive:
+            # Bound the query to this month, and use local midnights rather than UTC dates.
+            windows = []
+            for number in range(1, end.day + 1):
+                day = start.replace(day=number)
+                try:
+                    left, right = map(stamp, runtime.day_window(day))
+                except OverflowError:
+                    # ISO boundary days may extend outside representable UTC.
+                    if day == date.min:
+                        left, right = "", stamp(runtime.day_window(day + timedelta(days=1))[0])
+                    else:
+                        left, right = stamp(runtime.day_window(day - timedelta(days=1))[1]), "~"
+                windows.append((day.isoformat(), left, right))
+            recordings = runtime.store.recording_days(windows)
+            return {"month": month, "days": [
+                {"day": day, "has_summary": day in summaries, "has_recordings": day in recordings}
+                for day in sorted(summaries | recordings)
+            ]}
         return {
             "month": month,
             "days": [
-                {"day": day, "has_summary": True} for day in memory().store.summary_days(start, end)
+                {"day": day, "has_summary": True} for day in sorted(summaries)
             ],
         }
+
+    @app.get("/v1/archive/search")
+    def archive_search(q: Annotated[str, Query(min_length=1, max_length=200)], response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        items = []
+        for row in memory().store.search(q, 30):
+            offset = row.get("lexical_offset")
+            match = excerpt(row["text"], q, offset, min(offset + 180, len(row["text"]))
+                            if offset is not None else None)
+            match.update(segment_metadata(row, match))
+            items.append({
+                "id": row["id"], "started_at": row["started_at"],
+                "title": json.loads(row["topic_details"] or "{}").get("title"),
+                "transcript_version": row["transcript_version"], "match": match,
+            })
+        return {"items": items}
+
+    @app.get("/v1/archive/sources/{source_id}")
+    def archive_passage(
+        source_id: UUID, response: Response,
+        version: Annotated[str, Query(max_length=128)],
+        start: Annotated[int, Query(ge=0)], end: Annotated[int, Query(gt=0)],
+    ) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        row = memory().store.get_audio(str(source_id))
+        if not row or row["state"] != "done" or not row["text"]:
+            raise HTTPException(404, "This transcript is no longer available")
+        if (row["transcript_version"] != version or not start < end <= len(row["text"])
+                or end - start > 1200):
+            raise HTTPException(409, "This passage has changed; search again")
+        source = public_source(row)
+        if source["audio_available"] and not audio_is_present(row):
+            source["audio_availability"] = "missing"
+        span = {"start_offset": start, "end_offset": end}
+        return {"source": source, "passage": span | segment_metadata(row, span)}
 
     @app.get("/v1/diary/{day}.md")
     def diary_markdown(day: date) -> FileResponse:
@@ -898,9 +970,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 str(body.session_id) if body.session_id else None,
                 body.day,
                 str(body.meeting_id) if body.meeting_id else None,
-                bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                bool(body.model_fields_set.intersection(SCOPE_FIELDS)),
                 body.start_day,
                 body.end_day,
+                recording_id=str(body.recording_id) if body.recording_id else None,
             )
         except ChatScopeNotFound as exc:
             raise HTTPException(404, str(exc)) from exc
@@ -922,10 +995,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         str(body.session_id) if body.session_id else None,
                         body.day,
                         str(body.meeting_id) if body.meeting_id else None,
-                        bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                        bool(body.model_fields_set.intersection(SCOPE_FIELDS)),
                         body.start_day,
                         body.end_day,
                         on_event=queue.put,
+                        recording_id=str(body.recording_id) if body.recording_id else None,
                     )
                     await queue.put({"type": "done", "result": result})
                 except Exception as exc:
@@ -977,9 +1051,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 str(body.session_id) if body.session_id else None,
                 body.day,
                 str(body.meeting_id) if body.meeting_id else None,
-                bool(body.model_fields_set & {"day", "meeting_id", "start_day", "end_day"}),
+                bool(body.model_fields_set.intersection(SCOPE_FIELDS)),
                 body.start_day,
                 body.end_day,
+                recording_id=str(body.recording_id) if body.recording_id else None,
             )
         except ChatScopeNotFound as exc:
             raise HTTPException(404, str(exc)) from exc

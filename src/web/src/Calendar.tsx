@@ -16,7 +16,7 @@ type CalendarProps = {
 export function MonthCalendar({ day, today, onDay }: CalendarProps) {
   const [month, setMonth] = useState(day.slice(0, 7));
   const [activeDay, setActiveDay] = useState(day);
-  const resource = useResource<CalendarMonth>(`/v1/calendar?month=${month}`, 30_000);
+  const resource = useResource<CalendarMonth>(`/v1/calendar?month=${month}&archive=true`, 30_000);
   const grid = useRef<HTMLTableElement>(null);
   const focusDay = useRef<string | null>(null);
   const heading = useId();
@@ -30,6 +30,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
       ? resource.data.days.filter((entry) => entry.has_summary).map((entry) => entry.day)
       : [],
   );
+  const recordings = new Set(resource.data?.days.filter((entry) => entry.has_recordings).map((entry) => entry.day));
   useEffect(() => {
     window.addEventListener("omi:archive-changed", resource.refresh);
     return () => window.removeEventListener("omi:archive-changed", resource.refresh);
@@ -87,7 +88,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
                 data-day={value} disabled={value > today} aria-pressed={value === day}
                 tabIndex={value === tabDay ? 0 : -1}
                 aria-current={value === today ? "date" : undefined}
-                aria-label={`${dayLabel(value, true)}${summaries.has(value) ? t(", summary available") : ""}`}
+                aria-label={`${dayLabel(value, true)}${recordings.has(value) ? t(", recordings available") : ""}${summaries.has(value) ? t(", summary available") : ""}`}
                 onFocus={() => setActiveDay(value)}
                 onClick={() => onDay(value)}
                 onKeyDown={(event) => {
@@ -105,6 +106,7 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
                 }}>
                 <span>{Number(value.slice(-2))}</span>
                 <span className="calendar-indicators" aria-hidden="true">
+                  {recordings.has(value) ? <span className="recording-dot" /> : null}
                   {summaries.has(value) ? <span className="summary-dot" /> : null}
                 </span>
               </button>
@@ -113,13 +115,14 @@ export function MonthCalendar({ day, today, onDay }: CalendarProps) {
         ))}</tbody>
       </table>
       <div className="calendar-footer">
+        <span className="calendar-legend"><span className="recording-dot" /> {t("Recordings")}</span>
         <span className="calendar-legend"><span className="summary-dot" /> {t("Saved summary")}</span>
         <button type="button" className="text-button" onClick={() => { setMonth(today.slice(0, 7)); onDay(today); }}>{t("Today")}</button>
       </div>
       <div className="calendar-status" aria-live="polite">
         {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} />
-          : resource.loading ? t("Checking summaries…")
-          : resource.data && !summaries.size ? t("No saved summaries this month.") : null}
+          : resource.loading && !resource.data ? t("Checking archive…")
+          : resource.data && !summaries.size && !recordings.size ? t("No recordings or recaps this month.") : null}
       </div>
     </section>
   );

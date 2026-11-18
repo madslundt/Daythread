@@ -25,6 +25,7 @@ function savedSession(): string | undefined {
 
 function sessionScope(session?: ChatSession): ChatScope {
   if (session?.meeting_id) return { kind: "meeting", meeting_id: session.meeting_id };
+  if (session?.recording_id) return { kind: "recording", recording_id: session.recording_id };
   if (session?.day) return { kind: "day", day: session.day };
   if (session?.start_day && session.end_day) {
     return { kind: "range", start_day: session.start_day, end_day: session.end_day };
@@ -111,7 +112,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
         ...(sessionId ? { session_id: sessionId } : scope.kind === "day"
           ? { day: scope.day }
           : scope.kind === "range" ? { start_day: scope.start_day, end_day: scope.end_day }
-          : scope.kind === "meeting" ? { meeting_id: scope.meeting_id } : {}),
+          : scope.kind === "meeting" ? { meeting_id: scope.meeting_id }
+          : scope.kind === "recording" ? { recording_id: scope.recording_id } : {}),
       }, (event) => {
         if (controller.signal.aborted) return;
         if (event.type === "status") setStage(event.stage);
@@ -189,7 +191,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <span>{session.title}</span>
               <small>{session.day ? dayLabel(session.day, true)
                 : session.start_day && session.end_day ? `${dayLabel(session.start_day, true)} – ${dayLabel(session.end_day, true)}`
-                  : session.meeting_id ? t("Meeting") : t("All days")}</small>
+                  : session.meeting_id ? t("Meeting") : session.recording_id ? t("Recording") : t("All days")}</small>
               <small>{dateTimeLabel(session.updated_at, timezone)}</small>
             </button>
           ))}
@@ -217,6 +219,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <option value="day">{t("Specific date")}</option>
               <option value="range">{t("Date range")}</option>
               <option value="meeting" disabled={!meetings.length && scope.kind !== "meeting"}>{t("Meeting")}</option>
+              {scope.kind === "recording" ? <option value="recording">{t("Recording")}</option> : null}
             </select>
           </label>
           {scope.kind === "day" ? (
@@ -273,7 +276,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               </select>
             </label>
           ) : null}
-          <p className="caption">{scopeLabel}{t(". Changing context starts a new conversation and keeps your draft question.")}</p>
+          <p className="caption">{scope.kind === "recording" ? t("This recording only") : scopeLabel}{t(". Changing context starts a new conversation and keeps your draft question.")}</p>
           {timeline.error && scope.kind === "meeting" ? <ErrorState message={timeline.error} retry={timeline.refresh} /> : null}
           {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">{t("Meetings appear here after a meeting has been recorded.")}</p> : null}
         </div>
@@ -315,7 +318,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               </article>
             ))
           ) : !sending && !conversation.error ? (
-            <EmptyState icon="chat" title={scope.kind === "day" ? t("Ask about this day") : scope.kind === "range" ? t("Ask about this date range") : scope.kind === "meeting" ? t("Ask about this meeting") : t("A little help remembering")}
+            <EmptyState icon="chat" title={scope.kind === "recording" ? t("Chat with this recording") : scope.kind === "day" ? t("Ask about this day") : scope.kind === "range" ? t("Ask about this date range") : scope.kind === "meeting" ? t("Ask about this meeting") : t("A little help remembering")}
               action={<div className="chat-starters" aria-label={t("Suggested questions")}>
                 {[t("What were the key decisions?"), t("What should I follow up on?"), t("Summarize the main themes.")].map((prompt) => (
                   <button type="button" className="chat-starter" key={prompt} onClick={() => {
@@ -324,7 +327,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                   }}>{prompt}<Icon name="chevron-right" size={16} /></button>
                 ))}
               </div>}>
-              {scope.kind === "day" ? t("Revisit this date’s diary and recordings.")
+              {scope.kind === "recording" ? t("This recording only") : scope.kind === "day" ? t("Revisit this date’s diary and recordings.")
                 : scope.kind === "range" ? t("Explore diary entries and recordings between the selected dates.")
                 : scope.kind === "meeting" ? t("Explore the recordings around this meeting.")
                   : t("Find a detail or connect the threads across all your diary entries and recordings.")}

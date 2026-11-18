@@ -36,7 +36,7 @@ export function Today({
   timeline?: Timeline;
   onUpload: () => void;
   onPrepare: () => void;
-  onRewind: (minutes: number) => void;
+  onRewind: (minutes: number, localTime?: string) => void;
   onChat: (scope: ChatScope, question?: string) => void;
 }) {
   const [filters, setFilters] = useState(dayFiltersForProfile);
@@ -87,7 +87,7 @@ export function Today({
       <aside className="day-rail" aria-label={t("Day tools and capture")}>
         {filtered ? <p className="caption day-whole-day-tools">{t("Chat and quick rewind use the whole day.")}</p> : null}
         <details className="day-utility"><summary><Icon name="rewind" size={18} />{t("Quick rewind")}<Icon name="chevron-right" size={14} /></summary>
-          <QuickRewind onRewind={onRewind} />
+          <QuickRewind historical={day !== localDay(timezone)} onRewind={onRewind} />
         </details>
         <section className="day-tools">
           <h2>{t("Day tools")}</h2>
@@ -110,10 +110,16 @@ export function Today({
   );
 }
 
-function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
+export function QuickRewind({ historical, onRewind }: { historical: boolean; onRewind: (minutes: number, localTime?: string) => void }) {
   const [minutes, setMinutes] = useState(10);
+  const [localTime, setLocalTime] = useState("");
   return (
-    <section className="quick-rewind">
+    <form className="quick-rewind" onSubmit={(event) => {
+      event.preventDefault();
+      onRewind(minutes, historical ? localTime : undefined);
+    }}>
+      {historical ? <label className="select-with-icon">{t("End time")} <input type="time" value={localTime}
+        required onChange={(event) => setLocalTime(event.target.value)} /></label> : null}
       <label className="select-with-icon">
         <Icon name="clock" size={19} />
         <select
@@ -127,27 +133,31 @@ function QuickRewind({ onRewind }: { onRewind: (minutes: number) => void }) {
           ))}
         </select>
       </label>
-      <button className="button dark" onClick={() => onRewind(minutes)}>
+      <button className="button dark" type="submit">
         <Icon name="skip-back" size={19} />
         {t("Rewind audio")}{" "}</button>
-    </section>
+    </form>
   );
 }
 
-function TranscriptTimeline({
+export function TranscriptTimeline({
   day,
   timezone,
   timeline,
   onUpload,
   onChat,
-  filters,
+  filters = allDayFilters,
+  archive = false,
+  onRewindAt,
 }: {
   day: string;
   timezone: string;
   timeline?: Timeline;
   onUpload: () => void;
   onChat: (scope: ChatScope) => void;
-  filters: DayFilters;
+  filters?: DayFilters;
+  archive?: boolean;
+  onRewindAt?: (end: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -160,6 +170,7 @@ function TranscriptTimeline({
     ...(tagID ? { tag_id: tagID } : {}),
     limit: "30",
     offset: String(page * 30),
+    ...(archive ? { archive: "true" } : {}),
   });
   const resource = useResource<RecordingGroupList>(
     `/v1/recording-groups?${params}`,
@@ -174,11 +185,15 @@ function TranscriptTimeline({
       (meeting) => localDay(timezone, new Date(meeting.started_at)) === day,
     ) || [];
   const groups = resource.data?.items || [];
+  useEffect(() => {
+    window.addEventListener("omi:archive-changed", resource.refresh);
+    return () => window.removeEventListener("omi:archive-changed", resource.refresh);
+  }, [resource.refresh]);
   return (
     <section className="timeline-section">
       <div className="section-heading">
         <div className="timeline-title">
-          <h2>{t("Timeline")}</h2>
+          <h2>{archive ? t("Recordings") : t("Timeline")}</h2>
           {resource.data ? <span className="caption">{resource.data.total} {t("groups")}</span> : null}
         </div>
         {resource.data?.total ? (
@@ -259,11 +274,11 @@ function TranscriptTimeline({
           ) : null}
         </form>
       ) : null}
-      {resource.loading && !resource.data ? (
+      {resource.error && !resource.data ? null : resource.loading && !resource.data ? (
         <Loading>{t("Loading recordings…")}</Loading>
       ) : groups.length ? (
         <>
-          <RecordingGroups groups={groups} day={day} query={submitted} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} />
+          <RecordingGroups groups={groups} day={day} query={submitted} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={resource.refresh} timeline={timeline} archive={archive} onRewindAt={onRewindAt} onChat={onChat} />
           {(resource.data?.total || 0) > 30 || page > 0 ? <div className="pagination">
             <span className="caption">
               {page * 30 + 1}–{page * 30 + groups.length} {t("of")}{" "}
@@ -288,11 +303,11 @@ function TranscriptTimeline({
       ) : (
         <EmptyState
           icon={submitted || zoneID || tagID ? "search" : "mic"}
-          title={submitted || zoneID || tagID ? t("No matching recordings") : t("Make room for your first memory")}
+          title={submitted || zoneID || tagID ? t("No matching recordings") : t("No recordings on this day")}
         >
           {submitted || zoneID || tagID
             ? t("Try another word or choose a different day.")
-            : t("Connect Omi on your iPhone, or upload a recording.")}
+            : t("Choose another date, search the archive, or upload a recording.")}
           <span className="empty-action">
             <button className="button accent" onClick={onUpload}>
               <Icon name="upload" size={18} />

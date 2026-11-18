@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS diary_versions (
 );
 CREATE TABLE IF NOT EXISTS chat_sessions (
  id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- day TEXT, meeting_id TEXT, start_day TEXT, end_day TEXT
+ day TEXT, meeting_id TEXT, start_day TEXT, end_day TEXT, recording_id TEXT
 );
 CREATE TABLE IF NOT EXISTS chat_messages (
  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL,
@@ -343,24 +343,25 @@ class ArchiveStore:
         scope_supplied: bool = False,
         start_day: str | None = None,
         end_day: str | None = None,
+        recording_id: str | None = None,
     ) -> dict:
         key, now = session_id or str(uuid4()), stamp(utc_now())
         with self.connect() as db:
             old = db.execute("SELECT * FROM chat_sessions WHERE id=?", (key,)).fetchone()
             if old:
-                saved_scope = tuple(
-                    old[field] for field in ("day", "meeting_id", "start_day", "end_day")
-                )
-                if scope_supplied and saved_scope != (day, meeting_id, start_day, end_day):
+                fields = ("day", "meeting_id", "start_day", "end_day", "recording_id")
+                saved_scope = tuple(old[field] for field in fields)
+                requested_scope = (day, meeting_id, start_day, end_day, recording_id)
+                if scope_supplied and saved_scope != requested_scope:
                     raise ChatScopeConflict("Start a new chat to choose a different scope")
                 return dict(old)
             if session_id:
                 raise KeyError("Chat session not found")
             db.execute(
                 "INSERT INTO chat_sessions "
-                "(id,title,created_at,updated_at,day,meeting_id,start_day,end_day) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                (key, title[:120], now, now, day, meeting_id, start_day, end_day),
+                "(id,title,created_at,updated_at,day,meeting_id,start_day,end_day,recording_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (key, title[:120], now, now, day, meeting_id, start_day, end_day, recording_id),
             )
         return {
             "id": key,
@@ -371,6 +372,7 @@ class ArchiveStore:
             "meeting_id": meeting_id,
             "start_day": start_day,
             "end_day": end_day,
+            "recording_id": recording_id,
         }
 
     def chat_sessions(self) -> list[dict]:

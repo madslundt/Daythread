@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, post, rewindAudioUrl } from "./api";
-import { dateTimeLabel, timeLabel } from "./format";
+import { dateTimeLabel, dayLabel, timeLabel } from "./format";
 import { Icon } from "./Icon";
 import { CompletenessDetails, EvidenceFeedback } from "./CompletenessFeedback";
 import { SourceList } from "./SourceList";
@@ -10,7 +10,12 @@ import { EmptyState, ErrorState, Notice } from "./UI";
 import { SummaryTranslation } from "./SummaryTranslation";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 
-export type RewindIntent = { minutes: number; id: number };
+export type RewindIntent = { minutes: number; id: number; day?: string; localTime?: string; end?: string };
+
+export function rewindAnchor(intent?: RewindIntent, now = new Date()) {
+  return intent?.day && intent.localTime ? { day: intent.day, local_time: intent.localTime }
+    : { end: intent?.end || now.toISOString() };
+}
 
 export function Rewind({
   timezone,
@@ -20,29 +25,28 @@ export function Rewind({
   intent?: RewindIntent;
 }) {
   const [minutes, setMinutes] = useState(intent?.minutes || 10);
-  const [summarize, setSummarize] = useState(true);
+  const [summarize, setSummarize] = useState(!intent);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [audioError, setAudioError] = useState(false);
   const [result, setResult] = useState<MemoryWindow>();
-  const [completedMinutes, setCompletedMinutes] = useState(10);
+  const [completed, setCompleted] = useState({ minutes: 10, summarize: false });
   const handled = useRef<number | undefined>(undefined);
-  async function rewind(duration = minutes, includeSummary = summarize) {
+  async function rewind(duration = minutes, includeSummary = summarize, anchor = intent) {
     setBusy(true);
     setError("");
     setAudioError(false);
     setResult(undefined);
     // Keep the exact end timestamp for both the transcript and audio request.
-    const end = new Date().toISOString();
     try {
       setResult(
         await post<MemoryWindow>("/v1/rewind", {
           minutes: duration,
-          end,
+          ...rewindAnchor(anchor),
           summarize: includeSummary,
         }),
       );
-      setCompletedMinutes(duration);
+      setCompleted({ minutes: duration, summarize: includeSummary });
     } catch (error) {
       setError(errorMessage(error));
     } finally {
@@ -53,7 +57,8 @@ export function Rewind({
     if (intent && handled.current !== intent.id) {
       handled.current = intent.id;
       setMinutes(intent.minutes);
-      void rewind(intent.minutes);
+      setSummarize(false);
+      void rewind(intent.minutes, false, intent);
     }
     // A new intent is an explicit navigation action, not a form-state dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,6 +66,8 @@ export function Rewind({
   const hasAudio = result?.sources.some((source) => source.audio_available !== false);
   return (
     <div className="feature-content">
+      {intent?.day && intent.localTime ? <p className="caption">{dayLabel(intent.day)} · {intent.localTime} ({timezone})</p>
+        : intent?.end ? <p className="caption">{dateTimeLabel(intent.end, timezone)}</p> : null}
       <form
         className="rewind-form"
         onSubmit={(event) => {
@@ -117,7 +124,7 @@ export function Rewind({
                 </div>
                 <RecordingAudioPlayer
                   key={result.end}
-                  src={rewindAudioUrl(completedMinutes, result.end)}
+                  src={rewindAudioUrl(completed.minutes, result.end)}
                   onError={() => setAudioError(true)}
                   label={t("Play rewind audio")}
                 />
@@ -133,7 +140,7 @@ export function Rewind({
                   <SummaryTranslation outputId={result.output_id} original={result.summary} />
                   <EvidenceFeedback outputId={result.output_id} evidence={result.evidence} outputText={result.summary} />
                 </section>
-              ) : summarize ? (
+              ) : completed.summarize ? (
                 <Notice>
                   {t("No transcribed speech is available to summarize yet.")}{" "}{hasAudio ? t("You can listen to the recording above.") : t("Original audio is unavailable.")}
                 </Notice>
@@ -159,8 +166,8 @@ export function Rewind({
               <SourceList sources={result.sources} timezone={timezone} />
             </>
           ) : (
-            <EmptyState icon="rewind" title={t("No audio in this window")}>
-              {t("Try a longer window, or connect your iPhone to send its queued recordings.")}{" "}</EmptyState>
+            <EmptyState icon="rewind" title={t("No recordings in this window")}>
+              {t("Try a longer window or choose another time.")}{" "}</EmptyState>
           )}
         </div>
       ) : !busy && !error ? (

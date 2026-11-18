@@ -115,6 +115,32 @@ def test_restart_after_accept_and_after_exchange_commit_never_duplicates(jobs):
     assert jobs.memory.inference.calls == 1
 
 
+def test_recording_scope_survives_restart_and_followup_without_leaking_neighbors(jobs):
+    at = datetime.now(UTC)
+    recording_id = str(uuid4())
+    parts = [str(uuid4()), str(uuid4())]
+    for index, key in enumerate(parts):
+        jobs.store.ingest(key, "web", at, f"part {index}".encode(), 1,
+                          source_kind="manual_upload", source_metadata={
+                              "recording_id": recording_id, "part_index": index, "part_count": 2,
+                          })
+        jobs.store.complete(key, f"Planning the weekend, part {index + 1}")
+    body = request(recording_id=recording_id)
+    accepted = jobs.enqueue(body)
+    session_id = accepted["parameters"]["session_id"]
+    restarted = GenerationJobs(jobs.memory)
+    assert restarted.store.chat_session(session_id)["recording_id"] == recording_id
+    assert asyncio.run(restarted.process_one())
+    followup = request("What else about planning the weekend?", session_id=session_id)
+    restarted.enqueue(followup)
+    assert asyncio.run(restarted.process_one())
+    for item in (body, followup):
+        job = restarted.get(str(item.id))
+        assert job["state"] == "completed", job
+        assert job["result"]["recording_id"] == recording_id
+        assert {source["id"] for source in job["result"]["sources"]} == set(parts)
+
+
 def test_deleted_inflight_chat_never_reappears_or_notifies(jobs):
     body = request()
     accepted = jobs.enqueue(body)

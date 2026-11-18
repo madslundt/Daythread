@@ -233,6 +233,8 @@ class GenerationJobs(ChatJobs):
                 params = self.prepare_chat(params, db, job_id, existing, body.parameters)
             if existing:
                 previous = json.loads(existing["parameters"])
+                if body.kind == existing["kind"] == "chat":
+                    previous.setdefault("recording_id", None)
                 if body.kind == "recap" and not scoped(params):
                     for field in ("template", "instructions"):
                         if field not in params and field in previous:

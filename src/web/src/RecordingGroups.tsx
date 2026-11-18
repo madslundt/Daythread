@@ -6,7 +6,8 @@ import { SourceList } from "./SourceList";
 import { RecordingChapters, type RecordingChapter } from "./RecordingChapters";
 import { ErrorState, Loading } from "./UI";
 import { timeLabel } from "./format";
-import type { Source, Timeline } from "./types";
+import { statusLabel } from "./statusLabels";
+import type { ChatScope, Source, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { MergedRecording, MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
 
@@ -19,6 +20,9 @@ export type RecordingGroup = {
   recording_id?: string;
   topic_count?: number;
   estimated_times?: boolean;
+  states?: string[];
+  has_audio?: boolean;
+  has_transcript?: boolean;
   tags?: ConversationTag[];
   sources: Source[];
 };
@@ -28,22 +32,27 @@ export type RecordingGroupList = {
   total_recordings: number;
 };
 
-export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, onCorrect, timeline, archive, onRewindAt, onChat }: {
   groups: RecordingGroup[]; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+  archive?: boolean; onRewindAt?: (end: string) => void;
+  onChat?: (scope: ChatScope) => void;
 }) {
   return <div className="source-list source-list-compact recording-groups">
     {groups.map((group) => <div className="recording-group" key={group.id}>
       {!group.recording_id && group.recording_count === 1 ? (
-        <SourceList compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} />
-      ) : <RecordingSession group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} />}
+        <SourceList compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} onRewindAt={onRewindAt} onChat={onChat} />
+      ) : <RecordingSession group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} archive={archive} onRewindAt={onRewindAt} onChat={onChat} />}
     </div>)}
   </div>;
 }
 
-function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline, archive, onRewindAt, onChat }: {
   group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+  archive?: boolean; onRewindAt?: (end: string) => void;
+  onChat?: (scope: ChatScope) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const states = group.states?.filter((state) => state !== "done").map(statusLabel).join(" · ");
   return <details className="source-row source-row-compact recording-session" onToggle={(event) => {
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
@@ -52,13 +61,21 @@ function RecordingSession({ group, day, query, zoneID, tagID, timezone, onCorrec
       <span className="source-overview"><span className="source-preview">{group.title}</span>
         <span className="source-glance">{group.topic_count
           ? `${group.topic_count} ${group.topic_count === 1 ? t("topic") : t("topics")}`
-          : t("Recording")}{group.estimated_times ? t("· estimated times") : ""}</span></span>
+          : t("Recording")}{states ? ` · ${states}` : group.has_transcript && !group.has_audio ? ` · ${t("Transcript only")}`
+            : group.has_transcript === false ? ` · ${t("No transcript text")}` : ""}{group.estimated_times ? t("· estimated times") : ""}</span></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="source-detail">
-      <div className="recording-organization"><ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} /></div>
-      {open ? group.recording_id ? <MergedRecording recordingID={group.recording_id} />
-        : <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} /> : null}
+      {!archive ? <div className="recording-organization"><ConversationTags groupID={group.id} day={day} tags={group.tags} onChanged={onCorrect} /></div> : null}
+      {open ? group.recording_id ? <MergedRecording recordingID={group.recording_id} timezone={timezone} archive={archive} />
+        : <SessionSources key={`${day}:${query}:${zoneID || ""}:${tagID || ""}`} group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} archive={archive} /> : null}
+      {open && archive && group.recording_id && group.has_audio ? <SessionSources
+        group={group} day={day} query={query} timezone={timezone} onCorrect={onCorrect} archive originalsOnly /> : null}
+      {open && onRewindAt && (group.has_audio || group.has_transcript) ? <button className="text-button" onClick={() => onRewindAt(group.ended_at)}>
+        <Icon name="rewind" size={16} />{t("Rewind from recording end")}</button> : null}
+      {open && onChat && group.recording_id && group.has_transcript !== false ? <button className="text-button"
+        onClick={() => onChat({ kind: "recording", recording_id: group.recording_id! })}>
+        <Icon name="chat" size={16} />{t("Chat with this recording")}</button> : null}
     </div>
   </details>;
 }
@@ -76,31 +93,33 @@ function recordingDuration(startedAt: string, endedAt: string): string {
     });
 }
 
-export function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline }: {
+export function SessionSources({ group, day, query, zoneID, tagID, timezone, onCorrect, timeline, archive, originalsOnly }: {
   group: RecordingGroup; day: string; query: string; zoneID?: string; tagID?: string; timezone: string; onCorrect: () => void; timeline?: Timeline;
+  archive?: boolean; originalsOnly?: boolean;
 }) {
   const [page, setPage] = useState(0);
   const [toolsOpen, setToolsOpen] = useState(false);
   const params = new URLSearchParams({ day, q: query, limit: "30", offset: String(page * 30) });
   if (zoneID) params.set("zone_id", zoneID);
   if (tagID) params.set("tag_id", tagID);
+  if (archive) params.set("archive", "true");
   const scope = new URLSearchParams(params);
   scope.delete("limit"); scope.delete("offset");
   const base = `/v1/recording-groups/${encodeURIComponent(group.id)}`;
-  const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[]; recording?: CombinedRecording }>(`${base}/sources?${params}`, 15_000);
+  const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[]; recording?: CombinedRecording }>(!originalsOnly || toolsOpen ? `${base}/sources?${params}` : null, 15_000);
   if (resource.data?.recording) scope.set("version", resource.data.recording.audio_version || resource.data.recording.transcript_version);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
-    {resource.data?.recording ? <MergedRecordingContent recording={resource.data.recording}
+    {originalsOnly ? null : resource.data?.recording ? <MergedRecordingContent recording={resource.data.recording}
       resourceBase={base} resourceQuery={`?${scope}`} timezone={timezone} />
       : <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}
-    {resource.data ? <details className="recording-disclosure recording-originals" open={toolsOpen} onToggle={(event) => {
+    {originalsOnly || resource.data ? <details className="recording-disclosure recording-originals" open={toolsOpen} onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);
     }}>
-      <summary>{t("Full recording & tools")}</summary>
-      {toolsOpen ? <>
+      <summary>{t(originalsOnly ? "Original part recordings" : "Full recording & tools")}</summary>
+      {toolsOpen && resource.data ? <>
         <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} />
         {resource.data.total > 30 || page > 0 ? <div className="pagination">
           <span className="caption">{t("Recordings")}{" "}{page * 30 + 1}–{page * 30 + resource.data.items.length} {t("of")}{" "}{resource.data.total}</span>

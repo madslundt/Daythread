@@ -17,6 +17,7 @@ export type Source = {
   state: string;
   text: string | null;
   title?: string | null;
+  recording_summary?: string | null;
   sections?: { title: string; start_offset: number; end_offset: number;
     chapter_id?: string; start_seconds?: number; end_seconds?: number }[];
   important?: boolean;
@@ -178,6 +179,7 @@ export type Recap = Partial<MemoryWindow> & {
 export type CalendarDay = {
   day: string;
   has_summary: boolean;
+  has_recordings?: boolean;
 };
 export type CalendarMonth = {
   month: string;
@@ -190,6 +192,7 @@ export type ChatSession = {
   updated_at: string;
   day?: string | null;
   meeting_id?: string | null;
+  recording_id?: string | null;
   start_day?: string | null;
   end_day?: string | null;
 };
@@ -197,6 +200,7 @@ export type ChatScope =
   | { kind: "all" }
   | { kind: "day"; day: string }
   | { kind: "range"; start_day: string; end_day: string }
+  | { kind: "recording"; recording_id: string }
   | { kind: "meeting"; meeting_id: string };
 export type ChatMessage = {
   evidence?: Evidence;

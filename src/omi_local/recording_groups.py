@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime
 
+from .conversation_state import finished_file
 from .conversation_tags import decorate_tags, tag_filter
 from .domain import stamp
 from .location_zones import zone_filter
@@ -21,7 +22,7 @@ TRANSCRIPT_WHITESPACE = (
 )
 
 
-def group_recordings(rows: list[dict]) -> list[dict]:
+def group_recordings(rows: list[dict], *, archive: bool = False) -> list[dict]:
     groups, latest, explicit = [], {}, {}
     for row in rows:
         metadata = json.loads(row["source_metadata"] or "{}")
@@ -31,6 +32,9 @@ def group_recordings(rows: list[dict]) -> list[dict]:
             kind = "manual_upload"
         # Quiet-only chunks form compact runs without bridging separate speech sessions.
         stream = (row["device_id"], kind, row["state"] == "done" and not row["has_text"])
+        if archive:
+            file_id = row["id"] if finished_file(row) else None
+            stream += (row["state"], row["audio_available"], file_id)
         previous = explicit.get(recording) if recording else latest.get(stream)
         if previous and not recording:
             gap = (datetime.fromisoformat(row["started_at"])
@@ -48,16 +52,17 @@ def group_recordings(rows: list[dict]) -> list[dict]:
             explicit[recording] = previous
         else:
             latest[stream] = previous
-    return sorted(groups, key=lambda group: (group["started_at"], group["id"]), reverse=True)
+    return sorted(groups, key=lambda group: (group["started_at"], group["id"]), reverse=not archive)
 
 
 def recording_groups(
     store, start, end, query, limit, offset, group_id=None, zone_id=None, tag_id=None,
-    playback=False,
+    playback=False, archive=False,
 ):
-    filters, args = ["started_at<?", "ended_at> ?", "state='done'", TRANSCRIPT_TEXT_SQL], [
-        stamp(end), stamp(start), TRANSCRIPT_WHITESPACE,
-    ]
+    filters, args = ["started_at<?", "ended_at>?"], [stamp(end), stamp(start)]
+    if not archive or query:
+        filters.extend(["state='done'", TRANSCRIPT_TEXT_SQL])
+        args.append(TRANSCRIPT_WHITESPACE)
     if query:
         filters.append("text LIKE ? ESCAPE '\\'")
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -73,17 +78,26 @@ def recording_groups(
         # Read lightweight metadata for grouping; load bodies only for the selected member page.
         rows = [dict(row) for row in db.execute(
             "SELECT id,device_id,started_at,ended_at,state,source_kind,source_metadata,"
-            "transcript_version,topic_details,"
+            "transcript_version,topic_details,audio_available,"
             "json_extract(topic_details,'$.title') AS title,"
-            "length(trim(coalesce(text,'')))>0 AS has_text,"
+            + TRANSCRIPT_TEXT_SQL + " AS has_text,"
             "CASE WHEN " + MANUAL_UPLOAD_SQL + " THEN 'audio:' || digest || ':' || "
             "coalesce(json_extract(source_metadata,'$.part_index'),0) "
             "ELSE 'source:' || id END AS upload_key FROM audio WHERE "
-            + " AND ".join(filters) + " ORDER BY started_at,id", args,
+            + " AND ".join(filters) + " ORDER BY started_at,id", [TRANSCRIPT_WHITESPACE, *args],
         )]
+        if archive:
+            # Prefer a usable copy over an otherwise identical expired upload.
+            rows.sort(key=lambda row: (not row["has_text"] or row["state"] != "done",
+                                      not row["audio_available"]))
         decorate_tags(db, rows)
         canonical, alternatives, upload_tags = {}, {}, {}
         for row in rows:
+            if archive:
+                # Identical parts in distinct files do not make those files interchangeable.
+                recording = json.loads(row["source_metadata"] or "{}").get("recording_id")
+                if recording:
+                    row["upload_key"] = f'{recording}:{row["upload_key"]}'
             upload_tags.setdefault(row["upload_key"], {}).update({
                 tag["id"]: tag for tag in row["tags"]
             })
@@ -91,7 +105,8 @@ def recording_groups(
                 alternatives.setdefault(row["upload_key"], []).append(row["id"])
             else:
                 canonical[row["upload_key"]] = row
-        groups = group_recordings(list(canonical.values()))
+        ordered = sorted(canonical.values(), key=lambda row: (row["started_at"], row["id"]))
+        groups = group_recordings(ordered, archive=archive)
 
         def sources(members):
             ids = [row["id"] for row in members]
@@ -144,9 +159,15 @@ def recording_groups(
             if recording_id and recording_metadata.get("recording_started_at"):
                 bounds.update(started_at=recording_metadata["recording_started_at"],
                               ended_at=recording_metadata["recording_ended_at"])
+            archive_state = {
+                "states": sorted({row["state"] for row in members}),
+                "has_transcript": any(r["state"] == "done" and r["has_text"] for r in members),
+                "has_audio": any(row["audio_available"] for row in members),
+            } if archive else {}
             items.append(bounds | {
                 "title": title, "recording_count": 1 if recording_id else len(members),
                 **({"recording_id": recording_id} if recording_id else {}),
+                **archive_state,
                 "topic_count": len({" ".join(chapter["title"].casefold().split())
                                     for chapter in chapter_navigation(members)}),
                 "tags": list({

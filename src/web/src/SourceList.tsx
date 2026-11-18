@@ -18,7 +18,7 @@ import { Icon } from "./Icon";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { useRecordingSeek } from "./useRecordingSeek";
 import { groupTopicRuns } from "./topicOccurrences";
-import type { Source } from "./types";
+import type { ChatScope, Source } from "./types";
 import { useResource } from "./useResource";
 import { ErrorState } from "./UI";
 
@@ -31,6 +31,8 @@ export function SourceList({
   compact = false,
   showDate = false,
   idPrefix = "source",
+  onRewindAt,
+  onChat,
 }: {
   sources: Source[];
   timezone: string;
@@ -40,6 +42,8 @@ export function SourceList({
   compact?: boolean;
   showDate?: boolean;
   idPrefix?: string;
+  onRewindAt?: (end: string) => void;
+  onChat?: (scope: ChatScope) => void;
 }) {
   return (
     <div className={`source-list${compact ? " source-list-compact" : ""}`}>
@@ -55,6 +59,8 @@ export function SourceList({
           compact={compact}
           showDate={showDate}
           index={index + 1}
+          onRewindAt={onRewindAt}
+          onChat={onChat}
         />
       ))}
     </div>
@@ -71,6 +77,8 @@ function SourceRow({
   compact,
   showDate,
   index,
+  onRewindAt,
+  onChat,
 }: {
   source: Source;
   idPrefix: string;
@@ -81,6 +89,8 @@ function SourceRow({
   compact: boolean;
   showDate: boolean;
   index: number;
+  onRewindAt?: (end: string) => void;
+  onChat?: (scope: ChatScope) => void;
 }) {
   const [creatingDecision, setCreatingDecision] = useState(false);
   const [open, setOpen] = useState(expanded);
@@ -178,7 +188,8 @@ function SourceRow({
               ? t("The archive expects audio, but the file is missing.")
               : isVendorTranscript(source)
                 ? t("Imported from {vendor}. This import includes the transcript only; original audio is unavailable.", { vendor: sourceVendorLabel(source) })
-                : t("Audio was removed by your retention policy. The transcript remains available.")}
+                : text ? t("Audio was removed by your retention policy. The transcript remains available.")
+                  : t("Original audio is unavailable.")}
           </p>
         ) : (
           <>
@@ -237,6 +248,7 @@ function SourceRow({
             {source.alternate_sources?.length ? t(" · {value0} uploads", { value0: source.alternate_sources.length + 1 }) : ""}
             {hasTopics ? ` · ${currentSource.sections!.length} ${currentSource.sections!.length === 1 ? t("topic") : t("topics")}` : ""}
             {source.state !== "done" ? ` · ${statusLabel(source.state)}` : ""}
+            {source.audio_available === false && text ? ` · ${t("Transcript only")}` : ""}
           </span> : null}
           {compact && source.matches?.length && currentSource.title ? <span className="source-match">{source.matches[0].text}</span> : null}
         </span>
@@ -294,6 +306,13 @@ function SourceRow({
             idPrefix={`${idPrefix}-alternate`} onCorrect={onCorrect} onDeleted={onDeleted} />
         </details> : null}
         {compact ? playback : null}
+        {open && onRewindAt && (text || source.audio_available) ? <button className="text-button" onClick={() => onRewindAt(source.ended_at)}>
+          <Icon name="rewind" size={16} />{t("Rewind from recording end")}</button> : null}
+        {open && onChat && text?.trim() && source.state === "done" ? <button className="text-button"
+          onClick={() => onChat({ kind: "recording", recording_id: source.id })}>
+          <Icon name="chat" size={16} />{t("Chat with this recording")}</button> : null}
+        {currentSource.recording_summary ? <section className="recording-overview">
+          <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
         {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
         <div className={compact ? "recording-transcript" : undefined}>
@@ -341,14 +360,14 @@ function SourceRow({
                       ? t("Transcription blocked. Resolve the problem and retry.")
                       : t("This recording is waiting for transcription."))}
             </p>}
-            <button
+            {source.state === "done" ? <button
               className="text-button"
               onClick={() => {
                 setDraft(text || "");
                 setEditing(true);
               }}
             >
-              {t("Correct transcript")}{" "}</button>
+              {t("Correct transcript")}{" "}</button> : null}
           </>
         )}
         </div>

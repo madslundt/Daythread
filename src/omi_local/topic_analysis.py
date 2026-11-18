@@ -19,6 +19,7 @@ class Analysis(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     sections: list[Topic] = Field(min_length=1, max_length=24)
     continues_previous: bool = False
+    summary: str = Field(default="", max_length=800)
 
 
 def topic_offsets(result: Analysis, excerpt: str) -> list[int]:
@@ -40,7 +41,7 @@ def topic_offsets(result: Analysis, excerpt: str) -> list[int]:
 def repair_reason(error: ValueError) -> str:
     if not isinstance(error, ValidationError):
         return str(error)
-    allowed = {"title", "sections", "start_quote", "continues_previous"}
+    allowed = {"title", "sections", "start_quote", "continues_previous", "summary"}
     # Include schema paths and error codes, never the rejected response or its values.
     return json.dumps([{
         "field": [part if isinstance(part, int) or part in allowed else "field"

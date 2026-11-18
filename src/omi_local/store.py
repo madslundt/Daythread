@@ -237,7 +237,7 @@ class Store(
             session_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_sessions)")
             }
-            for column in ("day", "meeting_id", "start_day", "end_day"):
+            for column in ("day", "meeting_id", "start_day", "end_day", "recording_id"):
                 if column not in session_columns:
                     db.execute(f"ALTER TABLE chat_sessions ADD COLUMN {column} TEXT")
             phone_columns = {
@@ -489,6 +489,25 @@ class Store(
                 ).fetchone()
                 is not None
             )
+
+    def recording_days(self, windows: list[tuple[str, str, str]]) -> set[str]:
+        with self.connect() as db:
+            return {row[0] for row in db.execute(
+                "SELECT json_extract(value,'$[0]') FROM json_each(?) WHERE EXISTS ("
+                "SELECT 1 FROM audio WHERE started_at<json_extract(value,'$[2]') "
+                "AND ended_at>json_extract(value,'$[1]'))",
+                (json.dumps(windows),),
+            )}
+
+    def chat_recording_sources(self, recording_id: str) -> list[dict]:
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT id,started_at,ended_at FROM audio WHERE state='done' AND text IS NOT NULL "
+                "AND length(trim(text))>0 "
+                "AND (id=? OR json_extract(source_metadata,'$.recording_id')=?) "
+                "ORDER BY started_at,id",
+                (recording_id, recording_id),
+            )]
 
     def sample_transcripts(
         self, limit: int, start: datetime | None = None, end: datetime | None = None,

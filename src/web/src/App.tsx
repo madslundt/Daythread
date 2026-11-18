@@ -146,8 +146,12 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
       t("Audio uploaded. Follow transcription progress under Capture & sync."),
     );
   }
-  function rewind(minutes: number) {
-    setRewindIntent({ minutes, id: Date.now() });
+  function rewind(minutes: number, localTime?: string) {
+    setRewindIntent({ minutes, id: Date.now(), ...(localTime ? { day, localTime } : {}) });
+    navigate("rewind");
+  }
+  function rewindAt(end: string) {
+    setRewindIntent({ minutes: 10, id: Date.now(), end });
     navigate("rewind");
   }
   function openChat(scope: ChatScope, question?: string) {
@@ -283,10 +287,14 @@ function ProfileApp({ profiles, selected, onSelect, onCreate, onUpdate, profileE
           <Rewind timezone={timezone} intent={rewindIntent} />
         ) : page === "diary" ? (
           <Diary
+            key={version}
             day={day}
             timezone={timezone}
             onDay={selectDay}
             onChat={openChat}
+            onUpload={() => setUploadFiles([])}
+            onRewind={rewind}
+            onRewindAt={rewindAt}
           />
         ) : page === "inbox" ? (
           <Inbox timezone={timezone} />

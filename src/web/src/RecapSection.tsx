@@ -29,6 +29,7 @@ export function RecapSection({
   onUpload,
   onChat,
   compact = false,
+  archive = false,
   filters = allDayFilters,
 }: {
   day: string;
@@ -38,6 +39,7 @@ export function RecapSection({
   onUpload?: () => void;
   onChat: (scope: ChatScope, question?: string) => void;
   compact?: boolean;
+  archive?: boolean;
   filters?: DayFilters;
 }) {
   const filtered = hasDayFilters(filters);
@@ -92,6 +94,7 @@ export function RecapSection({
     <ActionPoints key={`actions-${day}`} day={day} timezone={timezone} filters={filters}
       focus={focus && recap.data?.stale && focus.basis !== "original" ? { ...focus, passages: [] } : focus} onChat={scopedChat} />
   </DisplayTranslationLanguage>;
+  if (archive && !summary && !hasOriginalTopics && !recap.error) return null;
   return (
     <section className="recap-section">
       {!filtered ? <RecapTemplateControl key={`template-${day}`} day={day} onGenerated={recap.refresh} /> : null}
@@ -103,7 +106,7 @@ export function RecapSection({
       {!filtered ? <DayRecapOverview key={day} day={day} timezone={timezone} onTopic={(title) => {
         setTopicRequest((previous) => ({ title, request: (previous?.request || 0) + 1 }));
       }} /> : null}
-      {!filtered ? <h3>{t("Topics")}</h3> : null}
+      {!filtered && (summary || hasOriginalTopics) ? <h3>{t("Topics")}</h3> : null}
       {recap.error ? <ErrorState message={recap.error} retry={recap.refresh} /> : null}
       {filtered && recap.data?.generation_state === "failed" ? <ErrorState
         message={retryError || recap.data.generation_error || t("The filtered recap could not be generated.")}
@@ -264,4 +267,3 @@ function RecapVersions({ day, timezone }: { day: string; timezone: string }) {
     </div>
   );
 }
-

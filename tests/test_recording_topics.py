@@ -204,6 +204,28 @@ def test_correction_clears_existing_sections(recording):
     assert response.json()["sections"] == []
 
 
+def test_excessively_fine_topics_keep_one_summary_and_the_entire_original(recording):
+    client, memory, key = recording
+    lines = [f"Planning remark {index}: follow up tomorrow." for index in range(12)]
+    text = "\n".join(lines)
+    memory.store.correct_transcript(key, text)
+
+    class OvereagerModel:
+        async def generate_json(self, task, evidence):
+            assert evidence == text
+            return json.dumps({
+                "title": "Planning", "summary": "The team planned follow-up.",
+                "sections": [{"title": line, "start_quote": line} for line in lines],
+            })
+
+    memory.inference = OvereagerModel()
+    assert run(memory)
+    result = client.get(f"/v1/transcripts/{key}").json()
+    assert result["recording_summary"] == "The team planned follow-up."
+    assert len(result["sections"]) <= 5
+    assert "".join(text[s["start_offset"]:s["end_offset"]] for s in result["sections"]) == text
+
+
 @pytest.mark.parametrize("output", [
     {}, {"title": "Wrong", "sections": []},
     {"title": "Wrong", "sections": [{"title": "Missing", "start_quote": "Invented quote"}]},

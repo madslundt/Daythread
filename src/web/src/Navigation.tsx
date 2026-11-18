@@ -23,7 +23,7 @@ export const pages: {
   },
   {
     id: "diary",
-    label: source("Diary"),
+    label: source("Archive"),
     icon: "diary",
     title: source("The days add up."),
   },

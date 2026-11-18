@@ -96,10 +96,11 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("Whole selected transcript.");
     expect(html).toContain("Original part transcripts");
     expect(html).toContain("Launch continues across upload parts.");
-    expect(html).not.toContain('class="recording-topic-bookmarks"');
+    expect(html).toContain("Chapters in the original transcript");
+    expect(html).toContain('class="recording-player-bookmarks"');
     expect(html).not.toContain("Use full-recording transcript");
   });
-  it("shows readable selected text by default and suppresses old part bookmarks", () => {
+  it("shows readable selected text separately from original part bookmarks", () => {
     const canonical = "Hello there.\nUnknown word.";
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       recording_transcription: { state: "ready", version: "variant-v1", text: canonical },
@@ -127,7 +128,8 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("Rae");
     expect(html).not.toContain("recording-speaker-label");
     expect(html).not.toContain("recording-speaker-time");
-    expect(html).not.toContain('class="recording-topic-bookmarks"');
+    expect(html).toContain('class="recording-topic-bookmarks"');
+    expect(html).toContain("Chapters in the original transcript");
     expect(html).toContain("Original part transcripts");
   });
   it("coalesces same-speaker whitespace but never absorbs unknown spoken words", () => {

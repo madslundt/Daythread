@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS deleted_chat_jobs (id TEXT PRIMARY KEY);
 """
-SCOPE_FIELDS = ("day", "meeting_id", "start_day", "end_day")
+SCOPE_FIELDS = ("day", "meeting_id", "start_day", "end_day", "recording_id")
 
 
 class ChatParameters(ChatRequest):
@@ -128,8 +128,8 @@ class ChatJobs:
             title = " ".join(params["question"].split())[:120]
             db.execute(
                 "INSERT INTO chat_sessions "
-                "(id,title,created_at,updated_at,day,meeting_id,start_day,end_day) "
-                "VALUES(?,?,?,?,?,?,?,?)",
+                "(id,title,created_at,updated_at,day,meeting_id,start_day,end_day,recording_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
                 (key, title, now, now, *(params[field] for field in SCOPE_FIELDS)),
             )
         params["session_id"] = key
@@ -144,6 +144,8 @@ class ChatJobs:
         return params
 
     def _validate_chat_scope(self, params: dict) -> None:
+        if params["recording_id"] and not self.store.chat_recording_sources(params["recording_id"]):
+            raise HTTPException(404, "Recording transcript unavailable")
         if params["meeting_id"] and not any(
             meeting["id"] == params["meeting_id"] for meeting in self.memory.timeline()["meetings"]
         ):
@@ -172,7 +174,7 @@ class ChatJobs:
                 params["meeting_id"], False,
                 date.fromisoformat(params["start_day"]) if params["start_day"] else None,
                 date.fromisoformat(params["end_day"]) if params["end_day"] else None,
-                on_event=event, request_id=job["id"],
+                on_event=event, request_id=job["id"], recording_id=params.get("recording_id"),
             )
         finally:
             self.chat_progress.pop(job["id"], None)

@@ -1,7 +1,7 @@
 import io
 import json
 import wave
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -56,6 +56,16 @@ class RewindRequest(BaseModel):
     minutes: int = Field(default=10, ge=1, le=60)
     end: AwareDatetime | None = None
     summarize: bool = True
+    day: date | None = None
+    local_time: time | None = None
+
+    @model_validator(mode="after")
+    def local_anchor(self):
+        if (self.day is None) != (self.local_time is None) or (
+            self.local_time is not None and (self.end is not None or self.local_time.tzinfo)
+        ):
+            raise ValueError("Supply either an absolute end or a date and local time")
+        return self
 
 
 class ChatRequest(BaseModel):
@@ -66,6 +76,7 @@ class ChatRequest(BaseModel):
     meeting_id: UUID | None = None
     start_day: date | None = None
     end_day: date | None = None
+    recording_id: UUID | None = None
 
     @model_validator(mode="after")
     def exclusive_scope(self):
@@ -73,8 +84,10 @@ class ChatRequest(BaseModel):
             raise ValueError("Provide both start_day and end_day")
         if self.start_day is not None and self.start_day > self.end_day:
             raise ValueError("start_day must be on or before end_day")
-        if sum(value is not None for value in (self.day, self.meeting_id, self.start_day)) > 1:
-            raise ValueError("Choose a date, a date range, or a meeting")
+        if sum(value is not None for value in (
+            self.day, self.meeting_id, self.start_day, self.recording_id,
+        )) > 1:
+            raise ValueError("Choose only one chat scope")
         return self
 
 

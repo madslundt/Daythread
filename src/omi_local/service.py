@@ -69,6 +69,8 @@ def public_source(row: dict) -> dict:
     result["transcription_details"] = json.loads(row.get("transcription_details", "{}"))
     topics = json.loads(row.get("topic_details") or "{}")
     result["title"] = topics.get("title")
+    if topics.get("summary_sources") == 1:
+        result["recording_summary"] = topics.get("recording_summary")
     result["sections"] = topics.get("sections", [])
     for key in (
         "received_at",
@@ -415,15 +417,16 @@ class Memory:
         retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
         query_override: str | None = None,
         exclude_message_id: str | None = None,
+        recording_id: str | None = None,
     ) -> dict:
         if (start_day is None) != (end_day is None) or (
             start_day is not None and start_day > end_day
         ):
             raise ChatScopeConflict("Provide an ordered start_day and end_day pair")
-        if sum(value is not None for value in (day, meeting_id, start_day)) > 1:
-            raise ChatScopeConflict("Choose a date, a date range, or a meeting")
+        if sum(value is not None for value in (day, meeting_id, start_day, recording_id)) > 1:
+            raise ChatScopeConflict("Choose only one chat scope")
         scope_supplied = scope_supplied or any(
-            value is not None for value in (day, meeting_id, start_day, end_day)
+            value is not None for value in (day, meeting_id, start_day, end_day, recording_id)
         )
         if session_id:
             session = self.store.ensure_session(
@@ -434,9 +437,11 @@ class Memory:
                 scope_supplied,
                 start_day.isoformat() if start_day else None,
                 end_day.isoformat() if end_day else None,
+                recording_id,
             )
             day = date.fromisoformat(session["day"]) if session["day"] else None
             meeting_id = session["meeting_id"]
+            recording_id = session["recording_id"]
             start_day = date.fromisoformat(session["start_day"]) if session["start_day"] else None
             end_day = date.fromisoformat(session["end_day"]) if session["end_day"] else None
         session = (
@@ -446,6 +451,7 @@ class Memory:
                 "id": None,
                 "day": day.isoformat() if day else None,
                 "meeting_id": meeting_id,
+                "recording_id": recording_id,
                 "start_day": start_day.isoformat() if start_day else None,
                 "end_day": end_day.isoformat() if end_day else None,
             }
@@ -459,7 +465,14 @@ class Memory:
         today = utc_now().astimezone(ZoneInfo(self.settings.timezone)).date()
         scope = (day, day) if day else ((start_day, end_day) if start_day else None)
         source_scope = None
-        if meeting_id:
+        if recording_id:
+            originals = await asyncio.to_thread(self.store.chat_recording_sources, recording_id)
+            if not originals:
+                raise ChatScopeNotFound("Recording transcript unavailable")
+            start = datetime.fromisoformat(originals[0]["started_at"])
+            end = datetime.fromisoformat(max(row["ended_at"] for row in originals))
+            source_scope = [row["id"] for row in originals]
+        elif meeting_id:
             meeting = next(
                 (item for item in self.timeline()["meetings"] if item["id"] == meeting_id), None
             )
@@ -513,7 +526,8 @@ class Memory:
                 **({"source_ids": source_scope} if source_scope is not None else {}),
             )
         details["contextual_query"] = search_question != question
-        if not query and not start and not end and history and not archive_recall(question):
+        if (not query and source_scope is None and not start and not end
+                and history and not archive_recall(question)):
             previous = next(
                 (message for message in reversed(history) if message["role"] == "assistant"), None
             )
@@ -526,7 +540,7 @@ class Memory:
             ][:limit]
             rows = previous_rows or rows
         sources = {row["id"]: public_source(row) for row in rows}
-        if not meeting_id:
+        if not meeting_id and not recording_id:
             for source in self.diary_chat_sources(
                 query if day is None else "",
                 start,
@@ -592,6 +606,7 @@ class Memory:
             "session_id": session["id"],
             "day": session["day"],
             "meeting_id": session["meeting_id"],
+            "recording_id": session["recording_id"],
             "start_day": session["start_day"],
             "end_day": session["end_day"],
             "scope": {"start": stamp(start), "end": stamp(end)} if start and end else None,
@@ -609,6 +624,7 @@ class Memory:
         start_day: date | None = None,
         end_day: date | None = None,
         retrieval_mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
+        recording_id: str | None = None,
     ) -> dict:
         result = await self.retrieve(
             question,
@@ -620,6 +636,7 @@ class Memory:
             start_day,
             end_day,
             retrieval_mode,
+            recording_id=recording_id,
         )
         result.pop("_history")
         return result
@@ -636,6 +653,7 @@ class Memory:
         end_day: date | None = None,
         on_event: Callable[[dict], Awaitable[None]] | None = None,
         request_id: str | None = None,
+        recording_id: str | None = None,
     ) -> dict:
         self.settings.require_inference("llm")
         if session_id:
@@ -655,6 +673,7 @@ class Memory:
             start_day,
             end_day,
             exclude_message_id=user_message_id(request_id) if request_id else None,
+            recording_id=recording_id,
         )
         scope = result["scope"]
         start = datetime.fromisoformat(scope["start"]) if scope else None
@@ -694,6 +713,7 @@ class Memory:
                         end_day,
                         query_override=query,
                         exclude_message_id=user_message_id(request_id) if request_id else None,
+                        recording_id=recording_id,
                     )
                     result["retrieval_details"]["query_expanded"] = True
                     result["retrieval_details"]["notice"] += " Used alternate search wording."
@@ -712,6 +732,7 @@ class Memory:
                 result["meeting_id"],
                 start_day=result["start_day"],
                 end_day=result["end_day"],
+                recording_id=result["recording_id"],
             )
             result["session_id"] = session["id"]
         context_state = {}

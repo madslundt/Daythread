@@ -8,6 +8,7 @@ import { SourceList } from "./SourceList";
 import type { Source } from "./types";
 import { audioUrl, recordingAudioUrl } from "./api";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
+import { useSourceTurns, useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
 
 // Topic passages stay separate from the optional complete recording.
 export function RecapEvidence({ source, point, topic = "", timezone, onCorrect, sections: selectedSections, search = false }: {
@@ -21,6 +22,11 @@ export function RecapEvidence({ source, point, topic = "", timezone, onCorrect, 
   const sourceAudioUrl = isRecordingVariant
     ? recordingAudioUrl(source.recording_id || source.id) : audioUrl(source.id);
   const sections = selectedSections ?? recapSourceSections(point, source, topic);
+  const turns = useSourceTurns(source, !isRecordingVariant && !!sections.length);
+  const filters = useSpeakerFilters();
+  const canPlay = source.audio_available !== false && source.audio_availability !== "missing";
+  const reading = useSpeakerReading(turns, `${source.id}:${source.transcript_version ?? ""}`, filters,
+    canPlay, canPlay && !isRecordingVariant);
   return <article className="recap-evidence">
     <div className="recap-evidence-heading">
       <span className="caption">{timeLabel(source.started_at, timezone)}</span>
@@ -31,13 +37,13 @@ export function RecapEvidence({ source, point, topic = "", timezone, onCorrect, 
     {sections.length ? sections.map((section) => <blockquote key={section.start_offset}>
       {sections.length > 1 ? <p className="caption">{section.title}</p> : null}
       {(search || section.start_seconds !== undefined) && source.audio_available !== false && source.audio_availability !== "missing"
-        ? <RecordingAudioPlayer label={section.title}
+        ? <RecordingAudioPlayer label={section.title} skipIntervals={reading.intervals}
           src={section.start_seconds === undefined ? sourceAudioUrl : `${sourceAudioUrl}#t=${section.start_seconds},${section.end_seconds}`} /> : null}
       {search && section.start_seconds === undefined && source.audio_available !== false && source.audio_availability !== "missing"
         ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
       {search && (source.audio_available === false || source.audio_availability === "missing")
         ? <p className="caption">{t("Original audio is unavailable.")}</p> : null}
-      <TranscriptPassage source={source} section={section} />
+      <TranscriptPassage source={source} section={section} reading={reading} fullTurns={turns} />
     </blockquote>) : null}
     <details className="recap-full-recording" onToggle={(event) => {
       if (event.target === event.currentTarget) setFullRecording(event.currentTarget.open);

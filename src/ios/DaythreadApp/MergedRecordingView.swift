@@ -81,7 +81,8 @@ struct MergedRecordingContentView: View {
     var onRetry: () -> Void
     @Environment(AppModel.self) private var model
     @State private var playback = RecordingPlayback()
-    @State private var selectedTopic = ""
+    @State private var speakerFilters = RecordingSpeakerFilters()
+    @State private var selectedTopic: Int?
     @State private var refresh = UUID()
     @State private var selectionBusy = false
     @State private var selectionError: String?
@@ -90,7 +91,6 @@ struct MergedRecordingContentView: View {
     @State private var originalsOpen = false
 
     private var topics: [JSONValue] { recording["sections"].array }
-    private var topicIndex: Int { topics.firstIndex { $0["chapter_id"].text == selectedTopic } ?? 0 }
     private var transcriptSelection: RecordingTranscriptSelection? {
         guard let data = try? JSONEncoder().encode(recording["transcript_selection"]) else { return nil }
         return try? JSONDecoder().decode(RecordingTranscriptSelection.self, from: data)
@@ -105,10 +105,16 @@ struct MergedRecordingContentView: View {
         return evidence.exactUtterances(for: text)
     }
 
-    private func selectTopic(_ index: Int) {
-        guard topics.indices.contains(index) else { return }
-        selectedTopic = topics[index]["chapter_id"].text
-        if case .number(let seconds) = topics[index]["start_seconds"] { playback.seek(to: seconds) }
+    private var originalReading: RecordingSpeakerReading {
+        speakerReading(recording["transcript_turns"].array, scope: "original:" + recording["transcript_version"].text)
+    }
+    private var selectedScope: String { "selected:" + (transcriptSelection?.resultVersion ?? "") }
+    private var selectedReading: RecordingSpeakerReading { speakerReading(selectedTurns, scope: selectedScope) }
+
+    private func speakerReading(_ turns: [JSONValue], scope: String) -> RecordingSpeakerReading {
+        RecordingSpeakerReading(turns: turns, scope: recording["id"].text + ":" + scope,
+            filters: speakerFilters, canPlay: recording["audio_available"] == .bool(true),
+            canSkip: recording["mixed_audio"] != .bool(true) && recording["audio_availability"].text != "partial")
     }
 
     private var playbackIdentity: String {
@@ -198,11 +204,12 @@ struct MergedRecordingContentView: View {
                 if let selectionError { ErrorNote(message: selectionError) }
                 DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                     if transcriptOpen {
-                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek)
+                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek, speakerReading: selectedReading)
                         if case .string(let original) = recording["text"] {
                             DisclosureGroup(L10n.text("Original part transcripts"), isExpanded: $originalsOpen) {
                                 if originalsOpen {
-                                    RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array, onSeek: seek)
+                                    RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array,
+                                        onSeek: seek, speakerReading: originalReading)
                                 }
                             }
                         }
@@ -229,7 +236,8 @@ struct MergedRecordingContentView: View {
                 if case .string(let text) = recording["text"] {
                     DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                         if transcriptOpen {
-                            RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array, onSeek: seek)
+                            RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array,
+                                onSeek: seek, speakerReading: originalReading)
                         }
                     }
                 } else {
@@ -257,12 +265,8 @@ struct MergedRecordingContentView: View {
                 durationHint: durationHint,
                 model: model, audioPath: audioPath, audioQuery: audioQuery)
         }
-        .onChange(of: playback.position) { _, seconds in
-            guard topics.allSatisfy({ if case .number = $0["start_seconds"] { true } else { false } }) else { return }
-            if let topic = topics.last(where: { if case .number(let start) = $0["start_seconds"] { start <= seconds } else { false } }) {
-                selectedTopic = topic["chapter_id"].text
-            }
-        }
+        .onChange(of: selectedTranscript != nil && speakerFilters.scope == recording["id"].text + ":" + selectedScope
+            ? selectedReading.intervals : originalReading.intervals, initial: true) { _, intervals in playback.setSkipIntervals(intervals) }
         .onDisappear { playback.close(); selectionOperation?.cancel() }
     }
 
@@ -271,15 +275,32 @@ struct MergedRecordingContentView: View {
             Text(selectedTranscript == nil ? L10n.text("Topics") : L10n.text("Chapters in the original transcript"))
                 .font(.headline).accessibilityAddTraits(.isHeader)
             ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
-                VStack(alignment: .leading, spacing: 5) {
-                    if seek != nil, case .number = topic["start_seconds"] {
-                        Button { selectTopic(index) } label: {
-                            Label(topic["title"].text, systemImage: index == topicIndex ? "play.circle.fill" : "play.circle")
-                        }.buttonStyle(.borderless)
-                    } else { Text(topic["title"].text).font(.subheadline.weight(.semibold)) }
-                    if !topic["summary"].text.isEmpty { Text(topic["summary"].text).textSelection(.enabled) }
+                DisclosureGroup(topic["title"].text, isExpanded: Binding(get: { selectedTopic == index },
+                    set: { selectedTopic = $0 ? index : nil })) {
+                    if selectedTopic == index {
+                        TopicReadingView {
+                            TopicSummaryText(text: topic["summary"].text)
+                        } transcript: {
+                            topicTranscript(topic)
+                        }
+                        if let seek, case .number(let seconds) = topic["start_seconds"] {
+                            Button { seek(seconds) } label: { Label(L10n.text("Listen from this topic"), systemImage: "play.fill") }
+                                .buttonStyle(.borderless)
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func topicTranscript(_ topic: JSONValue) -> some View {
+        let text = recording["text"].text
+        let scalars = text.unicodeScalars
+        let start = topic["start_offset"].integer, end = topic["end_offset"].integer
+        if start >= 0, end > start, end <= scalars.count {
+            RecordingTranscriptTurns(text: String(String.UnicodeScalarView(scalars.dropFirst(start).prefix(end - start))),
+                turns: RecordingTranscriptTurns.passageTurns(text: text, turns: recording["transcript_turns"].array,
+                    start: start, end: end), onSeek: seek, speakerReading: originalReading)
         }
     }
 
@@ -288,7 +309,9 @@ struct MergedRecordingContentView: View {
             .object(["text": .string(turn.text), "attribution": .string(turn.attribution),
                      "speaker_name": turn.speakerName.map(JSONValue.string) ?? .null,
                      "speaker_label": turn.speakerLabel.map(JSONValue.string) ?? .null,
-                     "start": turn.start.map(JSONValue.number) ?? .null])
+                     "speaker_id": turn.speakerID.map(JSONValue.string) ?? .null,
+                     "start_offset": .number(Double(turn.startOffset)), "end_offset": .number(Double(turn.endOffset)),
+                     "start": turn.start.map(JSONValue.number) ?? .null, "end": turn.end.map(JSONValue.number) ?? .null])
         }
     }
 }

@@ -3303,5 +3303,14 @@
   "Generate day summary": "Tageszusammenfassung erstellen",
   "Quick rewind uses the whole day.": "Der Schnellrücklauf umfasst den ganzen Tag.",
   "{value0} entry": "{value0} Eintrag",
-  "{value0} entries": "{value0} Einträge"
+  "{value0} entries": "{value0} Einträge",
+  "Topic view": "Themenansicht",
+  "Topic summary": "Themenzusammenfassung",
+  "Topic transcript": "Transkript zum Thema",
+  "No topic summary yet": "Noch keine Zusammenfassung zum Thema",
+  "Listen from this topic": "Ab diesem Thema anhören",
+  "Filter speakers": "Sprecher filtern",
+  "Unassigned speech": "Nicht zugeordnete Sprache",
+  "Some hidden speech will still play if its timing is unclear or it overlaps other audio.": "Ausgeblendete Sprache kann weiterhin abgespielt werden, wenn die Zeitangaben unklar sind oder sich die Sprache mit anderem Ton überschneidet.",
+  "No speech from the selected speakers in this passage.": "In diesem Abschnitt sprechen die ausgewählten Personen nicht."
 }

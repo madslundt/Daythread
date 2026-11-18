@@ -83,6 +83,10 @@ def test_combines_complete_transcript_and_topics_with_global_offsets(recording):
     assert result["text"] == "\n".join(texts)
     assert [turn["text"] for turn in result["transcript_turns"]] == texts
     assert [turn["start"] for turn in result["transcript_turns"]] == [0.25, 2.25, 4.25]
+    assert [turn["end"] for turn in result["transcript_turns"]] == [1.5, 3.5, 5.5]
+    assert [(turn["part_start"], turn["part_end"]) for turn in result["transcript_turns"]] == [
+        (0, 2), (2, 4), (4, 6),
+    ]
     assert result["state"] == "done" and result["audio_available"]
     assert [section["title"] for section in result["sections"]] == ["Launch", "Garden"]
     assert result["sections"][1]["start_offset"] == result["text"].index("Garden")

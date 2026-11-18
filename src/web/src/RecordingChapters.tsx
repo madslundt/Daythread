@@ -9,7 +9,8 @@ import { useResource } from "./useResource";
 import type { Source } from "./types";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { groupTopicRuns } from "./topicOccurrences";
-import { RecordingTranscript } from "./RecordingTranscript";
+import { TopicReading } from "./TopicReading";
+import { useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
 
 export type RecordingChapter = {
   id: string; title: string; started_at: string;
@@ -94,8 +95,11 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect, audioRef, initia
 }) {
   const resource = useResource<Source>(`/v1/transcripts/${encodeURIComponent(part.source_id)}`);
   const [toolsOpen, setToolsOpen] = useState(false);
-  if (resource.error) return <ErrorState message={resource.error} retry={resource.refresh} />;
   const source = resource.data;
+  const canPlay = !!source && source.audio_available !== false && source.audio_availability !== "missing";
+  const filters = useSpeakerFilters();
+  const reading = useSpeakerReading(source?.transcript_turns, part.source_id, filters, canPlay);
+  if (resource.error) return <ErrorState message={resource.error} retry={resource.refresh} />;
   if (!source) return <Loading>{t("Loading recordings…")}</Loading>;
   const section = source.sections?.find((section) => (section.chapter_id ?? `${source.id}:${section.start_offset}`) === (part.chapter_id ?? chapterID) &&
     section.start_offset === part.start_offset && section.end_offset === part.end_offset);
@@ -105,12 +109,10 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect, audioRef, initia
     ? `#t=${section.start_seconds},${section.end_seconds}` : "");
   return <article className="chapter-passage">
     <p className="caption">{timeLabel(source.started_at, timezone)}</p>
-    {source.audio_available !== false && source.audio_availability !== "missing"
-      ? <RecordingAudioPlayer src={audio} label={section.title} audioRef={audioRef} initialSpeed={initialSpeed} /> : null}
-    {section.summary ? <p className="transcript-text">{section.summary}</p> : null}
-    <RecordingTranscript label={t("Transcript")}>
-      <TranscriptPassage source={source} section={section} />
-    </RecordingTranscript>
+    {canPlay ? <RecordingAudioPlayer src={audio} label={section.title} audioRef={audioRef} initialSpeed={initialSpeed}
+      skipIntervals={reading.intervals} /> : null}
+    <TopicReading summary={section.summary?.trim() ? <p className="transcript-text">{section.summary}</p> : null}
+      transcript={(visible) => visible ? <TranscriptPassage source={source} section={section} reading={reading} /> : null} />
     <details onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);
     }}>

@@ -233,7 +233,7 @@ private struct RecapTopicsContent: View {
             }
             ForEach(todayView && !showingAllTopics && !searching ? Array(visibleOriginals.prefix(topicOverviewLimit)) : visibleOriginals) { topic in
                 RecapOriginalTopicRow(topic: topic, day: day, onCorrect: onCorrect, displayTitle: originalTitle(topic), filters: filters,
-                    scopeFingerprint: recap["scope_fingerprint"].text, showSummary: todayView,
+                    scopeFingerprint: recap["scope_fingerprint"].text,
                     expanded: Binding(get: { expandedID == "original:" + topic.id }, set: { select($0 ? "original:" + topic.id : nil, title: topic.title) }),
                     onFocus: acceptFocus)
                 Divider()

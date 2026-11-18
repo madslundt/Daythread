@@ -32,7 +32,8 @@ The UI shows empty, queued, failure, and model-unavailable states from the actua
 
 Today starts with the saved **Day summary**, or the introduction from the detailed recap if no
 separate summary has been generated. **Read the detailed recap** opens the long-form view;
-**Topics** lets you search and open individual subjects, and **Day entries** jumps to the
+**Topics** lets you search and open individual subjects. Each topic opens on **Topic summary**;
+**Topic transcript** switches to the matching original passages. **Day entries** jumps to the
 chronological list of conversations, voice notes, and transcript imports. Those entries and
 their topics remain available before a day summary is ready. **Ask Daythread** opens Chat for
 the selected day, its Monday–Sunday week, or an editable date range beginning on the selected
@@ -62,7 +63,13 @@ playback interruptions.
 
 After transcription, the backend generates a descriptive recording title and topic sections using
 the local summary model. Open a recording to see the topic summaries first, including stated
-decisions, key details, and follow-ups. Open **Full transcript** to read the original text.
+decisions, key details, and follow-ups. Open a topic and choose **Topic transcript** to read
+just that passage, or open **Full transcript** to read the entire original text. Use
+**Listen from this topic** to seek without changing what you are reading.
+
+In a transcript, use **Filter speakers** to hide their turns and skip audio where
+the speaker's timing is known. Unassigned or overlapping audio may still play.
+Only speaker names are colored; identical names share a color and a filter.
 When speaker evidence is available, each turn has a label. **Show timestamps** reveals the
 available offsets, which jump to the matching audio when the recording can be played.
 Recording playback matches the iPhone controls: an audio-derived, seekable waveform,

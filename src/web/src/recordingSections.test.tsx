@@ -18,13 +18,15 @@ describe("recording topic sections", () => {
       { title: "Tesla Roadster", start_offset: 24, end_offset: 41, summary: "No test drive date was agreed." },
     ],
   };
-  it("renders every topic summary without opening its transcript", () => {
-    const html = renderToStaticMarkup(<RecordingSections source={source} compact />);
-    expect(html).toContain("The group preferred dark chocolate.");
+  it("renders the selected topic summary without opening its transcript", () => {
+    const html = renderToStaticMarkup(<RecordingSections source={source} compact selectedOffset={10} onSelectOffset={() => {}} />);
+    expect(html).not.toContain("The group preferred dark chocolate.");
     expect(html).toContain("The recorder arrives on Friday.");
-    expect(html).toContain("No test drive date was agreed.");
+    expect(html).not.toContain("No test drive date was agreed.");
     expect(html).not.toContain("☕️ Cocoa.");
     expect(html).toContain("Omi recorder");
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="true">Topic summary/);
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
   });
   it("puts the topics between playback and the collapsed full transcript", () => {
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[source]} />);
@@ -44,9 +46,10 @@ describe("recording topic sections", () => {
       expect(html).not.toContain('class="transcript-translation"');
     }
   });
-  it("also leads with summaries outside the timeline", () => {
+  it("also offers topics separately from the full transcript outside the timeline", () => {
     const html = renderToStaticMarkup(<SourceList expanded timezone="UTC" sources={[source]} />);
-    expect(html).toContain("The recorder arrives on Friday.");
+    expect(html).toContain("Omi recorder");
+    expect(html).not.toContain("The recorder arrives on Friday.");
     expect(html).toContain("<summary>Full transcript</summary>");
   });
   it("shows repeated uploads once with access to each original time and transcript", () => {

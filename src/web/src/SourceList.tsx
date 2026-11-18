@@ -14,7 +14,7 @@ import { TranscriptionReview } from "./TranscriptionReview";
 import { TranscriptTranslation } from "./TranscriptTranslation";
 import { Speakers } from "./Speakers";
 import { RecordingSections } from "./RecordingSections";
-import { RecordingTranscript, SourceTranscriptTurns, TranscriptTurns } from "./RecordingTranscript";
+import { RecordingTranscript, SourceTranscriptTurns, TranscriptTurns, useSourceTurns, useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
 import { Icon } from "./Icon";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { useRecordingSeek } from "./useRecordingSeek";
@@ -105,11 +105,15 @@ function SourceRow({
   const [showHistory, setShowHistory] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const topicPlayback = useRecordingSeek();
-  const [selectedTopicOffset, setSelectedTopicOffset] = useState<number>();
+  const [selectedTopicOffset, setSelectedTopicOffset] = useState<number | null>(null);
   useEffect(() => {
     setSaved(undefined);
   }, [source.id, source.source_version]);
   const text = saved ?? source.text;
+  const canPlay = source.audio_available !== false && source.audio_availability !== "missing";
+  const turns = useSourceTurns(currentSource, open && !deleted && !!text && source.state === "done");
+  const speakerFilters = useSpeakerFilters();
+  const reading = useSpeakerReading(turns, `${source.id}:${currentSource.transcript_version ?? ""}`, speakerFilters, canPlay);
   useEffect(() => { setCurrentSource(source); setSaved(undefined); }, [source]);
   useEffect(() => {
     const closeDecision = () => setCreatingDecision(false);
@@ -200,6 +204,7 @@ function SourceRow({
               durationHint={(Date.parse(source.ended_at) - Date.parse(source.started_at)) / 1000}
               label={t("Play recording from {value0}", { value0: timeLabel(source.started_at, timezone) })}
               audioRef={topicPlayback.audioRef} onReady={topicPlayback.onReady}
+              skipIntervals={reading.intervals}
               bookmarks={compact ? groupTopicRuns(currentSource.sections || [], (section) => section.title,
                 (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.flatMap(([section]) => section.start_seconds === undefined ? [] : [{
                 label: section.title,
@@ -316,7 +321,7 @@ function SourceRow({
           <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
         {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
-        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo}
+        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo} reading={reading} fullTurns={turns}
           selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
         <div className={compact ? "recording-transcript" : undefined}>
         {editing ? (
@@ -351,9 +356,9 @@ function SourceRow({
           text ? <RecordingTranscript>
             <TranscriptTranslation
               key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
-              sourceId={source.id} original={text}
+              sourceId={source.id} original={text} forceOriginal={!!reading.excluded.size}
               renderText={(value, translated) => translated ? <TranscriptTurns text={value} /> : <SourceTranscriptTurns
-                text={value} source={currentSource}
+                text={value} source={currentSource} reading={reading} fullTurns={turns}
                 onSeek={source.audio_available !== false && source.audio_availability !== "missing" ? topicPlayback.seekTo : undefined} />}
             />
             {source.state === "done" ? <button className="text-button" onClick={() => {

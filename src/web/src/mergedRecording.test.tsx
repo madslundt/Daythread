@@ -46,8 +46,8 @@ describe("combined uploaded recording", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={recording} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
     expect(html).toContain("01:06:00");
-    expect(html).toContain("Release stays on Friday.");
-    expect(html).toContain("Water the roses tomorrow.");
+    expect(html).not.toContain("Release stays on Friday.");
+    expect(html).not.toContain("Water the roses tomorrow.");
     expect(html).not.toContain(recording.text!);
     expect(html).toContain("/v1/recordings/uploaded-file/audio");
     expect(html).toContain("Download archived audio");
@@ -56,7 +56,7 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("Full recording &amp; tools");
     expect(html).not.toContain("Next recordings");
     expect(html).toContain('class="recording-topic-bookmarks"');
-    expect(html).toContain('aria-current="true"');
+    expect(html.match(/class="recording-topic-toggle" type="button" aria-expanded="false"/g)).toHaveLength(2);
     expect(html).toContain('26:40');
     expect(html).not.toContain('<select');
     expect(html.indexOf('<audio')).toBeLessThan(html.indexOf('class="recording-topic-bookmarks"'));
@@ -140,7 +140,7 @@ describe("combined uploaded recording", () => {
       { text: "Hi.", start_offset: 7, end_offset: 10, speaker_name: "Rae", start: 2 },
       { text: "Thanks.", start_offset: 11, end_offset: 18, speaker_number: 1, start: 4 },
     ]} />);
-    expect(html.match(/Speaker 1/g)).toHaveLength(2);
+    expect(html.match(/>Speaker A<\/span>/g)).toHaveLength(3); // Two turns and the filter label.
     expect(html).toContain("Rae");
     expect(html).toContain("Show timestamps");
     expect(html).not.toContain("00:02");
@@ -162,7 +162,7 @@ describe("combined uploaded recording", () => {
     const runs = compactSpeakerEvidence(pieces);
     expect(runs.map((run) => run.text).join("")).toBe(canonical);
     expect(runs.map((run) => run.attribution)).toEqual(["attributed", "unknown", "attributed"]);
-    expect(runs[0]).toMatchObject({ text: "Hello there.", start: 2.5, start_offset: 0, end_offset: 12 });
+    expect(runs[0]).toMatchObject({ text: "Hello there.", start: 2.5, end: 3.2, start_offset: 0, end_offset: 12 });
     expect(runs[1]).toMatchObject({ text: " Missing ", attribution: "unknown",
       start_offset: 12, end_offset: 21 });
     expect(runs[2]).toMatchObject({ text: "words.", start: 4, start_offset: 21, end_offset: 27 });

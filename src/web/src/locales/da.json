@@ -3303,5 +3303,14 @@
   "Generate day summary": "Lav dagens resumé",
   "Quick rewind uses the whole day.": "Hurtig tilbagespoling bruger hele dagen.",
   "{value0} entry": "{value0} post",
-  "{value0} entries": "{value0} poster"
+  "{value0} entries": "{value0} poster",
+  "Topic view": "Emnevisning",
+  "Topic summary": "Emneresumé",
+  "Topic transcript": "Udskrift for emnet",
+  "No topic summary yet": "Intet resumé for emnet endnu",
+  "Listen from this topic": "Lyt fra dette emne",
+  "Filter speakers": "Filtrér talere",
+  "Unassigned speech": "Tale uden tildelt taler",
+  "Some hidden speech will still play if its timing is unclear or it overlaps other audio.": "Noget skjult tale afspilles stadig, hvis tidsangivelserne er usikre, eller talen overlapper anden lyd.",
+  "No speech from the selected speakers in this passage.": "Ingen tale fra de valgte talere i dette afsnit."
 }

@@ -3160,3 +3160,11 @@
 "Read day summary" = "Lire le résumé de la journée";
 "No day summary yet" = "Pas encore de résumé de la journée";
 "Generate day summary" = "Générer le résumé de la journée";
+"Topic view" = "Vue du sujet";
+"Topic summary" = "Résumé du sujet";
+"Topic transcript" = "Transcription du sujet";
+"No topic summary yet" = "Pas encore de résumé pour ce sujet";
+"Filter speakers" = "Filtrer les intervenants";
+"Unassigned speech" = "Paroles non attribuées";
+"Some hidden speech will still play if its timing is unclear or it overlaps other audio." = "Certaines paroles masquées restent audibles si leur minutage est incertain ou si elles se superposent à un autre son.";
+"No speech from the selected speakers in this passage." = "Aucune intervention des personnes sélectionnées dans ce passage.";

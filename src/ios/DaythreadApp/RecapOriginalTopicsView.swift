@@ -20,7 +20,6 @@ struct RecapOriginalTopicRow: View {
     var displayTitle: String? = nil
     var filters = DayFilterScope()
     var scopeFingerprint = ""
-    var showSummary = false
     @Binding var expanded: Bool
     let onFocus: (RecapTopicFocus) -> Void
     @Environment(AppModel.self) private var model
@@ -31,7 +30,6 @@ struct RecapOriginalTopicRow: View {
     @State private var error: String?
     @State private var refresh = UUID()
     @State private var selected: OriginalTopicRecording?
-    @State private var showingOriginals = false
     @State private var validatedKey = ""
     private var key: String {
         model.archiveIdentity + model.archiveRevision + filters.identity + scopeFingerprint + topic.id + topic.parts.map {
@@ -41,54 +39,59 @@ struct RecapOriginalTopicRow: View {
     private var verifiedSources: [JSONValue] { validatedKey == key ? sources : [] }
     private var summary: String {
         var seen = Set<String>()
-        return topic.parts.map(\.summary).filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n\n")
+        return topic.parts.map { $0.summary.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n\n")
     }
 
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
             RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title,
-                preview: showSummary && !summary.isEmpty ? summary : L10n.text("Original passages"), expanded: $expanded)
+                preview: summary.isEmpty ? L10n.text("No topic summary yet") : summary, expanded: $expanded)
             if expanded {
-                if showSummary && !summary.isEmpty { Text(summary).textSelection(.enabled) }
-                if loading { ProgressView(L10n.text("Checking original evidence…")) }
-                ErrorNote(message: error)
-                if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
-                if !verifiedSources.isEmpty {
-                    DisclosureGroup(showingOriginals ? L10n.text("Hide original passages") : L10n.text("Show original passages"), isExpanded: $showingOriginals) {
-                        ForEach(topic.parts) { part in
-                            if let source = verifiedSources.first(where: { $0["id"].text == part.sourceID }) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text(time(source)).font(.caption).foregroundStyle(.secondary)
-                                    SourceTranscriptView(source: source, editing: false, startOffset: part.start, endOffset: part.end)
-                                    if source["audio_available"] != .bool(false),
-                                       let section = source["sections"].array.first(where: { $0["start_offset"].integer == part.start && $0["end_offset"].integer == part.end }),
-                                       case .number(let seconds) = section["start_seconds"], seconds.isFinite, seconds >= 0 {
-                                        Button { selected = OriginalTopicRecording(source: source, startAt: seconds) } label: {
-                                            Label(L10n.text("Listen from this topic"), systemImage: "gobackward")
-                                        }
+                TopicReadingView {
+                    if filters.isFiltered && validatedKey != key { evidenceStatus }
+                    else { TopicSummaryText(text: summary) }
+                } transcript: {
+                    evidenceStatus
+                    ForEach(topic.parts) { part in
+                        if let source = verifiedSources.first(where: { $0["id"].text == part.sourceID }) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(time(source)).font(.caption).foregroundStyle(.secondary)
+                                SourceTranscriptView(source: source, editing: false, startOffset: part.start, endOffset: part.end)
+                                if source["audio_available"] != .bool(false),
+                                   let section = source["sections"].array.first(where: { $0["start_offset"].integer == part.start && $0["end_offset"].integer == part.end }),
+                                   case .number(let seconds) = section["start_seconds"], seconds.isFinite, seconds >= 0 {
+                                    Button { selected = OriginalTopicRecording(source: source, startAt: seconds) } label: {
+                                        Label(L10n.text("Listen from this topic"), systemImage: "gobackward")
                                     }
-                                    Button { selected = OriginalTopicRecording(source: source, startAt: nil) } label: {
-                                        Label(L10n.text("Full recording & tools"), systemImage: "waveform")
-                                    }
-                                }.padding(.vertical, 8)
-                            }
+                                }
+                                Button { selected = OriginalTopicRecording(source: source, startAt: nil) } label: {
+                                    Label(L10n.text("Full recording & tools"), systemImage: "waveform")
+                                }
+                            }.padding(.vertical, 8)
                         }
-                    }.accessibilityIdentifier("recap.originalPassages.original:" + topic.id)
-                    if !filters.isFiltered {
-                        NavigationLink {
-                            ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + topic.title)
-                        } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
-                        Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                if !filters.isFiltered {
+                    NavigationLink {
+                        ChatView(initialScope: .day(day), initialQuestion: L10n.text("Recap this topic from this day: ") + topic.title)
+                    } label: { Label(L10n.text("Ask about this topic"), systemImage: "bubble.left.and.bubble.right") }
+                    Text(L10n.text("Chat searches this day, guided by your topic question.")).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
         .task(id: key + String(expanded)) { if expanded { await load() } }
-        .onChange(of: expanded) { _, value in if !value { showingOriginals = false; sources = []; validatedKey = "" } }
+        .onChange(of: expanded) { _, value in if !value { sources = []; validatedKey = ""; error = nil } }
         .sheet(item: $selected) { recording in
             SourceDetail(source: recording.source, onCorrect: { sources = []; refresh = UUID(); onCorrect?() }, startAt: recording.startAt)
         }
+    }
+
+    @ViewBuilder private var evidenceStatus: some View {
+        if loading { ProgressView(L10n.text("Checking original evidence…")) }
+        ErrorNote(message: error)
+        if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
     }
 
     private func load() async {

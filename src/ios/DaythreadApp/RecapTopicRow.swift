@@ -49,7 +49,6 @@ struct RecapTopicRow: View {
     @State private var loading = false
     @State private var error: String?
     @State private var refresh = UUID()
-    @State private var showingOriginals = false
     @State private var validatedKey = ""
     private var title: String { (topic.original.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "") }
     private var displayTitle: String { (display.title ?? L10n.text("Day recap")).replacingOccurrences(of: "**", with: "") }
@@ -65,8 +64,10 @@ struct RecapTopicRow: View {
         VStack(alignment: .leading, spacing: 12) {
             RecapTopicHeader(id: topic.id, title: displayTitle, preview: RecapPresentation.topicSummary(display), expanded: $expanded)
             if expanded {
-                if !filters.isFiltered || validatedKey == key {
-                    if display.hasSubtopics {
+                TopicReadingView {
+                    if filters.isFiltered && validatedKey != key {
+                        evidenceStatus
+                    } else if display.hasSubtopics {
                         ForEach(Array(display.contentSections.enumerated()), id: \.offset) { index, section in
                             if let title = section.title {
                                 RecapSubtopicDisclosure(id: topic.id + ":\(index)",
@@ -78,19 +79,17 @@ struct RecapTopicRow: View {
                     } else {
                         Text(.init(RecapPresentation.topicSummary(display))).textSelection(.enabled)
                     }
-                }
-                if loading { ProgressView(L10n.text("Checking original evidence…")) }
-                ErrorNote(message: error)
-                if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
-                if related.ids.isEmpty { Text(L10n.text("No linked or matching recordings for this topic.")).font(.caption).foregroundStyle(.secondary) }
-                if !verifiedSources.isEmpty {
-                    DisclosureGroup(showingOriginals ? L10n.text("Hide original passages") : L10n.text("Show original passages"), isExpanded: $showingOriginals) {
+                } transcript: {
+                    evidenceStatus
+                    if related.ids.isEmpty {
+                        Text(L10n.text("No linked or matching recordings for this topic.")).font(.caption).foregroundStyle(.secondary)
+                    } else if !verifiedSources.isEmpty {
                         Text(related.basis == .citation ? L10n.text("Cited recordings · check the original context.") : L10n.text("Possible matching recordings · relevance is inferred from shared words."))
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(verifiedSources, id: \.["id"].text) { source in
                             RecapEvidenceView(source: source, point: point, topic: title, onCorrect: { currentSources = []; refresh = UUID(); onCorrect?() })
                         }
-                    }.accessibilityIdentifier("recap.originalPassages." + topic.id)
+                    }
                 }
                 if !filters.isFiltered {
                     NavigationLink {
@@ -101,7 +100,13 @@ struct RecapTopicRow: View {
             }
         }
         .task(id: key + String(expanded) + String(describing: phase)) { if expanded && phase == .active { await load() } }
-        .onChange(of: expanded) { _, value in if !value { showingOriginals = false; currentSources = []; validatedKey = "" } }
+        .onChange(of: expanded) { _, value in if !value { currentSources = []; validatedKey = ""; error = nil } }
+    }
+
+    @ViewBuilder private var evidenceStatus: some View {
+        if loading { ProgressView(L10n.text("Checking original evidence…")) }
+        ErrorNote(message: error)
+        if error != nil { Button(L10n.text("Retry original evidence")) { refresh = UUID() } }
     }
 
     private func load() async {
@@ -308,4 +313,3 @@ private struct RecordingTranscriptCitationEvidence: View {
         }
     }
 }
-

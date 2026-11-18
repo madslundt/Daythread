@@ -153,6 +153,7 @@ private struct RecordingTopicView: View {
     private func select(_ value: Int) {
         resumePlayback = playback.playing
         selected = value
+        playback.setSkipIntervals([])
     }
 
     var body: some View {
@@ -188,7 +189,7 @@ private struct RecordingChapterPassage: View {
     @State private var error: String?
     @State private var refresh = UUID()
     @State private var loading = true
-    @State private var transcriptOpen = false
+    @State private var speakerFilters = RecordingSpeakerFilters()
     private var identity: String {
         model.archiveIdentity + model.archiveRevision + part["source_id"].text
         + part["transcript_version"].text + String(part["start_offset"].integer) + refresh.uuidString
@@ -206,18 +207,21 @@ private struct RecordingChapterPassage: View {
     }
 
     var body: some View {
+        let canPlay = section != nil && source["audio_available"] != .bool(false) && source["audio_availability"].text != "missing"
+        let speakerReading = RecordingSpeakerReading(turns: source["transcript_turns"].array,
+            scope: part["source_id"].text + ":" + part["transcript_version"].text, filters: speakerFilters, canPlay: canPlay)
         VStack(alignment: .leading, spacing: 12) {
             if loading { ProgressView(L10n.text("Loading recordings…")) }
             else if let section {
-                if source["audio_available"] != .bool(false) && source["audio_availability"].text != "missing" {
+                if canPlay {
                     RecordingAudioPlayer(playback: playback, retry: { refresh = UUID() })
                 }
-                if !section["summary"].text.isEmpty { Text(section["summary"].text).textSelection(.enabled) }
-                DisclosureGroup(L10n.text("Transcript"), isExpanded: $transcriptOpen) {
-                    if transcriptOpen {
-                        SourceTranscriptView(source: source, editing: false,
-                            startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer)
-                    }
+                TopicReadingView {
+                    TopicSummaryText(text: section["summary"].text)
+                } transcript: {
+                    SourceTranscriptView(source: source, editing: false,
+                        startOffset: section["start_offset"].integer, endOffset: section["end_offset"].integer,
+                        speakerReading: speakerReading)
                 }
                 Button { selected = SourceSelection(source: source) } label: {
                     Label(L10n.text("Full recording & tools"), systemImage: "waveform")
@@ -234,6 +238,7 @@ private struct RecordingChapterPassage: View {
         .sheet(item: $selected) { selection in
             SourceDetail(source: selection.source, onCorrect: { refresh = UUID(); onCorrect?() }, startAt: startAt)
         }
+        .onChange(of: speakerReading.intervals, initial: true) { _, intervals in playback.setSkipIntervals(intervals) }
         .task(id: identity) {
             let requested = identity
             loading = true; source = .null; error = nil

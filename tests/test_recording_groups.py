@@ -390,6 +390,7 @@ def test_parrot_separately_uploaded_multipart_tracks_keep_silent_parts_and_survi
     assert detail["total"] == 4
     before = detail["recording"]
     assert before["text"] == "system speech.\nmic speech." and before["duration_seconds"] == 9
+    assert before["mixed_audio"] is True
     store = client.app.state.memory.store
     store.audio_storage.delete(ids["mic"][0])
     with store.connect() as db:

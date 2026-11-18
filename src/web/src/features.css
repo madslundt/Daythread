@@ -42,10 +42,30 @@
 .recording-attributed-transcript { display: grid; gap: 12px; line-height: 1.5; }
 .recording-attributed-run { white-space: pre-wrap; border-inline-start: 2px solid var(--line); padding-inline-start: 10px; }
 .recording-speaker-label { font-weight: 600; }
+.recording-speaker-label[data-speaker-color] { color: var(--speaker-ink); }
+[data-speaker-color="0"] { --speaker-ink: #005e9c; --speaker-dark: #82caff; }
+[data-speaker-color="1"] { --speaker-ink: #a33a10; --speaker-dark: #ffa579; }
+[data-speaker-color="2"] { --speaker-ink: #087546; --speaker-dark: #6fdda4; }
+[data-speaker-color="3"] { --speaker-ink: #793795; --speaker-dark: #d5a5f7; }
+[data-speaker-color="4"] { --speaker-ink: #a12552; --speaker-dark: #ff9abb; }
+[data-speaker-color="5"] { --speaker-ink: #006d72; --speaker-dark: #6ed9e1; }
+[data-speaker-color="6"] { --speaker-ink: #805b04; --speaker-dark: #ecca69; }
+[data-speaker-color="7"] { --speaker-ink: #404ab2; --speaker-dark: #aab6ff; }
+[data-speaker-color="8"] { --speaker-ink: #9e3639; --speaker-dark: #ffa19e; }
+[data-speaker-color="9"] { --speaker-ink: #526d13; --speaker-dark: #b8d982; }
+:root[data-theme="dark"] .recording-speaker-label[data-speaker-color] { color: var(--speaker-dark); }
+.recording-speaker-filters { margin-block: 8px; }
+.recording-speaker-filters > summary { cursor: pointer; font-size: 13px; }
+.recording-speaker-filters [role="group"] { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.recording-speaker-filters label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .recording-speaker-time { margin-inline-start: 10px; font-variant-numeric: tabular-nums; }
 .recording-timestamp-option { display: inline-flex; align-items: center; gap: 6px; }
-.recording-topic-bookmarks .recording-topic-summary { margin: 0 4px 14px; line-height: 1.5; }
+.topic-reading { margin: 6px 0 14px; }
+.topic-reading-options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.topic-reading-options .button { min-height: 44px; }
+.topic-reading-options .button[aria-pressed="true"] { background: var(--hover); color: var(--accent); border-color: var(--accent); }
 .translation-tabs { display: flex; flex-wrap: wrap; gap: 20px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.translation-tabs[hidden] { display: none; }
 .translation-tabs > button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 10px 0; min-height: 44px; color: var(--secondary); font-size: 12px; }
 .translation-tabs > button[aria-selected='true'] { border-bottom-color: var(--accent); color: var(--ink); }
 .translation-tabs > button:hover { color: var(--accent); }

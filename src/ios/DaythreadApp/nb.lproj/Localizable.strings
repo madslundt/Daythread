@@ -3160,3 +3160,11 @@
 "Read day summary" = "Les dagens sammendrag";
 "No day summary yet" = "Ingen dagsoppsummering ennå";
 "Generate day summary" = "Lag dagens sammendrag";
+"Topic view" = "Emnevisning";
+"Topic summary" = "Emnesammendrag";
+"Topic transcript" = "Transkripsjon av emnet";
+"No topic summary yet" = "Ingen oppsummering av emnet ennå";
+"Filter speakers" = "Filtrer talere";
+"Unassigned speech" = "Tale uten tilordnet taler";
+"Some hidden speech will still play if its timing is unclear or it overlaps other audio." = "Noe skjult tale spilles fortsatt av hvis tidsangivelsene er uklare eller talen overlapper annen lyd.";
+"No speech from the selected speakers in this passage." = "Ingen tale fra de valgte talerne i dette avsnittet.";

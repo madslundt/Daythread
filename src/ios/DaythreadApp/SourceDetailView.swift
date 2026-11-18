@@ -13,6 +13,7 @@ struct SourceDetail: View {
     @State private var editing = false
     @State private var draft = ""
     @State private var audio = RecordingPlayback()
+    @State private var speakerFilters = RecordingSpeakerFilters()
     @State private var audioRetry = UUID()
     @Environment(\.locale) private var interfaceLocale
     private var evidence: JSONValue {
@@ -33,6 +34,8 @@ struct SourceDetail: View {
 
     var body: some View {
         let _ = interfaceLocale
+        let speakerReading = RecordingSpeakerReading(turns: evidence["transcript_turns"].array,
+            scope: source["id"].text + ":" + evidence["transcript_version"].text, filters: speakerFilters, canPlay: canLoadAudio)
         NavigationStack {
             List {
                 Section(L10n.text("Listen")) {
@@ -46,7 +49,7 @@ struct SourceDetail: View {
                     SourceTranscriptTopicsView(source: evidence, editing: editing, onPlayTopic: canLoadAudio ? { seconds in
                         audio.seek(to: seconds)
                         if !audio.playing { audio.togglePlayback() }
-                    } : nil)
+                    } : nil, speakerReading: speakerReading)
                 }
                 Section {
                     DisclosureGroup(L10n.text("Transcript correction")) {
@@ -87,6 +90,7 @@ struct SourceDetail: View {
             else { audio.close() }
         }
         .onDisappear { audio.close() }
+        .onChange(of: speakerReading.intervals, initial: true) { _, intervals in audio.setSkipIntervals(intervals) }
     }
 
     @ViewBuilder private var playback: some View {

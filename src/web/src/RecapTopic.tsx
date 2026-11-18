@@ -4,10 +4,11 @@ import { errorMessage, request } from "./api";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
 import { RecapEvidence } from "./RecapEvidence";
-import { currentRecapPassage, itemSources, originalRecapText, recapTopicText, type OriginalRecapPassage, type RecapFocus, type RecapPart } from "./recapItems";
+import { currentRecapPassage, itemSources, recapTopicText, type OriginalRecapPassage, type RecapFocus, type RecapPart } from "./recapItems";
 import type { ChatScope, Source } from "./types";
 import { ErrorState, InlineText, Loading, RichText } from "./UI";
 import { useResource } from "./useResource";
+import { TopicReading } from "./TopicReading";
 
 type Props = {
   title: string; parts: RecapPart[]; sources: Source[]; timezone: string;
@@ -22,13 +23,10 @@ type Props = {
 };
 
 export function RecapTopic({ title, parts, displayTitle = title, displayParts = parts, inline = false, entrySummary, sources, timezone, onCorrect, compact, day, onChat, expanded = false, onExplore, originalPassages, evidencePassages, onFocus }: Props) {
-  const [showEvidence, setShowEvidence] = useState(false);
-  const passageId = useId();
   const text = recapTopicText(parts);
   const plain = text.replace(/\*\*/g, "");
   const heading = title.replace(/\*\*/g, "");
   const displayText = recapTopicText(displayParts, true);
-  const originalText = displayText ? "" : originalRecapText(originalPassages, sources);
   const displayHeading = displayTitle.replace(/\*\*/g, "");
   const reportFocus = useCallback((focus?: RecapFocus) => onFocus?.(focus ? { ...focus, displayTitle: displayHeading } : undefined), [onFocus, displayHeading]);
   const related = itemSources(`**${title}**\n${parts.map((part) => part.text).join("\n")}`, sources);
@@ -36,26 +34,22 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
     <CurrentTopicEvidence key={`${source.reference_type || "source"}:${source.id}`} source={source}
       point={plain} topic={heading} timezone={timezone} onCorrect={onCorrect} />
   )) : <p className="caption">{t("No linked or matching recordings for this topic.")}</p>;
+  const summary = displayText ? displayParts.some((part) => part.kind === "heading") ? <RecapSubtopics parts={displayParts} />
+    : inline ? <div className="recap-topic-summary"><RichText text={displayText} headingLevel={4} /></div> : <RecapSummary text={displayText} />
+    : entrySummary ? <div className="recap-topic-summary"><RichText text={entrySummary} headingLevel={4} /></div> : null;
   const body = <>
-    {displayText ? displayParts.some((part) => part.kind === "heading") ? <RecapSubtopics parts={displayParts} />
-      : inline ? <div className="recap-topic-summary"><RichText text={displayText} headingLevel={4} /></div> : <RecapSummary text={displayText} /> : null}
-    {entrySummary ? <div className="recap-topic-summary"><RichText text={entrySummary} headingLevel={4} /></div>
-      : originalText ? <><p className="caption">{t("Original passages")}</p><RecapSummary text={originalText} /></> : null}
+    {onExplore ? summary : <TopicReading summary={summary ? <>{summary}
+      {displayText || entrySummary ? <CopySummary text={`${displayHeading}\n\n${(displayText || entrySummary || "").replace(/\*\*/g, "")}`} context={displayHeading} /> : null}
+    </> : null} transcript={(visible) => originalPassages || evidencePassages
+      ? <OriginalTopicEvidence title={title} passages={(originalPassages || evidencePassages)!} visible={visible}
+          timezone={timezone} onCorrect={onCorrect} onFocus={reportFocus} />
+      : visible ? evidence : null} />}
     {!onExplore ? <div className="recap-topic-actions">
       {expanded && onChat && day ? <button className="text-button" onClick={() => onChat({ kind: "day", day },
         t("Recap {value0} from this day. What happened, what was agreed, and what needs follow-up?", { value0: heading }))}>
         <Icon name="chat" size={16} />{t("Chat about this topic")}
       </button> : null}
-      {displayText ? <CopySummary text={`${displayHeading}\n\n${displayText.replace(/\*\*/g, "")}`} context={displayHeading} /> : null}
     </div> : null}
-    {onExplore ? null : <div className="recap-topic-evidence">
-      <button type="button" className="text-button" aria-expanded={showEvidence} aria-controls={passageId}
-        onClick={() => setShowEvidence((value) => !value)}>{showEvidence ? t("Hide original passages") : t("Show original passages")}</button>
-      <div id={passageId} hidden={!showEvidence}>
-        {originalPassages || evidencePassages ? <OriginalTopicEvidence title={title} passages={(originalPassages || evidencePassages)!} visible={showEvidence}
-          timezone={timezone} onCorrect={onCorrect} onFocus={reportFocus} /> : showEvidence ? evidence : null}
-      </div>
-    </div>}
   </>;
   return compact ? <details className="recap-group">
     <summary>

@@ -133,7 +133,7 @@ describe("day recap interactions", () => {
     expect(html).not.toContain("1 point");
     expect(html).not.toContain("recap-item-button");
     expect(html).toContain('aria-label="Copy summary: Cocoa"');
-    expect(html).toContain("Show original passages");
+    expect(html).toContain("Topic transcript");
     expect(html).not.toContain("Loading recordings…");
     expect(html).toContain("Milk frother and cocoa.");
   });
@@ -147,7 +147,7 @@ describe("day recap interactions", () => {
     expect(new Set(controls.map((match) => match[1])).size).toBe(2);
     expect(html).not.toContain('class="recap-topic-summary');
     expect(html).not.toContain("Read more");
-    expect(html).not.toContain("Show original passages");
+    expect(html).not.toContain("Topic transcript");
     expect(html).not.toContain("Loading recordings…");
     expect(html).not.toContain('<article class="recap-evidence">');
     expect(html).not.toContain("<audio");
@@ -164,7 +164,7 @@ describe("day recap interactions", () => {
     expect(html).toContain("Compared garden tools.");
     expect(html).not.toContain("Read more");
     expect(html).not.toContain("All topics");
-    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+">Show original passages/);
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
     expect(html).not.toContain("Loading recordings…");
     expect(html).not.toContain("<audio");
   });
@@ -174,9 +174,8 @@ describe("day recap interactions", () => {
     const html = renderToStaticMarkup(<RecapTopic title="Cocoa" parts={[{ kind: "text", text }]}
       day="2026-10-16" sources={sources} timezone="UTC" onCorrect={() => {}} compact={false} expanded={expanded} />);
     expect(html).toContain("Read more");
-    expect(html).toContain("Show original passages");
-    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+">Show original passages/);
-    expect(html).toMatch(/<div id="[^"]+" hidden="">/);
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="true">Topic summary/);
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
     expect(html).not.toContain("Loading recordings…");
     expect(html).not.toContain('<article class="recap-evidence">');
     expect(html).not.toContain("<audio");
@@ -187,11 +186,21 @@ describe("day recap interactions", () => {
     const original = recapBrowserTopics([], [source])[0];
     const html = renderToStaticMarkup(<RecapTopic {...original} day="2026-10-16" sources={[source]} timezone="UTC"
       onCorrect={() => {}} compact={false} expanded onFocus={() => {}} />);
-    expect(html).toContain("Show original passages");
+    expect(html).toContain("Topic transcript");
     expect(html).not.toContain("Loading recordings…");
-    expect(html).toContain("No.");
-    expect(html).toContain("recap-topic-summary");
+    expect(html).not.toContain("No.");
+    expect(html).toContain("No topic summary yet");
     expect(html).not.toContain("<audio");
+  });
+
+  it("opens an entry topic on its saved summary, not its original text", () => {
+    const source: Source = { ...sources[0], sections: [{ title: "Gym", start_offset: 0, end_offset: 14, summary: "Class moved to Friday." }] };
+    const topic = { ...recapBrowserTopics([], [source])[0], displayTitle: "Gym", displayParts: [] };
+    const html = renderToStaticMarkup(<RecapTopicRow topic={topic} day="2026-10-16" sources={[source]} timezone="UTC"
+      onCorrect={() => {}} expanded onToggle={() => {}} />);
+    expect(html).toContain("Class moved to Friday.");
+    expect(html).not.toContain("Gym discussion");
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
   });
 
   it("copies the complete topic text, removing citations and exact repeated paragraphs", () => {

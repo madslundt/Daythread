@@ -3160,3 +3160,11 @@
 "Read day summary" = "Leer el resumen del día";
 "No day summary yet" = "Aún no hay resumen del día";
 "Generate day summary" = "Generar el resumen del día";
+"Topic view" = "Vista del tema";
+"Topic summary" = "Resumen del tema";
+"Topic transcript" = "Transcripción del tema";
+"No topic summary yet" = "Aún no hay resumen del tema";
+"Filter speakers" = "Filtrar hablantes";
+"Unassigned speech" = "Voz sin asignar";
+"Some hidden speech will still play if its timing is unclear or it overlaps other audio." = "Algunas intervenciones ocultas se seguirán reproduciendo si sus tiempos no son claros o se superponen con otro audio.";
+"No speech from the selected speakers in this passage." = "En este pasaje no interviene ninguno de los hablantes seleccionados.";

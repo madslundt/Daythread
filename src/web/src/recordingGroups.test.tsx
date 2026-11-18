@@ -105,12 +105,13 @@ describe("compact recording sessions", () => {
     vi.mocked(useResource).mockReturnValue({ data: {
       id: "part-0", device_id: "omi", started_at: group.started_at, ended_at: group.ended_at,
       state: "done", text, transcript_version: "version", sections: [{
-        chapter_id: chapter.id, title: chapter.title, start_offset: 0, end_offset: text.length,
+        chapter_id: chapter.id, title: chapter.title, start_offset: 0, end_offset: text.length, summary: "Launch stays on schedule.",
       }],
     }, loading: false, error: "", refresh: vi.fn(), setData: vi.fn() });
     const html = renderToStaticMarkup(<RecordingChapterContent chapter={chapter} timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("<summary>Transcript</summary>");
+    expect(html).toContain("Launch stays on schedule.");
+    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
     expect(html).not.toContain("First passage in the same subject.");
     expect(html).toContain(">Previous</button>");
     expect(html).toContain(">Next</button>");

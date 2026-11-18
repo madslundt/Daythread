@@ -3,6 +3,21 @@ import AVFoundation
 import Observation
 import OmiCore
 
+struct RecordingSkipInterval: Equatable {
+    let start: Double
+    let end: Double
+
+    static func merge(_ spans: [Self]) -> [Self] {
+        var merged: [Self] = []
+        for span in spans.filter({ $0.start < $0.end }).sorted(by: { $0.start < $1.start }) {
+            if let last = merged.last, last.end >= span.start {
+                merged[merged.count - 1] = .init(start: last.start, end: max(last.end, span.end))
+            } else { merged.append(span) }
+        }
+        return merged
+    }
+}
+
 /// Owned by the recording screen so scrolling the transcript keeps audio playing.
 @MainActor @Observable
 final class RecordingPlayback {
@@ -21,6 +36,7 @@ final class RecordingPlayback {
     @ObservationIgnored private var progressTask: Task<Void, Never>?
     @ObservationIgnored private var scrubbing = false
     @ObservationIgnored private var resumeAfterScrub = false
+    @ObservationIgnored private var skipIntervals: [RecordingSkipInterval] = []
 
     private var player: AVAudioPlayer? {
         guard let fileURL, model?.player?.url == fileURL else { return nil }
@@ -60,9 +76,8 @@ final class RecordingPlayback {
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
             fileURL = audio; downloaded = nil; ready = true
             progressTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    self?.updatePosition()
-                    do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                while !Task.isCancelled, let delay = self?.updatePosition() {
+                    do { try await Task.sleep(for: .seconds(delay)) } catch { return }
                 }
             }
         } catch {
@@ -77,6 +92,13 @@ final class RecordingPlayback {
             error = L10n.text("Stop recording before playing audio."); return
         }
         error = nil
+        if player?.isPlaying != true {
+            if position >= duration { seek(to: 0) }
+            if let span = nextSkip(at: position), span.start <= position {
+                seek(to: span.end)
+                if position >= duration { return }
+            }
+        }
         if let player {
             if player.isPlaying { player.pause(); playing = false }
             else { playing = player.play() }
@@ -98,6 +120,11 @@ final class RecordingPlayback {
     }
 
     func skip(_ seconds: TimeInterval) { seek(to: position + seconds) }
+
+    func setSkipIntervals(_ intervals: [RecordingSkipInterval]) {
+        skipIntervals = intervals
+        _ = updatePosition()
+    }
 
     func changeSpeed(_ delta: Double) {
         speed = min(2, max(0.5, speed + delta))
@@ -124,14 +151,29 @@ final class RecordingPlayback {
         scrubbing = false; resumeAfterScrub = false
     }
 
-    private func updatePosition() {
-        guard !scrubbing else { return }
+    private func nextSkip(at seconds: Double) -> RecordingSkipInterval? {
+        var low = 0, high = skipIntervals.count
+        while low < high {
+            let middle = (low + high) / 2
+            if skipIntervals[middle].end <= seconds { low = middle + 1 }
+            else { high = middle }
+        }
+        return low < skipIntervals.count ? skipIntervals[low] : nil
+    }
+
+    private func updatePosition() -> Double {
+        guard !scrubbing else { return 0.2 }
         if let player {
             position = min(duration, max(0, player.currentTime)); playing = player.isPlaying
+            if playing, let span = nextSkip(at: position) {
+                if span.start <= position { seek(to: span.end) }
+                if let next = nextSkip(at: position) { return min(0.2, max(0.01, (next.start - position) / speed)) }
+            }
         } else if playing {
             playing = false
             if duration - position < 1 { position = duration }
         }
+        return 0.2
     }
 }
 

@@ -3162,3 +3162,11 @@
 "Read day summary" = "Read day summary";
 "No day summary yet" = "No day summary yet";
 "Generate day summary" = "Generate day summary";
+"Topic view" = "Topic view";
+"Topic summary" = "Topic summary";
+"Topic transcript" = "Topic transcript";
+"No topic summary yet" = "No topic summary yet";
+"Filter speakers" = "Filter speakers";
+"Unassigned speech" = "Unassigned speech";
+"Some hidden speech will still play if its timing is unclear or it overlaps other audio." = "Some hidden speech will still play if its timing is unclear or it overlaps other audio.";
+"No speech from the selected speakers in this passage." = "No speech from the selected speakers in this passage.";

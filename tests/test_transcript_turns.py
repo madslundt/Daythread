@@ -18,6 +18,7 @@ def test_repeated_speaker_label_and_start_only_import_timestamps():
     assert [(t["speaker_name"], t["text"], t["start"]) for t in turns] == [
         ("Rae", "Hello.", 0), ("Lee", "Hi.", 2), ("Rae", "Thanks.", 4),
     ]
+    assert all("end" not in turn for turn in turns)
 
 
 def test_unknown_speakers_keep_their_text_without_attribution_or_made_up_times():
@@ -37,6 +38,20 @@ def test_exported_speaker_labels_do_not_appear_twice():
         {"text": "Speaker 1: Hello.", "start": 0},
         {"text": "Speaker 2: Hi.", "start": 2},
     ]))
-    assert [(turn["speaker_name"], turn["text"]) for turn in turns] == [
+    assert [(turn["speaker_label"], turn["text"]) for turn in turns] == [
         ("Speaker 1", "Hello."), ("Speaker 2", "Hi."),
     ]
+
+
+def test_only_project_verified_end_times_and_saved_identity():
+    text = "One. Two. Three."
+    source = row(text, [
+        {"text": "One.", "speaker_id": 1, "start": 0, "end": 2},
+        {"text": "Two.", "speaker_id": 2, "start": 2, "end": 12},
+        {"text": "Three.", "speaker_id": 1, "start": 4, "end": 9},
+    ])
+    assert [turn.get("end") for turn in transcript_turns(source)] == [2, None, 9]
+    saved = [{"text": text, "start_offset": 0, "end_offset": len(text), "start": 0,
+              "end": 9, "speaker_id": "stable-id", "speaker_label": "Speaker A",
+              "attribution": "attributed"}]
+    assert transcript_turns(source, saved) == saved

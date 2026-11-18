@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { interfaceLanguage, source, t } from "./i18n";
 import { Icon } from "./Icon";
 import { CopySummary } from "./CopySummary";
-import { originalRecapText, originalTopicTranslation, recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
+import { originalTopicTranslation, recapBrowserTopics, recapParts, recapReadingText, recapTopics, recapTopicText, topicFocus, type RecapBrowserTopic, type RecapFocus, type RecapTopicGroup } from "./recapItems";
 import { RecapTopic } from "./RecapTopic";
 import { recapTranslationDisplay } from "./recapTranslationDisplay";
 import type { SummaryTranslationStructure } from "./transcriptTranslationRequests";
@@ -110,7 +110,7 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
       <DisplayTranslationStatus value={labels} />
       <div id={`${id}-topics`} className="recap-topic-list">
         {visible.map((topic) => <RecapTopicRow key={topic.id} topic={topic} expanded={selected === topic.id} onToggle={() => toggle(topic)}
-          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} todayView={todayView} />)}
+          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} />)}
       </div>
       {limitedOverview && matching.length > topicOverviewLimit ? <button type="button" className="text-button"
         aria-expanded={showingAllTopics} aria-controls={`${id}-topics`} onClick={() => {
@@ -134,14 +134,14 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
 // A controlled row keeps its siblings visible while one canonical topic owns the focus.
 export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
   topic: TopicRow; expanded: boolean; onToggle: () => void;
-} & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus" | "todayView">) {
+} & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus">) {
   const id = useId();
-  const entrySummary = props.todayView ? [...new Set(topic.originalPassages?.flatMap(({ section }) => section.summary || []) || [])].join("\n\n") : "";
-  const preview = (recapTopicText(topic.displayParts) || entrySummary || (!props.todayView ? originalRecapText(topic.originalPassages, props.sources) : "")).replace(/\*\*/g, "");
+  const entrySummary = [...new Set(topic.originalPassages?.map(({ section }) => section.summary?.trim()).filter(Boolean))].join("\n\n");
+  const preview = (recapTopicText(topic.displayParts) || entrySummary).replace(/\*\*/g, "");
   return <article className="recap-topic-row" data-topic-id={topic.id}>
     <h3><button type="button" className="recap-topic-option" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
       <span><strong><InlineText text={topic.displayTitle} /></strong>{!expanded ? <>
-        {topic.originalPassages && !entrySummary ? <small className="caption">{t("Original passages")}</small> : null}
+        {topic.originalPassages && !entrySummary ? <small className="caption">{t("No topic summary yet")}</small> : null}
         <span>{preview}</span>
       </> : null}</span>
       <Icon name="chevron-right" size={16} />

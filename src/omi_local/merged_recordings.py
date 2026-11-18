@@ -110,7 +110,8 @@ class Recording:
         )
         analyzed = ready and all(detail.get("sections") for row, detail in zip(self.rows, details)
                                  if (row["text"] or "").strip())
-        for row, detail, seconds in zip(self.rows, details, self.playback_starts):
+        parts = zip(self.rows, details, self.playback_starts, self.frames)
+        for row, detail, seconds, frames in parts:
             text = row["text"] or ""
             if text.strip():
                 if analyzed:
@@ -145,8 +146,11 @@ class Recording:
                         {"text": text, "start_offset": 0, "end_offset": len(text)},
                     ]
                     for turn in source_turns:
-                        position = {"start": seconds + turn["start"]} if "start" in turn else {}
-                        turns.append({**turn, **position,
+                        position = {
+                            key: seconds + turn[key] for key in ("start", "end") if key in turn
+                        }
+                        turns.append({**turn, **position, "source_part": row["id"],
+                                      "part_start": seconds, "part_end": seconds + frames / 16000,
                                       "start_offset": offset + turn["start_offset"],
                                       "end_offset": offset + turn["end_offset"]})
                     offset += len(text) + 1

@@ -97,6 +97,7 @@ class ParallelTrackRecording(SessionRecording):
                       started_at=self.rows[0]["started_at"],
                       duration_seconds=self.playback_frames / 16000,
                       interruptions=[],
+                      mixed_audio=True,
                       audio_version=self.mixed_audio_version,
                       title=result["title"] or "Recording session")
         if self.audio_available and len(self.available_tracks) < len(self.tracks):

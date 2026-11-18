@@ -6,29 +6,29 @@ import {
   type TranscriptTranslationData, type TranslationPassage,
 } from "./transcriptTranslationRequests";
 import { ErrorState } from "./UI";
-import type { Source } from "./types";
-import { SourceTranscriptTurns } from "./RecordingTranscript";
+import type { Source, TranscriptTurn } from "./types";
+import { SourceTranscriptTurns, type SpeakerReading } from "./RecordingTranscript";
 
-export function TranscriptPassage({ source, section }: {
-  source: Source; section: { start_offset: number; end_offset: number };
+export function TranscriptPassage({ source, section, onSeek, reading, fullTurns }: {
+  source: Source; section: { start_offset: number; end_offset: number }; onSeek?: (seconds: number) => void;
+  reading?: SpeakerReading; fullTurns?: TranscriptTurn[];
 }) {
   const original = Array.from(source.text || "").slice(section.start_offset, section.end_offset).join("");
   // Recording variants have no raw-source translation or correction endpoint.
   // Keep the cited exact passage readable without sending a logical recording ID
   // to source-scoped transcript actions.
-  if (source.reference_type === "recording_transcription") {
-    return <p className="transcript-text">{original}</p>;
-  }
+  const originalTurns = <SourceTranscriptTurns source={source} text={original} range={section} onSeek={onSeek} reading={reading} fullTurns={fullTurns} />;
   // Without a source version there is no safe way to translate saved offsets.
-  if (!source.transcript_version) return <p className="transcript-text">{original}</p>;
+  if (source.reference_type === "recording_transcription" || !source.transcript_version) return originalTurns;
   return <TranscriptTranslation key={`${source.id}:${source.transcript_version}:${section.start_offset}:${section.end_offset}`}
     sourceId={source.id} original={original} passage={{ ...section, transcript_version: source.transcript_version }}
-    renderText={(text, translated) => translated ? <p className="transcript-text">{text}</p>
-      : <SourceTranscriptTurns source={source} text={text} range={section} />} />;
+    forceOriginal={!!reading?.excluded.size}
+    renderText={(text, translated) => translated ? <p className="transcript-text">{text}</p> : originalTurns} />;
 }
 
-export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText, renderFollowing }: {
+export function TranscriptTranslation({ sourceId, original, passage, content = "transcript", renderText, renderFollowing, forceOriginal }: {
   sourceId: string; original: string; passage?: TranslationPassage;
+  forceOriginal?: boolean;
   content?: "transcript" | "summary";
   renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>, language?: string) => ReactNode;
   renderFollowing?: (language?: string) => ReactNode;
@@ -119,7 +119,7 @@ export function TranscriptTranslation({ sourceId, original, passage, content = "
     }
   }
 
-  return <TranscriptTranslationView original={original} data={data} translated={translated}
+  return <TranscriptTranslationView original={original} data={data} translated={translated} forceOriginal={forceOriginal}
     content={content} renderText={renderText} renderFollowing={renderFollowing}
     selectedLanguage={generating ? generationTarget.current : target ?? data?.language} loading={loading} generating={generating}
     error={error} translationError={translationError}
@@ -136,13 +136,14 @@ export function TranscriptTranslation({ sourceId, original, passage, content = "
 
 export function TranscriptTranslationView({ original, data, translated = false, selectedLanguage,
   loading, generating, error, translationError = "", onTranslate, onSelect, onRetry, onLanguage,
-  content = "transcript", renderText, renderFollowing }: {
+  content = "transcript", renderText, renderFollowing, forceOriginal }: {
   original: string;
   content?: "transcript" | "summary";
   renderText?: (text: string, translated: boolean, translation?: NonNullable<TranscriptTranslationData["translation"]>, language?: string) => ReactNode;
   renderFollowing?: (language?: string) => ReactNode;
   data?: TranscriptTranslationData;
   translated?: boolean;
+  forceOriginal?: boolean;
   selectedLanguage?: string;
   loading: boolean;
   generating: boolean;
@@ -160,7 +161,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
     && !(data?.already_in_target_language && code === data.language));
   const selected = selectedLanguage ?? data?.language ?? "";
   const target = available.includes(selected) ? selected : "";
-  const active = translated && available.includes(target) ? target : "original";
+  const active = !forceOriginal && translated && available.includes(target) ? target : "original";
   const language = active !== "original" ? translationLanguageLabel(active) : "";
   const translation = !loading && active === data?.language ? data.translation : null;
   const placeholder = active !== "original" && !translation;
@@ -191,7 +192,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
   </div>;
 
   return <div className="transcript-translation">
-    <div className="translation-tabs" role="tablist" aria-label={content === "summary" ? t("Summary language") : t("Transcript language")}
+    <div className="translation-tabs" hidden={forceOriginal} role="tablist" aria-label={content === "summary" ? t("Summary language") : t("Transcript language")}
       onKeyDown={(event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
@@ -209,7 +210,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
         {code === "original" ? t("Original") : translationLanguageLabel(code)}
       </button>)}
     </div>
-    {content !== "summary" && offer ? <div className="notice">
+    {!forceOriginal && content !== "summary" && offer ? <div className="notice">
       <span>{t("Mixed languages · {value0} is dominant (about {value1}%).", {
         value0: translationLanguageLabel(recommendation),
         value1: Math.floor(analysis.dominant_language_share * 100),
@@ -219,7 +220,7 @@ export function TranscriptTranslationView({ original, data, translated = false, 
         {t("Translate to {value0}", { value0: translationLanguageLabel(recommendation) })}
       </button>
     </div> : null}
-    {content !== "summary" && available.length ? <div className="translation-language-picker">
+    {!forceOriginal && content !== "summary" && available.length ? <div className="translation-language-picker">
       <label htmlFor={`${id}-language-search`}>{t("Translate to")}</label>
       <input id={`${id}-language-search`} type="search" placeholder={t("Find a language…")}
         aria-label={t("Find a translation language")} value={languageSearch} disabled={generating}

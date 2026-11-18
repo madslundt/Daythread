@@ -75,7 +75,7 @@ describe("canonical recap translation display", () => {
     const html = renderToStaticMarkup(<RecapTopicRow {...props} topic={topic} expanded onToggle={() => {}} />);
     expect(html).toContain("Kakao ☕️"); expect(html).not.toContain("Cocoa ☕️</");
     expect(html).toContain('aria-label="Copy summary: Kakao ☕️"');
-    expect(html).toContain("Show original passages");
+    expect(html).toContain("Topic transcript");
     expect(html).not.toContain("Cocoa trial."); expect(html).not.toContain("Garden tools.");
     expect(html).not.toContain("<audio");
   });

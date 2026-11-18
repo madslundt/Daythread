@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefCallback } from "reac
 import { displayLocale, t } from "./i18n";
 import { Icon } from "./Icon";
 import { playbackTime, recordingPeaks } from "./recordingWaveform";
+import { nextSpeakerSkip, type AudioInterval } from "./recordingSpeakers";
 import "./recordingAudioPlayer.css";
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
   onPositionChange?: (seconds: number) => void;
   onReady?: () => void;
   initialSpeed?: number;
+  skipIntervals?: readonly AudioInterval[];
   bookmarks?: { label: string; seconds: number; onSelect: () => void }[];
 };
 
@@ -23,7 +25,7 @@ export function RecordingAudioPlayer(props: Props) {
   return <Player key={props.src} {...props} />;
 }
 
-function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1, bookmarks }: Props) {
+function Player({ src, waveformSrc, label, active = true, durationHint = 0, autoPlay, audioRef, onError, onPositionChange, onReady, initialSpeed = 1, bookmarks, skipIntervals }: Props) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const scrubbing = useRef(false);
   const resumeAfterScrub = useRef(false);
@@ -91,10 +93,47 @@ function Player({ src, waveformSrc, label, active = true, durationHint = 0, auto
     return () => { controller.abort(); element?.pause(); };
   }, [active, src, waveformSrc, retry, start, requestedEnd]);
 
+  useEffect(() => {
+    const element = audio.current;
+    if (!active || !element || !skipIntervals?.length) return;
+    let timer: number | undefined;
+    const cancel = () => window.clearTimeout(timer);
+    const follow = () => {
+      cancel();
+      if (element.paused || element.seeking || scrubbing.current) return;
+      const span = nextSpeakerSkip(skipIntervals, element.currentTime);
+      if (!span || span.start >= clipEnd.current) return;
+      if (span.start <= element.currentTime) {
+        const target = Math.min(span.end, clipEnd.current);
+        if (target <= element.currentTime) return;
+        if (target >= clipEnd.current) element.pause();
+        element.currentTime = target;
+        setPosition(target - start);
+      } else {
+        const delay = (span.start - element.currentTime) / element.playbackRate * 1000;
+        timer = window.setTimeout(follow, Math.min(1000, Math.max(10, delay)));
+      }
+    };
+    const events = ["playing", "timeupdate", "seeked", "ratechange"];
+    events.forEach((event) => element.addEventListener(event, follow));
+    element.addEventListener("pause", cancel);
+    follow();
+    return () => {
+      cancel();
+      events.forEach((event) => element.removeEventListener(event, follow));
+      element.removeEventListener("pause", cancel);
+    };
+  }, [active, skipIntervals, start]);
+
   async function play() {
     const element = audio.current;
     if (!element) return;
     if (element.currentTime >= clipEnd.current || element.ended) element.currentTime = start;
+    const span = skipIntervals && nextSpeakerSkip(skipIntervals, element.currentTime);
+    if (span && span.start <= element.currentTime) {
+      element.currentTime = Math.min(clipEnd.current, span.end);
+      if (element.currentTime >= clipEnd.current) { setPosition(duration); return; }
+    }
     element.playbackRate = speed;
     try { await element.play(); setError(""); }
     catch (error) {

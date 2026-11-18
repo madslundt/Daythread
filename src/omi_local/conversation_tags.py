@@ -10,7 +10,6 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .domain import stamp
-from .source_matching import MANUAL_UPLOAD_SQL
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversation_tags (
@@ -101,16 +100,14 @@ def members(db, anchor, start=None, end=None):
         if not row.fetchone():
             raise HTTPException(404, "Recording unavailable for tagging")
         return [anchor]
-    from .recording_groups import group_recordings
+    from .recording_groups import UPLOAD_KEY_SQL, group_recordings, upload_key
 
     rows = [
         dict(row)
         for row in db.execute(
-            "SELECT id,device_id,started_at,ended_at,state,source_kind,source_metadata,"
+            "SELECT id,device_id,started_at,ended_at,state,source_kind,source_id,source_metadata,"
             "length(trim(coalesce(text,'')))>0 AS has_text,"
-            "CASE WHEN " + MANUAL_UPLOAD_SQL + " THEN 'audio:' || digest || ':' || "
-            "coalesce(json_extract(source_metadata,'$.part_index'),0) "
-            "ELSE 'source:' || id END AS upload_key FROM audio "
+            + UPLOAD_KEY_SQL + " AS upload_key FROM audio "
             "WHERE started_at<? AND ended_at>? ORDER BY started_at,id",
             (stamp(end), stamp(start)),
         )
@@ -119,9 +116,10 @@ def members(db, anchor, start=None, end=None):
     # upload's timestamp must not bridge otherwise separate conversations.
     canonical, uploads = {}, {}
     for row in rows:
-        canonical.setdefault(row["upload_key"], row)
-        uploads.setdefault(row["upload_key"], []).append(row)
-    for group in group_recordings(list(canonical.values())):
+        key = row["upload_key"] = upload_key(row)
+        canonical.setdefault(key, row)
+        uploads.setdefault(key, []).append(row)
+    for group in group_recordings(list(canonical.values()), parrot=True):
         represented = [source for row in group["members"] for source in uploads[row["upload_key"]]]
         if any(row["id"] == anchor for row in represented):
             ids = sorted(row["id"] for row in represented if row["state"] != "expired")

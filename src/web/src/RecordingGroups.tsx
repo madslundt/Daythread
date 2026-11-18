@@ -18,6 +18,7 @@ export type RecordingGroup = {
   title: string;
   recording_count: number;
   recording_id?: string;
+  parallel_tracks?: boolean;
   topic_count?: number;
   estimated_times?: boolean;
   states?: string[];
@@ -39,7 +40,7 @@ export function RecordingGroups({ groups, day, query, zoneID, tagID, timezone, o
 }) {
   return <div className="source-list source-list-compact recording-groups">
     {groups.map((group) => <div className="recording-group" key={group.id}>
-      {!group.recording_id && group.recording_count === 1 ? (
+      {!group.recording_id && !group.parallel_tracks && group.recording_count === 1 ? (
         <SourceList compact sources={withHints(group.sources, timeline)} timezone={timezone} onCorrect={onCorrect} onRewindAt={onRewindAt} onChat={onChat} />
       ) : <RecordingSession group={group} day={day} query={query} zoneID={zoneID} tagID={tagID} timezone={timezone} onCorrect={onCorrect} timeline={timeline} archive={archive} onRewindAt={onRewindAt} onChat={onChat} />}
     </div>)}
@@ -111,14 +112,14 @@ export function SessionSources({ group, day, query, zoneID, tagID, timezone, onC
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>
     {originalsOnly ? null : resource.data?.recording ? <MergedRecordingContent recording={resource.data.recording}
-      resourceBase={base} resourceQuery={`?${scope}`} timezone={timezone} />
+      resourceBase={base} resourceQuery={`?${scope}`} timezone={timezone} refresh={resource.refresh} />
       : <RecordingChapters chapters={resource.data?.chapters || []} timezone={timezone} onCorrect={correct} />}
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {resource.loading && !resource.data ? <Loading>{t("Loading recordings…")}</Loading> : null}
     {originalsOnly || resource.data ? <details className="recording-disclosure recording-originals" open={toolsOpen} onToggle={(event) => {
       if (event.target === event.currentTarget) setToolsOpen(event.currentTarget.open);
     }}>
-      <summary>{t(originalsOnly ? "Original part recordings" : "Full recording & tools")}</summary>
+      <summary>{t(originalsOnly || group.parallel_tracks ? "Original part recordings" : "Full recording & tools")}</summary>
       {toolsOpen && resource.data ? <>
         <SourceList compact sources={withHints(resource.data.items, timeline)} timezone={timezone} onCorrect={correct} />
         {resource.data.total > 30 || page > 0 ? <div className="pagination">

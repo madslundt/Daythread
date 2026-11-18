@@ -52,6 +52,28 @@ describe("compact recording sessions", () => {
     expect(html).not.toContain("recording-session");
     expect(html).toContain('id="source-original"');
   });
+  it("shows matching Parrot tracks as one Archive row with one player and both transcripts", () => {
+    const parrot = { ...group, title: "Parrot call", recording_count: 1, parallel_tracks: true };
+    const overview = render([parrot]);
+    expect(overview.match(/class="source-row source-row-compact recording-session"/g)).toHaveLength(1);
+    expect(overview).toContain("Parrot call");
+    expect(overview).not.toContain("<audio");
+    vi.mocked(useResource).mockReturnValue({ data: {
+      items: [], total: 2, recording: {
+        ...parrot, state: "done", duration_seconds: 5, audio_available: true,
+        audio_availability: "partial", audio_version: "mix", transcript_version: "text",
+        text: "Remote speaker.\nLocal speaker.", sections: [],
+      },
+    }, loading: false, error: "", refresh: vi.fn(), setData: vi.fn() });
+    const html = renderToStaticMarkup(<SessionSources group={parrot} archive
+      day="2026-10-16" query="" timezone="UTC" onCorrect={() => {}} />);
+    expect(html.match(/<audio /g)).toHaveLength(1);
+    expect(html).toContain("Remote speaker.");
+    expect(html).toContain("Local speaker.");
+    expect(html).toContain("Original part recordings");
+    expect(html).toContain("Recording audio is incomplete");
+    expect(html).toContain("/v1/recording-groups/group/audio?day=2026-10-16&amp;q=&amp;archive=true&amp;version=mix");
+  });
   it("identifies forwarded audio times as estimates", () => {
     expect(render([{ ...group, estimated_times: true }])).toContain("estimated times");
   });

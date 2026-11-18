@@ -246,6 +246,10 @@ that have only one track. Debug audio and `import_*` files are ignored. It uses 
 timestamp from the filename, converts locally to 16 kHz mono PCM16, and uploads resumable
 two-minute parts as a Parrot recording. It does not wait for Parrot's report generation.
 
+If you already imported the system and microphone CAFs separately, the day view can
+show them as one recording when their exact filename timestamps match and their saved
+capture times overlap. It mixes them during playback without rewriting the originals.
+
 A local SQLite index remembers acknowledged file versions **and content hashes** across
 restarts, including renamed files. Daythread's duplicate check and stable upload plans also
 prevent repeated uploads and resume missing parts after interruptions. Completion is recorded

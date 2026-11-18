@@ -17,7 +17,7 @@ struct TimelineRecordingGroups: View {
         ForEach(Array(groups.enumerated()), id: \.element["id"].text) { _, group in
             if !group["recording_id"].text.isEmpty {
                 MergedRecordingView(group: group, day: day, onCorrect: onCorrect)
-            } else if group["recording_count"].integer == 1 {
+            } else if group["recording_count"].integer == 1 && group["parallel_tracks"] != .bool(true) {
                 SourceList(sources: sourcesWithHints(group["sources"].array, timeline: timeline), showsDate: false, onCorrect: onCorrect, onSelect: onSelect)
             } else {
                 TimelineRecordingSession(group: group, day: day, query: query, zoneID: zoneID, tagID: tagID, timeline: timeline, onCorrect: onCorrect, onSelect: onSelect)
@@ -277,4 +277,3 @@ private struct RecordingChapterPassage: View {
         return .object(values)
     }
 }
-

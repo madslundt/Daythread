@@ -24,7 +24,7 @@ def client(tmp_path):
 
 
 def recording(client, at=AT, *, device="omi", kind="", text="Recorded discussion", level=1,
-              duration=None):
+              duration=None, source_id="", source_metadata=None):
     audio = io.BytesIO()
     with wave.open(audio, "wb") as stream:
         stream.setparams((1, 2, 16000, 0, "NONE", "PCM"))
@@ -32,7 +32,8 @@ def recording(client, at=AT, *, device="omi", kind="", text="Recorded discussion
         stream.writeframes(level.to_bytes(2, "little", signed=True) * frames)
     key = str(uuid4())
     store = client.app.state.memory.store
-    store.ingest(key, device, at, audio.getvalue(), duration or 60, source_kind=kind)
+    store.ingest(key, device, at, audio.getvalue(), duration or 60, source_kind=kind,
+                 source_id=source_id, source_metadata=source_metadata)
     store.complete(key, text)
     return key
 
@@ -282,3 +283,129 @@ def test_session_corrections_and_retention_update_the_combined_view(client):
     assert client.get(f"/v1/recording-groups/{first}/audio", params={
         "day": "2026-10-16",
     }).status_code == 404
+
+
+def parrot(client, role, *, at=AT, timestamp="2026-10-16T09-00-00Z", **kwargs):
+    return recording(client, at, device="manual-web", kind="manual_upload",
+                     source_id=f"{role}_{timestamp}.caf", duration=4, **kwargs)
+
+
+@pytest.mark.parametrize("archive", (False, True))
+def test_parrot_pair_is_one_recording_with_one_seekable_mix(client, archive):
+    system = parrot(client, "system", text="Remote speaker.", level=1200)
+    mic = parrot(client, "mic", at=AT + timedelta(seconds=1), text="Local speaker.", level=600)
+    result = listing(client, archive=archive)
+    assert result["total"] == result["total_recordings"] == 1
+    group = result["items"][0]
+    assert group["id"] == system and group["parallel_tracks"] and group["recording_count"] == 1
+    assert group["sources"] == [] and "recording_id" not in group
+    detail = members(client, system, archive=archive)
+    assert [row["id"] for row in detail["items"]] == [system, mic]
+    assert detail["total"] == 2 and detail["chapters"] == []
+    mixed = detail["recording"]
+    assert mixed["text"] == "Remote speaker.\nLocal speaker."
+    assert mixed["audio_available"] and mixed["sections"] == mixed["interruptions"] == []
+    assert mixed["duration_seconds"] == 5 and mixed["ended_at"] == group["ended_at"]
+    params = {"day": "2026-10-16", "archive": archive, "version": mixed["audio_version"]}
+    url = f"/v1/recording-groups/{system}/audio"
+    response = client.get(url, params=params)
+    assert response.status_code == 200
+    with wave.open(io.BytesIO(response.content)) as wav:
+        assert wav.getnframes() == 80000
+        for frames, level in ((16000, 1200), (48000, 900), (16000, 600)):
+            assert wav.readframes(frames) == level.to_bytes(2, "little") * frames
+    for start, end in ((39, 49), (32039, 32051), (65577, 65591), (128039, 128051)):
+        position = {"Range": f"bytes={start}-{end}"}
+        seek = client.get(url, params=params, headers=position)
+        assert seek.status_code == 206 and seek.content == response.content[start:end + 1]
+        assert seek.headers["content-range"] == f"bytes {start}-{end}/{len(response.content)}"
+    waveform = client.get(f"/v1/recording-groups/{system}/waveform", params=params).json()
+    assert waveform["duration"] == 5
+    assert [waveform["peaks"][i] for i in (0, 80, 159)] == [1, 0.75, 0.5]
+    for key, level in ((system, 1200), (mic, 600)):
+        original = client.get(f"/v1/audio/{key}")
+        with wave.open(io.BytesIO(original.content)) as wav:
+            assert wav.getnframes() == 64000
+            assert wav.readframes(1) == level.to_bytes(2, "little")
+
+
+@pytest.mark.parametrize("case", ("other timestamp", "no overlap", "ambiguous", "invalid date"))
+def test_parrot_requires_unambiguous_filename_and_capture_overlap(client, case):
+    timestamp = "2026-13-16T09-00-00Z" if case == "invalid date" else "2026-10-16T09-00-00Z"
+    parrot(client, "system", timestamp=timestamp)
+    parrot(client, "mic", level=2,
+           at=AT + timedelta(seconds=4 if case == "no overlap" else 1),
+           timestamp="2026-10-16T09-00-01Z" if case == "other timestamp" else timestamp)
+    if case == "ambiguous":
+        parrot(client, "system", level=3, text="Unrelated capture.")
+    result = listing(client, archive=True)
+    assert result["total"] == result["total_recordings"] == (3 if case == "ambiguous" else 2)
+    assert not any(item.get("parallel_tracks") for item in result["items"])
+    if case == "ambiguous":
+        scoped = listing(client, q="discussion")["items"]
+        assert not any(item.get("parallel_tracks") for item in scoped)
+
+
+def test_parrot_scoped_search_and_tags_keep_their_original_boundaries(client):
+    system = parrot(client, "system", text="Remote speaker only.")
+    mic = parrot(client, "mic", at=AT + timedelta(seconds=1), text="Local speaker only.")
+    parrot(client, "system", text="Retry of the same PCM.")
+    # Equal sampled audio on the other track isn't a duplicate; a true retry is.
+    result = listing(client)
+    pair = result["items"][0]
+    assert result["total_recordings"] == 1
+    assert members(client, pair["id"])["total"] == 2
+    for q in ("Local speaker", "Remote speaker"):
+        result = listing(client, q=q, archive=True)
+        assert result["total_recordings"] == 1
+        source = result["items"][0]["sources"][0]
+        assert q in source["text"] and source["alternate_sources"] == []
+        assert not result["items"][0].get("parallel_tracks")
+    path = f"/v1/recording-groups/{pair['id']}/tags?day=2026-10-16"
+    before = client.get(path).json()
+    assert before["source_count"] == 3
+    response = client.put(path, json={"action": "add", "name": "Parrot call",
+                                     "expected_revision": before["revision"],
+                                     "expected_membership": before["membership"]})
+    assert response.status_code == 200, response.text
+    tag_id = response.json()["tags"][0]["id"]
+    tagged = listing(client, tag_id=tag_id)
+    assert tagged["total_recordings"] == 1 and tagged["items"][0]["parallel_tracks"]
+    assert client.get(f"/v1/sources/{mic}/tags").json()["tags"][0]["id"] == tag_id
+    assert client.get(f"/v1/sources/{system}/tags").json()["tags"][0]["id"] == tag_id
+
+
+def test_parrot_separately_uploaded_multipart_tracks_keep_silent_parts_and_surviving_audio(client):
+    ids = {}
+    for role, delay, levels in (("system", 0, [500, 1000]), ("mic", 1, [500, 400])):
+        record_id = str(uuid4())
+        ids[role] = [parrot(client, role, at=AT + timedelta(seconds=delay + 4 * index),
+                           text=f"{role} speech." if index else "", level=level,
+                           source_metadata={"recording_id": record_id, "part_index": index,
+                                            "part_count": 2}) for index, level in enumerate(levels)]
+    row = listing(client)["items"][0]
+    group_id = ids["system"][0]
+    assert row["id"] == group_id and row["parallel_tracks"] and row["recording_count"] == 1
+    detail = members(client, group_id)
+    assert detail["total"] == 4
+    before = detail["recording"]
+    assert before["text"] == "system speech.\nmic speech." and before["duration_seconds"] == 9
+    store = client.app.state.memory.store
+    store.audio_storage.delete(ids["mic"][0])
+    with store.connect() as db:
+        db.execute("UPDATE audio SET audio_available=0 WHERE id=?", (ids["mic"][1],))
+    after = members(client, group_id)["recording"]
+    assert after["text"] == before["text"] and after["audio_availability"] == "partial"
+    assert after["audio_version"] != before["audio_version"]
+    url = f"/v1/recording-groups/{group_id}/audio"
+    params = {"day": "2026-10-16"}
+    assert client.get(url, params=params | {"version": before["audio_version"]}).status_code == 409
+    audio = client.get(url, params=params | {"version": after["audio_version"]},
+                       headers={"If-Range": f'"{before["audio_version"]}"', "Range": "bytes=44-45"})
+    assert audio.status_code == 200 and audio.headers["etag"] == f'"{after["audio_version"]}"'
+    with wave.open(io.BytesIO(audio.content)) as wav:
+        assert wav.readframes(144000) == b"\xf4\x01" * 64000 + b"\xe8\x03" * 64000 + b"\0\0" * 16000
+    store.apply_retention(1, 0, now=AT + timedelta(days=4))
+    retained = members(client, group_id, archive=True)["recording"]
+    assert retained["text"] == before["text"] and not retained["audio_available"]
+    assert client.get(url, params=params | {"archive": True}).status_code == 404

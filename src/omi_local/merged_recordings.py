@@ -9,7 +9,7 @@ import sys
 import wave
 from array import array
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -60,6 +60,31 @@ class Recording:
         return [round((datetime.fromisoformat(row["ended_at"])
                        - datetime.fromisoformat(row["started_at"])).total_seconds() * 16000)
                 for row in self.rows]
+
+    @property
+    def playback_frames(self) -> int:
+        return sum(self.frames)
+
+    @property
+    def audio_etag(self) -> str:
+        return '"' + hashlib.sha256(json.dumps([
+            (row["id"], row["digest"]) for row in self.rows
+        ]).encode()).hexdigest() + '"'
+
+    def playback_pcm(self, store: Store, first: int, stop: int) -> Iterator[bytes]:
+        cursor = 0
+        for row, count in zip(self.rows, self.frames):
+            end = cursor + count * 2
+            if end > first and cursor < stop:
+                # At most one original upload part is held in memory.
+                data = pcm(store, row, count)
+                left, right = max(0, first - cursor), min(count * 2, stop - cursor)
+                for offset in range(left, right, 65536):
+                    yield data[offset:min(right, offset + 65536)]
+                del data
+            cursor = end
+            if cursor >= stop:
+                break
 
     def snapshot(self, *, partial: bool = False) -> dict:
         ready = self.complete and all(row["state"] == "done" for row in self.rows)
@@ -177,16 +202,13 @@ def audio_response(store: Store, recording: Recording, request: Request) -> Resp
         raise HTTPException(409, "Recording upload is incomplete")
     if not recording.audio_available:
         raise HTTPException(404, "Recording audio unavailable")
-    frames = recording.frames
-    size = sum(frames) * 2
+    size = recording.playback_frames * 2
     header = struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", size + 36, b"WAVE", b"fmt ",
                          16, 1, 1, 16000, 32000, 2, 16, b"data", size)
     total, first, last = size + len(header), 0, size + len(header) - 1
     requested = request.headers.get("range")
     # If-Range mismatches request the complete current representation.
-    etag = '"' + hashlib.sha256(json.dumps([
-        (row["id"], row["digest"]) for row in recording.rows
-    ]).encode()).hexdigest() + '"'
+    etag = recording.audio_etag
     partial = bool(requested and request.headers.get("if-range", etag) == etag)
     if partial:
         match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested)
@@ -203,21 +225,11 @@ def audio_response(store: Store, recording: Recording, request: Request) -> Resp
                                 headers={"Content-Range": f"bytes */{total}"})
 
     def stream():
-        cursor = len(header)
         if first < len(header):
             yield header[first:min(last + 1, len(header))]
-        for row, count in zip(recording.rows, frames):
-            end = cursor + count * 2
-            if end > first and cursor <= last:
-                # At most one original upload part is held in memory, even for twelve hours.
-                data = pcm(store, row, count)
-                left, right = max(0, first - cursor), min(len(data), last + 1 - cursor)
-                for offset in range(left, right, 65536):
-                    yield data[offset:min(right, offset + 65536)]
-                del data
-            cursor = end
-            if cursor > last:
-                break
+        if last >= len(header):
+            yield from recording.playback_pcm(store, max(0, first - len(header)),
+                                              last + 1 - len(header))
 
     headers = {"Accept-Ranges": "bytes", "Content-Length": str(last - first + 1),
                "Content-Disposition": f'inline; filename="{recording.id}.wav"',
@@ -236,10 +248,11 @@ def recording_waveform(store: Store, recording: Recording) -> dict:
         raise HTTPException(409, "Recording upload is incomplete")
     if not recording.audio_available:
         raise HTTPException(404, "Recording audio unavailable")
-    frames, peaks, cursor = recording.frames, [0] * 160, 0
-    total = sum(frames)
-    for row, count in zip(recording.rows, frames):
-        samples = array("h", pcm(store, row, count))
+    peaks, cursor = [0] * 160, 0
+    total = recording.playback_frames
+    for block in recording.playback_pcm(store, 0, total * 2):
+        samples = array("h", block)
+        count = len(samples)
         if sys.byteorder != "little":
             samples.byteswap()
         offset = 0

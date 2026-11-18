@@ -2,13 +2,21 @@
 
 import hashlib
 import json
-from collections.abc import Callable
+import sys
+from array import array
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
+from functools import cached_property
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from .merged_recordings import Recording, audio_response, recording_waveform
+from .blob_storage import audio_is_present
+from .merged_recordings import Recording, audio_response, pcm, recording_waveform
+
+if TYPE_CHECKING:
+    from .store import Store
 
 
 class SessionRecording(Recording):
@@ -40,6 +48,78 @@ class SessionRecording(Recording):
         if all(row["source_kind"].endswith(("_api", "_export")) for row in self.rows):
             result["audio_availability"] = "transcript_only"
         return result
+
+
+class ParallelTrackRecording(SessionRecording):
+    """Mix retained Parrot tracks on their shared timeline instead of concatenating them."""
+
+    @cached_property
+    def tracks(self) -> list[tuple[int, int, dict]]:
+        origin = datetime.fromisoformat(self.rows[0]["started_at"])
+        return [(round((datetime.fromisoformat(row["started_at"]) - origin).total_seconds()
+                       * 16000), count, row) for row, count in zip(self.rows, self.frames)]
+
+    @cached_property
+    def available_tracks(self) -> list[tuple[int, int, dict]]:
+        return [track for track in self.tracks if audio_is_present(track[2])]
+
+    @property
+    def audio_available(self) -> bool:
+        return bool(self.available_tracks)
+
+    @property
+    def playback_frames(self) -> int:
+        return max(start + count for start, count, _ in self.tracks)
+
+    @cached_property
+    def mixed_audio_version(self) -> str:
+        return hashlib.sha256(json.dumps([
+            [(start, frames, row["id"], row["digest"]) for start, frames, row in self.tracks],
+            [row["id"] for _, _, row in self.available_tracks],
+        ]).encode()).hexdigest()
+
+    @property
+    def audio_etag(self) -> str:
+        return f'"{self.mixed_audio_version}"'
+
+    def snapshot(self) -> dict:
+        result = Recording.snapshot(self, partial=True)
+        result.update(ended_at=max(row["ended_at"] for row in self.rows),
+                      started_at=self.rows[0]["started_at"],
+                      duration_seconds=self.playback_frames / 16000,
+                      interruptions=[], sections=[], recording_summary=None,
+                      audio_version=self.mixed_audio_version,
+                      title=result["title"] or "Recording session")
+        if self.audio_available and len(self.available_tracks) < len(self.tracks):
+            result["audio_availability"] = "partial"
+        return result
+
+    def playback_pcm(self, store: Store, first: int, stop: int) -> Iterator[bytes]:
+        # Mix bounded blocks and cache only source parts overlapping the current block.
+        cache = {}
+        for left in range(first // 2, (stop + 1) // 2, 32768):
+            right = min(left + 32768, (stop + 1) // 2)
+            totals, counts = [0] * (right - left), [0] * (right - left)
+            active = {}
+            for start, frames, row in self.available_tracks:
+                begin, end = max(left, start), min(right, start + frames)
+                if begin >= end:
+                    continue
+                key = row["id"]
+                if key not in cache:
+                    cache[key] = array("h", pcm(store, row, frames))
+                    if sys.byteorder != "little":
+                        cache[key].byteswap()
+                active[key] = cache[key]
+                for offset in range(begin, end):
+                    totals[offset - left] += cache[key][offset - start]
+                    counts[offset - left] += 1
+            cache = active
+            samples = array("h", (int(total / count) if count else 0
+                                  for total, count in zip(totals, counts)))
+            if sys.byteorder != "little":
+                samples.byteswap()
+            yield samples.tobytes()[max(0, first - left * 2):stop - left * 2]
 
 
 def session_recording_routes(memory: Callable) -> APIRouter:

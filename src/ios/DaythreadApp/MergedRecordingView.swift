@@ -164,6 +164,9 @@ struct MergedRecordingContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             if recording["audio_available"] == .bool(true) {
                 RecordingAudioPlayer(playback: playback, retry: { refresh = UUID(); onRetry() })
+                if recording["audio_availability"].text == "partial" {
+                    Text(L10n.text("Recording audio is incomplete")).font(.caption).foregroundStyle(.secondary)
+                }
             } else if recording["state"].text == "done" {
                 Text(recording["audio_availability"].text == "transcript_only"
                      ? L10n.text("Imported transcript only; original audio is unavailable.")

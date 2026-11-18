@@ -121,6 +121,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
         </button>{" · "}{boundaryTime(boundary.previous_end)} → {boundaryTime(boundary.next_start)}
       </li>)}</ul>
     </details> : null}
+    {recording.audio_availability === "partial" ? <p className="caption">{t("Recording audio is incomplete")}</p> : null}
     {!recording.audio_available && recording.state === "done" ? <p className="caption">
       {recording.audio_availability === "transcript_only"
         ? t("Imported transcript only; original audio is unavailable.")

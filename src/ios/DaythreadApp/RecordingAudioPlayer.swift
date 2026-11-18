@@ -38,6 +38,7 @@ final class RecordingPlayback {
     @ObservationIgnored private var resumeAfterScrub = false
     @ObservationIgnored private var skipIntervals: [RecordingSkipInterval] = []
     @ObservationIgnored private var preview: RecordingSkipInterval?
+    @ObservationIgnored private var pendingBookmark: TimeInterval?
 
     private var player: AVAudioPlayer? {
         guard let fileURL, model?.player?.url == fileURL else { return nil }
@@ -76,6 +77,7 @@ final class RecordingPlayback {
             }
             guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
             fileURL = audio; downloaded = nil; ready = true
+            if let pendingBookmark { playFrom(pendingBookmark) }
             progressTask = Task { [weak self] in
                 while !Task.isCancelled, let delay = self?.updatePosition() {
                     do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -118,6 +120,19 @@ final class RecordingPlayback {
             if player != nil { model?.stopPlayback() }
             playing = false
         } else { player?.currentTime = position }
+    }
+
+    func playFrom(_ seconds: TimeInterval) {
+        guard seconds.isFinite, seconds >= 0 else { return }
+        guard ready else {
+            if loading { pendingBookmark = seconds }
+            return
+        }
+        pendingBookmark = nil
+        guard seconds < duration else { return }
+        preview = nil
+        seek(to: seconds)
+        if player?.isPlaying != true { togglePlayback() }
     }
 
     func skip(_ seconds: TimeInterval) { seek(to: position + seconds) }
@@ -178,7 +193,7 @@ final class RecordingPlayback {
         if player != nil { model?.stopPlayback() }
         if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
         fileURL = nil; ready = false; playing = false; loading = false
-        scrubbing = false; resumeAfterScrub = false; preview = nil
+        scrubbing = false; resumeAfterScrub = false; preview = nil; pendingBookmark = nil
     }
 
     private func nextSkip(at seconds: Double) -> RecordingSkipInterval? {

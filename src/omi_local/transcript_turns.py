@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 
 EXPORTED_SPEAKER = re.compile(r"^(Speaker (?:\d{1,4}|[A-Z])):\s+(.+)$", re.DOTALL)
+PLACEHOLDER_LABELS = {"unassigned speaker", "unknown speaker", "unassigned speech"}
 
 
 def _valid_seconds(value, duration):
@@ -19,10 +20,18 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
         return []
     if attributed and any(turn["attribution"] != "unknown" for turn in attributed):
         if "".join(turn["text"] for turn in attributed) == text:
-            return [{key: turn[key] for key in (
+            turns = [{key: turn[key] for key in (
                 "text", "start_offset", "end_offset", "start", "end", "speaker_id",
                 "speaker_name", "speaker_label", "attribution", "speaker_edit",
             ) if turn.get(key) is not None} for turn in attributed]
+            return editable_transcript_turns(row, turns)
+    turns = _segment_turns(row, text)
+    return editable_transcript_turns(row, turns or [
+        {"text": text, "start_offset": 0, "end_offset": len(text)},
+    ])
+
+
+def _segment_turns(row: dict, text: str) -> list[dict]:
     segments = json.loads(row.get("segments") or "[]")
     if not isinstance(segments, list):
         return []
@@ -43,7 +52,9 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
         name = segment.get("speaker_name")
         label = segment.get("speaker_label")
         identity = segment.get("speaker_id")
-        prefix = f"{name or label}: " if name or label else ""
+        has_identity = type(identity) in (int, str) and identity != ""
+        prefix_label = name or label or (f"Speaker {identity}" if has_identity else None)
+        prefix = f"{prefix_label}: " if prefix_label else ""
         prefixed = bool(prefix and text.startswith(prefix + body, start))
         evidence = prefix + body if prefixed else body
         if not text.startswith(evidence, start):
@@ -56,7 +67,7 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
             turn["speaker_name"] = name
         if label:
             turn["speaker_label"] = label
-        if type(identity) in (int, str) and identity != "":
+        if has_identity:
             turn["speaker_number"] = speakers.setdefault(identity, len(speakers) + 1)
         timestamp, end = segment.get("start"), segment.get("end")
         if _valid_seconds(timestamp, duration) and previous <= timestamp:
@@ -78,6 +89,10 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
         turns.append(turn)
     if text[offset:].strip():
         return []
+    return turns
+
+
+def editable_transcript_turns(row: dict, turns: list[dict]) -> list[dict]:
     if row.get("id") and row.get("source_version"):
         apply_transcript_speaker_names(row, turns)
     return turns
@@ -91,12 +106,22 @@ def transcript_speaker_names(row: dict) -> dict:
 def apply_transcript_speaker_names(row: dict, turns: list[dict]) -> None:
     saved = transcript_speaker_names(row)
     for turn in turns:
+        if (turn.get("speaker_edit") or turn.get("speaker_id")
+                or turn.get("attribution") == "overlap"):
+            continue
+        for field in ("speaker_label", "speaker_name"):
+            if (turn.get(field) or "").strip().lower() in PLACEHOLDER_LABELS:
+                turn.pop(field)
         if "speaker_number" in turn:
             identity = ["number", turn["speaker_number"]]
         elif label := turn.get("speaker_label") or turn.get("speaker_name"):
             identity = ["label", label]
         else:
-            continue
+            if not turn["text"].strip():
+                continue
+            # This is an editable bucket for unclassified speech, not a diarization result.
+            identity = ["unclassified"]
+            turn["attribution"] = "unknown"
         key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         turn["speaker_edit"] = {
             "kind": "transcript", "scope_id": row["id"], "id": key,

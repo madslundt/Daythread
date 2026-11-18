@@ -276,18 +276,13 @@ struct MergedRecordingContentView: View {
             Text(selectedTranscript == nil ? L10n.text("Topics") : L10n.text("Chapters in the original transcript"))
                 .font(.headline).accessibilityAddTraits(.isHeader)
             ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
-                DisclosureGroup(topic["title"].text, isExpanded: Binding(get: { selectedTopic == index },
-                    set: { selectedTopic = $0 ? index : nil })) {
-                    if selectedTopic == index {
-                        TopicReadingView {
-                            TopicSummaryText(text: topic["summary"].text)
-                        } transcript: {
-                            topicTranscript(topic)
-                        }
-                        if let seek, case .number(let seconds) = topic["start_seconds"] {
-                            Button { seek(seconds) } label: { Label(L10n.text("Listen from this topic"), systemImage: "play.fill") }
-                                .buttonStyle(.borderless)
-                        }
+                RecordingTopicRow(title: topic["title"].text, expanded: selectedTopic == index,
+                    toggle: { selectedTopic = selectedTopic == index ? nil : index }, seconds: topic["start_seconds"].seconds,
+                    play: seek == nil ? nil : { playback.playFrom($0) }) {
+                    TopicReadingView {
+                        TopicSummaryText(text: topic["summary"].text)
+                    } transcript: {
+                        topicTranscript(topic)
                     }
                 }
             }
@@ -314,6 +309,7 @@ struct MergedRecordingContentView: View {
             } ?? .null
             return .object(["text": .string(turn.text), "attribution": .string(turn.attribution),
                      "speaker_name": turn.speakerName.map(JSONValue.string) ?? .null,
+                     "speaker_name_is_custom": .bool(turn.speakerNameIsCustom == true),
                      "speaker_label": turn.speakerLabel.map(JSONValue.string) ?? .null,
                      "speaker_id": turn.speakerID.map(JSONValue.string) ?? .null,
                      "speaker_edit": edit,

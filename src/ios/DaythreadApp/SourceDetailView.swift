@@ -46,10 +46,10 @@ struct SourceDetail: View {
                     }
                 }
                 Section(L10n.text("Recording summary")) {
-                    SourceTranscriptTopicsView(source: evidence, editing: editing, onPlayTopic: canLoadAudio ? { seconds in
-                        audio.seek(to: seconds)
-                        if !audio.playing { audio.togglePlayback() }
-                    } : nil, speakerReading: speakerReading, previewPlayback: canLoadAudio ? audio : nil)
+                    SourceTranscriptTopicsView(source: evidence, editing: editing,
+                        onSeek: canLoadAudio ? { audio.seek(to: $0) } : nil,
+                        onPlayTopic: canLoadAudio ? { audio.playFrom($0) } : nil,
+                        speakerReading: speakerReading, previewPlayback: canLoadAudio ? audio : nil)
                 }
                 Section {
                     DisclosureGroup(L10n.text("Transcript correction")) {

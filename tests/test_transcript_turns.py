@@ -29,7 +29,10 @@ def test_unknown_speakers_keep_their_text_without_attribution_or_made_up_times()
     ]))
     assert [t.get("speaker_number") for t in turns] == [1, None, 1]
     assert [t.get("start") for t in turns] == [0, None, 6]
-    assert not transcript_turns(row("Corrected words.", [{"text": "Old words.", "start": 0}]))
+    corrected = row("Corrected words.", [{"text": "Old words.", "start": 0}])
+    assert transcript_turns(corrected) == [
+        {"text": "Corrected words.", "start_offset": 0, "end_offset": 16},
+    ]
 
 
 def test_exported_speaker_labels_do_not_appear_twice():
@@ -40,6 +43,18 @@ def test_exported_speaker_labels_do_not_appear_twice():
     ]))
     assert [(turn["speaker_label"], turn["text"]) for turn in turns] == [
         ("Speaker 1", "Hello."), ("Speaker 2", "Hi."),
+    ]
+
+
+def test_import_generated_prefixes_keep_the_original_speaker_identities():
+    text = "Speaker 17: Hello.\nSpeaker 2: Hi.\nSpeaker 17: Goodbye."
+    turns = transcript_turns(row(text, [
+        {"text": "Hello.", "speaker_id": 17, "start": 0},
+        {"text": "Hi.", "speaker_id": 2, "start": 2},
+        {"text": "Goodbye.", "speaker_id": 17, "start": 4},
+    ]))
+    assert [(turn["speaker_number"], turn["text"], turn["start"]) for turn in turns] == [
+        (1, "Hello.", 0), (2, "Hi.", 2), (1, "Goodbye.", 4),
     ]
 
 

@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS recording_transcription_selections (
  pipeline_fingerprint TEXT,
  updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recording_transcript_speaker_names (
+ recording_id TEXT NOT NULL,
+ result_version TEXT NOT NULL,
+ version TEXT NOT NULL,
+ name TEXT NOT NULL,
+ PRIMARY KEY(recording_id,result_version)
+);
 """
 
 STATES = {"queued", "processing", "error", "blocked", "stale", "ready"}
@@ -279,6 +286,10 @@ class RecordingTranscriptionStore:
             )
             db.execute(
                 "DELETE FROM recording_transcription_selections WHERE recording_id=?",
+                (recording_id,),
+            )
+            db.execute(
+                "DELETE FROM recording_transcript_speaker_names WHERE recording_id=?",
                 (recording_id,),
             )
 

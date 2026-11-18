@@ -97,7 +97,7 @@ export function turnsInRange(text: string, turns: TranscriptTurn[] | undefined, 
 }
 
 function speakerLabel(speaker: Speaker) {
-  return speaker.name ?? t("Speaker {value0}", { value0: speaker.letter! });
+  return speaker.name ?? t("Speaker {value0}", { value0: speaker.number });
 }
 
 type EditableSpeakers = ReturnType<typeof speakersInPassage>;
@@ -235,9 +235,12 @@ export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSee
       {visible.filter((turn) => turn.text.trim()).map((turn) => {
         const speaker = speakers.get(speakerKey(turn) ?? "");
         return <div className="recording-attributed-run" key={turn.start_offset}>
-          <span className="caption recording-speaker-label" data-speaker-color={speaker?.color}>{speaker ? speakerLabel(speaker)
-            : turn.attribution === "overlap" ? t("Overlapping speech") : t("Unassigned speech")}</span>
-          {speaker && editableByIdentity.has(speakerIdentity(turn) ?? "") ? editButton(speaker, turn) : null}
+          {speaker && editableByIdentity.has(speakerIdentity(turn) ?? "") ? <button type="button"
+            className="recording-speaker-label recording-speaker-rename" data-speaker-color={speaker.color}
+            aria-label={t("Edit speaker: {value0}", { value0: speakerLabel(speaker) })}
+            onClick={() => setEditingSpeaker({ key: speaker.key, row: turn })}>{speakerLabel(speaker)} <Icon name="pencil" size={14} /></button>
+            : <span className="caption recording-speaker-label" data-speaker-color={speaker?.color}>{speaker ? speakerLabel(speaker)
+              : turn.attribution === "overlap" ? t("Overlapping speech") : t("Unassigned speech")}</span>}
           {showTimes && turn.start != null ? onSeek
             ? <button type="button" className="caption recording-speaker-time text-link"
               aria-label={`${t("Playback position")} ${playbackTime(turn.start)}`}

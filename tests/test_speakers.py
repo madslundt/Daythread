@@ -111,6 +111,31 @@ def test_transcript_speaker_names_apply_only_to_current_part_and_evidence(client
     assert client.patch(rename, json={"version": newest, "name": "Lee"}).status_code == 409
 
 
+def test_unclassified_turns_can_be_renamed_without_changing_evidence(client):
+    keys, _ = recordings(client)
+    store = client.app.state.memory.store
+    store.complete(keys[0], "Hello. Goodbye.", segments=[
+        {"text": "Hello.", "speaker_name": "Unassigned speaker", "start": 0, "end": 0.5},
+        {"text": "Goodbye.", "start": 1, "end": 2},
+    ])
+    path = f"/v1/transcripts/{keys[0]}"
+    original = client.get(path).json()["transcript_turns"]
+    assert len(original) == 2
+    edit = original[0]["speaker_edit"]
+    assert edit == original[1]["speaker_edit"]
+    assert all(turn["attribution"] == "unknown" and "speaker_name" not in turn for turn in original)
+    rename = f"/v1/speakers/transcript/{keys[0]}/{edit['id']}"
+    assert client.patch(rename, json={
+        "version": edit["version"], "name": "Mads",
+    }).status_code == 200
+    updated = client.get(path).json()["transcript_turns"]
+    assert [turn["speaker_name"] for turn in updated] == ["Mads", "Mads"]
+    assert [(turn["start"], turn["end"]) for turn in updated] == [(0, 0.5), (1, 2)]
+    other = client.get(f"/v1/transcripts/{keys[1]}").json()["transcript_turns"][0]
+    assert other["speaker_edit"]["scope_id"] == keys[1]
+    assert "speaker_name" not in other and "start" not in other
+
+
 def test_detect_names_and_playback_share_a_whole_upload_and_persist(client):
     keys, path = recordings(client)
     calls = detector(client)

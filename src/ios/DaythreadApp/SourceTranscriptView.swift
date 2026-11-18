@@ -233,6 +233,7 @@ struct SourceTranscriptView: View {
 struct SourceTranscriptTopicsView: View {
     let source: JSONValue
     let editing: Bool
+    var onSeek: ((Double) -> Void)? = nil
     var onPlayTopic: ((Double) -> Void)? = nil
     var speakerReading: RecordingSpeakerReading? = nil
     var previewPlayback: RecordingPlayback? = nil
@@ -255,19 +256,16 @@ struct SourceTranscriptTopicsView: View {
         }
         ForEach(sections, id: \.topicStartOffset) { section in
             let start = section["start_offset"].integer
-            DisclosureGroup(section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text,
-                isExpanded: Binding(get: { openTopic == start }, set: { openTopic = $0 ? start : nil })) {
+            RecordingTopicRow(title: section["title"].text.isEmpty ? L10n.text("Topic") : section["title"].text,
+                expanded: openTopic == start, toggle: { openTopic = openTopic == start ? nil : start },
+                seconds: section["start_seconds"].seconds, play: onPlayTopic) {
                 if openTopic == start {
                     TopicReadingView {
                         TopicSummaryText(text: section["summary"].text)
                     } transcript: {
                         SourceTranscriptView(source: source, editing: false, startOffset: start,
-                            endOffset: section["end_offset"].integer, onSeek: onPlayTopic, speakerReading: speakerReading,
+                            endOffset: section["end_offset"].integer, onSeek: onSeek, speakerReading: speakerReading,
                             previewPlayback: previewPlayback)
-                    }
-                    if let onPlayTopic, case .number(let seconds) = section["start_seconds"] {
-                        Button { onPlayTopic(seconds) } label: { Label(L10n.text("Listen from this topic"), systemImage: "play.fill") }
-                            .buttonStyle(.borderless)
                     }
                 }
             }
@@ -277,7 +275,7 @@ struct SourceTranscriptTopicsView: View {
         } else {
             DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
                 if transcriptOpen {
-                    SourceTranscriptView(source: source, editing: editing, onSeek: onPlayTopic, speakerReading: speakerReading,
+                    SourceTranscriptView(source: source, editing: editing, onSeek: onSeek, speakerReading: speakerReading,
                         previewPlayback: previewPlayback)
                 }
             }
@@ -289,6 +287,36 @@ private extension JSONValue {
     var topicStartOffset: Int { self["start_offset"].integer }
 }
 
+struct RecordingTopicRow<Content: View>: View {
+    let title: String
+    let expanded: Bool
+    let toggle: () -> Void
+    let seconds: Double?
+    let play: ((Double) -> Void)?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button(action: toggle) {
+                    HStack {
+                        Text(title).multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
+                    }.frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityAddTraits(expanded ? .isSelected : [])
+                if let play, let seconds, seconds.isFinite, seconds >= 0 {
+                    Button { play(seconds) } label: {
+                        Image(systemName: "play.fill").frame(minWidth: 44, minHeight: 44)
+                    }.buttonStyle(.borderless).accessibilityLabel(L10n.text("Listen from this topic") + " · " + title)
+                }
+            }
+            if expanded { content() }
+        }
+    }
+}
+
 struct TopicReadingView<Summary: View, Transcript: View>: View {
     @ViewBuilder let summary: () -> Summary
     @ViewBuilder let transcript: () -> Transcript
@@ -298,29 +326,14 @@ struct TopicReadingView<Summary: View, Transcript: View>: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 10) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { choices }.fixedSize(horizontal: true, vertical: false)
-                VStack(alignment: .leading, spacing: 4) { choices }
-            }.accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Topic view"))
+            Picker(L10n.text("Topic view"), selection: $showingTranscript) {
+                Text(L10n.text("Topic summary")).tag(false)
+                Text(L10n.text("Topic transcript")).tag(true)
+            }.pickerStyle(.segmented)
             if showingTranscript { transcript() } else { summary() }
         }
     }
 
-    @ViewBuilder private var choices: some View {
-        choice(L10n.text("Topic summary"), transcript: false)
-        choice(L10n.text("Topic transcript"), transcript: true)
-    }
-
-    private func choice(_ label: String, transcript: Bool) -> some View {
-        Button {
-            showingTranscript = transcript
-        } label: {
-            Text(label).font(.subheadline.weight(showingTranscript == transcript ? .semibold : .regular))
-                .padding(.vertical, 4)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityAddTraits(showingTranscript == transcript ? .isSelected : [])
-    }
 }
 
 struct TopicSummaryText: View {
@@ -409,11 +422,14 @@ struct RecordingTranscriptTurns: View {
                     let speaker = reading.speaker(for: turn)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            speakerBadge(speaker?.label ?? (turn["attribution"].text == "overlap"
-                                ? L10n.text("Overlapping speech") : L10n.text("Unassigned speech")),
-                                color: speaker?.color(dark: colorScheme == .dark) ?? .secondary)
                             if let speaker, let identity = turn.recordingSpeakerIdentity, let entry = byIdentity[identity] {
-                                editButton(speaker, entries: [entry], row: turn)
+                                Button { editingSpeaker = TranscriptSpeakerSelection(entries: [entry], row: turn) } label: {
+                                    speakerBadge(speaker.label, color: speaker.color(dark: colorScheme == .dark), editable: true)
+                                }.buttonStyle(.borderless).accessibilityLabel(L10n.text("Edit speaker: \(speaker.label)"))
+                            } else {
+                                speakerBadge(speaker?.label ?? (turn["attribution"].text == "overlap"
+                                    ? L10n.text("Overlapping speech") : L10n.text("Unassigned speech")),
+                                    color: speaker?.color(dark: colorScheme == .dark) ?? .secondary)
                             }
                             if showTimes, let start = turn["start"].seconds, start < Double(Int.max) {
                                 let seconds = Int(start)
@@ -432,10 +448,14 @@ struct RecordingTranscriptTurns: View {
         }
     }
 
-    private func speakerBadge(_ title: String, color: Color) -> some View {
-        Text(title).font(.subheadline.weight(.bold)).foregroundStyle(color)
+    private func speakerBadge(_ title: String, color: Color, editable: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+            if editable { Image(systemName: "pencil").font(.caption) }
+        }.font(.subheadline.weight(.bold)).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            .frame(minHeight: editable ? 44 : nil).contentShape(Rectangle())
     }
 
     private func editButton(_ speaker: RecordingSpeakerReading.Speaker, entries: [TranscriptEditableSpeaker], row: JSONValue? = nil) -> some View {
@@ -487,8 +507,7 @@ private struct TranscriptSpeakerPassage {
 
     static func initial(in passages: [Self], shown: [JSONValue], row: JSONValue?) -> Int? {
         if let row {
-            guard row["start"].seconds != nil else { return nil }
-            return passages.firstIndex { $0.offset == row.transcriptStartOffset }
+            return passages.firstIndex { $0.offset == row.transcriptStartOffset } ?? passages.indices.first
         }
         let offsets = Set(shown.filter { $0["start"].seconds != nil }.map(\.transcriptStartOffset))
         return passages.firstIndex { offsets.contains($0.offset) } ?? passages.indices.first
@@ -627,11 +646,14 @@ private struct TranscriptSpeakerEditor: View {
     }
 }
 
-private extension JSONValue {
+extension JSONValue {
     var seconds: Double? {
         if case .number(let value) = self, value.isFinite, value >= 0 { return value }
         return nil
     }
+}
+
+private extension JSONValue {
     var hasSpokenText: Bool { !self["text"].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var transcriptStartOffset: Int { self["start_offset"].integer }
     var assignedSpeakerName: String? {
@@ -644,9 +666,10 @@ private extension JSONValue {
     }
     var recordingSpeakerIdentity: String? {
         let attribution = self["attribution"].text
-        guard attribution != "unknown", attribution != "overlap" else { return nil }
+        guard attribution != "overlap" else { return nil }
         let edit = self["speaker_edit"]
         if !edit["id"].text.isEmpty { return "edit:\(edit["kind"].text):\(edit["scope_id"].text):\(edit["id"].text)" }
+        guard attribution != "unknown" else { return nil }
         let id = self["speaker_id"].text
         if !id.isEmpty { return "id:" + id }
         let part = self["source_part"].text
@@ -655,7 +678,8 @@ private extension JSONValue {
         return label.isEmpty ? nil : "part:\(part):label:\(label)"
     }
     var recordingSpeakerKey: String? {
-        guard self["attribution"].text != "unknown", self["attribution"].text != "overlap" else { return nil }
+        let attribution = self["attribution"].text
+        guard attribution != "overlap", attribution != "unknown" || recordingSpeakerIdentity != nil else { return nil }
         return assignedSpeakerName.map { "name:" + $0 } ?? recordingSpeakerIdentity
     }
     var speakerAudioInterval: RecordingSkipInterval? {
@@ -679,9 +703,9 @@ struct RecordingSpeakerReading {
     struct Speaker: Identifiable {
         let id: String
         let name: String?
-        let letter: String
+        let number: Int
         let colorIndex: Int
-        var label: String { name ?? L10n.text("Speaker \(letter)") }
+        var label: String { name ?? L10n.text("Speaker \(number)") }
 
         func color(dark: Bool) -> Color {
             let light: [UInt32] = [0x005e9c, 0xa33a10, 0x087546, 0x793795, 0xa12552, 0x006d72, 0x805b04, 0x404ab2, 0x9e3639, 0x526d13]
@@ -712,7 +736,7 @@ struct RecordingSpeakerReading {
             guard let key = turn.recordingSpeakerKey, byID[key] == nil else { continue }
             let name = turn.assignedSpeakerName
             let color = name?.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 10 } ?? index % 10
-            let speaker = Speaker(id: key, name: name, letter: Self.letter(index), colorIndex: color)
+            let speaker = Speaker(id: key, name: name, number: index + 1, colorIndex: color)
             speakers.append(speaker); byID[key] = speaker
         }
         let excluded = filters.scope == scope ? filters.excluded.intersection(byID.keys) : []
@@ -729,15 +753,6 @@ struct RecordingSpeakerReading {
     @MainActor func toggle(_ key: String) { filters.toggle(key, scope: scope) }
     func speaker(for turn: JSONValue) -> Speaker? { turn.recordingSpeakerKey.flatMap { byID[$0] } }
     func hides(_ turn: JSONValue) -> Bool { turn.recordingSpeakerKey.map(excluded.contains) ?? false }
-
-    private static func letter(_ index: Int) -> String {
-        var value = index, letter = ""
-        while value >= 0 {
-            if let scalar = UnicodeScalar(65 + value % 26) { letter = String(scalar) + letter }
-            value = value / 26 - 1
-        }
-        return letter
-    }
 
     private static func skipPlan(_ turns: [JSONValue], excluded: Set<String>) -> (intervals: [RecordingSkipInterval], incomplete: Bool) {
         func hidden(_ turn: JSONValue) -> Bool { turn.recordingSpeakerKey.map(excluded.contains) ?? false }

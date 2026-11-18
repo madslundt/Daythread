@@ -111,7 +111,7 @@ describe("compact recording sessions", () => {
     const html = renderToStaticMarkup(<RecordingChapterContent chapter={chapter} timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
     expect(html).toContain("Launch stays on schedule.");
-    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Topic transcript/);
     expect(html).not.toContain("First passage in the same subject.");
     expect(html).toContain(">Previous</button>");
     expect(html).toContain(">Next</button>");

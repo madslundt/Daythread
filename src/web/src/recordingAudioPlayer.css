@@ -29,6 +29,9 @@
 .recording-topic-bookmarks { margin: 0 0 16px; padding: 0; list-style: none; }
 .recording-topic-bookmarks li { border-top: 1px solid var(--line); }
 .recording-topic-bookmarks li:last-child { border-bottom: 1px solid var(--line); }
+.recording-topic-heading { display: flex; align-items: center; gap: 4px; }
+.recording-topic-heading > .recording-topic-toggle { flex: 1; min-width: 0; }
+.recording-topic-play { color: var(--accent); }
 .recording-topic-toggle { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 44px; border: 0; border-radius: 0; padding: 12px 4px; background: transparent; text-align: left; }
 .recording-topic-toggle > span { min-width: 0; overflow-wrap: anywhere; }
 .recording-topic-toggle > svg { flex-shrink: 0; color: var(--muted); }

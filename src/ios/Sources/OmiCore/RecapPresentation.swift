@@ -144,7 +144,7 @@ public struct RecordingSpeakerEvidence: Decodable, Equatable, Sendable {
     public let utterances: [RecordingSpeakerUtterance]
 
     public func exactUtterances(for text: String) -> [RecordingSpeakerUtterance]? {
-        guard state == "ready", !utterances.isEmpty else { return nil }
+        guard !utterances.isEmpty, state == "ready" || utterances.contains(where: { $0.speakerEdit != nil }) else { return nil }
         var cursor = 0
         for utterance in utterances {
             guard utterance.startOffset == cursor,
@@ -185,6 +185,7 @@ public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
     public let speakerID: String?
     public let speakerLabel: String?
     public let speakerName: String?
+    public let speakerNameIsCustom: Bool?
     public let speakerEdit: Edit?
 
     enum CodingKeys: String, CodingKey {
@@ -194,6 +195,7 @@ public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
         case speakerID = "speaker_id"
         case speakerLabel = "speaker_label"
         case speakerName = "speaker_name"
+        case speakerNameIsCustom = "speaker_name_is_custom"
         case speakerEdit = "speaker_edit"
     }
 

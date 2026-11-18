@@ -77,7 +77,39 @@ def speaker_routes(get_memory) -> APIRouter:
             })
             db.execute("UPDATE audio SET transcript_speaker_names=? WHERE id=?",
                        (row["transcript_speaker_names"], str(key)))
-            return public_source(row, attributed=attributed)
+        return public_source(row, attributed=attributed)
+
+    @router.patch("/recording-transcript/{key}/{speaker_key}")
+    def rename_recording_transcript_speaker(key: UUID, speaker_key: str, body: Rename) -> dict:
+        from .merged_recordings import load_recording
+        from .recording_transcription_recap import (
+            UNCLASSIFIED_RECORDING_SPEAKER,
+            editable_recording_speaker_evidence,
+        )
+
+        memory = get_memory()
+        with memory.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            recording = load_recording(memory.store, str(key), db)
+            selection = memory.store.selected_recording_transcription(
+                recording, memory.settings, db,
+            )
+            changed = "Speaker assignments or evidence changed; reload and retry"
+            if selection["state"] != "selected" or speaker_key != UNCLASSIFIED_RECORDING_SPEAKER:
+                raise HTTPException(409, changed)
+            evidence = editable_recording_speaker_evidence(memory.recaps, recording, selection, db)
+            if not any(
+                edit["kind"] == "recording-transcript" and edit["version"] == body.version
+                for turn in evidence["utterances"] if (edit := turn.get("speaker_edit"))
+            ):
+                raise HTTPException(409, changed)
+            db.execute(
+                "INSERT INTO recording_transcript_speaker_names VALUES(?,?,?,?) "
+                "ON CONFLICT(recording_id,result_version) DO UPDATE SET "
+                "version=excluded.version,name=excluded.name",
+                (recording.id, selection["result_version"], str(uuid4()), body.name or ""),
+            )
+            return editable_recording_speaker_evidence(memory.recaps, recording, selection, db)
 
     @router.get("/{kind}/{key}")
     def read(kind: Kind, key: UUID) -> dict:

@@ -38,6 +38,52 @@ def test_versioned_selection_is_explicit_and_invalidates_after_correction(app_re
     assert [store.get_audio(source_id)["text"] for source_id in ids] != before
 
 
+def test_selected_unclassified_speech_has_an_editable_versioned_label(app_recording):
+    client, store, rid, ids, _, _ = app_recording
+    memory = client.app.state.memory
+    pinned_settings(memory)
+    text = "Full selected text."
+    _, version = make_ready_variant(store, memory, rid, ids, text)
+    detail_path = f"/v1/recordings/{rid}"
+    selection_path = f"{detail_path}/transcript-selection"
+    assert client.put(selection_path, json={
+        "expected_version": 0, "result_version": version,
+    }).status_code == 200
+
+    def selected_turn():
+        detail = client.get(detail_path).json()
+        assert all(turn["speaker_edit"]["kind"] == "transcript"
+                   for turn in detail["transcript_turns"])
+        evidence = detail["transcript_selection"]["transcript"]["speaker_evidence"]
+        assert evidence["state"] == "idle"
+        turn, = evidence["utterances"]
+        assert turn["text"] == text and turn["attribution"] == "unknown"
+        assert turn["start"] is None and turn["end"] is None
+        return turn
+
+    edit = selected_turn()["speaker_edit"]
+    path = f"/v1/speakers/{edit['kind']}/{edit['scope_id']}/{edit['id']}"
+    body = {"version": edit["version"], "name": "Mads"}
+    assert client.patch(path, json=body).status_code == 200
+    assert selected_turn()["speaker_name"] == "Mads"
+    assert client.patch(path, json=body).status_code == 409
+    current_version = selected_turn()["speaker_edit"]["version"]
+    assert client.put(selection_path, json={
+        "expected_version": 1, "result_version": None,
+    }).status_code == 200
+    assert client.patch(path, json={"version": current_version, "name": None}).status_code == 409
+    assert client.put(selection_path, json={
+        "expected_version": 2, "result_version": version,
+    }).status_code == 200
+    assert selected_turn()["speaker_name"] == "Mads"
+    assert selected_turn()["speaker_edit"]["version"] != current_version
+    assert all("speaker_name" not in turn
+               for turn in client.get(detail_path).json()["transcript_turns"])
+    store.delete_audio(ids[0])
+    with store.connect() as db:
+        assert not db.execute("SELECT 1 FROM recording_transcript_speaker_names").fetchone()
+
+
 def test_exact_historical_transcript_withholds_current_audio_after_pipeline_change(app_recording):
     client, store, rid, ids, _, _ = app_recording
     memory = client.app.state.memory

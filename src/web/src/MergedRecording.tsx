@@ -71,17 +71,19 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const selectedText = selection?.state === "selected" ? selection.transcript?.text : null;
   const showingSelected = typeof selectedText === "string";
   const speakerEvidence = showingSelected ? selection?.transcript?.speaker_evidence : undefined;
-  const speakerRuns = useMemo(
-    () => compactSpeakerEvidence(speakerEvidence?.utterances || []), [speakerEvidence],
-  );
-  const hasSpeakerEvidence = speakerEvidence?.state === "ready"
-    && exactSpeakerEvidence(speakerEvidence.utterances, selectedText ?? "");
+  const speakerRuns = useMemo(() => {
+    const pieces = speakerEvidence?.utterances;
+    if (!pieces || !exactSpeakerEvidence(pieces, selectedText ?? "")) return undefined;
+    // The API already coalesces editable runs and validates their timing.
+    if (pieces.some((piece) => piece.speaker_edit)) return pieces;
+    return speakerEvidence.state === "ready" ? compactSpeakerEvidence(pieces) : undefined;
+  }, [speakerEvidence, selectedText]);
   const filters = useSpeakerFilters();
   const originalScope = `original:${recording.id}:${recording.transcript_version}`;
   const selectedScope = `selected:${recording.id}:${selection?.result_version ?? selection?.transcript?.version ?? ""}`;
   const skipSupported = recording.audio_available && !recording.mixed_audio && recording.audio_availability !== "partial";
   const originalReading = useSpeakerReading(recording.transcript_turns, originalScope, filters, recording.audio_available, skipSupported);
-  const selectedReading = useSpeakerReading(hasSpeakerEvidence ? speakerEvidence?.utterances : undefined,
+  const selectedReading = useSpeakerReading(speakerRuns,
     selectedScope, filters, recording.audio_available, skipSupported);
   const activeReading = showingSelected && filters.selection?.scope === selectedScope ? selectedReading : originalReading;
   const displayedText = showingSelected ? selectedText : recording.text;
@@ -105,7 +107,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       bookmarks={occurrences.length < 2 ? [] : occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
         label: section.title + (section.occurrenceCount > 1 ? ` · ${t("Recording")} ${section.occurrenceNumber}` : "")
           + (section.start_estimated ? ` ${t("· estimated times")}` : ""),
-        seconds: section.start_seconds, onSelect: () => playback.seekTo(section.start_seconds),
+        seconds: section.start_seconds, onSelect: () => playback.playFrom(section.start_seconds!),
       }])}
       audioRef={playback.audioRef} onReady={playback.onReady} skipIntervals={activeReading.intervals} /> : null}
     {recording.interruptions?.length ? <details className="recording-disclosure">
@@ -148,19 +150,18 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       <h3>{showingSelected ? t("Chapters in the original transcript") : t("Chapters")}</h3>
       <RecordingTopicList topics={topics.map((group) => ({ key: group.key, title: group.title,
         occurrences: group.occurrences.map(([section]) => ({ id: `${section.chapter_id}:${section.start_offset}`,
-          label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated })) }))}
+          label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated,
+          play: recording.audio_available && section.start_seconds != null ? () => playback.playFrom(section.start_seconds!) : undefined })) }))}
         selected={topic?.id} onSelect={setSelectedTopic} renderTopic={(id) => topic ? <div key={id}>
           <TopicReading summary={topic.summary ? <p className="transcript-text">{topic.summary}</p> : null}
             transcript={(visible) => visible ? <TranscriptTurns text={originalText.slice(topic.start_offset, topic.end_offset).join("")}
               turns={turnsInRange(recording.text || "", recording.transcript_turns, topic)} reading={originalReading}
               allTurns={recording.transcript_turns} previewSrc={previewSrc}
               onSeek={recording.audio_available ? playback.seekTo : undefined} /> : null} />
-          {recording.audio_available && topic.start_seconds !== undefined ? <button type="button" className="text-button"
-            onClick={() => playback.seekTo(topic.start_seconds)}>{t("Listen from this topic")}</button> : null}
         </div> : null} />
     </div> : null}
     {displayedText !== null ? <RecordingTranscript>
-      <TranscriptTurns text={displayedText} turns={showingSelected ? hasSpeakerEvidence ? speakerRuns : undefined : recording.transcript_turns}
+      <TranscriptTurns text={displayedText} turns={showingSelected ? speakerRuns : recording.transcript_turns}
         reading={showingSelected ? selectedReading : originalReading} previewSrc={previewSrc}
         onSeek={recording.audio_available ? playback.seekTo : undefined} />
       {showingSelected && recording.text !== null ? <RecordingTranscript label={t("Original part transcripts")}>

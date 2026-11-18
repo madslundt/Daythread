@@ -25,8 +25,19 @@ describe("recording topic sections", () => {
     expect(html).not.toContain("No test drive date was agreed.");
     expect(html).not.toContain("☕️ Cocoa.");
     expect(html).toContain("Omi recorder");
-    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="true">Topic summary/);
-    expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
+    expect(html).toContain('role="tablist" aria-label="Topic view" class="translation-tabs"');
+    expect(html).toMatch(/aria-selected="true" tabindex="0">Topic summary/);
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Topic transcript/);
+  });
+  it("shows a play bookmark on a collapsed topic only when it has playable audio", () => {
+    const timed = { ...source, sections: [{ ...source.sections![0], start_seconds: 0 }, ...source.sections!.slice(1)] };
+    const html = renderToStaticMarkup(<RecordingSections source={timed} compact onPlay={() => {}} />);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html.match(/class="icon-button recording-topic-play"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Listen from this topic · Cocoa"');
+    expect(html).not.toContain('role="tablist"');
+    expect(renderToStaticMarkup(<RecordingSections source={{ ...timed, audio_available: false }} compact onPlay={() => {}} />))
+      .not.toContain('recording-topic-play');
   });
   it("puts the topics between playback and the collapsed full transcript", () => {
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[source]} />);

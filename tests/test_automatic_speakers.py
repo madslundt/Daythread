@@ -121,7 +121,13 @@ def test_projection_keeps_unaligned_words_and_marks_turn_crossings_unknown(clien
     assert displayed[0]["start"] == 0.1
     assert displayed[-1]["attribution"] == "unknown"
     assert "speaker_label" not in displayed[-1]
-    assert "speaker_edit" not in displayed[-1]
+    assert "speaker_id" not in displayed[-1]
+    fallback = displayed[-1]["speaker_edit"]
+    assert fallback["kind"] == "transcript" and fallback["scope_id"] == keys[0]
+    fallback_path = f"/v1/speakers/transcript/{keys[0]}/{fallback['id']}"
+    assert client.patch(fallback_path, json={
+        "version": fallback["version"], "name": "Unknown passage",
+    }).status_code == 200
     edit = displayed[0]["speaker_edit"]
     rename_path = f"/v1/speakers/{edit['kind']}/{edit['scope_id']}/{edit['id']}"
     body = {"version": edit["version"], "name": "Rae"}
@@ -129,6 +135,8 @@ def test_projection_keeps_unaligned_words_and_marks_turn_crossings_unknown(clien
     assert client.patch(rename_path, json=body).status_code == 409
     updated = client.get(f"/v1/transcripts/{keys[0]}").json()
     assert updated["transcript_turns"][0]["speaker_name"] == "Rae"
+    assert updated["transcript_turns"][-1]["speaker_name"] == "Unknown passage"
+    assert updated["transcript_turns"][-1]["attribution"] == "unknown"
     assert updated["text"] == "alpha beta gamma"
 
 

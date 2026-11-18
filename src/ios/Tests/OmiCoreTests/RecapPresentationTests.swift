@@ -169,6 +169,24 @@ final class RecapPresentationTests: XCTestCase {
         XCTAssertNil(partial.exactUtterances(for: "Hej 😊, ja!"), "Partial timing must not hide unknown transcript text")
     }
 
+    func testSelectedRecordingAcceptsEditableUnknownSpeechWithoutInventingTiming() throws {
+        let payload = """
+        {"state":"idle","version":null,"utterances":[{
+          "text":"Hello.","start_offset":0,"end_offset":6,"start":null,"end":null,
+          "attribution":"unknown","speaker_name":"Speaker 2","speaker_name_is_custom":true,
+          "speaker_edit":{"kind":"recording-transcript","scope_id":"recording",
+                          "id":"unclassified","version":"label-v1"}
+        }]}
+        """
+        let evidence = try JSONDecoder().decode(RecordingSpeakerEvidence.self, from: Data(payload.utf8))
+        let turn = try XCTUnwrap(evidence.exactUtterances(for: "Hello.")?.first)
+        XCTAssertEqual(turn.speakerEdit?.kind, "recording-transcript")
+        XCTAssertEqual(turn.speakerName, "Speaker 2")
+        XCTAssertEqual(turn.speakerNameIsCustom, true)
+        XCTAssertNil(turn.start)
+        XCTAssertNil(turn.end)
+    }
+
     func testTranscriptSelectionCASPayloadIncludesExplicitNullToRestoreOriginal() throws {
         let clear = try RecordingTranscriptSelectionRequest(expectedVersion: 9, resultVersion: nil).jsonObject()
         XCTAssertEqual(clear["expected_version"] as? Int, 9)

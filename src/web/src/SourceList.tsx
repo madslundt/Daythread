@@ -208,7 +208,7 @@ function SourceRow({
               bookmarks={compact ? groupTopicRuns(currentSource.sections || [], (section) => section.title,
                 (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.flatMap(([section]) => section.start_seconds === undefined ? [] : [{
                 label: section.title,
-                seconds: section.start_seconds, onSelect: () => topicPlayback.seekTo(section.start_seconds),
+                seconds: section.start_seconds, onSelect: () => topicPlayback.playFrom(section.start_seconds!),
               }])) : undefined}
             />
             {!compact ? <a
@@ -319,7 +319,7 @@ function SourceRow({
           <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
         {!compact ? metadata : null}
         {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
-        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo} reading={reading} fullTurns={turns}
+        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo} onPlay={topicPlayback.playFrom} reading={reading} fullTurns={turns}
           selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
         <div className={compact ? "recording-transcript" : undefined}>
         {editing ? (

@@ -12,6 +12,42 @@ from .recording_transcription_selection import SelectedRecordingVariant
 from .recording_transcription_store import pipeline_fingerprint, project_words, source_fingerprint
 from .transcript_turns import saved_speaker_edit
 
+UNCLASSIFIED_RECORDING_SPEAKER = "unclassified"
+
+
+def editable_recording_speaker_evidence(recaps, recording, selection, db) -> dict:
+    """Expose a label for unclassified speech, separate from actual diarization."""
+    variant = selection["transcript"]
+    group = Conversation(recording.rows, recording.rows[-1]["ended_at"], "recording")
+    evidence, evidence_version, state = recaps.recording_speaker_evidence(
+        group, recording.id, variant, db, editable=True,
+    )
+    if not evidence:
+        pieces = project_words(variant.get("text") or "", variant.get("word_segments") or [],
+                               variant.get("source_map") or [])
+        evidence = _recording_utterances(
+            [dict(piece, attribution="unknown") for piece in pieces], recording.id,
+        )
+    saved = db.execute(
+        "SELECT name,version FROM recording_transcript_speaker_names "
+        "WHERE recording_id=? AND result_version=?", (recording.id, selection["result_version"]),
+    ).fetchone()
+    version = hashlib.sha256(json.dumps([
+        selection["result_version"], selection["selection_version"], evidence_version,
+        saved["version"] if saved else None,
+    ]).encode()).hexdigest()
+    for turn in evidence:
+        if turn["attribution"] != "unknown" or not turn["text"].strip():
+            continue
+        turn["speaker_edit"] = {
+            "kind": "recording-transcript", "scope_id": recording.id,
+            "id": UNCLASSIFIED_RECORDING_SPEAKER, "version": version,
+        }
+        if saved and saved["name"]:
+            turn["speaker_name"] = saved["name"]
+            turn["speaker_name_is_custom"] = True
+    return {"state": state, "version": evidence_version, "utterances": evidence}
+
 
 def selected_recording_variants(
     recaps, group: Conversation, db=None,

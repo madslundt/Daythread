@@ -1,6 +1,6 @@
 import type { TranscriptTurn } from "./types";
 
-export type Speaker = { key: string; name?: string; letter?: string; color: number };
+export type Speaker = { key: string; name?: string; number: number; color: number };
 export type AudioInterval = { start: number; end: number };
 
 function assignedName(turn: TranscriptTurn) {
@@ -10,8 +10,9 @@ function assignedName(turn: TranscriptTurn) {
 }
 
 export function speakerIdentity(turn: TranscriptTurn): string | undefined {
-  if (turn.attribution === "unknown" || turn.attribution === "overlap") return;
+  if (turn.attribution === "overlap") return;
   if (turn.speaker_edit) return JSON.stringify([turn.speaker_edit.kind, turn.speaker_edit.scope_id, turn.speaker_edit.id]);
+  if (turn.attribution === "unknown") return;
   if (turn.speaker_id) return `id:${turn.speaker_id}`;
   const label = turn.speaker_label?.trim() || turn.speaker_name?.trim();
   const identity = turn.speaker_number != null ? `number:${turn.speaker_number}` : label ? `label:${label}` : undefined;
@@ -19,7 +20,7 @@ export function speakerIdentity(turn: TranscriptTurn): string | undefined {
 }
 
 export function speakerKey(turn: TranscriptTurn): string | undefined {
-  if (turn.attribution === "unknown" || turn.attribution === "overlap") return;
+  if (turn.attribution === "overlap" || (turn.attribution === "unknown" && !turn.speaker_edit)) return;
   const name = assignedName(turn);
   return name ? `name:${name}` : speakerIdentity(turn);
 }
@@ -45,16 +46,14 @@ export function speakerPassages(turns: readonly TranscriptTurn[], identity: stri
 }
 
 export function initialSpeakerPassage(passages: ReturnType<typeof speakerPassages>, shown: readonly TranscriptTurn[], row?: TranscriptTurn) {
-  if (row) return validStart(row) ? passages.findIndex((passage) => passage.offset === row.start_offset) : -1;
+  if (row && validStart(row)) {
+    const clicked = passages.findIndex((passage) => passage.offset === row.start_offset);
+    if (clicked !== -1) return clicked;
+  }
+  if (row) return passages.length ? 0 : -1;
   const offsets = new Set(shown.filter(validStart).map((turn) => turn.start_offset));
   const first = passages.findIndex((passage) => offsets.has(passage.offset));
   return first === -1 && passages.length ? 0 : first;
-}
-
-function letterFor(index: number): string {
-  let letter = "";
-  for (; index >= 0; index = Math.floor(index / 26) - 1) letter = String.fromCharCode(65 + index % 26) + letter;
-  return letter;
 }
 
 export function recordingSpeakers(turns: readonly TranscriptTurn[]) {
@@ -64,16 +63,13 @@ export function recordingSpeakers(turns: readonly TranscriptTurn[]) {
     const key = speakerKey(turn);
     const identity = speakerIdentity(turn);
     if (identity && turn.text.trim() && !identities.has(identity)) identities.set(identity, identities.size);
-    if (!key || speakers.has(key) || !turn.text.trim()) continue;
+    if (!key || !identity || speakers.has(key) || !turn.text.trim()) continue;
     const name = assignedName(turn);
     let color = 0;
-    if (name) {
-      for (const char of name) color = (color * 31 + char.codePointAt(0)!) % 10;
-      speakers.set(key, { key, name, color });
-    } else {
-      const index = identities.get(identity!)!;
-      speakers.set(key, { key, letter: letterFor(index), color: index % 10 });
-    }
+    const index = identities.get(identity)!;
+    if (name) for (const char of name) color = (color * 31 + char.codePointAt(0)!) % 10;
+    else color = index % 10;
+    speakers.set(key, { key, name, number: index + 1, color });
   }
   return speakers;
 }

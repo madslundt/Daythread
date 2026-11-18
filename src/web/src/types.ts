@@ -1,5 +1,5 @@
 export type SpeakerEdit = {
-  kind: "source" | "meeting" | "transcript"; scope_id: string; id: string; version: string;
+  kind: "source" | "meeting" | "transcript" | "recording-transcript"; scope_id: string; id: string; version: string;
 };
 
 export type TranscriptTurn = {

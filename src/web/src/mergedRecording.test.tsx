@@ -57,6 +57,7 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("Next recordings");
     expect(html).toContain('class="recording-topic-bookmarks"');
     expect(html.match(/class="recording-topic-toggle" type="button" aria-expanded="false"/g)).toHaveLength(2);
+    expect(html.match(/class="icon-button recording-topic-play"/g)).toHaveLength(2);
     expect(html).toContain('26:40');
     expect(html).not.toContain('<select');
     expect(html.indexOf('<audio')).toBeLessThan(html.indexOf('class="recording-topic-bookmarks"'));
@@ -140,8 +141,8 @@ describe("combined uploaded recording", () => {
       { text: "Hi.", start_offset: 7, end_offset: 10, speaker_name: "Rae", start: 2 },
       { text: "Thanks.", start_offset: 11, end_offset: 18, speaker_number: 1, start: 4 },
     ]} />);
-    expect(html.match(/>Speaker A<\/span>/g)).toHaveLength(2);
-    expect(html).toContain('aria-pressed="true">Speaker A</button>');
+    expect(html.match(/>Speaker 1<\/span>/g)).toHaveLength(2);
+    expect(html).toContain('aria-pressed="true">Speaker 1</button>');
     expect(html).toContain("Rae");
     expect(html).toContain("Show timestamps");
     expect(html).not.toContain("00:02");
@@ -194,6 +195,25 @@ describe("combined uploaded recording", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ text: "unclear words.", attribution: "unknown",
       start_offset: 0, end_offset: 14 });
+  });
+  it("plays a topic bookmark when paused and only seeks when already playing", () => {
+    const pause = vi.fn();
+    const play = vi.fn().mockResolvedValue(undefined);
+    const audio = { pause, play, paused: true, currentTime: 0, readyState: 0 };
+    const playback = createRecordingSeekController();
+    playback.audioRef(audio as unknown as HTMLAudioElement);
+    playback.playFrom(5);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(audio.currentTime).toBe(0);
+    audio.readyState = 1;
+    playback.onReady();
+    expect(audio.currentTime).toBe(5);
+    expect(play).toHaveBeenCalledTimes(1);
+    audio.paused = false;
+    playback.playFrom(9);
+    expect(audio.currentTime).toBe(9);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(pause).not.toHaveBeenCalled();
   });
   it("falls back to original transcript when the selection is stale", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,

@@ -26,7 +26,7 @@ describe("combined uploaded recording", () => {
     expect(html).toContain("09:00:04");
     expect(html).toContain("09:00:06");
     expect(html).toContain("Processing audio");
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain(recording.text);
     expect(html.match(/<audio /g)).toHaveLength(1);
   });
@@ -91,21 +91,22 @@ describe("combined uploaded recording", () => {
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("Launch continues");
   });
-  it("shows the selected full transcript and preserves the original transcript access", () => {
+  it("keeps full-transcript selection controls out of the default Summary view", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       recording_transcription: { state: "ready", version: "variant-v1", text: "Whole selected transcript." },
       transcript_selection: { state: "selected", selection_version: 3, result_version: "variant-v1",
         transcript: { text: "Whole selected transcript.", version: "variant-v1" } },
     }} />);
-    expect(html).toContain("Using selected full-recording transcript");
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain("Using selected full-recording transcript");
+    expect(html).toMatch(/aria-selected="true" tabindex="0">Summary/);
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain("Whole selected transcript.");
     expect(html).not.toContain("Launch continues across upload parts.");
     expect(html).toContain("Chapters in the original transcript");
     expect(html).toContain('class="recording-player-bookmarks"');
     expect(html).not.toContain("Use full-recording transcript");
   });
-  it("shows readable selected text separately from original part bookmarks", () => {
+  it("keeps selected text and speakers out of the Summary view", () => {
     const canonical = "Hello there.\nUnknown word.";
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       recording_transcription: { state: "ready", version: "variant-v1", text: canonical },
@@ -127,7 +128,7 @@ describe("combined uploaded recording", () => {
           },
         },
     }}} />);
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain(canonical);
     expect(html).not.toContain("Rae");
     expect(html).not.toContain("recording-speaker-label");
@@ -215,12 +216,12 @@ describe("combined uploaded recording", () => {
     expect(play).toHaveBeenCalledTimes(1);
     expect(pause).not.toHaveBeenCalled();
   });
-  it("falls back to original transcript when the selection is stale", () => {
+  it("keeps stale-transcript details out of the default Summary view", () => {
     const html = renderToStaticMarkup(<MergedRecordingContent recording={{ ...recording,
       transcript_selection: { state: "stale", selection_version: 2, result_version: "old" },
     }} />);
-    expect(html).toContain("The selected transcript is out of date.");
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).not.toContain("The selected transcript is out of date.");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain("old transcript text");
   });
 });

@@ -45,7 +45,7 @@ struct SourceDetail: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section(L10n.text("Recording summary")) {
+                Section {
                     SourceTranscriptTopicsView(source: evidence, editing: editing,
                         onSeek: canLoadAudio ? { audio.seek(to: $0) } : nil,
                         onPlayTopic: canLoadAudio ? { audio.playFrom($0) } : nil,

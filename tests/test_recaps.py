@@ -439,7 +439,7 @@ def test_speaker_projection_only_returns_source_keys_for_multiple_scopes(client,
     rows = memory.store.get_audio_many([first, second])
     group = SimpleNamespace(sources=[rows[first], rows[second]])
     scopes = {
-        key: {"key": f"source:{key}", "rows": [rows[key]]}
+        key: {"scope": {"kind": "source", "id": key}, "key": f"source:{key}", "rows": [rows[key]]}
         for key in (first, second)
     }
     monkeypatch.setattr(
@@ -455,6 +455,9 @@ def test_speaker_projection_only_returns_source_keys_for_multiple_scopes(client,
     )
     projected = memory.recaps.speaker_projection(group)
     assert set(projected) == {first, second}
+    assert {key: value["scope"] for key, value in projected.items()} == {
+        key: {"kind": "source", "id": key} for key in (first, second)
+    }
 
 
 @pytest.mark.anyio

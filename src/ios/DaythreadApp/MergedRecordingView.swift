@@ -87,7 +87,7 @@ struct MergedRecordingContentView: View {
     @State private var selectionBusy = false
     @State private var selectionError: String?
     @State private var selectionOperation: Task<Void, Never>?
-    @State private var transcriptOpen = false
+    @State private var showingTranscript = false
     @State private var originalsOpen = false
 
     private var topics: [JSONValue] { recording["sections"].array }
@@ -183,70 +183,24 @@ struct MergedRecordingContentView: View {
                      : L10n.text("Audio expired under retention; transcript remains available."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if !recording["recording_summary"].text.isEmpty {
+            RecordingReadingPicker(showingTranscript: $showingTranscript)
+            if !showingTranscript && !recording["recording_summary"].text.isEmpty {
                 Text(L10n.text("Recording summary")).font(.headline).accessibilityAddTraits(.isHeader)
                 Text(recording["recording_summary"].text).textSelection(.enabled)
                 if selectedTranscript != nil {
                     Text(L10n.text("Based on the original part transcripts.")).font(.caption).foregroundStyle(.secondary)
                 }
+            } else if !showingTranscript && topics.isEmpty && (selectedTranscript != nil || recording["text"] != .null) {
+                Text(L10n.text("No summary in this version.")).font(.caption).foregroundStyle(.secondary)
             }
-            if !topics.isEmpty { topicSummaries }
-            if let text = selectedTranscript {
-                HStack {
-                    Text(L10n.text("Using selected full-recording transcript"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button(L10n.text("Use original part transcripts")) {
-                        chooseTranscript(nil)
-                    }.disabled(selectionBusy)
-                }
-                if selectionBusy { ProgressView() }
-                if let selectionError { ErrorNote(message: selectionError) }
-                DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
-                    if transcriptOpen {
-                        RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek, speakerReading: selectedReading,
-                            previewPlayback: seek == nil ? nil : playback)
-                        if case .string(let original) = recording["text"] {
-                            DisclosureGroup(L10n.text("Original part transcripts"), isExpanded: $originalsOpen) {
-                                if originalsOpen {
-                                    RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array,
-                                        onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                if transcriptSelection?.state == .stale {
-                    Text(L10n.text("The selected transcript is out of date. Showing the original part transcripts."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if recording["recording_transcription"]["state"].text == "ready",
-                   !recording["recording_transcription"]["version"].text.isEmpty {
-                    HStack {
-                        Text(L10n.text("A full-recording transcript is ready"))
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button(L10n.text("Use full-recording transcript")) {
-                            chooseTranscript(recording["recording_transcription"]["version"].text)
-                        }.disabled(selectionBusy)
-                    }
-                }
-                if selectionBusy { ProgressView() }
-                if let selectionError { ErrorNote(message: selectionError) }
-                if case .string(let text) = recording["text"] {
-                    DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
-                        if transcriptOpen {
-                            RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array,
-                                onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
-                        }
-                    }
-                } else {
-                    Text(recording["state"].text == "expired"
-                         ? L10n.text("Transcript expired under your retention policy.")
-                         : L10n.text("Processing audio"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+            if showingTranscript && topics.indices.contains(selectedTopic ?? -1) {
+                Button(L10n.text("Full transcript")) { selectedTopic = nil }.buttonStyle(.borderless)
+            }
+            if !topics.isEmpty { topicList }
+            if showingTranscript && !topics.indices.contains(selectedTopic ?? -1) {
+                fullTranscript
+            } else if selectedTranscript == nil && recording["text"] == .null {
+                transcriptUnavailable
             }
             if recording["text"] != .null && recording["state"].text == "processing" {
                 Text(L10n.text("Processing audio")).font(.caption).foregroundStyle(.secondary)
@@ -271,7 +225,64 @@ struct MergedRecordingContentView: View {
         .onDisappear { playback.close(); selectionOperation?.cancel() }
     }
 
-    private var topicSummaries: some View {
+    @ViewBuilder private var fullTranscript: some View {
+        if let text = selectedTranscript {
+                HStack {
+                    Text(L10n.text("Using selected full-recording transcript"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button(L10n.text("Use original part transcripts")) {
+                        chooseTranscript(nil)
+                    }.disabled(selectionBusy)
+                }
+                if selectionBusy { ProgressView() }
+                if let selectionError { ErrorNote(message: selectionError) }
+                Text(L10n.text("Full transcript")).font(.headline).accessibilityAddTraits(.isHeader)
+                RecordingTranscriptTurns(text: text, turns: selectedTurns, onSeek: seek, speakerReading: selectedReading,
+                    previewPlayback: seek == nil ? nil : playback)
+                if case .string(let original) = recording["text"] {
+                    DisclosureGroup(L10n.text("Original part transcripts"), isExpanded: $originalsOpen) {
+                        if originalsOpen {
+                            RecordingTranscriptTurns(text: original, turns: recording["transcript_turns"].array,
+                                onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
+                        }
+                    }
+                }
+            } else {
+                if transcriptSelection?.state == .stale {
+                    Text(L10n.text("The selected transcript is out of date. Showing the original part transcripts."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if recording["recording_transcription"]["state"].text == "ready",
+                   !recording["recording_transcription"]["version"].text.isEmpty {
+                    HStack {
+                        Text(L10n.text("A full-recording transcript is ready"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button(L10n.text("Use full-recording transcript")) {
+                            chooseTranscript(recording["recording_transcription"]["version"].text)
+                        }.disabled(selectionBusy)
+                    }
+                }
+                if selectionBusy { ProgressView() }
+                if let selectionError { ErrorNote(message: selectionError) }
+                if case .string(let text) = recording["text"] {
+                    Text(L10n.text("Full transcript")).font(.headline).accessibilityAddTraits(.isHeader)
+                    RecordingTranscriptTurns(text: text, turns: recording["transcript_turns"].array,
+                        onSeek: seek, speakerReading: originalReading, previewPlayback: seek == nil ? nil : playback)
+                } else {
+                    transcriptUnavailable
+                }
+            }
+    }
+
+    private var transcriptUnavailable: some View {
+        Text(recording["state"].text == "expired"
+             ? L10n.text("Transcript expired under your retention policy.") : L10n.text("Processing audio"))
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var topicList: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(selectedTranscript == nil ? L10n.text("Topics") : L10n.text("Chapters in the original transcript"))
                 .font(.headline).accessibilityAddTraits(.isHeader)
@@ -279,10 +290,10 @@ struct MergedRecordingContentView: View {
                 RecordingTopicRow(title: topic["title"].text, expanded: selectedTopic == index,
                     toggle: { selectedTopic = selectedTopic == index ? nil : index }, seconds: topic["start_seconds"].seconds,
                     play: seek == nil ? nil : { playback.playFrom($0) }) {
-                    TopicReadingView {
-                        TopicSummaryText(text: topic["summary"].text)
-                    } transcript: {
+                    if showingTranscript {
                         topicTranscript(topic)
+                    } else {
+                        TopicSummaryText(text: topic["summary"].text)
                     }
                 }
             }

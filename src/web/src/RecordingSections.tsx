@@ -10,7 +10,7 @@ import { playbackTime } from "./recordingWaveform";
 import { TopicReading } from "./TopicReading";
 import { useSourceTurns, useSpeakerFilters, useSpeakerReading, type SpeakerReading } from "./RecordingTranscript";
 
-type SpeakerProps = { reading?: SpeakerReading; fullTurns?: TranscriptTurn[] };
+type SpeakerProps = { reading?: SpeakerReading; fullTurns?: TranscriptTurn[]; showingTranscript?: boolean };
 
 export function RecordingSections({ source, compact = false, onSeek, onPlay, selectedOffset, onSelectOffset, ...speakerProps }: {
   source: Source; compact?: boolean; onSeek?: (seconds?: number) => void;
@@ -64,7 +64,7 @@ function RecordingSection({ source, section, onSeek, ...speakerProps }: {
   </details>;
 }
 
-function RecordingTopicReader({ source, section, onSeek, hasPlayBookmark, ...speakerProps }: {
+function RecordingTopicReader({ source, section, onSeek, hasPlayBookmark, showingTranscript, ...speakerProps }: {
   source: Source; section: NonNullable<Source["sections"]>[number]; onSeek?: (seconds: number) => void;
   hasPlayBookmark?: boolean;
 } & SpeakerProps) {
@@ -73,10 +73,12 @@ function RecordingTopicReader({ source, section, onSeek, hasPlayBookmark, ...spe
   const turns = useSourceTurns(source, !speakerProps.reading);
   const local = useSpeakerReading(speakerProps.reading ? undefined : turns, source.id, filters, canPlay);
   const reading = speakerProps.reading ?? local;
+  const summary = section.summary?.trim() ? <p className="transcript-text">{section.summary}</p> : null;
+  const transcript = () => <TranscriptPassage source={source} section={section} onSeek={canPlay ? onSeek : undefined}
+    reading={reading} fullTurns={speakerProps.fullTurns ?? turns} />;
   return <>
-    <TopicReading summary={section.summary?.trim() ? <p className="transcript-text">{section.summary}</p> : null}
-      transcript={(visible) => visible ? <TranscriptPassage source={source} section={section} onSeek={canPlay ? onSeek : undefined}
-        reading={reading} fullTurns={speakerProps.fullTurns ?? turns} /> : null} />
+    {showingTranscript === undefined ? <TopicReading summary={summary} transcript={(visible) => visible ? transcript() : null} />
+      : showingTranscript ? transcript() : summary || <p className="caption">{t("No topic summary yet")}</p>}
     {!hasPlayBookmark && canPlay && section.start_seconds !== undefined ? onSeek
       ? <button type="button" className="text-button" onClick={() => onSeek(section.start_seconds!)}>{t("Listen from this topic")}</button>
       : <RecordingAudioPlayer label={section.title} skipIntervals={reading.intervals}

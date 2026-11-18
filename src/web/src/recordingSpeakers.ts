@@ -42,7 +42,7 @@ export function speakerPassages(turns: readonly TranscriptTurn[], identity: stri
     // When only a start is known, offer a short preview rather than playing the rest of the recording.
     const end = Math.min(timed(turn) ? turn.end : turn.start + 8, turn.part_end ?? Infinity);
     return end > turn.start ? [{ offset: turn.start_offset, start: turn.start, end, text: turn.text }] : [];
-  }).sort((a, b) => a.offset - b.offset);
+  }).sort((a, b) => a.start - b.start || a.offset - b.offset);
 }
 
 export function initialSpeakerPassage(passages: ReturnType<typeof speakerPassages>, shown: readonly TranscriptTurn[], row?: TranscriptTurn) {
@@ -59,7 +59,7 @@ export function initialSpeakerPassage(passages: ReturnType<typeof speakerPassage
 export function recordingSpeakers(turns: readonly TranscriptTurn[]) {
   const speakers = new Map<string, Speaker>();
   const identities = new Map<string, number>();
-  for (const turn of turns) {
+  for (const turn of turnsInPlaybackOrder(turns)) {
     const key = speakerKey(turn);
     const identity = speakerIdentity(turn);
     if (identity && turn.text.trim() && !identities.has(identity)) identities.set(identity, identities.size);
@@ -81,6 +81,15 @@ export function turnIsExcluded(turn: TranscriptTurn, excluded: ReadonlySet<strin
 
 function validStart(turn: TranscriptTurn): turn is TranscriptTurn & { start: number } {
   return turn.start != null && Number.isFinite(turn.start) && turn.start >= 0;
+}
+
+export function turnsInPlaybackOrder(turns: readonly TranscriptTurn[]) {
+  // Interleave timed turns from parallel tracks without guessing times for untimed text.
+  const timedTurns = turns.filter(validStart);
+  if (timedTurns.every((turn, index) => index === 0 || timedTurns[index - 1].start <= turn.start)) return turns;
+  timedTurns.sort((a, b) => a.start - b.start);
+  let index = 0;
+  return turns.map((turn) => validStart(turn) ? timedTurns[index++] : turn);
 }
 
 function timed(turn: TranscriptTurn): turn is TranscriptTurn & AudioInterval {

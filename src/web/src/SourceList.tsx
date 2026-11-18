@@ -14,7 +14,8 @@ import { TranscriptionReview } from "./TranscriptionReview";
 import { TranscriptTranslation } from "./TranscriptTranslation";
 import { Speakers } from "./Speakers";
 import { RecordingSections } from "./RecordingSections";
-import { RecordingTranscript, SourceTranscriptTurns, TranscriptTurns, useSourceTurns, useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
+import { SourceTranscriptTurns, TranscriptTurns, useSourceTurns, useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
+import { RecordingReading } from "./TopicReading";
 import { Icon } from "./Icon";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { useRecordingSeek } from "./useRecordingSeek";
@@ -106,6 +107,7 @@ function SourceRow({
   const [toolsOpen, setToolsOpen] = useState(false);
   const topicPlayback = useRecordingSeek();
   const [selectedTopicOffset, setSelectedTopicOffset] = useState<number | null>(null);
+  const [showingTranscript, setShowingTranscript] = useState(false);
   useEffect(() => {
     setSaved(undefined);
   }, [source.id, source.source_version]);
@@ -231,7 +233,13 @@ function SourceRow({
       open={expanded || undefined}
       id={`${idPrefix}-${source.id}`}
       onToggle={(event) => {
-        if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
+        if (event.target === event.currentTarget) {
+          setOpen(event.currentTarget.open);
+          if (!event.currentTarget.open) {
+            setShowingTranscript(false);
+            setSelectedTopicOffset(null);
+          }
+        }
       }}
     >
       <summary>
@@ -315,13 +323,7 @@ function SourceRow({
         {open && onChat && text?.trim() && source.state === "done" ? <button className="text-button"
           onClick={() => onChat({ kind: "recording", recording_id: source.id })}>
           <Icon name="chat" size={16} />{t("Chat with this recording")}</button> : null}
-        {currentSource.recording_summary ? <section className="recording-overview">
-          <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
         {!compact ? metadata : null}
-        {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
-        {!editing ? <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo} onPlay={topicPlayback.playFrom} reading={reading} fullTurns={turns}
-          selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} /> : null}
-        <div className={compact ? "recording-transcript" : undefined}>
         {editing ? (
           <div className="transcript-editor">
             <label htmlFor={`edit-${idPrefix}-${source.id}`}>{t("Correct transcript")}</label>
@@ -350,8 +352,18 @@ function SourceRow({
             <p className="caption">
               {t("Corrections update search, invalidate saved recaps and weekly reviews, and require dependent decision evidence to be reviewed.")}{" "}</p>
           </div>
-        ) : (
-          text ? <RecordingTranscript>
+        ) : <RecordingReading showingTranscript={showingTranscript} onChange={setShowingTranscript}>
+          {!showingTranscript && currentSource.recording_summary ? <section className="recording-overview">
+            <h3>{t("Recording summary")}</h3><p>{currentSource.recording_summary}</p></section> : null}
+          {!showingTranscript && text && !currentSource.recording_summary && !hasTopics
+            ? <p className="caption">{t("No summary in this version.")}</p> : null}
+          {showingTranscript && hasTopics && selectedTopicOffset !== null
+            ? <button type="button" className="text-button" onClick={() => setSelectedTopicOffset(null)}>{t("Full transcript")}</button> : null}
+          <RecordingSections source={currentSource} compact onSeek={topicPlayback.seekTo} onPlay={topicPlayback.playFrom} reading={reading} fullTurns={turns}
+            selectedOffset={selectedTopicOffset} onSelectOffset={setSelectedTopicOffset} showingTranscript={showingTranscript} />
+          {showingTranscript && text && (!hasTopics || selectedTopicOffset === null) ? <div className="recording-transcript">
+            <h3>{t("Full transcript")}</h3>
+            {source.matches?.length ? <p className="caption">{t("Search excerpt · full transcript below. Timing covers the recording interval.")}</p> : null}
             <TranscriptTranslation
               key={`${source.id}:${currentSource.transcript_version || currentSource.source_version || ""}:${text}`}
               sourceId={source.id} original={text} forceOriginal={!!reading.excluded.size}
@@ -362,7 +374,7 @@ function SourceRow({
             {source.state === "done" ? <button className="text-button" onClick={() => {
               setDraft(text); setEditing(true);
             }}>{t("Correct transcript")}</button> : null}
-          </RecordingTranscript> : <p className="transcript-text">
+          </div> : !text ? <p className="transcript-text">
               {source.state === "done"
                   ? t("Processing completed without transcript text; this does not prove no speech occurred.")
                   : source.state === "expired"
@@ -370,9 +382,8 @@ function SourceRow({
                     : source.state === "blocked"
                       ? t("Transcription blocked. Resolve the problem and retry.")
                       : t("This recording is waiting for transcription.")}
-            </p>
-        )}
-        </div>
+            </p> : null}
+        </RecordingReading>}
         <TranscriptionReview details={currentSource.transcription_details} onReview={() => {
           setDraft(text || "");
           setEditing(true);

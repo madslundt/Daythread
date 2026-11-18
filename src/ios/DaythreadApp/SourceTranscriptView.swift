@@ -237,7 +237,7 @@ struct SourceTranscriptTopicsView: View {
     var onPlayTopic: ((Double) -> Void)? = nil
     var speakerReading: RecordingSpeakerReading? = nil
     var previewPlayback: RecordingPlayback? = nil
-    @State private var transcriptOpen = false
+    @State private var showingTranscript = false
     @State private var openTopic: Int?
 
     private var sections: [JSONValue] {
@@ -251,8 +251,14 @@ struct SourceTranscriptTopicsView: View {
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
-        if !source["recording_summary"].text.isEmpty {
+        RecordingReadingPicker(showingTranscript: $showingTranscript)
+        if !showingTranscript && !source["recording_summary"].text.isEmpty {
             Text(source["recording_summary"].text).textSelection(.enabled)
+        } else if !showingTranscript && sections.isEmpty && !source["text"].text.isEmpty {
+            Text(L10n.text("No summary in this version.")).font(.caption).foregroundStyle(.secondary)
+        }
+        if showingTranscript && sections.contains(where: { $0.topicStartOffset == openTopic }) {
+            Button(L10n.text("Full transcript")) { openTopic = nil }.buttonStyle(.borderless)
         }
         ForEach(sections, id: \.topicStartOffset) { section in
             let start = section["start_offset"].integer
@@ -260,31 +266,41 @@ struct SourceTranscriptTopicsView: View {
                 expanded: openTopic == start, toggle: { openTopic = openTopic == start ? nil : start },
                 seconds: section["start_seconds"].seconds, play: onPlayTopic) {
                 if openTopic == start {
-                    TopicReadingView {
-                        TopicSummaryText(text: section["summary"].text)
-                    } transcript: {
+                    if showingTranscript {
                         SourceTranscriptView(source: source, editing: false, startOffset: start,
                             endOffset: section["end_offset"].integer, onSeek: onSeek, speakerReading: speakerReading,
                             previewPlayback: previewPlayback)
+                    } else {
+                        TopicSummaryText(text: section["summary"].text)
                     }
                 }
             }
         }
         if source["text"].text.isEmpty {
             SourceTranscriptView(source: source, editing: editing)
-        } else {
-            DisclosureGroup(L10n.text("Full transcript"), isExpanded: $transcriptOpen) {
-                if transcriptOpen {
-                    SourceTranscriptView(source: source, editing: editing, onSeek: onSeek, speakerReading: speakerReading,
-                        previewPlayback: previewPlayback)
-                }
-            }
+        } else if showingTranscript && !sections.contains(where: { $0.topicStartOffset == openTopic }) {
+            Text(L10n.text("Full transcript")).font(.headline).accessibilityAddTraits(.isHeader)
+            SourceTranscriptView(source: source, editing: editing, onSeek: onSeek, speakerReading: speakerReading,
+                previewPlayback: previewPlayback)
         }
     }
 }
 
 private extension JSONValue {
     var topicStartOffset: Int { self["start_offset"].integer }
+}
+
+struct RecordingReadingPicker: View {
+    @Binding var showingTranscript: Bool
+    @Environment(\.locale) private var interfaceLocale
+
+    var body: some View {
+        let _ = interfaceLocale
+        Picker(L10n.text("Recording"), selection: $showingTranscript) {
+            Text(L10n.text("status.summary")).tag(false)
+            Text(L10n.text("Transcript")).tag(true)
+        }.pickerStyle(.segmented)
+    }
 }
 
 struct RecordingTopicRow<Content: View>: View {
@@ -362,7 +378,7 @@ struct RecordingTranscriptTurns: View {
 
     static func passageTurns(text: String, turns: [JSONValue], start: Int, end: Int) -> [JSONValue] {
         let scalars = Array(text.unicodeScalars)
-        return turns.compactMap { turn in
+        return turnsInPlaybackOrder(turns).compactMap { turn in
             let turnStart = turn["start_offset"].integer, turnEnd = turn["end_offset"].integer
             let left = max(start, turnStart), right = min(end, turnEnd)
             guard left >= 0, right <= scalars.count, left < right,
@@ -378,18 +394,18 @@ struct RecordingTranscriptTurns: View {
 
     var body: some View {
         let reading = speakerReading ?? RecordingSpeakerReading(turns: allTurns ?? turns, scope: "transcript", filters: filters)
-        let visible = turns.filter { !reading.hides($0) && $0.hasSpokenText }
+        let visible = turnsInPlaybackOrder(turns).filter { !reading.hides($0) && $0.hasSpokenText }
         let editable = canEditSpeakers ? editableSpeakers(reading) : []
         let byIdentity = Dictionary(uniqueKeysWithValues: editable.map { ($0.id, $0) })
-        let topicKeys = Set(turns.filter(\.hasSpokenText).compactMap(\.recordingSpeakerKey))
-        let topicSpeakers = reading.speakers.filter { topicKeys.contains($0.id) }
+        let present = Set(turns.filter(\.hasSpokenText).compactMap(\.recordingSpeakerKey))
+        let passageSpeakers = reading.speakers.filter { present.contains($0.id) }
         if turns.isEmpty {
             Text(text).textSelection(.enabled)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                if !topicSpeakers.isEmpty {
+                if !passageSpeakers.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(topicSpeakers) { speaker in
+                        ForEach(passageSpeakers) { speaker in
                             let included = !reading.excluded.contains(speaker.id)
                             let entries = editable.filter { $0.speaker.id == speaker.id }
                             HStack(spacing: 4) {
@@ -466,7 +482,7 @@ struct RecordingTranscriptTurns: View {
 
     private func editableSpeakers(_ reading: RecordingSpeakerReading) -> [TranscriptEditableSpeaker] {
         var seen = Set<String>()
-        return turns.compactMap { turn in
+        return turnsInPlaybackOrder(turns).compactMap { turn in
             let edit = turn["speaker_edit"]
             guard turn.hasSpokenText, let speaker = reading.speaker(for: turn),
                   !edit["version"].text.isEmpty, let id = turn.recordingSpeakerIdentity,
@@ -502,7 +518,7 @@ private struct TranscriptSpeakerPassage {
             let end = min(turn.speakerAudioInterval?.end ?? start + 8, turn["part_end"].seconds ?? .infinity)
             guard end > start else { return nil }
             return Self(offset: turn.transcriptStartOffset, interval: .init(start: start, end: end), text: turn["text"].text)
-        }.sorted { $0.offset < $1.offset }
+        }.sorted { ($0.interval.start, $0.offset) < ($1.interval.start, $1.offset) }
     }
 
     static func initial(in passages: [Self], shown: [JSONValue], row: JSONValue?) -> Int? {
@@ -688,6 +704,18 @@ private extension JSONValue {
     }
 }
 
+private func turnsInPlaybackOrder(_ turns: [JSONValue]) -> [JSONValue] {
+    // Interleave timed turns from parallel tracks without guessing times for untimed text.
+    let timed = turns.enumerated().compactMap { index, turn in
+        turn["start"].seconds.map { (time: $0, index: index, turn: turn) }
+    }
+    guard !zip(timed, timed.dropFirst()).allSatisfy({ $0.0.time <= $0.1.time }) else { return turns }
+    var ordered = timed.sorted { ($0.time, $0.index) < ($1.time, $1.index) }.makeIterator()
+    return turns.map { turn in
+        turn["start"].seconds == nil ? turn : (ordered.next()?.turn ?? turn)
+    }
+}
+
 @MainActor @Observable
 final class RecordingSpeakerFilters {
     private(set) var scope = ""
@@ -727,7 +755,7 @@ struct RecordingSpeakerReading {
                     canPlay: Bool = false, canSkip: Bool = true) {
         self.scope = scope; self.filters = filters
         var speakers: [Speaker] = [], byID: [String: Speaker] = [:], identities: [String: Int] = [:]
-        for turn in turns where turn.hasSpokenText {
+        for turn in turnsInPlaybackOrder(turns) where turn.hasSpokenText {
             let index: Int
             if let identity = turn.recordingSpeakerIdentity {
                 index = identities[identity, default: identities.count]

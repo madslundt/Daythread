@@ -62,13 +62,14 @@ transcribed selection, including uploaded files with empty parts; omitted audio 
 playback interruptions.
 
 After transcription, the backend generates a descriptive recording title and topic sections using
-the local summary model. Topics start collapsed. Expand a title to see its summary, including stated
-decisions, key details, and follow-ups. Choose **Topic transcript** to read
-just that passage, or open **Full transcript** to read the entire original text. Use
+the local summary model. Recordings open on **Summary**, with topics collapsed. Use the
+**Transcript** tab to read the full recording or the currently open topic. The topic stays open
+when you switch tabs; choose **Full transcript** to return to the whole recording. Use
 **Listen from this topic** to seek without changing what you are reading.
 
 In a transcript, select a speaker label above the text to hide or show their turns.
-All speakers are shown by default. Playback skips hidden speech where timing is known;
+Each topic lists only the people who spoke in it, using the recording's speaker numbers,
+names, and colors. All speakers are shown by default. Playback skips hidden speech where timing is known;
 unassigned or overlapping audio may still play.
 Only speaker labels are colored; identical names share a color and a filter.
 Use the pencil next to a speaker label to rename that speaker without changing the original

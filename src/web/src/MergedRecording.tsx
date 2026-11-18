@@ -11,7 +11,7 @@ import { groupTopicRuns } from "./topicOccurrences";
 import { RecordingTopicList } from "./RecordingTopicList";
 import { RecordingTranscript, TranscriptTurns, turnsInRange, useSpeakerFilters, useSpeakerReading, useSpeakerRefresh } from "./RecordingTranscript";
 import type { TranscriptTurn } from "./types";
-import { TopicReading } from "./TopicReading";
+import { RecordingReading } from "./TopicReading";
 
 export type CombinedRecording = {
   id: string; title: string; started_at: string; ended_at: string;
@@ -60,6 +60,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
     occurrenceNumber: index + 1, occurrenceCount: topic.occurrences.length,
   }))), [topics]);
   const [selectedTopic, setSelectedTopic] = useState<string>();
+  const [showingTranscript, setShowingTranscript] = useState(false);
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const topic = occurrences.find((section) => section.id === selectedTopic);
@@ -126,6 +127,8 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
         ? t("The archive expects audio, but the file is missing.")
         : t("Audio was removed by your retention policy. The transcript remains available.")}
     </p> : null}
+    <RecordingReading showingTranscript={showingTranscript} onChange={setShowingTranscript}>
+    {showingTranscript && !topic ? <>
     {showingSelected ? <div className="caption recording-transcript-choice">
       <span>{t("Using selected full-recording transcript")}</span>
       <button className="text-button" disabled={selectionBusy}
@@ -142,10 +145,15 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       {t("The selected transcript is out of date. Showing the original part transcripts.")}
     </p> : null}
     {selectionError ? <p className="caption" role="alert">{selectionError}</p> : null}
-    {recording.recording_summary ? <section className="recording-overview">
+    </> : null}
+    {!showingTranscript && recording.recording_summary ? <section className="recording-overview">
       <h3>{t("Recording summary")}</h3><p className="transcript-text">{recording.recording_summary}</p>
       {showingSelected ? <p className="caption">{t("Based on the original part transcripts.")}</p> : null}
     </section> : null}
+    {!showingTranscript && !recording.recording_summary && !occurrences.length
+      ? <p className="caption">{t("No summary in this version.")}</p> : null}
+    {showingTranscript && topic ? <button type="button" className="text-button" onClick={() => setSelectedTopic(undefined)}>
+      {t("Full transcript")}</button> : null}
     {occurrences.length ? <div className="recording-sections">
       <h3>{showingSelected ? t("Chapters in the original transcript") : t("Chapters")}</h3>
       <RecordingTopicList topics={topics.map((group) => ({ key: group.key, title: group.title,
@@ -153,14 +161,15 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
           label: section.start_seconds === undefined ? "—" : playbackTime(section.start_seconds), estimated: section.start_estimated,
           play: recording.audio_available && section.start_seconds != null ? () => playback.playFrom(section.start_seconds!) : undefined })) }))}
         selected={topic?.id} onSelect={setSelectedTopic} renderTopic={(id) => topic ? <div key={id}>
-          <TopicReading summary={topic.summary ? <p className="transcript-text">{topic.summary}</p> : null}
-            transcript={(visible) => visible ? <TranscriptTurns text={originalText.slice(topic.start_offset, topic.end_offset).join("")}
+          {showingTranscript ? <TranscriptTurns text={originalText.slice(topic.start_offset, topic.end_offset).join("")}
               turns={turnsInRange(recording.text || "", recording.transcript_turns, topic)} reading={originalReading}
               allTurns={recording.transcript_turns} previewSrc={previewSrc}
-              onSeek={recording.audio_available ? playback.seekTo : undefined} /> : null} />
+              onSeek={recording.audio_available ? playback.seekTo : undefined} />
+            : topic.summary ? <p className="transcript-text">{topic.summary}</p> : <p className="caption">{t("No topic summary yet")}</p>}
         </div> : null} />
     </div> : null}
-    {displayedText !== null ? <RecordingTranscript>
+    {showingTranscript && !topic && displayedText !== null ? <>
+      <h3>{t("Full transcript")}</h3>
       <TranscriptTurns text={displayedText} turns={showingSelected ? speakerRuns : recording.transcript_turns}
         reading={showingSelected ? selectedReading : originalReading} previewSrc={previewSrc}
         onSeek={recording.audio_available ? playback.seekTo : undefined} />
@@ -168,8 +177,9 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
         <TranscriptTurns text={recording.text} turns={recording.transcript_turns} reading={originalReading} previewSrc={previewSrc}
           onSeek={recording.audio_available ? playback.seekTo : undefined} />
       </RecordingTranscript> : null}
-    </RecordingTranscript> : <p className="caption" role="status">{recording.state === "expired"
-        ? t("Transcript unavailable after retention.") : t("This recording is waiting for transcription.")}</p>}
+    </> : displayedText === null ? <p className="caption" role="status">{recording.state === "expired"
+        ? t("Transcript unavailable after retention.") : t("This recording is waiting for transcription.")}</p> : null}
+    </RecordingReading>
     {recording.text !== null && recording.state === "processing"
       ? <p className="caption" role="status">{t("Processing audio")}</p> : null}
     {recording.text !== null && recording.state === "expired"

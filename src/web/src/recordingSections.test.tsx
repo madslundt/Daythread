@@ -39,11 +39,24 @@ describe("recording topic sections", () => {
     expect(renderToStaticMarkup(<RecordingSections source={{ ...timed, audio_available: false }} compact onPlay={() => {}} />))
       .not.toContain('recording-topic-play');
   });
-  it("puts the topics between playback and the collapsed full transcript", () => {
+  it("switches an already-open topic between its summary and transcript without nested reading tabs", () => {
+    const props = { source, compact: true, selectedOffset: 10, onSelectOffset: () => {} };
+    const summary = renderToStaticMarkup(<RecordingSections {...props} showingTranscript={false} />);
+    const transcript = renderToStaticMarkup(<RecordingSections {...props} showingTranscript />);
+    expect(summary).toContain("The recorder arrives on Friday.");
+    expect(summary).not.toContain("Omi recorder. ");
+    expect(transcript).not.toContain("The recorder arrives on Friday.");
+    expect(transcript).toContain('<p class="transcript-text">Omi recorder. </p>');
+    expect(transcript).not.toContain("Tesla Roadster.</p>");
+    expect(transcript).not.toContain('aria-label="Topic view"');
+  });
+  it("opens on Summary with the topic list below the player", () => {
     const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[source]} />);
     expect(html).toContain("2 min · 3 topics");
     expect(html.indexOf("<audio")).toBeLessThan(html.indexOf('class="recording-sections"'));
-    expect(html.indexOf('class="recording-sections"')).toBeLessThan(html.indexOf("Full transcript"));
+    expect(html.indexOf('aria-label="Recording" class="translation-tabs"')).toBeLessThan(html.indexOf('class="recording-sections"'));
+    expect(html).toMatch(/aria-selected="true" tabindex="0">Summary/);
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain('class="transcript-translation"');
     expect(html).toContain('<details class="recording-disclosure recording-utilities">');
     expect(html).not.toContain("Correct transcript");
@@ -53,7 +66,7 @@ describe("recording topic sections", () => {
   it("offers the transcript even for recordings without topics and for search matches", () => {
     for (const value of [{ ...source, sections: [] }, { ...source, matches: [{ text: "Cocoa", start_offset: 0, end_offset: 10, timing: "recording" }] }]) {
       const html = renderToStaticMarkup(<SourceList compact expanded timezone="UTC" sources={[value]} />);
-      expect(html).toContain("<summary>Full transcript</summary>");
+      expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
       expect(html).not.toContain('class="transcript-translation"');
     }
   });
@@ -61,7 +74,7 @@ describe("recording topic sections", () => {
     const html = renderToStaticMarkup(<SourceList expanded timezone="UTC" sources={[source]} />);
     expect(html).toContain("Omi recorder");
     expect(html).not.toContain("The recorder arrives on Friday.");
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
   });
   it("shows repeated uploads once with access to each original time and transcript", () => {
     const alternative: Source = {

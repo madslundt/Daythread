@@ -6,7 +6,7 @@ import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { playbackTime } from "./recordingWaveform";
 import type { Source, TranscriptTurn } from "./types";
 import { useResource } from "./useResource";
-import { initialSpeakerPassage, recordingSpeakers, speakerIdentity, speakerKey, speakerPassages, speakersInPassage, speakerSkipPlan, turnIsExcluded, type Speaker } from "./recordingSpeakers";
+import { initialSpeakerPassage, recordingSpeakers, speakerIdentity, speakerKey, speakerPassages, speakersInPassage, speakerSkipPlan, turnIsExcluded, turnsInPlaybackOrder, type Speaker } from "./recordingSpeakers";
 
 const noTurns: TranscriptTurn[] = [];
 const noExclusions: ReadonlySet<string> = new Set();
@@ -85,7 +85,7 @@ export function turnsInRange(text: string, turns: TranscriptTurn[] | undefined, 
   start_offset: number; end_offset: number;
 }): TranscriptTurn[] | undefined {
   const original = Array.from(text);
-  return turns?.flatMap((turn) => {
+  return turns && turnsInPlaybackOrder(turns).flatMap((turn) => {
     const left = Math.max(turn.start_offset, range.start_offset);
     const right = Math.min(turn.end_offset, range.end_offset);
     if (left >= right) return [];
@@ -198,14 +198,15 @@ export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSee
   const filters = useSpeakerFilters();
   const local = useSpeakerReading(reading ? undefined : allTurns, text, filters, false);
   const { speakers, excluded, toggle, incomplete } = reading ?? local;
-  const visible = turns.filter((turn) => !turnIsExcluded(turn, excluded));
+  const ordered = useMemo(() => turnsInPlaybackOrder(turns), [turns]);
+  const visible = ordered.filter((turn) => !turnIsExcluded(turn, excluded));
   const hasTimes = visible.some((turn) => turn.start != null);
-  const { topicSpeakers, editable, editableByIdentity } = useMemo(() => {
-    const keys = new Set(turns.filter((turn) => turn.text.trim()).map(speakerKey));
-    const editable = speakersInPassage(turns, speakers);
-    return { topicSpeakers: [...speakers.values()].filter((speaker) => keys.has(speaker.key)), editable,
-      editableByIdentity: new Map(editable.map((entry) => [entry.identity, entry])) };
-  }, [turns, speakers]);
+  const { passageSpeakers, editable, editableByIdentity } = useMemo(() => {
+    const present = new Set(ordered.filter((turn) => turn.text.trim()).map(speakerKey));
+    const editable = speakersInPassage(ordered, speakers);
+    return { passageSpeakers: [...speakers.values()].filter((speaker) => present.has(speaker.key)),
+      editable, editableByIdentity: new Map(editable.map((entry) => [entry.identity, entry])) };
+  }, [ordered, speakers]);
   const rowEntry = editingSpeaker?.row && editableByIdentity.get(speakerIdentity(editingSpeaker.row) ?? "");
   const entries = rowEntry ? [rowEntry] : editable.filter((entry) => entry.speaker.key === editingSpeaker?.key);
   function editButton(speaker: Speaker, row?: TranscriptTurn) {
@@ -213,11 +214,10 @@ export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSee
     return <button className="icon-button recording-edit-speaker" type="button" aria-label={label} title={label}
       onClick={() => setEditingSpeaker({ key: speaker.key, row })}><Icon name="pencil" size={15} /></button>;
   }
-  if (!turns.length) return <p className="transcript-text">{text}</p>;
   return <>
-    {topicSpeakers.length ? <div className="recording-speaker-filters">
+    {passageSpeakers.length ? <div className="recording-speaker-filters">
       <div role="group" aria-label={t("Filter speakers")} className="recording-speaker-list">
-        {topicSpeakers.map((speaker) => <span className="recording-speaker-chip" key={speaker.key}>
+        {passageSpeakers.map((speaker) => <span className="recording-speaker-chip" key={speaker.key}>
           <button type="button" className="recording-speaker-label" data-speaker-color={speaker.color}
             aria-pressed={!excluded.has(speaker.key)} onClick={() => toggle(speaker.key)}>{speakerLabel(speaker)}</button>
           {editable.some((entry) => entry.speaker.key === speaker.key) ? editButton(speaker) : null}
@@ -231,7 +231,7 @@ export function TranscriptTurns({ text, turns = noTurns, allTurns = turns, onSee
       <input type="checkbox" checked={showTimes} onChange={(event) => setShowTimes(event.target.checked)} />
       {t("Show timestamps")}
     </label> : null}
-    {visible.some((turn) => turn.text.trim()) ? <div className="transcript-text recording-attributed-transcript">
+    {!turns.length ? <p className="transcript-text">{text}</p> : visible.some((turn) => turn.text.trim()) ? <div className="transcript-text recording-attributed-transcript">
       {visible.filter((turn) => turn.text.trim()).map((turn) => {
         const speaker = speakers.get(speakerKey(turn) ?? "");
         return <div className="recording-attributed-run" key={turn.start_offset}>

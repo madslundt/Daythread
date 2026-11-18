@@ -37,7 +37,7 @@ describe("compact recording sessions", () => {
     const html = renderToStaticMarkup(<SessionSources group={group}
       day="2026-10-16" query="café & plans" zoneID="home" tagID="friends" timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain("First few seconds. The conversation continues.");
     expect(html).not.toContain("Next recordings");
     expect(html).toContain("Full recording &amp; tools");
@@ -69,7 +69,7 @@ describe("compact recording sessions", () => {
     const html = renderToStaticMarkup(<SessionSources group={parrot} archive
       day="2026-10-16" query="" timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<audio /g)).toHaveLength(1);
-    expect(html).toContain("<summary>Full transcript</summary>");
+    expect(html).toMatch(/aria-selected="false" tabindex="-1">Transcript/);
     expect(html).not.toContain("Remote speaker.");
     expect(html).not.toContain("Local speaker.");
     expect(html).toContain("Original part recordings");

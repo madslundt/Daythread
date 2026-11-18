@@ -26,6 +26,7 @@ struct SourceTranscriptView: View {
     @State private var refresh = UUID()
     @State private var generation: Task<Void, Never>?
     @State private var loadedScope = ""
+    @State private var refreshedTurns: [JSONValue]?
 
     private var sourceID: String { source["id"].text }
     private var languageName: String { L10n.locale.localizedString(forLanguageCode: language) ?? language }
@@ -66,7 +67,7 @@ struct SourceTranscriptView: View {
                 Text(translation["text"].text).textSelection(.enabled).accessibilityIdentifier("source.transcriptText")
             } else {
                 RecordingTranscriptTurns(text: originalText, turns: originalTurns, onSeek: onSeek,
-                    speakerReading: speakerReading, allTurns: source["transcript_turns"].array)
+                    speakerReading: speakerReading, allTurns: fullTurns, canEditSpeakers: !editing)
                     .accessibilityIdentifier("source.transcriptText")
             }
             if !filtering && !source["text"].text.isEmpty && !originalText.isEmpty {
@@ -106,6 +107,17 @@ struct SourceTranscriptView: View {
             }
         }
         .task(id: loadKey) { await load() }
+        .task(id: scopeKey + model.speakerRevision.uuidString) {
+            guard speakerReading == nil, !editing, !sourceID.isEmpty,
+                  source["reference_type"].text != "recording_transcription", !source["text"].text.isEmpty else { return }
+            let scope = scopeKey
+            if let fresh = try? await model.client().request("v1/transcripts/\(sourceID)"),
+               !Task.isCancelled, scopeKey == scope, fresh["source_version"] == source["source_version"],
+               fresh["text"] == source["text"] {
+                refreshedTurns = fresh["transcript_turns"].array
+            }
+        }
+        .onChange(of: scopeKey) { _, _ in refreshedTurns = nil }
         .onChange(of: scenePhase) { _, phase in
             // A temporary loss of focus must not discard a translation request or
             // switch the reader back to the original when the request completes.
@@ -126,8 +138,10 @@ struct SourceTranscriptView: View {
         return L10n.text("No transcript text · \(source["transcription_outcome"].text) · \(source["state"].text)")
     }
 
+    private var fullTurns: [JSONValue] { refreshedTurns ?? source["transcript_turns"].array }
+
     private var originalTurns: [JSONValue] {
-        let turns = source["transcript_turns"].array
+        let turns = fullTurns
         guard let startOffset, let endOffset else { return turns }
         return RecordingTranscriptTurns.passageTurns(text: source["text"].text, turns: turns, start: startOffset, end: endOffset)
     }
@@ -322,9 +336,11 @@ struct RecordingTranscriptTurns: View {
     var onSeek: ((Double) -> Void)? = nil
     var speakerReading: RecordingSpeakerReading? = nil
     var allTurns: [JSONValue]? = nil
+    var canEditSpeakers = true
     @State private var showTimes = false
     @State private var filters = RecordingSpeakerFilters()
     @State private var filterOpen = false
+    @State private var editingSpeaker = false
     @Environment(\.colorScheme) private var colorScheme
 
     static func passageTurns(text: String, turns: [JSONValue], start: Int, end: Int) -> [JSONValue] {
@@ -346,6 +362,7 @@ struct RecordingTranscriptTurns: View {
     var body: some View {
         let reading = speakerReading ?? RecordingSpeakerReading(turns: allTurns ?? turns, scope: "transcript", filters: filters)
         let visible = turns.filter { !reading.hides($0) && $0.hasSpokenText }
+        let editable = canEditSpeakers ? editableSpeakers(reading) : []
         if turns.isEmpty {
             Text(text).textSelection(.enabled)
         } else {
@@ -355,7 +372,7 @@ struct RecordingTranscriptTurns: View {
                         ForEach(reading.speakers) { speaker in
                             Toggle(isOn: Binding(get: { !reading.excluded.contains(speaker.id) },
                                 set: { _ in reading.toggle(speaker.id) })) {
-                                Text(speaker.label).foregroundStyle(speaker.color(dark: colorScheme == .dark))
+                                speakerBadge(speaker.label, color: speaker.color(dark: colorScheme == .dark))
                             }
                         }
                     } label: {
@@ -369,6 +386,11 @@ struct RecordingTranscriptTurns: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                if !editable.isEmpty {
+                    Button { editingSpeaker = true } label: {
+                        Label(L10n.text("Edit speaker"), systemImage: "pencil")
+                    }.buttonStyle(.borderless).accessibilityIdentifier("transcript.editSpeaker")
+                }
                 if visible.contains(where: { $0["start"].seconds != nil }) {
                     Toggle(L10n.text("Show timestamps"), isOn: $showTimes)
                 }
@@ -378,12 +400,11 @@ struct RecordingTranscriptTurns: View {
                 }
                 ForEach(visible, id: \.transcriptStartOffset) { turn in
                     let speaker = reading.speaker(for: turn)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text(speaker?.label ?? (turn["attribution"].text == "overlap"
-                                ? L10n.text("Overlapping speech") : L10n.text("Unassigned speech")))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(speaker?.color(dark: colorScheme == .dark) ?? Color.secondary)
+                            speakerBadge(speaker?.label ?? (turn["attribution"].text == "overlap"
+                                ? L10n.text("Overlapping speech") : L10n.text("Unassigned speech")),
+                                color: speaker?.color(dark: colorScheme == .dark) ?? .secondary)
                             if showTimes, let start = turn["start"].seconds, start < Double(Int.max) {
                                 let seconds = Int(start)
                                 let time = String(format: "%02d:%02d", seconds / 60, seconds % 60)
@@ -395,6 +416,106 @@ struct RecordingTranscriptTurns: View {
                         Text(turn["text"].text).textSelection(.enabled)
                     }
                 }
+            }.sheet(isPresented: $editingSpeaker) {
+                if let first = editable.first {
+                    TranscriptSpeakerEditor(entries: editable, first: first)
+                }
+            }
+        }
+    }
+
+    private func speakerBadge(_ title: String, color: Color) -> some View {
+        Text(title).font(.subheadline.weight(.bold)).foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func editableSpeakers(_ reading: RecordingSpeakerReading) -> [TranscriptEditableSpeaker] {
+        var seen = Set<String>()
+        return turns.compactMap { turn in
+            let edit = turn["speaker_edit"]
+            guard turn.hasSpokenText, let speaker = reading.speaker(for: turn),
+                  !edit["version"].text.isEmpty, let id = turn.recordingSpeakerIdentity,
+                  seen.insert(id).inserted else { return nil }
+            return TranscriptEditableSpeaker(id: id, speaker: speaker, edit: edit,
+                sample: String(turn["text"].text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(60)))
+        }
+    }
+}
+
+private struct TranscriptEditableSpeaker: Identifiable {
+    let id: String
+    let speaker: RecordingSpeakerReading.Speaker
+    let edit: JSONValue
+    let sample: String
+}
+
+private struct TranscriptSpeakerEditor: View {
+    let entries: [TranscriptEditableSpeaker]
+    @State private var target: TranscriptEditableSpeaker
+    @State private var name: String
+    @State private var busy = false
+    @State private var error: String?
+    @State private var conflict = false
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var interfaceLocale
+
+    init(entries: [TranscriptEditableSpeaker], first: TranscriptEditableSpeaker) {
+        self.entries = entries
+        _target = State(initialValue: first)
+        _name = State(initialValue: first.speaker.name ?? "")
+    }
+
+    var body: some View {
+        let _ = interfaceLocale
+        NavigationStack {
+            Form {
+                Picker(L10n.text("Speaker"), selection: Binding(get: { target.id }, set: { id in
+                    guard let entry = entries.first(where: { $0.id == id }) else { return }
+                    target = entry; name = entry.speaker.name ?? ""; error = nil; conflict = false
+                })) {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        let repeated = entries.contains { $0.id != entry.id && $0.speaker.id == entry.speaker.id }
+                        Text(repeated ? "\(index + 1). \(entry.speaker.label) – \(entry.sample)" : entry.speaker.label).tag(entry.id)
+                    }
+                }.disabled(busy)
+                TextField(L10n.text("Name"), text: $name).disabled(busy)
+                ErrorNote(message: error)
+                if busy { ProgressView() }
+            }
+            .navigationTitle(L10n.text("Edit speaker")).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.text("Cancel")) { dismiss() }.disabled(busy)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.text("Save")) { Task { await save() } }
+                        .disabled(busy || conflict || name.unicodeScalars.count > 200)
+                }
+            }
+        }.interactiveDismissDisabled(busy)
+    }
+
+    @MainActor private func save() async {
+        guard !busy, !conflict else { return }
+        busy = true; error = nil
+        defer { busy = false }
+        let archive = model.archiveIdentity, edit = target.edit
+        let kind = edit["kind"].text, scope = edit["scope_id"].text, id = edit["id"].text
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            _ = try await model.client().request("v1/speakers/\(kind)/\(scope)/\(id)", method: "PATCH",
+                body: ["version": edit["version"].text, "name": name.isEmpty ? NSNull() : name as Any])
+            guard archive == model.archiveIdentity else { return }
+            model.speakerRevision = UUID()
+            dismiss()
+        } catch {
+            guard archive == model.archiveIdentity else { return }
+            self.error = L10n.error(error)
+            if (error as? BackendFailure)?.status == 409 {
+                conflict = true
+                model.speakerRevision = UUID()
             }
         }
     }
@@ -411,20 +532,25 @@ private extension JSONValue {
         let name = self["speaker_name"].text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         let parts = name.split(separator: " ", omittingEmptySubsequences: false)
-        if self["speaker_id"].text.isEmpty, parts.count == 2, parts[0] == "Speaker",
+        if self["speaker_id"].text.isEmpty, self["speaker_name_is_custom"] != .bool(true), parts.count == 2, parts[0] == "Speaker",
            parts[1].range(of: "^(?:[0-9]+|[A-Z]+)$", options: .regularExpression) != nil { return nil }
         return name
     }
-    var recordingSpeakerKey: String? {
+    var recordingSpeakerIdentity: String? {
         let attribution = self["attribution"].text
         guard attribution != "unknown", attribution != "overlap" else { return nil }
-        if let name = assignedSpeakerName { return "name:" + name }
+        let edit = self["speaker_edit"]
+        if !edit["id"].text.isEmpty { return "edit:\(edit["kind"].text):\(edit["scope_id"].text):\(edit["id"].text)" }
         let id = self["speaker_id"].text
         if !id.isEmpty { return "id:" + id }
         let part = self["source_part"].text
         if case .number = self["speaker_number"] { return "part:\(part):number:\(self["speaker_number"].integer)" }
         let label = self["speaker_label"].text.isEmpty ? self["speaker_name"].text : self["speaker_label"].text
         return label.isEmpty ? nil : "part:\(part):label:\(label)"
+    }
+    var recordingSpeakerKey: String? {
+        guard self["attribution"].text != "unknown", self["attribution"].text != "overlap" else { return nil }
+        return assignedSpeakerName.map { "name:" + $0 } ?? recordingSpeakerIdentity
     }
     var speakerAudioInterval: RecordingSkipInterval? {
         guard let start = self["start"].seconds, let end = self["end"].seconds, start < end else { return nil }
@@ -470,17 +596,21 @@ struct RecordingSpeakerReading {
     @MainActor init(turns: [JSONValue], scope: String, filters: RecordingSpeakerFilters,
                     canPlay: Bool = false, canSkip: Bool = true) {
         self.scope = scope; self.filters = filters
-        let excluded = filters.scope == scope ? filters.excluded : []
-        self.excluded = excluded
-        var speakers: [Speaker] = [], byID: [String: Speaker] = [:], anonymous = 0
+        var speakers: [Speaker] = [], byID: [String: Speaker] = [:], identities: [String: Int] = [:]
         for turn in turns where turn.hasSpokenText {
+            let index: Int
+            if let identity = turn.recordingSpeakerIdentity {
+                index = identities[identity, default: identities.count]
+                identities[identity] = index
+            } else { index = identities.count }
             guard let key = turn.recordingSpeakerKey, byID[key] == nil else { continue }
             let name = turn.assignedSpeakerName
-            let color = name?.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 10 } ?? anonymous % 10
-            let speaker = Speaker(id: key, name: name, letter: Self.letter(anonymous), colorIndex: color)
+            let color = name?.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 10 } ?? index % 10
+            let speaker = Speaker(id: key, name: name, letter: Self.letter(index), colorIndex: color)
             speakers.append(speaker); byID[key] = speaker
-            if name == nil { anonymous += 1 }
         }
+        let excluded = filters.scope == scope ? filters.excluded.intersection(byID.keys) : []
+        self.excluded = excluded
         self.speakers = speakers; self.byID = byID
         if canPlay && !excluded.isEmpty {
             if canSkip {

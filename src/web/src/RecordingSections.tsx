@@ -20,8 +20,8 @@ export function RecordingSections({ source, compact = false, onSeek, selectedOff
   if (compact) return <CompactTopics source={source} onSeek={onSeek} selectedOffset={selectedOffset} onSelectOffset={onSelectOffset} {...speakerProps} />;
   return <div className="recording-sections">
     <h3>{source.sections.length === 1 ? t("Topic") : t("{value0} topic sections", { value0: source.sections.length })}</h3>
-    {source.sections.map((section, index) => <RecordingSection key={section.start_offset}
-      source={source} section={section} index={index} onSeek={onSeek} {...speakerProps} />)}
+    {source.sections.map((section) => <RecordingSection key={section.start_offset}
+      source={source} section={section} onSeek={onSeek} {...speakerProps} />)}
   </div>;
 }
 
@@ -47,15 +47,15 @@ function CompactTopics({ source, onSeek, selectedOffset, onSelectOffset, ...spea
   </div>;
 }
 
-function RecordingSection({ source, section, index, onSeek, ...speakerProps }: {
-  source: Source; section: NonNullable<Source["sections"]>[number]; index: number;
+function RecordingSection({ source, section, onSeek, ...speakerProps }: {
+  source: Source; section: NonNullable<Source["sections"]>[number];
   onSeek?: (seconds?: number) => void;
 } & SpeakerProps) {
   const [open, setOpen] = useState(false);
   return <details onToggle={(event) => {
     if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
   }}>
-    <summary><span className="caption">{index + 1}.</span> {section.title}</summary>
+    <summary>{section.title}</summary>
     {open ? <RecordingTopicReader source={source} section={section} onSeek={onSeek} {...speakerProps} /> : null}
   </details>;
 }

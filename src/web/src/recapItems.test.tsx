@@ -56,7 +56,7 @@ describe("day recap interactions", () => {
     const props = { day: "2026-10-16", sources: [source], timezone: "UTC", onCorrect: () => {} };
     const html = renderToStaticMarkup(<RecapContent {...props} text={text} version="test" />);
     expect(html.match(/class="recap-topic-row"/g)).toHaveLength(2);
-    expect(html).toContain("Architecture");
+    expect(html).not.toContain("Architecture");
     const topic = { ...recapBrowserTopics(topics, [source])[0], displayTitle: topics[0].title, displayParts: topics[0].parts };
     const expanded = renderToStaticMarkup(<RecapTopicRow {...props} topic={topic} expanded onToggle={() => {}} />);
     expect(expanded).toContain("<h4>Architecture</h4>");
@@ -94,7 +94,8 @@ describe("day recap interactions", () => {
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[]} timezone="UTC" onChat={() => {}} onCorrect={() => {}} compact={compact} />);
     expect(html).not.toContain("0 points");
     expect(html).not.toContain("Dagbogsoversigt");
-    expect(html).toContain("Kakao med mørk chokolade");
+    expect(html).not.toContain("Kakao med mørk chokolade");
+    expect(recapTopicText(groups[0].parts)).toContain("Kakao med mørk chokolade");
   });
 
   it("preserves introductions, nonredundant titles, and ordinary bracketed text", () => {
@@ -111,7 +112,7 @@ describe("day recap interactions", () => {
     expect(html).toContain('data-topic-id="recap:0:Gym"');
     expect(html.match(/class="recap-topic-option" aria-expanded="false"/g)).toHaveLength(2);
     expect(html).toContain("Follow-ups mentioned in the recap");
-    expect(html).toContain("A workout.");
+    expect(html).not.toContain("A workout.");
     expect(html).not.toContain(sources[0].id);
   });
 
@@ -161,7 +162,7 @@ describe("day recap interactions", () => {
     expect(html.match(/class="recap-topic-row"/g)).toHaveLength(2);
     expect(html).toMatch(/data-topic-id="recap:0:Cocoa"[\s\S]*aria-expanded="true"[\s\S]*recap-topic-inline[\s\S]*data-topic-id="recap:1:Garden"[\s\S]*aria-expanded="false"/);
     expect(html.match(/A cocoa trial\./g)).toHaveLength(1);
-    expect(html).toContain("Compared garden tools.");
+    expect(html).not.toContain("Compared garden tools.");
     expect(html).not.toContain("Read more");
     expect(html).not.toContain("All topics");
     expect(html).toMatch(/aria-controls="[^"]+" aria-pressed="false">Topic transcript/);
@@ -300,15 +301,20 @@ describe("day recap interactions", () => {
   });
 
   it("keeps recorded follow-ups readable without independent checkmarks and escapes model text", () => {
+    const text = '- **Gym · 07:15** — A workout.\n\n## Follow-ups\n- [x] <script>alert("unsafe")</script>';
     const html = renderToStaticMarkup(<RecapContent
-      text={'- **Gym · 07:15** — A workout.\n\n## Follow-ups\n- [x] <script>alert("unsafe")</script>'}
+      text={text}
       day="2026-10-16" version="test" sources={sources} timezone="UTC" onChat={() => {}} onCorrect={() => {}}
     />);
     expect(html).toContain('data-topic-id="recap:0:Gym · 07:15"');
     expect(html).not.toContain('type="checkbox"');
     expect(html).toContain("Follow-ups mentioned in the recap");
-    expect(html).not.toContain("<script>");
-    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("&lt;script&gt;");
+    const parts = recapTopics(recapParts(text), "2026-10-16").followups;
+    const expanded = renderToStaticMarkup(<RecapTopic title="Follow-ups" parts={parts}
+      sources={sources} timezone="UTC" onCorrect={() => {}} compact={false} expanded inline />);
+    expect(expanded).not.toContain("<script>");
+    expect(expanded).toContain("&lt;script&gt;");
   });
 
   it("adapts flat legacy topics and preserves narrative and follow-up text", () => {
@@ -349,7 +355,8 @@ describe("day recap interactions", () => {
     expect(topics[1].originalPassages).toEqual([{ source_id: source.id, source_version: "source-1", transcript_version: "text-1",
       section: source.sections![1], text: second }]);
     const html = renderToStaticMarkup(<RecapContent text={text} day="2026-10-16" version="test" sources={[source]} timezone="UTC" onCorrect={() => {}} />);
-    expect(html).toContain("A useful cocoa trial.");
+    expect(html).toContain("<strong>Cocoa</strong>");
+    expect(html).not.toContain("A useful cocoa trial.");
     expect(html).toContain("Browse all topics");
     expect(html).not.toContain("Garden tools");
     expect(html).not.toContain("Original passages");

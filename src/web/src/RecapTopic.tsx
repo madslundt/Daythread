@@ -53,7 +53,7 @@ export function RecapTopic({ title, parts, displayTitle = title, displayParts = 
   </>;
   return compact ? <details className="recap-group">
     <summary>
-      <span className="recap-group-overview"><span><InlineText text={displayTitle} /></span><span className="recap-group-summary">{displayText.replace(/\*\*/g, "")}</span></span>
+      <span className="recap-group-overview"><InlineText text={displayTitle} /></span>
       <Icon name="chevron-right" size={15} />
     </summary>
     <div className="recap-group-content">{body}</div>

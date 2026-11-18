@@ -97,7 +97,7 @@ private struct TimelineRecordingSession: View {
                 }
             }.padding(.vertical, 5)
         }
-        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(group["recording_count"].integer)") {
+        .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(model.archiveRevision).\(model.speakerRevision).\(group["recording_count"].integer)") {
             if expanded { await load(reset: true) }
         }
         .task(id: "\(day).\(query).\(zoneID).\(tagID).\(expanded).\(model.archiveIdentity).\(scenePhase).poll") {
@@ -239,6 +239,17 @@ private struct RecordingChapterPassage: View {
             SourceDetail(source: selection.source, onCorrect: { refresh = UUID(); onCorrect?() }, startAt: startAt)
         }
         .onChange(of: speakerReading.intervals, initial: true) { _, intervals in playback.setSkipIntervals(intervals) }
+        .onChange(of: model.speakerRevision) { _, _ in
+            Task { @MainActor in
+                let requested = identity, revision = model.speakerRevision
+                let id = part["source_id"].text
+                if let result = try? await model.client().request("v1/transcripts/\(id)"),
+                   requested == identity, revision == model.speakerRevision,
+                   result["source_version"] == source["source_version"] {
+                    source = result
+                }
+            }
+        }
         .task(id: identity) {
             let requested = identity
             loading = true; source = .null; error = nil

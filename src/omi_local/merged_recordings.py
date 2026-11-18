@@ -331,7 +331,7 @@ def merged_recording_routes(memory: Callable[[], Memory]) -> APIRouter:
                 group = Conversation(current.rows, current.rows[-1]["ended_at"], "recording")
                 evidence, evidence_version, evidence_state = (
                     app.recaps.recording_speaker_evidence(
-                        group, current.id, selection["transcript"], db,
+                        group, current.id, selection["transcript"], db, editable=True,
                     )
                 )
                 selection["transcript"]["speaker_evidence"] = {

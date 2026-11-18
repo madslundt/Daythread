@@ -199,6 +199,20 @@ class Store(
             db.executescript(SUMMARY_TRANSLATION_SCHEMA)
             db.executescript(SPEAKER_SCHEMA)
             migrate_speaker_triggers(db)
+            if "transcript_speaker_names" not in audio_columns:
+                db.execute(
+                    "ALTER TABLE audio ADD COLUMN transcript_speaker_names "
+                    "TEXT NOT NULL DEFAULT '{}'"
+                )
+            db.executescript("""
+                CREATE TRIGGER IF NOT EXISTS transcript_speaker_names_reset
+                AFTER UPDATE OF source_version ON audio
+                WHEN OLD.source_version IS NOT NEW.source_version
+                  AND OLD.transcript_speaker_names!='{}'
+                BEGIN
+                  UPDATE audio SET transcript_speaker_names='{}' WHERE id=NEW.id;
+                END;
+            """)
             db.executescript(VOICE_SCHEMA)
             message_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(chat_messages)")

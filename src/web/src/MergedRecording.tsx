@@ -9,7 +9,7 @@ import { playbackTime } from "./recordingWaveform";
 import { useRecordingSeek } from "./useRecordingSeek";
 import { groupTopicRuns } from "./topicOccurrences";
 import { RecordingTopicList } from "./RecordingTopicList";
-import { RecordingTranscript, TranscriptTurns, turnsInRange, useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
+import { RecordingTranscript, TranscriptTurns, turnsInRange, useSpeakerFilters, useSpeakerReading, useSpeakerRefresh } from "./RecordingTranscript";
 import type { TranscriptTurn } from "./types";
 import { TopicReading } from "./TopicReading";
 
@@ -29,11 +29,7 @@ export type CombinedRecording = {
     selection_version: number;
     result_version?: string | null;
     transcript?: { text?: string | null; version?: string | null;
-      speaker_evidence?: { state: string; version?: string | null; utterances: {
-        text: string; start?: number | null; end?: number | null; start_offset: number;
-        end_offset: number; attribution: string; speaker_id?: string | null;
-        speaker_label?: string | null; speaker_name?: string | null;
-      }[] } } | null;
+      speaker_evidence?: { state: string; version?: string | null; utterances: SpeakerEvidencePiece[] } } | null;
   };
   sections: { title: string; chapter_id: string; start_offset: number; end_offset: number;
     start_seconds?: number; end_seconds?: number; start_estimated?: boolean; summary?: string }[];
@@ -41,6 +37,7 @@ export type CombinedRecording = {
 
 export function MergedRecording({ recordingID, timezone, archive }: { recordingID: string; timezone?: string; archive?: boolean }) {
   const resource = useResource<CombinedRecording>(`/v1/recordings/${encodeURIComponent(recordingID)}${archive ? "?archive=true" : ""}`, 15_000);
+  useSpeakerRefresh(resource.refresh);
   return <>
     {resource.error ? <ErrorState message={resource.error} retry={resource.refresh} /> : null}
     {!resource.data && resource.loading ? <Loading>{t("Loading recordings…")}</Loading> : null}
@@ -66,12 +63,6 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const topic = occurrences.find((section) => section.id === selectedTopic);
-  function selectTopic(id: string) {
-    const section = occurrences.find((section) => section.id === id);
-    if (!section) return;
-    setSelectedTopic(section.id);
-    playback.seekTo(section.start_seconds);
-  }
   const base = resourceBase || `/v1/recordings/${encodeURIComponent(recording.id)}`;
   const url = (suffix: string) => profileResourceUrl(`${base}/${suffix}${resourceQuery}`);
   const boundaryTime = (value: string) => new Date(value).toLocaleTimeString(displayLocale(), { timeZone: timezone, hour12: false });
@@ -113,7 +104,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
       bookmarks={occurrences.length < 2 ? [] : occurrences.flatMap((section) => section.start_seconds === undefined ? [] : [{
         label: section.title + (section.occurrenceCount > 1 ? ` · ${t("Recording")} ${section.occurrenceNumber}` : "")
           + (section.start_estimated ? ` ${t("· estimated times")}` : ""),
-        seconds: section.start_seconds, onSelect: () => selectTopic(section.id),
+        seconds: section.start_seconds, onSelect: () => playback.seekTo(section.start_seconds),
       }])}
       audioRef={playback.audioRef} onReady={playback.onReady} skipIntervals={activeReading.intervals} /> : null}
     {recording.interruptions?.length ? <details className="recording-disclosure">
@@ -185,11 +176,7 @@ export function MergedRecordingContent({ recording, resourceBase, resourceQuery 
   </div>;
 }
 
-type SpeakerEvidencePiece = {
-  text: string; start?: number | null; end?: number | null; start_offset: number;
-  end_offset: number; attribution: string; speaker_id?: string | null;
-  speaker_label?: string | null; speaker_name?: string | null;
-};
+type SpeakerEvidencePiece = TranscriptTurn & { attribution: string };
 
 function exactSpeakerEvidence(pieces: SpeakerEvidencePiece[], text: string) {
   const original = Array.from(text);

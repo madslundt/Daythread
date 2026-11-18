@@ -478,6 +478,7 @@
 "Edit label" = "Rediger etikett";
 "Edit profile" = "Rediger profil";
 "Edit record and evidence" = "Rediger post og dokumentasjon";
+"Edit speaker" = "Rediger taler";
 "Edited evidence must remain after the predecessor" = "Redigert bevis må forbli etter forgjengeren";
 "Edited evidence must remain before the successor" = "Redigert bevis må forbli før etterfølgeren";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Redigering av navn eller replikker fjerner lagrede taleeksempler fra denne samtalen. Bekreft dem på nytt etter å ha korrigert talerne.";

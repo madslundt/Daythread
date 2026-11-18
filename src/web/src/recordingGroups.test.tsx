@@ -92,7 +92,7 @@ describe("compact recording sessions", () => {
     }]} timezone="UTC" onCorrect={() => {}} />);
     expect(html.match(/<summary>/g)).toHaveLength(1);
     expect(html).toContain("Launch review");
-    expect(html).toContain("1 recording");
+    expect(html).toContain("<details><summary>Launch review</summary></details>");
     expect(html).not.toContain("<audio");
     expect(html).not.toContain("Loading recordings");
   });

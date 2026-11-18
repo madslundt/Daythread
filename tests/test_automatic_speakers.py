@@ -121,6 +121,15 @@ def test_projection_keeps_unaligned_words_and_marks_turn_crossings_unknown(clien
     assert displayed[0]["start"] == 0.1
     assert displayed[-1]["attribution"] == "unknown"
     assert "speaker_label" not in displayed[-1]
+    assert "speaker_edit" not in displayed[-1]
+    edit = displayed[0]["speaker_edit"]
+    rename_path = f"/v1/speakers/{edit['kind']}/{edit['scope_id']}/{edit['id']}"
+    body = {"version": edit["version"], "name": "Rae"}
+    assert client.patch(rename_path, json=body).status_code == 200
+    assert client.patch(rename_path, json=body).status_code == 409
+    updated = client.get(f"/v1/transcripts/{keys[0]}").json()
+    assert updated["transcript_turns"][0]["speaker_name"] == "Rae"
+    assert updated["text"] == "alpha beta gamma"
 
 
 def test_conversation_audio_clock_clips_parts_and_does_not_count_capture_gaps():

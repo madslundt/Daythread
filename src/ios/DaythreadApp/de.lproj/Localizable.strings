@@ -478,6 +478,7 @@
 "Edit label" = "Beschriftung bearbeiten";
 "Edit profile" = "Profil bearbeiten";
 "Edit record and evidence" = "Datensatz und Beweise bearbeiten";
+"Edit speaker" = "Sprecher bearbeiten";
 "Edited evidence must remain after the predecessor" = "Bearbeitete Beweise müssen nach dem Vorgänger verbleiben";
 "Edited evidence must remain before the successor" = "Bearbeitete Beweise müssen vor dem Nachfolger verbleiben";
 "Editing names or turns removes saved voice examples from this conversation. Confirm them again after correcting the speakers." = "Das Bearbeiten von Namen oder Sprechern entfernt gespeicherte Stimmbeispiele aus diesem Gespräch. Bestätigen Sie sie nach der Korrektur der Sprecher erneut.";

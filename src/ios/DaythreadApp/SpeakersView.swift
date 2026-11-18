@@ -313,6 +313,7 @@ struct SpeakersView: View {
                 let updated = try await client.decoded(endpoint, method: method, body: payload, as: ConversationSpeakers.self)
                 guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }
                 self.result = updated
+                model.speakerRevision = UUID()
                 do {
                     let directory = try await client.decoded("v1/voice-profiles", as: SavedVoiceDirectory.self)
                     guard !Task.isCancelled, requestID == request, model.archiveIdentity == identity else { return }

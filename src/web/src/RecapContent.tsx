@@ -137,13 +137,9 @@ export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
 } & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus">) {
   const id = useId();
   const entrySummary = [...new Set(topic.originalPassages?.map(({ section }) => section.summary?.trim()).filter(Boolean))].join("\n\n");
-  const preview = (recapTopicText(topic.displayParts) || entrySummary).replace(/\*\*/g, "");
   return <article className="recap-topic-row" data-topic-id={topic.id}>
     <h3><button type="button" className="recap-topic-option" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
-      <span><strong><InlineText text={topic.displayTitle} /></strong>{!expanded ? <>
-        {topic.originalPassages && !entrySummary ? <small className="caption">{t("No topic summary yet")}</small> : null}
-        <span>{preview}</span>
-      </> : null}</span>
+      <span><strong><InlineText text={topic.displayTitle} /></strong></span>
       <Icon name="chevron-right" size={16} />
     </button></h3>
     <div id={id} hidden={!expanded}>

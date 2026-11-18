@@ -1,5 +1,6 @@
 """Project existing speaker and timing evidence without changing transcript text."""
 
+import hashlib
 import json
 import math
 import re
@@ -20,7 +21,7 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
         if "".join(turn["text"] for turn in attributed) == text:
             return [{key: turn[key] for key in (
                 "text", "start_offset", "end_offset", "start", "end", "speaker_id",
-                "speaker_name", "speaker_label", "attribution",
+                "speaker_name", "speaker_label", "attribution", "speaker_edit",
             ) if turn.get(key) is not None} for turn in attributed]
     segments = json.loads(row.get("segments") or "[]")
     if not isinstance(segments, list):
@@ -75,7 +76,41 @@ def transcript_turns(row: dict, attributed: list[dict] | None = None) -> list[di
                 turns[-1].pop("end", None)
             continue
         turns.append(turn)
-    return [] if text[offset:].strip() else turns
+    if text[offset:].strip():
+        return []
+    if row.get("id") and row.get("source_version"):
+        apply_transcript_speaker_names(row, turns)
+    return turns
+
+
+def transcript_speaker_names(row: dict) -> dict:
+    saved = json.loads(row.get("transcript_speaker_names") or "{}")
+    return saved if saved.get("source_version") == row["source_version"] else {}
+
+
+def apply_transcript_speaker_names(row: dict, turns: list[dict]) -> None:
+    saved = transcript_speaker_names(row)
+    for turn in turns:
+        if "speaker_number" in turn:
+            identity = ["number", turn["speaker_number"]]
+        elif label := turn.get("speaker_label") or turn.get("speaker_name"):
+            identity = ["label", label]
+        else:
+            continue
+        key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+        turn["speaker_edit"] = {
+            "kind": "transcript", "scope_id": row["id"], "id": key,
+            "version": saved.get("version", row["source_version"]),
+        }
+        if key in saved.get("names", {}):
+            turn["speaker_name"] = saved["names"][key]
+            turn["speaker_name_is_custom"] = True
+
+
+def saved_speaker_edit(projection: dict, speaker_id: str) -> dict:
+    scope = projection["scope"]
+    return {"kind": scope["kind"], "scope_id": scope["id"], "id": speaker_id,
+            "version": projection["version"]}
 
 
 def saved_speaker_turns(memory, rows: list[dict], db=None) -> dict[str, list[dict]]:
@@ -106,5 +141,9 @@ def saved_speaker_turns(memory, rows: list[dict], db=None) -> dict[str, list[dic
         seen.add(id(projection))
         for turn in projection["utterances"]:
             if projections.get(turn["source_id"]) is projection:
+                if turn.get("speaker_id"):
+                    turn = turn | {
+                        "speaker_edit": saved_speaker_edit(projection, turn["speaker_id"]),
+                    }
                 result[turn["source_id"]].append(turn)
     return result

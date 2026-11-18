@@ -38,8 +38,8 @@ describe("combined uploaded recording", () => {
       { ...recording.sections[0], chapter_id: "launch-return", start_offset: 30, start_seconds: 30 },
     ] }} />);
     expect(html.match(/<li /g)).toHaveLength(2);
-    expect(html).toContain("2 recordings");
-    expect(html).toContain('aria-label="Recording 2 · 00:30"');
+    expect(html).not.toContain('class="recording-topic-occurrences"');
+    expect(html).toContain('aria-label="00:30 · Launch · Recording 2"');
     expect(html.match(/<audio /g)).toHaveLength(1);
   });
   it("renders one continuous player, one full transcript and topics without chunk rows", () => {

@@ -10,7 +10,7 @@ import type { Source } from "./types";
 import { RecordingAudioPlayer } from "./RecordingAudioPlayer";
 import { groupTopicRuns } from "./topicOccurrences";
 import { TopicReading } from "./TopicReading";
-import { useSpeakerFilters, useSpeakerReading } from "./RecordingTranscript";
+import { useSpeakerFilters, useSpeakerReading, useSpeakerRefresh } from "./RecordingTranscript";
 
 export type RecordingChapter = {
   id: string; title: string; started_at: string;
@@ -44,7 +44,7 @@ export function RecordingChapters({ chapters, timezone, onCorrect }: {
         if (open) setSelected(0);
         setActiveChapter((current) => open ? topic.key : current === topic.key ? null : current);
       }}>
-      <summary><span>{topic.title}<small className="recording-topic-count caption">{topic.occurrences.length} {topic.occurrences.length === 1 ? t("recording") : t("recordings")}</small></span></summary>
+      <summary>{topic.title}</summary>
       {activeChapter === topic.key ? <>
         {topic.occurrences.length > 1 ? <div className="recording-topic-occurrences" role="group" aria-label={`${topic.title} · ${t("Recordings")}`}>
           {topic.occurrences.map(([first], occurrenceIndex) => <button type="button" key={`${first.id}:${occurrenceIndex}`}
@@ -94,6 +94,7 @@ function ChapterPassage({ chapterID, part, timezone, onCorrect, audioRef, initia
   initialSpeed: number;
 }) {
   const resource = useResource<Source>(`/v1/transcripts/${encodeURIComponent(part.source_id)}`);
+  useSpeakerRefresh(resource.refresh);
   const [toolsOpen, setToolsOpen] = useState(false);
   const source = resource.data;
   const canPlay = !!source && source.audio_available !== false && source.audio_availability !== "missing";

@@ -1,11 +1,13 @@
 """Profile-scoped speaker detection, manual naming, corrections, and original-turn audio."""
 
-from uuid import UUID
+import json
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .speakers import Kind
+from .transcript_turns import saved_speaker_turns, transcript_speaker_names, transcript_turns
 
 
 class Detect(BaseModel):
@@ -43,6 +45,39 @@ class Merge(Version):
 
 def speaker_routes(get_memory) -> APIRouter:
     router = APIRouter(prefix="/v1/speakers")
+
+    @router.patch("/transcript/{key}/{speaker_key}")
+    def rename_transcript_speaker(
+        key: UUID, speaker_key: str, body: Rename,
+    ) -> dict:
+        from .service import public_source
+
+        memory = get_memory()
+        with memory.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = memory.store.get_audio(str(key), db)
+            if row is None:
+                raise HTTPException(404, "Transcript not found")
+            saved = transcript_speaker_names(row)
+            changed = "Speaker assignments or evidence changed; reload and retry"
+            if body.version != saved.get("version", row["source_version"]):
+                raise HTTPException(409, changed)
+            attributed = saved_speaker_turns(memory, [row], db).get(str(key))
+            if not any(turn.get("speaker_edit", {}).get("id") == speaker_key
+                       and turn["speaker_edit"]["kind"] == "transcript"
+                       for turn in transcript_turns(row, attributed)):
+                raise HTTPException(409, changed)
+            names = saved.get("names", {})
+            if body.name is None:
+                names.pop(speaker_key, None)
+            else:
+                names[speaker_key] = body.name
+            row["transcript_speaker_names"] = json.dumps({
+                "source_version": row["source_version"], "version": str(uuid4()), "names": names,
+            })
+            db.execute("UPDATE audio SET transcript_speaker_names=? WHERE id=?",
+                       (row["transcript_speaker_names"], str(key)))
+            return public_source(row, attributed=attributed)
 
     @router.get("/{kind}/{key}")
     def read(kind: Kind, key: UUID) -> dict:

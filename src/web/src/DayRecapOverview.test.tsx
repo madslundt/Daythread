@@ -78,7 +78,7 @@ describe("on-demand saved day recap", () => {
   it("places the saved day overview before the detailed daily topics", () => {
     state.overview = overview({ summary: "An overview of the whole day.", generated_at: "2026-10-15T18:00:00Z" });
     const html = renderToStaticMarkup(<RecapSection day="2026-10-15" timezone="UTC" onChat={() => {}} />);
-    expect(html).toContain("Detailed planting plans.");
+    expect(html).not.toContain("Detailed planting plans.");
     expect(html.indexOf("An overview of the whole day.")).toBeLessThan(html.indexOf('data-topic-id="recap:0:Garden"'));
   });
   it("does not load or expose an unfiltered overview inside a filtered day", () => {

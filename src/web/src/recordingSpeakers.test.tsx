@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TranscriptTurns, turnsInRange } from "./RecordingTranscript";
-import { nextSpeakerSkip, recordingSpeakers, speakerKey, speakerSkipPlan } from "./recordingSpeakers";
+import { nextSpeakerSkip, recordingSpeakers, speakerKey, speakersInPassage, speakerSkipPlan } from "./recordingSpeakers";
 import type { TranscriptTurn } from "./types";
 
 const turn = (fields: Partial<TranscriptTurn>): TranscriptTurn => ({ text: "Speech.", start_offset: 0, end_offset: 7, ...fields });
@@ -28,6 +28,22 @@ describe("speaker filters", () => {
     expect(html).toContain('data-speaker-color="1">Speaker B</span>');
     expect(html).toContain('recording-speaker-label">Unassigned speech</span>');
     expect(html).not.toContain('caption recording-speaker-label" data-speaker-color="0"');
+  });
+
+  it("keeps edit targets separate when names share a filter and preserves letters on rename", () => {
+    const edit = (id: string) => ({ kind: "transcript" as const, scope_id: "part", id, version: "v1" });
+    const a = turn({ speaker_number: 1, speaker_edit: edit("a") });
+    const b = turn({ speaker_number: 2, speaker_edit: edit("b"), start_offset: 8, end_offset: 15 });
+    const c = turn({ speaker_number: 3, speaker_edit: edit("c"), start_offset: 16, end_offset: 23 });
+    const named = [a, b].map((item) => ({ ...item, speaker_name: "Speaker A", speaker_name_is_custom: true }));
+    const turns = [...named, c, { ...named[0], start_offset: 24, end_offset: 31 }];
+    const speakers = recordingSpeakers(turns);
+    expect(speakers.size).toBe(2);
+    expect(speakers.get(speakerKey(c)!)?.letter).toBe("C");
+    expect(speakersInPassage(turns, speakers).map(({ edit }) => edit.id)).toEqual(["a", "b", "c"]);
+    const html = renderToStaticMarkup(<TranscriptTurns text="Speech." turns={turns} />);
+    expect(html.match(/>Edit speaker<\/button>/g)).toHaveLength(1);
+    expect(html).not.toContain("<dialog");
   });
 
   it("skips timed speech without cutting through kept or overlapping audio", () => {

@@ -227,6 +227,7 @@ final class AppModel {
     @ObservationIgnored private var importanceRevision = UUID()
     var labelRevision = ""
     var archiveRevision = ""
+    var speakerRevision = UUID()
     var serverTimeZoneIdentifier: String?
     var singleClickAction: WearableAction { didSet { UserDefaults.standard.set(singleClickAction.rawValue, forKey: "singleClickAction") } }
     var doubleClickAction: WearableAction { didSet { UserDefaults.standard.set(doubleClickAction.rawValue, forKey: "doubleClickAction") } }

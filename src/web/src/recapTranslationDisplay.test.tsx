@@ -60,7 +60,7 @@ describe("canonical recap translation display", () => {
     expect(display.topics.map((topic) => topic.title)).toEqual(["Kakao ☕️"]);
     expect(display.followups).toEqual([{ kind: "item", text: "Køb kakao.", action: true }]);
     const html = renderToStaticMarkup(<RecapContent {...props} text={original} translatedText={translated} translationStructure={mapped} />);
-    expect(html).toContain("Kakao ☕️"); expect(html).toContain("Et kakaoforsøg.");
+    expect(html).toContain("Kakao ☕️"); expect(html).not.toContain("Et kakaoforsøg.");
     expect(html).toContain('data-topic-id="recap:0:Cocoa ☕️"');
     expect(html).toContain("Follow-ups mentioned in the recap");
     expect(html).not.toContain("Opfølgning");
@@ -75,6 +75,7 @@ describe("canonical recap translation display", () => {
     const html = renderToStaticMarkup(<RecapTopicRow {...props} topic={topic} expanded onToggle={() => {}} />);
     expect(html).toContain("Kakao ☕️"); expect(html).not.toContain("Cocoa ☕️</");
     expect(html).toContain('aria-label="Copy summary: Kakao ☕️"');
+    expect(html).toContain("Et kakaoforsøg.");
     expect(html).toContain("Topic transcript");
     expect(html).not.toContain("Cocoa trial."); expect(html).not.toContain("Garden tools.");
     expect(html).not.toContain("<audio");
@@ -104,7 +105,8 @@ describe("canonical recap translation display", () => {
     expect(recapTranslationDisplay(original, target, mapped)).toBeUndefined();
     const html = renderToStaticMarkup(<RecapContent {...props} text={original} translatedText={target} translationStructure={mapped} />);
     expect(html).toContain("Update this translation to keep the recap’s topics and layout.");
-    expect(html).toContain("A cocoa trial."); expect(html).not.toContain("Et kakaoforsøg.");
+    expect(html).toContain("<strong>Cocoa ☕️</strong>");
+    expect(html).not.toContain("A cocoa trial."); expect(html).not.toContain("Et kakaoforsøg.");
     expect(html).toContain('data-topic-id="recap:0:Cocoa ☕️"');
   });
 });

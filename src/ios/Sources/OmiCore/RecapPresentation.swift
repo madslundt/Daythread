@@ -164,6 +164,18 @@ public struct RecordingSpeakerEvidence: Decodable, Equatable, Sendable {
 }
 
 public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
+    public struct Edit: Decodable, Equatable, Sendable {
+        public let kind: String
+        public let scopeID: String
+        public let id: String
+        public let version: String
+
+        enum CodingKeys: String, CodingKey {
+            case kind, id, version
+            case scopeID = "scope_id"
+        }
+    }
+
     public let text: String
     public let startOffset: Int
     public let endOffset: Int
@@ -173,6 +185,7 @@ public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
     public let speakerID: String?
     public let speakerLabel: String?
     public let speakerName: String?
+    public let speakerEdit: Edit?
 
     enum CodingKeys: String, CodingKey {
         case text, start, end, attribution
@@ -181,6 +194,7 @@ public struct RecordingSpeakerUtterance: Decodable, Equatable, Sendable {
         case speakerID = "speaker_id"
         case speakerLabel = "speaker_label"
         case speakerName = "speaker_name"
+        case speakerEdit = "speaker_edit"
     }
 
     fileprivate var validTiming: Bool {

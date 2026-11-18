@@ -345,7 +345,8 @@ def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recor
         json={"expected_version": 0, "result_version": version},
     ).status_code == 200
     scope = {
-        "state": "ready", "evidence_version": "speaker-v1",
+        "state": "ready", "evidence_version": "speaker-v1", "version": "speaker-v1",
+        "scope": {"kind": "source", "id": ids[0]},
         "speakers": [{"id": "a", "label": "A", "name": "Reviewed name"}],
         "turns": [{"source_id": ids[0], "start": 0.0, "end": 1.0, "speaker_id": "a"}],
     }
@@ -364,6 +365,9 @@ def test_recording_detail_exposes_single_copy_bridged_speaker_evidence(app_recor
     assert pieces[0]["text"] == "hello world"
     assert pieces[0]["start_offset"] == 0 and pieces[0]["end_offset"] == 11
     assert pieces[0]["speaker_name"] == "Reviewed name"
+    assert pieces[0]["speaker_edit"] == {
+        "kind": "source", "scope_id": ids[0], "id": "a", "version": "speaker-v1",
+    }
     assert pieces[0].get("speaker_name_origin") == ("automatic" if automatic else None)
     assert pieces[0]["child_source_id"] == ids[0]
 

@@ -10,6 +10,7 @@ import { statusLabel } from "./statusLabels";
 import type { ChatScope, Source, Timeline } from "./types";
 import { useResource } from "./useResource";
 import { MergedRecording, MergedRecordingContent, type CombinedRecording } from "./MergedRecording";
+import { useSpeakerRefresh } from "./RecordingTranscript";
 
 export type RecordingGroup = {
   id: string;
@@ -108,6 +109,7 @@ export function SessionSources({ group, day, query, zoneID, tagID, timezone, onC
   scope.delete("limit"); scope.delete("offset");
   const base = `/v1/recording-groups/${encodeURIComponent(group.id)}`;
   const resource = useResource<{ items: Source[]; total: number; chapters?: RecordingChapter[]; recording?: CombinedRecording }>(!originalsOnly || toolsOpen ? `${base}/sources?${params}` : null, 15_000);
+  useSpeakerRefresh(resource.refresh, !originalsOnly || toolsOpen);
   if (resource.data?.recording) scope.set("version", resource.data.recording.audio_version || resource.data.recording.transcript_version);
   const correct = () => { resource.refresh(); onCorrect(); };
   return <>

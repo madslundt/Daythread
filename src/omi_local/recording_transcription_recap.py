@@ -10,6 +10,7 @@ from .conversation_state import Conversation
 from .merged_recordings import load_recording
 from .recording_transcription_selection import SelectedRecordingVariant
 from .recording_transcription_store import pipeline_fingerprint, project_words, source_fingerprint
+from .transcript_turns import saved_speaker_edit
 
 
 def selected_recording_variants(
@@ -175,6 +176,7 @@ def _recording_utterances(items: list[dict], recording_id: str) -> list[dict]:
 def recording_speaker_evidence(
     recaps, group: Conversation, recording_id: str, variant: dict,
     db: sqlite3.Connection | None = None,
+    *, editable: bool = False,
 ) -> tuple[list[dict], str | None, str]:
     """Map source-local diarized turns onto exact full-recording aligned word spans."""
     metadata_by_id = {
@@ -195,10 +197,13 @@ def recording_speaker_evidence(
         json.dumps({"projection": "recording-utterances-3", "diarization": versions},
                    sort_keys=True).encode(),
     ).hexdigest()
-    labels, turns = {}, []
+    labels, edits, turns = {}, {}, []
     seen_turns = set()
     for scope in scope_values:
         labels.update({speaker["id"]: speaker for speaker in scope.get("speakers", [])})
+        if editable:
+            edits.update({speaker["id"]: saved_speaker_edit(scope, speaker["id"])
+                          for speaker in scope.get("speakers", [])})
         for turn in scope.get("turns", []):
             identity = (turn.get("source_id"), turn.get("start"), turn.get("end"),
                         turn.get("speaker_id"))
@@ -275,5 +280,7 @@ def recording_speaker_evidence(
                                     speaker_name=speaker.get("name"))
                     if speaker.get("automatic_match"):
                         evidence["speaker_name_origin"] = "automatic"
+                    if speaker_id in edits:
+                        evidence["speaker_edit"] = edits[speaker_id]
         output.append(evidence)
     return _recording_utterances(output, recording_id), evidence_version, "ready"

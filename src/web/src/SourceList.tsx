@@ -208,9 +208,7 @@ function SourceRow({
               bookmarks={compact ? groupTopicRuns(currentSource.sections || [], (section) => section.title,
                 (left, right) => left.end_offset === right.start_offset).flatMap((topic) => topic.occurrences.flatMap(([section]) => section.start_seconds === undefined ? [] : [{
                 label: section.title,
-                seconds: section.start_seconds, onSelect: () => {
-                  setSelectedTopicOffset(section.start_offset); topicPlayback.seekTo(section.start_seconds);
-                },
+                seconds: section.start_seconds, onSelect: () => topicPlayback.seekTo(section.start_seconds),
               }])) : undefined}
             />
             {!compact ? <a

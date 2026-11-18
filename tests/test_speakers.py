@@ -65,6 +65,52 @@ def detector(client, callback=None):
     return calls
 
 
+def test_transcript_speaker_names_apply_only_to_current_part_and_evidence(client):
+    keys, _ = recordings(client)
+    store = client.app.state.memory.store
+    text = "Speaker 1: Hello. How are you?\nRae: I'm fine.\nSpeaker 1: Great."
+    segments = [
+        {"text": "Speaker 1: Hello. How are you?", "start": 0, "end": 0.5},
+        {"text": "I'm fine.", "speaker_name": "Rae", "speaker_id": 2, "start": 0.5, "end": 1},
+        {"text": "Speaker 1: Great.", "start": 1, "end": 2},
+    ]
+    for key in keys:
+        store.complete(key, text, segments=segments)
+    path = f"/v1/transcripts/{keys[0]}"
+    before = client.get(path).json()
+    first, second, last = before["transcript_turns"]
+    edit = first["speaker_edit"]
+    assert edit == last["speaker_edit"] and edit != second["speaker_edit"]
+    rename = f"/v1/speakers/transcript/{keys[0]}/{edit['id']}"
+    body = {"version": edit["version"], "name": "  Rae  "}
+    assert client.patch(rename, json=body).status_code == 200
+    assert client.patch(rename, json=body | {"name": "Lee"}).status_code == 409
+    current = client.get(path).json()
+    assert all(current[field] == before[field] for field in (
+        "text", "segments", "source_version", "transcript_version",
+    ))
+    turns = current["transcript_turns"]
+    assert [turn["speaker_name"] for turn in turns] == ["Rae", "Rae", "Rae"]
+    assert [(turn["text"], turn["start"], turn["end"]) for turn in turns] == [
+        ("Hello. How are you?", 0, 0.5), ("I'm fine.", 0.5, 1), ("Great.", 1, 2),
+    ]
+    other = client.get(f"/v1/transcripts/{keys[1]}").json()["transcript_turns"]
+    assert other[0]["speaker_label"] == "Speaker 1" and "speaker_name" not in other[0]
+    day = current["started_at"][:10]
+    groups = client.get(f"/v1/recording-groups?day={day}").json()["items"]
+    group = next(group for group in groups if group["recording_count"] == 2)
+    combined = client.get(f"/v1/recording-groups/{group['id']}/sources?day={day}").json()
+    assert combined["recording"]["transcript_turns"][0]["speaker_name"] == "Rae"
+
+    version = turns[0]["speaker_edit"]["version"]
+    cleared = client.patch(rename, json={"version": version, "name": None}).json()
+    assert "speaker_name" not in cleared["transcript_turns"][0]
+    assert cleared["transcript_turns"][1]["speaker_name"] == "Rae"
+    store.complete(keys[0], text, segments=segments)
+    newest = cleared["transcript_turns"][0]["speaker_edit"]["version"]
+    assert client.patch(rename, json={"version": newest, "name": "Lee"}).status_code == 409
+
+
 def test_detect_names_and_playback_share_a_whole_upload_and_persist(client):
     keys, path = recordings(client)
     calls = detector(client)

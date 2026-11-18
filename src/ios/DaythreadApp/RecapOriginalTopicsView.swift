@@ -46,8 +46,7 @@ struct RecapOriginalTopicRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
-            RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title,
-                preview: summary.isEmpty ? L10n.text("No topic summary yet") : summary, expanded: $expanded)
+            RecapTopicHeader(id: "original:" + topic.id, title: displayTitle ?? topic.title, expanded: $expanded)
             if expanded {
                 TopicReadingView {
                     if filters.isFiltered && validatedKey != key { evidenceStatus }

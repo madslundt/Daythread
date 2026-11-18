@@ -123,7 +123,8 @@ describe("transcribed recording recap display", () => {
         expect(query.get("zone_id")).toBe("zone");
       }
     }
-    expect(html).toContain("Only matching evidence.");
+    expect(html).toContain('data-topic-id="recap:0:Work"');
+    expect(html).not.toContain("Only matching evidence.");
     for (const unscoped of ["Export Markdown", "Saved versions", "Summary language", "Chat with this day", "Find highlights", "Find decisions"])
       expect(html).not.toContain(unscoped);
   });
@@ -186,7 +187,8 @@ describe("Today reading and chat", () => {
       sections: [{ title: "Garden", start_offset: 0, end_offset: 28, summary: "Plant the roses on Friday." }],
     }] };
     const html = renderToday();
-    expect(html).toContain("Plant the roses on Friday.");
+    expect(html).toContain("<strong>Garden</strong>");
+    expect(html).not.toContain("Plant the roses on Friday.");
     expect(html).not.toContain("An original spoken sentence.");
     expect(html).not.toContain("Read the detailed recap");
     expect(html).toContain('aria-label="Chat with this day"');

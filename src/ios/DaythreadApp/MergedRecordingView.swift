@@ -47,7 +47,7 @@ struct MergedRecordingView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(.vertical, 5)
         }
-        .task(id: "\(identity).\(expanded).\(scenePhase)") {
+        .task(id: "\(identity).\(expanded).\(scenePhase).\(model.speakerRevision)") {
             guard expanded, scenePhase == .active else { return }
             await load()
             while !Task.isCancelled {
@@ -306,10 +306,15 @@ struct MergedRecordingContentView: View {
 
     private var selectedTurns: [JSONValue] {
         (speakerUtterances ?? []).map { turn in
-            .object(["text": .string(turn.text), "attribution": .string(turn.attribution),
+            let edit: JSONValue = turn.speakerEdit.map {
+                .object(["kind": .string($0.kind), "scope_id": .string($0.scopeID),
+                         "id": .string($0.id), "version": .string($0.version)])
+            } ?? .null
+            return .object(["text": .string(turn.text), "attribution": .string(turn.attribution),
                      "speaker_name": turn.speakerName.map(JSONValue.string) ?? .null,
                      "speaker_label": turn.speakerLabel.map(JSONValue.string) ?? .null,
                      "speaker_id": turn.speakerID.map(JSONValue.string) ?? .null,
+                     "speaker_edit": edit,
                      "start_offset": .number(Double(turn.startOffset)), "end_offset": .number(Double(turn.endOffset)),
                      "start": turn.start.map(JSONValue.number) ?? .null, "end": turn.end.map(JSONValue.number) ?? .null])
         }

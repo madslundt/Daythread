@@ -40,8 +40,9 @@
 .source-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
 .transcript-text { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 13px 0 8px; }
 .recording-attributed-transcript { display: grid; gap: 12px; line-height: 1.5; }
-.recording-attributed-run { white-space: pre-wrap; border-inline-start: 2px solid var(--line); padding-inline-start: 10px; }
-.recording-speaker-label { font-weight: 600; }
+.recording-attributed-run { white-space: pre-wrap; border-inline-start: 2px solid var(--line); padding-inline-start: 12px; }
+.recording-attributed-run > div { margin-top: 5px; }
+.recording-speaker-label { display: inline-block; max-width: 100%; border-radius: 5px; padding: 2px 8px; background: var(--hover); font-size: .85rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .recording-speaker-label[data-speaker-color] { color: var(--speaker-ink); }
 [data-speaker-color="0"] { --speaker-ink: #005e9c; --speaker-dark: #82caff; }
 [data-speaker-color="1"] { --speaker-ink: #a33a10; --speaker-dark: #ffa579; }
@@ -55,6 +56,11 @@
 [data-speaker-color="9"] { --speaker-ink: #526d13; --speaker-dark: #b8d982; }
 :root[data-theme="dark"] .recording-speaker-label[data-speaker-color] { color: var(--speaker-dark); }
 .recording-speaker-filters { margin-block: 8px; }
+.recording-transcript-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 18px; }
+.recording-edit-speaker { min-height: 44px; }
+.recording-speaker-editor { display: grid; gap: 14px; }
+.recording-speaker-editor label { display: grid; gap: 5px; }
+.recording-speaker-editor input, .recording-speaker-editor select { width: 100%; min-width: 0; }
 .recording-speaker-filters > summary { cursor: pointer; font-size: 13px; }
 .recording-speaker-filters [role="group"] { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .recording-speaker-filters label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }

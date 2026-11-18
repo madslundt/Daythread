@@ -1,8 +1,14 @@
+export type SpeakerEdit = {
+  kind: "source" | "meeting" | "transcript"; scope_id: string; id: string; version: string;
+};
+
 export type TranscriptTurn = {
   text: string; start?: number | null; end?: number | null; start_offset: number; end_offset: number;
   speaker_name?: string | null; speaker_label?: string | null;
   speaker_number?: number; speaker_id?: string | null; source_part?: string; attribution?: string;
   part_start?: number; part_end?: number;
+  speaker_edit?: SpeakerEdit;
+  speaker_name_is_custom?: boolean;
 };
 
 export type Source = {

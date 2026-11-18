@@ -67,7 +67,7 @@ struct SourceDetail: View {
                     }.accessibilityIdentifier("source.details")
                 }
                 ErrorNote(message: error)
-            }.task(id: model.archiveRevision + model.archiveIdentity + String(describing: scenePhase)) {
+            }.task(id: model.archiveRevision + model.archiveIdentity + model.speakerRevision.uuidString + String(describing: scenePhase)) {
                 guard scenePhase == .active else { return }
                 let identity = model.archiveIdentity
                 do {

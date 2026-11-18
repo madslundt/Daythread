@@ -260,6 +260,7 @@ class Recaps:
                 ready = saved is not None and saved["fingerprint"] == speaker_fingerprint(scope)
                 payload = json.loads(saved["payload"]) if saved else {"speakers": [], "turns": []}
                 projected_scopes[scope_key] = {
+                    "scope": scope["scope"],
                     "state": "ready" if ready else "stale" if saved else "idle",
                     "version": saved["version"] if saved else None,
                     "evidence_version": saved["version"] if ready else None,
@@ -278,10 +279,10 @@ class Recaps:
         return selected_recording_variants(self, group, db)
 
     def recording_speaker_evidence(self, group: Conversation, recording_id: str,
-                                   variant: dict, db=None):
+                                   variant: dict, db=None, *, editable=False):
         from .recording_transcription_recap import recording_speaker_evidence
 
-        return recording_speaker_evidence(self, group, recording_id, variant, db)
+        return recording_speaker_evidence(self, group, recording_id, variant, db, editable=editable)
 
     def group_key(self, group: Conversation, db=None) -> str:
         settings = self.memory.settings

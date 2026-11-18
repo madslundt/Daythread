@@ -29,11 +29,11 @@
 .recording-topic-bookmarks { margin: 0 0 16px; padding: 0; list-style: none; }
 .recording-topic-bookmarks li { border-top: 1px solid var(--line); }
 .recording-topic-bookmarks li:last-child { border-bottom: 1px solid var(--line); }
-.recording-topic-toggle { display: flex; align-items: baseline; gap: 14px; width: 100%; min-height: 44px; border: 0; border-radius: 0; padding: 12px 4px; background: transparent; text-align: left; }
-.recording-topic-toggle > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.recording-topic-toggle { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 44px; border: 0; border-radius: 0; padding: 12px 4px; background: transparent; text-align: left; }
+.recording-topic-toggle > span { min-width: 0; overflow-wrap: anywhere; }
+.recording-topic-toggle > svg { flex-shrink: 0; color: var(--muted); }
+.recording-topic-toggle[aria-expanded="true"] > svg { transform: rotate(90deg); }
 .recording-topic-toggle:hover, .recording-topic-toggle[aria-expanded="true"] { color: var(--accent); background: var(--hover); }
-.recording-topic-time { flex-shrink: 0; min-width: 5ch; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.recording-topic-count { display: block; margin-top: 4px; }
 .recording-topic-occurrences { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px 12px; }
 .recording-topic-occurrences button { width: auto; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .recording-topic-occurrences button[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); background: var(--hover); }

@@ -62,14 +62,17 @@ transcribed selection, including uploaded files with empty parts; omitted audio 
 playback interruptions.
 
 After transcription, the backend generates a descriptive recording title and topic sections using
-the local summary model. Open a recording to see the topic summaries first, including stated
-decisions, key details, and follow-ups. Open a topic and choose **Topic transcript** to read
+the local summary model. Topics start collapsed. Expand a title to see its summary, including stated
+decisions, key details, and follow-ups. Choose **Topic transcript** to read
 just that passage, or open **Full transcript** to read the entire original text. Use
 **Listen from this topic** to seek without changing what you are reading.
 
 In a transcript, use **Filter speakers** to hide their turns and skip audio where
 the speaker's timing is known. Unassigned or overlapping audio may still play.
-Only speaker names are colored; identical names share a color and a filter.
+Only speaker labels are colored; identical names share a color and a filter.
+Use **Edit speaker** to rename an identified speaker without changing the original transcript.
+Detected speakers are renamed across their conversation; imported or numbered speaker edits
+apply to that recording part only. Clear the name to return to the original label.
 When speaker evidence is available, each turn has a label. **Show timestamps** reveals the
 available offsets, which jump to the matching audio when the recording can be played.
 Recording playback matches the iPhone controls: an audio-derived, seekable waveform,

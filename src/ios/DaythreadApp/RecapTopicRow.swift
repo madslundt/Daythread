@@ -13,20 +13,17 @@ struct RecapTopicFocus: Equatable {
 struct RecapTopicHeader: View {
     let id: String
     let title: String
-    let preview: String
     @Binding var expanded: Bool
     @Environment(\.locale) private var interfaceLocale
     var body: some View {
         let _ = interfaceLocale
         Button { expanded.toggle() } label: {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.headline).foregroundStyle(.primary)
-                    if !expanded { Text(.init(preview)).font(.subheadline).foregroundStyle(.secondary).lineLimit(3) }
-                }.frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 12) {
+                Text(title).font(.headline).foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0)).accessibilityHidden(true)
-            }.contentShape(Rectangle()).padding(.vertical, 6)
+            }.frame(minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("recap.topic." + id)
             .accessibilityValue(expanded ? L10n.text("Expanded") : L10n.text("Collapsed"))
     }
@@ -62,7 +59,7 @@ struct RecapTopicRow: View {
     var body: some View {
         let _ = interfaceLocale
         VStack(alignment: .leading, spacing: 12) {
-            RecapTopicHeader(id: topic.id, title: displayTitle, preview: RecapPresentation.topicSummary(display), expanded: $expanded)
+            RecapTopicHeader(id: topic.id, title: displayTitle, expanded: $expanded)
             if expanded {
                 TopicReadingView {
                     if filters.isFiltered && validatedKey != key {

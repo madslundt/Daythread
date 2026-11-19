@@ -88,8 +88,29 @@ use `--mtime-is-start` if it represents recording start. See the
 | `alignment_server.py`, `diarization_server.py`, `nemotron_diarization_server.py` | Optional model services with separate runtimes and weights; follow the [operations guide](../docs/README.md), [alignment guide](../docs/alignment.md), or [Nemotron guide](../docs/nemotron-diarization.md). |
 | `provision_nemotron_diarization.sh`, `build_nemotron_cpu_image.sh`, `nemotron_provenance.py`, `requirements-nemotron.txt`, `alignment-requirements.lock` | Model provisioning, image builds, provenance checks, and dependency pins used by those service guides. |
 | `deploy_busy_retry_homecore.py` | Operator-specific staging/deployment to home-core: `uv run python scripts/deploy_busy_retry_homecore.py --help`. |
-| `deploy_transcription_homecore.py` | Pinned transcription overlay for the reviewed home-core baseline. `plan` prints hashes; `stage --qualification /private/receipt.json` builds and checks an isolated image; `deploy --qualification /private/receipt.json` requires the same receipt and published source. Only audited inbox and queued/processing speaker jobs may resume; other active work blocks restart. Speaker job identities, fingerprints and retry history are checked after restart and rollback. SIGTERM drains foreground requests; timeout retains a pending receipt without force-killing. The receipt explicitly qualifies request determinism and retains unresolved accuracy limitations. `recover --release RELEASE` resumes an interrupted rollback. Run `--help` for arguments. |
+| `deploy_transcription_homecore.py` | Pinned transcription overlay for the reviewed home-core baseline. `plan` prints hashes; `stage --qualification /private/receipt.json` builds and checks an isolated image; `deploy --qualification /private/receipt.json` requires the same receipt and published source. Only audited inbox and queued/processing speaker jobs may resume; other active work blocks restart. Speaker job identities, fingerprints and retry history are checked after restart and rollback. SIGTERM drains foreground requests; timeout retains a pending receipt without force-killing. Legacy receipts qualify request determinism only. Version 2 foundation receipts require every declared reliability, accuracy, consumer, negative/quiet, cold/history, long-content and reserved-test gate; they qualify only their named fixtures and exact gain-zero profile, with explicit limitations. Profile installation reuses the existing private recording role key on its unchanged gateway URL and protects settings with a hash comparison; rollback preserves newer settings edits. `recover --release RELEASE` resumes an interrupted rollback. Run `--help` for arguments. |
 | `deploy_assistant_context_homecore.py` | Provisions matching external token copies (`credentials-plan`/`credentials-apply`) and the public CA from the managed Caddy data volume (`ca-plan`/`ca-apply`), then adds only the read-only assistant-context API to the pinned active transcription image. `plan` checks release/image/Compose hashes; `stage` builds an isolated derived image; `deploy` backs up the archive, verifies authenticated GET/resolve metadata, and checks unchanged transcription source hashes; `rollback --release RELEASE` restores the exact prior image/config while retaining the backup. Provider token is UID 10001/mode 0600; collector token belongs to `homecompute-openclaw`; CA projection is root-owned/mode 0444. |
+
+Foundation receipt validation lives in `transcription_qualification.py`; private installation and
+rollback live in `transcription_profile.py`. A version 2 receipt uses
+`status=qualified_transcription_foundation`, `scope=bounded_transcription_profile` and
+`accuracy_status=DECLARED_FIXTURES_AND_PROFILE_ONLY`. It records all seven producer fields,
+separate qualified ASR/scoring hashes and deployed module hashes, the tested consumer revision,
+per-gate evidence digests, request bounds, an exact profile and a CAS-pinned settings target.
+Pending, failed, missing or differently scoped gates refuse staging. Reserved references exposed
+during preparation must remain a stated limitation; this gate does not establish an untouched blind test.
+
+The profile uses automatic Danish/English recognition, 120-second normal requests, gain 0,
+a 900-second shared inference deadline, original canonical text and optional cleanup review.
+Whole requests retain the separate 1200-second/40 MB bound and existing alignment choice.
+Normal producer policy and all seven whole producer pins are operator environment settings;
+startup ignores saved overrides for those fields. Other profile values and the reused role key
+are installed privately after graceful shutdown and backup. The archive target is derived from
+the inspected bootstrap data directory and volume mapping, then checked against the receipt.
+Only the exact installed settings bytes may be rolled back; newer edits stop recovery for review.
+The pinned release `.env` and assistant-context Compose overlay are retained on startup and rollback.
+This path does not change transcript selection, restore databases or claim universal accuracy or
+live production-network qualification.
 
 ## Transcription repeatability and fresh benchmarks
 

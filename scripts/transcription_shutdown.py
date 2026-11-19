@@ -9,7 +9,7 @@ from pathlib import Path
 COMMAND = ["python", "-m", "uvicorn", "omi_local.api:create_app", "--factory", "--workers",
            "1", "--host", "0.0.0.0", "--port", "8787"]
 SOURCE_HASHES = {
-    "omi_local/api.py": "c95c343c7245b5bc5fac0dc3aa197aa53668052159eb84a59b10393bcc329324",
+    "omi_local/api.py": "77cd4a7a5e4a8a64b93915ee23cdc39678c6399c46778cbf652505800665846c",
     "omi_local/profiles.py": "7b83e0fd58ede5909dbff1c702f7352c32c80c9d583eb26dc70e5690cb2d22c5",
     "omi_local/worker.py": "6ea2d604feb20e6ae241343f40e0acf873de9b2be671d03533d390945355d335",
     "omi_local/inbox_jobs.py": "ae1ac7aef7ad6ea83cc608e3b85914a73282675ee178c6414de7679e41162e00",

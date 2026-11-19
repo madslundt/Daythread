@@ -16,7 +16,13 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from transcription_profile import apply_profile, restore_profile, stage_profile, verify_profile
+from transcription_profile import (
+    apply_profile,
+    preflight_restore,
+    restore_profile,
+    stage_profile,
+    verify_profile,
+)
 from transcription_qualification import (
     digest_value,
     runtime_asr_hashes,
@@ -315,6 +321,10 @@ def rollback(receipt: dict, manifest: dict, path: Path) -> None:
             current = None
         if current and current["Image"] not in (receipt["base_image"], receipt["image_id"]):
             raise RuntimeError("Running image belongs to another release; refusing recovery")
+        # Preflight every restore guard while the backend is still up: a conflict that is
+        # already readable must not cost a stop/restart cycle or touch newer bytes.
+        preflight_restore(DATA, path.parent, manifest.get("settings_change"),
+                          context=(base, manifest))
         receipt["speaker_retained"] = speaker_snapshot(
             DATA, receipt.get("speaker_retained", receipt.get("speaker_before", {})),
         )

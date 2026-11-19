@@ -260,6 +260,115 @@ def test_rollback_refuses_changed_release_context_without_overwriting_it(tmp_pat
     assert (tmp_path / ".env").read_bytes() == b"newer private environment"
 
 
+def test_preflight_restore_reports_conflicts_without_reading_for_a_write(private_profile):
+    data, release, saved, target, raw, receipt, info, config = private_profile
+    change = profile.stage_profile(receipt, config, release, info, data)
+    (saved / "archive").mkdir()
+    (saved / change["relative_path"]).write_bytes(raw)
+    profile.apply_profile(data, release, saved, change)
+    profile.preflight_restore(data, saved, change)
+    newer = target.read_bytes() + b" "
+    target.write_bytes(newer)
+    with pytest.raises(RuntimeError, match="preserve newer"):
+        profile.preflight_restore(data, saved, change)
+    assert target.read_bytes() == newer
+
+
+@pytest.fixture
+def staged_profile_rollback(artifact, private_profile, monkeypatch):
+    """Staged foundation release with a running backend and an in-flight transaction."""
+    payload, base, release, calls = artifact
+    data, _, _, target, raw, receipt, info, config = private_profile
+    deploy_mocks(monkeypatch, calls)
+    monkeypatch.setattr(remote, "DATA", data)
+    manifest_path = release / "config/transcription-overlay.json"
+    manifest = json.loads(manifest_path.read_text())
+    change = profile.stage_profile(receipt, config, release, info, data)
+    manifest["settings_change"] = change
+    (base / ".env").write_bytes(b"synthetic base environment")
+    manifest["env_sha256"] = hashlib.sha256((base / ".env").read_bytes()).hexdigest()
+    compose_file = (base / "config/compose.release.json").read_bytes()
+    manifest["compose_hashes"] = {"compose.release.json": hashlib.sha256(compose_file).hexdigest()}
+    manifest_path.write_text(json.dumps(manifest))
+    saved = base.parent.parent / "backups" / "new"
+    (saved / "archive").mkdir(parents=True)
+    (saved / change["relative_path"]).write_bytes(raw)
+    profile.apply_profile(data, release, saved, change)
+    installed = target.read_bytes()
+    assert hashlib.sha256(installed).hexdigest() == change["after_sha256"]
+    state = {"running": True}
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        state["running"] = False
+
+    monkeypatch.setattr(remote, "run", run)
+    monkeypatch.setattr(remote, "inspect", lambda: {
+        "Id": "container-1", "Image": manifest["image_id"],
+        "State": {"Running": state["running"], "ExitCode": 0, "OOMKilled": False},
+    })
+    monkeypatch.setattr(remote, "wait_for_shutdown", lambda *_: {
+        "Id": "container-1", "State": {"Running": False, "ExitCode": 0, "OOMKilled": False},
+    })
+    monkeypatch.setattr(remote, "ready", lambda *args: calls.append(("ready", *args)))
+    return {"payload": payload, "base": base, "release": release, "calls": calls,
+            "manifest": manifest, "change": change, "target": target, "raw": raw,
+            "installed": installed, "saved": saved,
+            "receipt": {"base_release": str(base), "base_image": payload["base_image"],
+                        "release": str(release), "image_id": manifest["image_id"],
+                        "status": "in_progress"},
+            "path": saved / "deployment.json",
+            "kill": ("docker", "kill", "--signal=SIGTERM", "omi-local-backend-1")}
+
+
+@pytest.mark.parametrize("conflict,reason", [
+    ("environment", "preserve newer configuration"),
+    ("compose", "preserve newer configuration"),
+    ("settings", "preserve newer edits"),
+    ("backup", "backup changed"),
+])
+def test_rollback_preflights_restore_guards_before_stopping_the_backend(
+    staged_profile_rollback, conflict, reason,
+):
+    case = staged_profile_rollback
+    base, target = case["base"], case["target"]
+    expected = case["installed"]
+    if conflict == "environment":
+        base.joinpath(".env").write_bytes(b"newer private environment")
+    elif conflict == "compose":
+        (base / "config/compose.release.json").write_text('{"services": {}}')
+    elif conflict == "settings":
+        expected = target.read_bytes() + b" "
+        target.write_bytes(expected)
+    else:
+        (case["saved"] / case["change"]["relative_path"]).write_bytes(b"changed private backup")
+    with pytest.raises(RuntimeError, match=reason):
+        remote.rollback(case["receipt"], case["manifest"], case["path"])
+    assert case["kill"] not in case["calls"], "backend was stopped despite a known conflict"
+    assert not [call for call in case["calls"] if call[0] in ("compose", "ready")]
+    assert target.read_bytes() == expected, "newer settings bytes were changed"
+    receipt = json.loads(case["path"].read_text())
+    assert receipt["status"] == "rollback_failed" and receipt["phase"] == "recovery_required"
+
+
+def test_valid_rollback_stops_once_restores_settings_then_starts_the_base_release(
+    staged_profile_rollback, monkeypatch,
+):
+    case = staged_profile_rollback
+    calls, base, payload = case["calls"], case["base"], case["payload"]
+    monkeypatch.setattr(remote, "compose", lambda path, *args, **kwargs: calls.append(
+        ("compose", path, args, kwargs, case["target"].read_bytes())))
+    remote.rollback(case["receipt"], case["manifest"], case["path"])
+    stops = [index for index, call in enumerate(calls) if call[:2] == ("docker", "kill")]
+    started = [index for index, call in enumerate(calls) if call[0] == "compose"]
+    assert len(stops) == 1 and len(started) == 1 and stops[0] < started[0]
+    assert calls[started[0]][1] == base and calls[started[0]][3] == {"image": payload["base_image"]}
+    assert calls[started[0]][4] == case["raw"], "base backend started before settings were restored"
+    assert case["target"].read_bytes() == case["raw"]
+    receipt = json.loads(case["path"].read_text())
+    assert receipt["status"] == "rolled_back" and receipt["phase"] == "rolled_back"
+
+
 @pytest.mark.parametrize("fail_candidate", [False, True])
 def test_foundation_restart_verifies_profile_or_restores_settings_before_base_start(
     artifact, private_profile, monkeypatch, fail_candidate,

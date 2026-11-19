@@ -128,27 +128,58 @@ def apply_profile(data: Path, release: Path, saved: Path, change: dict | None) -
     atomic_settings(target, after, change["uid"], change["gid"])
 
 
-def restore_profile(data: Path, saved: Path, change: dict | None,
-                    context: tuple[Path, dict] | None = None) -> None:
+def read_bytes(path: Path, failure: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError:
+        raise RuntimeError(failure) from None
+
+
+def restore_plan(data: Path, saved: Path, change: dict | None,
+                 context: tuple[Path, dict] | None = None) -> tuple[Path, bytes] | None:
+    """Every restore guard, reading only; None when the original bytes are already in place."""
     if context:
         base, manifest = context
+        unreadable = "Rollback release configuration is unreadable; refusing to restore"
         if (manifest.get("env_sha256")
-                and sha((base / ".env").read_bytes()) != manifest["env_sha256"]):
+                and sha(read_bytes(base / ".env", unreadable)) != manifest["env_sha256"]):
             raise RuntimeError("Rollback release environment changed; preserve newer configuration")
         for name, expected in manifest.get("compose_hashes", {}).items():
-            if sha((base / "config" / name).read_bytes()) != expected:
+            if sha(read_bytes(base / "config" / name, unreadable)) != expected:
                 raise RuntimeError("Rollback Compose context changed; preserve newer configuration")
     if change is None:
-        return
+        return None
     target = profile_file(data, change)
-    current = sha(target.read_bytes())
+    current = sha(read_bytes(target, "Private settings target is unreadable; refusing to restore"))
     if current == change["before_sha256"]:
-        return
+        return None
     if current != change["after_sha256"]:
         raise RuntimeError("Private settings changed after installation; preserve newer edits")
-    before = (saved / change["relative_path"]).read_bytes()
+    before = read_bytes(saved / change["relative_path"],
+                        "Private settings rollback backup is unreadable; refusing to restore")
     if sha(before) != change["before_sha256"]:
         raise RuntimeError("Private settings rollback backup changed")
+    return target, before
+
+
+def preflight_restore(data: Path, saved: Path, change: dict | None,
+                      context: tuple[Path, dict] | None = None) -> None:
+    """Refuse an unsafe rollback before any backend stop; newer bytes are never touched."""
+    restore_plan(data, saved, change, context)
+
+
+def restore_profile(data: Path, saved: Path, change: dict | None,
+                    context: tuple[Path, dict] | None = None) -> None:
+    plan = restore_plan(data, saved, change, context)
+    if plan is None or change is None:
+        return
+    # Recheck immediately before writing so a newer concurrent edit is never overwritten.
+    again = restore_plan(data, saved, change, context)
+    if again is None:
+        return
+    if again != plan:
+        raise RuntimeError("Private settings or release configuration changed during rollback")
+    target, before = plan
     atomic_settings(target, before, change["uid"], change["gid"])
 
 

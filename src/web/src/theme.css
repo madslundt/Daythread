@@ -60,7 +60,7 @@ h3 { font-size: 18px; }
 .day-rail h2, .capture-overview-title { font-size: 16px; }
 .day-main { gap: 20px; }
 .day-main > .recap-section, .day-main > .timeline-section, .day-main > .decisions-section,
-.day-rail > section, .day-rail > .capture-overview, .conversation-panel { border-color: transparent; border-radius: 16px; }
+.day-rail > section, .day-rail > .capture-overview { border-color: transparent; border-radius: 16px; }
 .recap-topic-option strong { font: 500 17px/1.4 var(--font-display); }
 .recap-workspace .recap-section-heading h3, .highlight-group-heading h3 { font-size: 18px; }
 .recap-workspace .prose { font-size: 15px; line-height: 1.7; }
@@ -78,8 +78,8 @@ h3 { font-size: 18px; }
 .activity-details { margin-left: auto; font-size: 13px; }
 .activity-details[open] { width: 100%; }
 .activity-details summary, .day-utility > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; list-style: none; color: var(--secondary); }
-.activity-details summary::-webkit-details-marker, .day-utility > summary::-webkit-details-marker, .chat-index > summary::-webkit-details-marker { display: none; }
-.activity-details[open] > summary > svg, .day-utility[open] > summary > svg:last-child, .chat-index[open] > summary > svg { transform: rotate(90deg); }
+.activity-details summary::-webkit-details-marker, .day-utility > summary::-webkit-details-marker { display: none; }
+.activity-details[open] > summary > svg, .day-utility[open] > summary > svg:last-child { transform: rotate(90deg); }
 .day-utility { padding: 6px 20px; border-radius: 16px; background: var(--surface); }
 .day-utility > summary { font-size: 14px; font-weight: 500; }
 .day-utility > summary > svg:last-child { margin-left: auto; }
@@ -112,16 +112,9 @@ h3 { font-size: 18px; }
 .segmented-control { display: inline-flex; gap: 3px; background: var(--rail); border-radius: 11px; padding: 3px; margin-bottom: 24px; }
 .segmented-control .button { border: 0; min-width: 90px; background: transparent; color: var(--secondary); }
 .segmented-control .button[aria-pressed='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px #00000012; }
-.diary-index .section-heading h2, .chat-index-heading h2 { font-size: 18px; }
+.diary-index .section-heading h2 { font-size: 18px; }
 .diary-index > .button { margin-block: 12px; }
-.diary-entry.selected, .conversation-link.selected { background: var(--accent-soft); }
-.chat-layout:has(.chat-index:not([open])) { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.chat-index { display: block; min-width: 0; }
-.chat-index-heading { display: flex; align-items: center; min-height: 44px; gap: 10px; list-style: none; margin-bottom: 0; }
-.chat-index-heading h2 { margin: 0; }
-.chat-index-heading > svg { margin-left: auto; color: var(--muted); }
-.chat-index[open] .chat-index-heading { margin-bottom: 16px; }
-.conversation-panel { min-height: 520px; max-height: min(850px, calc(100dvh - 190px)); }
+.diary-entry.selected { background: var(--accent-soft); }
 .rewind-form { background: var(--surface); padding: 24px; border: 0; border-radius: 16px; }
 .labels-page > p, .inbox-page > p { color: var(--muted); font-size: 14px; max-width: 65ch; }
 .label-directory { gap: 12px; }
@@ -154,10 +147,6 @@ h3 { font-size: 18px; }
   .activity-details { margin-left: 0; }
   .mobile-nav { background: var(--surface); border-top-color: var(--line); box-shadow: none; padding-top: 4px; }
   .mobile-nav a.active, .mobile-nav > button.active { background: transparent; font-weight: 600; }
-  .chat-index { display: block; padding: 0; }
-  .chat-index-heading { width: 100%; }
-  .conversation-panel { padding: 18px; min-height: 480px; max-height: none; }
-  .chat-form textarea { font-size: 16px; }
   .rewind-form { padding: 20px; gap: 18px; }
   .browser-recorder { padding: 14px 16px; }
   .browser-recorder .section-heading .button-row { margin: 0; width: 100%; }
@@ -169,5 +158,5 @@ h3 { font-size: 18px; }
 @media (prefers-contrast: more) {
   :root { --line: #98989d; --muted: #515154; }
   :root[data-theme='dark'] { --line: #86868b; --muted: #c5c5ca; }
-  .day-main > .recap-section, .day-main > .timeline-section, .day-rail > section, .conversation-panel { border-color: var(--line); }
+  .day-main > .recap-section, .day-main > .timeline-section, .day-rail > section { border-color: var(--line); }
 }

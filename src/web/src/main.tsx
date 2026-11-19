@@ -6,6 +6,7 @@ import { initializeLanguage } from "./i18n";
 import "./styles.css";
 import "./today.css";
 import "./theme.css";
+import "./chat.css";
 
 initializeTheme();
 initializeLanguage();

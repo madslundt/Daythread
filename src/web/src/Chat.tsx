@@ -1,19 +1,30 @@
-import { statusLabel } from "./statusLabels";
 import { t } from "./i18n";
 import { profileStorageKey } from "./profiles";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage } from "./api";
+import { ChatAnswer } from "./ChatAnswer";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { exchangeMessages, streamChat } from "./chatStream";
 import type { ChatResult } from "./chatStream";
-import { dateRangeForShortcut, dateRangeShortcuts, dateTimeLabel, dayLabel, localDay } from "./format";
+import { dateRangeForShortcut, dateRangeShortcuts, dateTimeLabel, dayLabel, localDay, timeLabel } from "./format";
 import { Icon } from "./Icon";
 import { EvidenceFeedback } from "./CompletenessFeedback";
-import { SourceList } from "./SourceList";
 import type { ChatMessage, ChatScope, ChatSession, Conversation, Timeline } from "./types";
 import { useResource } from "./useResource";
-import { EmptyState, ErrorState, Loading, RichText } from "./UI";
+import { EmptyState, ErrorState, Loading } from "./UI";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+const desktopChat = "(min-width: 1101px)";
+
+function MessageLabel({ user, timestamp, timezone }: { user?: boolean; timestamp?: string; timezone: string }) {
+  return <div className="message-label">
+    {!user && <span className="chat-avatar"><Icon name="chat" size={14} /></span>}
+    <strong>{user ? t("You") : t("Daythread")}</strong>
+    {timestamp && Number.isFinite(Date.parse(timestamp)) ? <time dateTime={timestamp} title={dateTimeLabel(timestamp, timezone)}>
+      {timeLabel(timestamp, timezone)}
+    </time> : null}
+  </div>;
+}
 
 function savedSession(): string | undefined {
   try {
@@ -47,11 +58,17 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
   const [error, setError] = useState("");
   const [streamedText, setStreamedText] = useState("");
   const [stage, setStage] = useState("searching");
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const [completed, setCompleted] = useState<{ result: ChatResult; question: string }>();
   const activeRequest = useRef<AbortController | null>(null);
   const pendingText = useRef("");
   const flushTimer = useRef<number | undefined>(undefined);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const history = useRef<HTMLDetailsElement>(null);
+  const scopeDetails = useRef<HTMLDetailsElement>(null);
+  const messageViewport = useRef<HTMLDivElement>(null);
+  const messageList = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const pauseFollowing = useCallback(() => { followLatest.current = false; }, []);
   const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => () => {
     activeRequest.current?.abort();
@@ -65,11 +82,10 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     if (completed && messages.some((message) => message.id === completed.result.message_id)) setCompleted(undefined);
   }, [completed, messages]);
   useEffect(() => {
-    if (initialQuestion) composer.current?.focus();
+    if (initialQuestion) composer.current?.focus({ preventScroll: true });
   }, [initialQuestion]);
-  const scope = sessionId
-    ? sessionScope(conversation.data ?? sessions.data?.items.find((session) => session.id === sessionId))
-    : draftScope;
+  const activeSession = conversation.data ?? sessions.data?.items.find((session) => session.id === sessionId);
+  const scope = sessionId ? sessionScope(activeSession) : draftScope;
   const meetings = timeline.data?.meetings ?? [];
   const selectedMeeting = scope.kind === "meeting" ? meetings.find((meeting) => meeting.id === scope.meeting_id) : undefined;
   const today = localDay(timezone);
@@ -79,7 +95,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       ? `${dayLabel(scope.start_day, true)} – ${dayLabel(scope.end_day, true)}`
     : scope.kind === "meeting"
       ? selectedMeeting ? t("Meeting · {value0}", { value0: dateTimeLabel(selectedMeeting.started_at, timezone) }) : t("Selected meeting")
-      : t("All diaries (all days)");
+      : scope.kind === "recording" ? t("This recording only") : t("All diaries (all days)");
   useEffect(() => {
     try {
       if (sessionId) localStorage.setItem(storageKey, sessionId);
@@ -88,12 +104,32 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       /* Storage may be disabled; sessions still persist on the backend. */
     }
   }, [sessionId, storageKey]);
-  useEffect(() => {
-    messagesEnd.current?.scrollIntoView({
-      block: "nearest",
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+  useLayoutEffect(() => {
+    if (history.current) history.current.open = window.matchMedia(desktopChat).matches;
+  }, []);
+  // Follow streaming replies only while the reader is already at the bottom.
+  // Observe size changes as the answer grows or the composer resizes.
+  useLayoutEffect(() => {
+    const viewport = messageViewport.current;
+    const list = messageList.current;
+    if (!viewport || !list) return;
+    const observer = new ResizeObserver(() => {
+      if (followLatest.current) viewport.scrollTop = viewport.scrollHeight;
+      else {
+        followLatest.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+        setAwayFromLatest(!followLatest.current);
+      }
     });
-  }, [visibleMessages.length, sending]);
+    observer.observe(viewport);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, []);
+  function jumpToLatest() {
+    followLatest.current = true;
+    setAwayFromLatest(false);
+    const viewport = messageViewport.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }
   async function send(event: React.FormEvent) {
     event.preventDefault();
     const value = question.trim();
@@ -103,7 +139,9 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     pendingText.current = "";
     setStreamedText("");
     setStage("searching");
-    composer.current?.focus();
+    if (scopeDetails.current) scopeDetails.current.open = false;
+    composer.current?.focus({ preventScroll: true });
+    jumpToLatest();
     setSending(value);
     setError("");
     try {
@@ -145,14 +183,23 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     }
   }
   function select(id?: string) {
+    if (history.current && !window.matchMedia(desktopChat).matches) history.current.open = false;
+    if (id && id === sessionId) {
+      messageViewport.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (scopeDetails.current) scopeDetails.current.open = false;
+    jumpToLatest();
     if (!id) setDraftScope(scope);
     setSessionId(id);
     setError("");
     setCompleted(undefined);
     setQuestion("");
-    if (!id) composer.current?.focus();
+    if (id) messageViewport.current?.focus({ preventScroll: true });
+    else composer.current?.focus({ preventScroll: true });
   }
   function changeScope(next: ChatScope) {
+    jumpToLatest();
     setDraftScope(next);
     setSessionId(undefined);
     setError("");
@@ -160,8 +207,9 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
   }
   return (
     <div className="chat-layout">
-      <details className="chat-index">
+      <details className="chat-index" ref={history}>
         <summary className="chat-index-heading">
+          <Icon name="chat" size={18} />
           <h2>{t("Conversations")}</h2>
           {sessions.data?.items.length ? <span aria-label={t("{value0} saved conversations", { value0: sessions.data.items.length })}>{sessions.data.items.length}</span> : null}
           <Icon name="chevron-right" size={16} />
@@ -200,7 +248,18 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           <p className="caption">{t("Your conversations will appear here. They stay on your home-core.")}</p>
         ) : null}
       </details>
-      <section className="conversation-panel" aria-label={t("Conversation")}>
+      <section className="conversation-panel" aria-labelledby="chat-title">
+        <header className="chat-thread-header">
+          <div className="chat-thread-title">
+            <h2 id="chat-title">{activeSession?.title || (sessionId && conversation.loading ? t("Loading conversation…") : t("New conversation"))}</h2>
+          </div>
+          <details className="chat-context" ref={scopeDetails}>
+            <summary className="chat-context-summary">
+              <Icon name="filter" size={16} />
+              <span>{scopeLabel}</span>
+              <Icon name="chevron-right" size={14} />
+              <span className="sr-only">{t("Chat scope")}</span>
+            </summary>
         <div className="chat-scope">
           <label>
             <span>{t("Chat with")}</span>
@@ -276,11 +335,19 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               </select>
             </label>
           ) : null}
-          <p className="caption">{scope.kind === "recording" ? t("This recording only") : scopeLabel}{t(". Changing context starts a new conversation and keeps your draft question.")}</p>
+          <p className="caption">{scopeLabel}{t(". Changing context starts a new conversation and keeps your draft question.")}</p>
           {timeline.error && scope.kind === "meeting" ? <ErrorState message={timeline.error} retry={timeline.refresh} /> : null}
           {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">{t("Meetings appear here after a meeting has been recorded.")}</p> : null}
         </div>
-        <div className="messages" role="log" aria-label={t("Conversation messages")} aria-live="polite" aria-relevant="additions text">
+          </details>
+        </header>
+        <div className="chat-transcript">
+        <div className="messages" ref={messageViewport} role="log" aria-label={t("Conversation messages")} aria-relevant="additions text" tabIndex={0} onScroll={(event) => {
+          const viewport = event.currentTarget;
+          followLatest.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+          setAwayFromLatest(!followLatest.current);
+        }}>
+          <div className="chat-message-list" ref={messageList}>
           {conversation.loading && !visibleMessages.length ? (
             <Loading>{t("Loading conversation…")}</Loading>
           ) : visibleMessages.length ? (
@@ -289,32 +356,13 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                 className={`chat-message ${message.role}`}
                 key={message.id}
               >
-                <div className="message-label">
-                  {message.role === "user" ? t("You") : t("Daythread")}
-                </div>
-                {message.stale ? <p className="caption" role="status">{t("Historical answer: its transcript evidence has changed. Ask again for a current answer.")}</p> : null}
-                <RichText text={message.content} />
-                {message.role === "assistant" ? <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} /> : null}
-                {message.retrieval_details?.notice ? <p className="caption">{t(message.retrieval_details.notice)}</p> : null}
-                {message.sources.length ? (
-                  <details className="chat-sources">
-                    <summary>
-                      {message.sources.length} {t("source")}{" "}{message.sources.length === 1 ? t("recording") : t("recordings")}
-                    </summary>
-                    <SourceList
-                      sources={message.sources}
-                      timezone={timezone}
-                      showDate
-                      onCorrect={conversation.refresh}
-                      onDeleted={() => {
-                        setDraftScope(scope);
-                        setSessionId(undefined);
-                        conversation.setData(undefined);
-                        sessions.refresh();
-                      }}
-                    />
-                  </details>
-                ) : null}
+                <MessageLabel user={message.role === "user"} timestamp={message.created_at} timezone={timezone} />
+                {message.role === "assistant" ? <ChatAnswer message={message} timezone={timezone} onInspect={pauseFollowing} />
+                  : <p className="chat-question">{message.content}</p>}
+                {message.role === "assistant" ? <details className="chat-evidence">
+                  <summary onClick={pauseFollowing}>{t("Evidence")}</summary>
+                  <EvidenceFeedback outputId={message.evidence ? message.id : undefined} evidence={message.evidence} outputText={message.content} />
+                </details> : null}
               </article>
             ))
           ) : !sending && !conversation.error ? (
@@ -334,18 +382,18 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             </EmptyState>
           ) : null}
           {sending ? (
-            <div>
+            <>
             <article className="chat-message user pending">
-              <div className="message-label">{t("You")}</div>
-              <p>{sending}</p>
+              <MessageLabel user timezone={timezone} />
+              <p className="chat-question">{sending}</p>
             </article>
-            <article className="chat-message assistant pending" aria-busy="true">
-              <div className="message-label">{t("Daythread")}</div>
-              {streamedText ? <p style={{ whiteSpace: "pre-wrap" }}>{streamedText}</p> : null}
+            <article className="chat-message assistant pending">
+              <MessageLabel timezone={timezone} />
+              {streamedText ? <ChatMarkdown text={streamedText} draft /> : null}
               <Loading>{stage === "expanding" ? t("Trying alternate search wording…") : stage === "generating" ? t("Writing your answer…") : t("Looking through your recordings…")}</Loading>
               {streamedText ? <p className="caption">{t("Draft answer · sources are checked before saving.")}</p> : null}
             </article>
-            </div>
+            </>
           ) : null}
           {conversation.error ? (
             <ErrorState
@@ -354,11 +402,18 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             />
           ) : null}
           {error ? <ErrorState message={error} /> : null}
-          <div ref={messagesEnd} />
+          </div>
+        </div>
+          {awayFromLatest ? <button type="button" className="button small chat-jump" onClick={() => {
+            jumpToLatest();
+            messageViewport.current?.focus({ preventScroll: true });
+          }}>
+            <Icon name="chevron-right" size={15} />{t("Jump to latest")}
+          </button> : null}
         </div>
         <form className="chat-form" onSubmit={send}>
           <label className="sr-only" htmlFor="chat-question">
-            {t("Ask your memory")}{" "}</label>
+            {t("Ask your memory")}</label>
           <textarea
             ref={composer}
             id="chat-question"
@@ -380,19 +435,19 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
             }}
             readOnly={Boolean(sending)}
           />
-          {sending ? <button key="stop" type="button" className="button" onClick={(event) => {
-            event.preventDefault();
+          {sending ? <button key="stop" type="button" className="button" onClick={() => {
             activeRequest.current?.abort();
+            composer.current?.focus({ preventScroll: true });
           }}>{t("Stop")}</button> : <button key="send" type="submit"
             className="button dark"
             disabled={
               !question.trim() || Boolean(sending) || conversation.loading
               || Boolean(sessionId && !conversation.data)
             }
-            aria-label={sending ? t("Asking your memory") : t("Send question")}
+            aria-label={t("Send question")}
           >
             <Icon name="send" size={18} />
-            <span>{sending ? t("Asking…") : t("Send")}</span>
+            <span>{t("Send")}</span>
           </button>}
           <p className="caption" id="chat-composer-hint">
             {t("Enter to send · Shift + Enter for a new line. Answers use your selected context; open the sources to check the details.")}{" "}</p>

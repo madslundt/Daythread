@@ -162,7 +162,12 @@ async def scheduled_recaps(memory: Memory, batcher: RecapBatcher | None = None) 
         return
     now = utc_now().astimezone(ZoneInfo(memory.settings.timezone))
     groups = memory.recaps.groups(now)
-    for day in recorded_days(memory, now):
+    today = now.date()
+    days = recorded_days(memory, now)
+    if days and days[-1] == today:
+        # A backfill should not make ready evidence for the current day wait its turn.
+        days.insert(0, days.pop())
+    for day in days:
         if not memory.settings.llm_enabled:
             return
         try:

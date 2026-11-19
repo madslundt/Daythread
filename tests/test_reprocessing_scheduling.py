@@ -4,7 +4,7 @@ import asyncio
 import json
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 from uuid import uuid4
 
 import pytest
@@ -116,3 +116,20 @@ def test_job_started_during_scheduler_pass_reserves_later_days(memory):
     asyncio.run(scheduled_recaps(memory))
 
     memory.recap.assert_awaited_once_with(date(2026, 10, 15))
+
+
+def test_ready_current_day_is_processed_before_backfill(memory, monkeypatch):
+    memory.settings.timezone = "Europe/Copenhagen"
+    now = NOW.replace(hour=22, minute=5)
+    monkeypatch.setattr("omi_local.worker.utc_now", lambda: now)
+    recording(memory, "2026-10-17")
+    # The evening recording belongs to the following local calendar day.
+    recording(memory, "2026-10-18", time="22:01:00")
+    batcher = RecapBatcher()
+
+    asyncio.run(scheduled_recaps(memory, batcher))
+    memory.recap.assert_not_awaited()
+    now += timedelta(seconds=15)
+    asyncio.run(scheduled_recaps(memory, batcher))
+
+    assert memory.recap.await_args_list == [call(date(2026, 10, 19)), call(date(2026, 10, 17))]

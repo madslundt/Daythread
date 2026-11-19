@@ -4,7 +4,8 @@ import { t } from "./i18n";
 import { ImportanceButton } from "./Importance";
 import { useEffect, useState } from "react";
 import { allDayFilters, dayFilterKey, dayFiltersForProfile, hasDayFilters, rememberDayFilters, type DayFilters } from "./dayFilters";
-import { dateRangeForShortcut, localDay, timeLabel } from "./format";
+import { localDay, timeLabel } from "./format";
+import { DayChatBubble } from "./DayChatBubble";
 import { CaptureStatus, RecordingActivity } from "./CaptureStatus";
 export { CaptureStatus } from "./CaptureStatus";
 import { Icon } from "./Icon";
@@ -68,12 +69,12 @@ export function Today({
             <TagFilter value={filters.tagID} onChange={(tagID) => changeFilters({ ...filters, tagID })} />
             <ZoneFilter value={filters.zoneID} onChange={(zoneID) => changeFilters({ ...filters, zoneID })} />
           </div>
-          <p className="caption">{t("Filters apply to the recap, highlights, topics, and timeline.")}</p>
+          <p className="caption">{t("Filters apply to the recap, topics, and timeline.")}</p>
           </div>
           {filtered ? <p className="caption" role="status">{t("Only recordings matching every selected filter are included.")}</p> : null}
         </section>
         <RecapSection key={`recap-${scopeKey}`} day={day} timezone={timezone} status={status} statusError={statusError}
-          onChat={onChat} filters={filters} compact todayView chatShortcuts={<DayChat day={day} filtered={filtered} onChat={onChat} />} />
+          onChat={onChat} filters={filters} compact todayView />
         <TranscriptTimeline
           key={`timeline-${scopeKey}`}
           day={day}
@@ -103,29 +104,9 @@ export function Today({
         <CaptureStatus status={status} error={statusError} compact />
         <div className="day-feedback"><FeedbackReview /></div>
       </aside>
+      <DayChatBubble key={day} day={day} timezone={timezone} filtered={filtered} />
     </div>
   );
-}
-
-export function dayChatScopes(day: string) {
-  return {
-    day: { kind: "day", day },
-    week: { kind: "range", ...dateRangeForShortcut("this_week", day) },
-    range: { kind: "range", start_day: day, end_day: day },
-  } satisfies Record<string, ChatScope>;
-}
-
-function DayChat({ day, filtered, onChat }: { day: string; filtered: boolean; onChat: (scope: ChatScope) => void }) {
-  const scopes = dayChatScopes(day);
-  return <section className="day-chat" aria-labelledby="day-chat-heading">
-    <div className="day-chat-heading"><Icon name="chat" size={19} /><h2 id="day-chat-heading">{t("Ask Daythread")}</h2></div>
-    <div className="day-chat-scopes">
-      <button type="button" className="button small" aria-label={t("Chat with this day")} onClick={() => onChat(scopes.day)}>{t("This day")}</button>
-      <button type="button" className="button small" aria-label={t("Chat with this week")} onClick={() => onChat(scopes.week)}>{t("This week")}</button>
-      <button type="button" className="button small" aria-label={t("Chat with a date range")} onClick={() => onChat(scopes.range)}>{t("Date range")}</button>
-    </div>
-    {filtered ? <p className="caption">{t("Chat uses all entries in the chosen period, regardless of these filters.")}</p> : null}
-  </section>;
 }
 
 export function QuickRewind({ historical, onRewind }: { historical: boolean; onRewind: (minutes: number, localTime?: string) => void }) {
@@ -213,7 +194,7 @@ export function TranscriptTimeline({
     <section className="timeline-section">
       <div className="section-heading">
         <div className="timeline-title">
-          <h2 id={todayView ? "day-entries" : undefined} tabIndex={todayView ? -1 : undefined}>{todayView ? t("Day entries") : archive ? t("Recordings") : t("Timeline")}</h2>
+          <h2 id={todayView ? "day-entries" : undefined} tabIndex={todayView ? -1 : undefined}>{todayView ? t("Day recordings") : archive ? t("Recordings") : t("Timeline")}</h2>
           {resource.data ? <span className="caption">{todayView
             ? t(resource.data.total === 1 ? "{value0} entry" : "{value0} entries", { value0: resource.data.total })
             : <>{resource.data.total} {t("groups")}</>}</span> : null}

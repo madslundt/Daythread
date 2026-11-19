@@ -110,7 +110,8 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
       <DisplayTranslationStatus value={labels} />
       <div id={`${id}-topics`} className="recap-topic-list">
         {visible.map((topic) => <RecapTopicRow key={topic.id} topic={topic} expanded={selected === topic.id} onToggle={() => toggle(topic)}
-          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus} />)}
+          day={day} sources={sources} timezone={timezone} onChat={onChat} onCorrect={onCorrect} onFocus={onFocus}
+          showFollowupHint={!todayView} />)}
       </div>
       {limitedOverview && matching.length > topicOverviewLimit ? <button type="button" className="text-button"
         aria-expanded={showingAllTopics} aria-controls={`${id}-topics`} onClick={() => {
@@ -132,8 +133,8 @@ export function RecapContent({ text, translatedText, translationStructure, day, 
 }
 
 // A controlled row keeps its siblings visible while one canonical topic owns the focus.
-export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
-  topic: TopicRow; expanded: boolean; onToggle: () => void;
+export function RecapTopicRow({ topic, expanded, onToggle, showFollowupHint = true, ...props }: {
+  topic: TopicRow; expanded: boolean; onToggle: () => void; showFollowupHint?: boolean;
 } & Pick<Props, "day" | "sources" | "timezone" | "onChat" | "onCorrect" | "onFocus">) {
   const id = useId();
   const entrySummary = [...new Set(topic.originalPassages?.map(({ section }) => section.summary?.trim()).filter(Boolean))].join("\n\n");
@@ -145,7 +146,7 @@ export function RecapTopicRow({ topic, expanded, onToggle, ...props }: {
     <div id={id} hidden={!expanded}>
       {expanded ? <>
         <RecapTopic {...topic} {...props} entrySummary={entrySummary} compact={false} expanded inline />
-        {topic.followups ? <p className="caption">{t("Review and manage these in the overview below.")}</p> : null}
+        {topic.followups && showFollowupHint ? <p className="caption">{t("Review and manage these in the overview below.")}</p> : null}
       </> : null}
     </div>
   </article>;

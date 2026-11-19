@@ -15,20 +15,18 @@ export type DayOverview = {
 };
 type SavedOverview = Omit<DayOverview, "day"> & { day?: string; week_start?: string; partial?: boolean; cutoff?: string };
 
-export function DayRecapOverview({ day, timezone, onTopic, todayView = false, introduction, hasDetailedRecap }: {
+export function DayRecapOverview({ day, timezone, onTopic }: {
   day: string; timezone: string; onTopic: (title: string) => void;
-  todayView?: boolean; introduction?: string; hasDetailedRecap?: boolean;
 }) {
-  return <SavedRecapOverview key={day} day={day} path={`/v1/recaps/${day}/overview`} {...{ timezone, onTopic, todayView, introduction, hasDetailedRecap }} />;
+  return <SavedRecapOverview key={day} day={day} path={`/v1/recaps/${day}/overview`} {...{ timezone, onTopic }} />;
 }
 
 export function WeeklyRecapOverview({ week, timezone }: { week: string; timezone: string }) {
   return <SavedRecapOverview key={week} path={`/v1/weekly-reviews/${week}/overview`} timezone={timezone} weekly />;
 }
 
-function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false, todayView = false, introduction, hasDetailedRecap }: {
+function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false }: {
   path: string; day?: string; timezone: string; onTopic?: (title: string) => void; weekly?: boolean;
-  todayView?: boolean; introduction?: string; hasDetailedRecap?: boolean;
 }) {
   const resource = useResource<SavedOverview>(path, 15_000);
   const [generating, setGenerating] = useState(false);
@@ -60,13 +58,13 @@ function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false, toda
   }
   return <div className={`day-recap-overview${weekly ? " weekly-recap-overview" : ""}`}
     aria-label={weekly ? t("Weekly recap") : t("Day recap summary")} aria-busy={generating}>
-    {!todayView ? <div className="day-recap-overview-heading">
+    <div className="day-recap-overview-heading">
       <p className="caption">{weekly ? t("The whole week, in five minutes or less.") : t("The whole day, in five minutes or less.")}</p>
       {data?.can_generate ? <button type="button" className="button accent"
         disabled={generating} onClick={() => void generate()}>
         {generating ? t("Generating recap…") : data.summary ? t("Update recap") : t("Recap")}
       </button> : null}
-    </div> : null}
+    </div>
     {weekly && data?.partial && data.cutoff ? <p className="caption" role="status">
       {t("This week is still in progress. Evidence cutoff:")} {dateTimeLabel(data.cutoff, timezone)}
     </p> : null}
@@ -76,23 +74,16 @@ function SavedRecapOverview({ path, day, timezone, onTopic, weekly = false, toda
     {resource.loading && !data ? <Loading>{weekly ? t("Loading saved weekly recap…") : t("Loading saved recap…")}</Loading> : null}
     {data?.summary ? <>
       <RecapSummary key={data.output_id || data.generated_at || path} outputId={data.output_id} text={data.summary}
-        expandLabel={todayView ? t("Read day summary") : undefined}
         renderContent={(text) => <DayOverviewText text={text} day={day} topics={data.topics || []}
           onTopic={onTopic ? (topic) => onTopic(topic.title) : undefined} />} />
       <p className="caption">{weekly && data.generated_at ? <>{t("Generated at")} {dateTimeLabel(data.generated_at, timezone)} · </> : null}
         {t("{value0} min read", { value0: data.reading_minutes || 1 })}</p>
-      {data.can_generate && !todayView ? <p className="caption" role="status">{weekly
+      {data.can_generate ? <p className="caption" role="status">{weekly
         ? t("New recordings are available. Update the weekly recap to include them.")
         : t("New recordings are available. Update the recap to include them.")}</p> : null}
-    </> : todayView && introduction ? <DayOverviewText text={introduction} topics={[]} />
-      : todayView ? data && !hasDetailedRecap ? <p className="caption">{t("No day summary yet")}</p> : null
-      : data ? <p className="caption">{data.can_generate
+    </> : data ? <p className="caption">{data.can_generate
       ? weekly ? t("Generate a short recap of this week. It will be saved here for later.") : t("Generate a short recap of this day. It will be saved here for later.")
       : weekly ? t("Your weekly recap will be available when there is something to recap.") : t("Your day recap will be available when there is something to recap.")}</p> : null}
-    {todayView && data?.can_generate ? <button type="button" className="text-button day-generate-summary"
-      disabled={generating} onClick={() => void generate()}>
-      {generating ? t("Generating recap…") : data.summary ? t("Update recap") : t("Generate day summary")}
-    </button> : null}
   </div>;
 }
 

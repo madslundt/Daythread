@@ -44,12 +44,16 @@ function sessionScope(session?: ChatSession): ChatScope {
   return { kind: "all" };
 }
 
-export function Chat({ timezone, initialScope, initialQuestion }: { timezone: string; initialScope?: ChatScope; initialQuestion?: string }) {
+export function Chat({ timezone, initialScope, initialQuestion, dayChat }: {
+  timezone: string; initialScope?: ChatScope; initialQuestion?: string;
+  dayChat?: { day: string; filtered: boolean; onClose: () => void };
+}) {
+  const embedded = Boolean(dayChat);
   const storageKey = useRef(profileStorageKey("omi.chat-session.v1")).current;
   const [sessionId, setSessionId] = useState<string | undefined>(() => initialScope ? undefined : savedSession());
   const [draftScope, setDraftScope] = useState<ChatScope>(initialScope ?? { kind: "all" });
-  const sessions = useResource<{ items: ChatSession[] }>("/v1/chat/sessions");
-  const timeline = useResource<Timeline>("/v1/timeline", 15_000);
+  const sessions = useResource<{ items: ChatSession[] }>(dayChat ? null : "/v1/chat/sessions");
+  const timeline = useResource<Timeline>(dayChat ? null : "/v1/timeline", dayChat ? 0 : 15_000);
   const conversation = useResource<Conversation>(
     sessionId ? `/v1/chat/sessions/${encodeURIComponent(sessionId)}` : null,
   );
@@ -85,7 +89,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     if (initialQuestion) composer.current?.focus({ preventScroll: true });
   }, [initialQuestion]);
   const activeSession = conversation.data ?? sessions.data?.items.find((session) => session.id === sessionId);
-  const scope = sessionId ? sessionScope(activeSession) : draftScope;
+  const scope = sessionId && (activeSession || !dayChat) ? sessionScope(activeSession) : draftScope;
   const meetings = timeline.data?.meetings ?? [];
   const selectedMeeting = scope.kind === "meeting" ? meetings.find((meeting) => meeting.id === scope.meeting_id) : undefined;
   const today = localDay(timezone);
@@ -97,13 +101,14 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       ? selectedMeeting ? t("Meeting · {value0}", { value0: dateTimeLabel(selectedMeeting.started_at, timezone) }) : t("Selected meeting")
       : scope.kind === "recording" ? t("This recording only") : t("All diaries (all days)");
   useEffect(() => {
+    if (embedded) return;
     try {
       if (sessionId) localStorage.setItem(storageKey, sessionId);
       else localStorage.removeItem(storageKey);
     } catch {
       /* Storage may be disabled; sessions still persist on the backend. */
     }
-  }, [sessionId, storageKey]);
+  }, [sessionId, storageKey, embedded]);
   useLayoutEffect(() => {
     if (history.current) history.current.open = window.matchMedia(desktopChat).matches;
   }, []);
@@ -170,7 +175,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
       }
       setQuestion("");
       setSessionId(result.session_id);
-      sessions.refresh();
+      if (!dayChat) sessions.refresh();
     } catch (error) {
       if (!controller.signal.aborted) setError(errorMessage(error));
     } finally {
@@ -199,6 +204,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     else composer.current?.focus({ preventScroll: true });
   }
   function changeScope(next: ChatScope) {
+    if (JSON.stringify(next) === JSON.stringify(scope)) return;
     jumpToLatest();
     setDraftScope(next);
     setSessionId(undefined);
@@ -206,8 +212,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
     setCompleted(undefined);
   }
   return (
-    <div className="chat-layout">
-      <details className="chat-index" ref={history}>
+    <div className={dayChat ? "chat-layout chat-layout-embedded" : "chat-layout"}>
+      {!dayChat ? <details className="chat-index" ref={history}>
         <summary className="chat-index-heading">
           <Icon name="chat" size={18} />
           <h2>{t("Conversations")}</h2>
@@ -247,11 +253,14 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
         {!sessions.loading && !sessions.error && !sessions.data?.items.length ? (
           <p className="caption">{t("Your conversations will appear here. They stay on your home-core.")}</p>
         ) : null}
-      </details>
+      </details> : null}
       <section className="conversation-panel" aria-labelledby="chat-title">
         <header className="chat-thread-header">
           <div className="chat-thread-title">
-            <h2 id="chat-title">{activeSession?.title || (sessionId && conversation.loading ? t("Loading conversation…") : t("New conversation"))}</h2>
+            <h2 id="chat-title">{dayChat ? t("Ask Daythread") : activeSession?.title || (sessionId && conversation.loading ? t("Loading conversation…") : t("New conversation"))}</h2>
+            {dayChat ? <button type="button" className="text-button day-chat-close" aria-label={t("Close")} onClick={dayChat.onClose}>
+              <Icon name="close" size={18} />
+            </button> : null}
           </div>
           <details className="chat-context" ref={scopeDetails}>
             <summary className="chat-context-summary">
@@ -261,7 +270,14 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <span className="sr-only">{t("Chat scope")}</span>
             </summary>
         <div className="chat-scope">
-          <label>
+          {dayChat ? <fieldset className="chat-range-shortcuts" disabled={Boolean(sending) || conversation.loading}>
+            <legend>{t("Chat with")}</legend>
+            <button type="button" className="button small" onClick={() => changeScope({ kind: "day", day: dayChat.day })}>{t("This day")}</button>
+            <button type="button" className="button small" onClick={() => changeScope({ kind: "range", ...dateRangeForShortcut("this_week", dayChat.day) })}>{t("This week")}</button>
+            {scope.kind !== "range" ? <button type="button" className="button small" onClick={() => changeScope({ kind: "range",
+              start_day: dayChat.day, end_day: dayChat.day })}>{t("Date range")}</button> : null}
+          </fieldset> : null}
+          {!dayChat ? <label>
             <span>{t("Chat with")}</span>
             <select
               aria-label={t("Chat scope")}
@@ -280,8 +296,8 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
               <option value="meeting" disabled={!meetings.length && scope.kind !== "meeting"}>{t("Meeting")}</option>
               {scope.kind === "recording" ? <option value="recording">{t("Recording")}</option> : null}
             </select>
-          </label>
-          {scope.kind === "day" ? (
+          </label> : null}
+          {!dayChat && scope.kind === "day" ? (
             <label>
               <span>{t("Date")}</span>
               <input type="date" aria-label={t("Chat date")} value={scope.day}
@@ -308,7 +324,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                     if (value) changeScope({ kind: "range", start_day: value < scope.start_day ? value : scope.start_day, end_day: value });
                   }} />
               </label>
-              <fieldset className="chat-range-shortcuts" disabled={Boolean(sending) || conversation.loading}>
+              {!dayChat ? <fieldset className="chat-range-shortcuts" disabled={Boolean(sending) || conversation.loading}>
                 <legend>{t("Date shortcuts")}</legend>
                 {dateRangeShortcuts.map((shortcut) => {
                   const range = dateRangeForShortcut(shortcut.id, today);
@@ -319,7 +335,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
                     onClick={() => changeScope({ kind: "range", ...range })}
                   >{t(shortcut.label)}</button>;
                 })}
-              </fieldset>
+              </fieldset> : null}
               <p className="caption">{t("Both dates included ·")}{" "}{timezone}{t(". Weeks run Monday–Sunday; shortcuts select full calendar periods.")}</p>
             </>
           ) : scope.kind === "meeting" ? (
@@ -340,6 +356,7 @@ export function Chat({ timezone, initialScope, initialQuestion }: { timezone: st
           {scope.kind === "meeting" && !timeline.loading && !timeline.error && !meetings.length ? <p className="caption">{t("Meetings appear here after a meeting has been recorded.")}</p> : null}
         </div>
           </details>
+          {dayChat?.filtered ? <p className="caption day-chat-filter-note">{t("Chat uses all entries in the chosen period, regardless of these filters.")}</p> : null}
         </header>
         <div className="chat-transcript">
         <div className="messages" ref={messageViewport} role="log" aria-label={t("Conversation messages")} aria-relevant="additions text" tabIndex={0} onScroll={(event) => {

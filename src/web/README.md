@@ -32,14 +32,14 @@ Settings → Connections lists recording brands from the server vendor catalog. 
 
 The UI shows empty, queued, failure, and model-unavailable states from the actual API. Recaps, chats, original audio, and correction history always come from home-core. Rewind audio uses the exact same end timestamp as its summary request. Gesture hints do not crop recordings, and the UI observes the configured flag cooldown.
 
-Today starts with the saved **Day summary**, or the introduction from the detailed recap if no
-separate summary has been generated. **Read the detailed recap** opens the long-form view;
-**Topics** lets you search and open individual subjects. Each topic opens on **Topic summary**;
-**Topic transcript** switches to the matching original passages. **Day entries** jumps to the
-chronological list of conversations, voice notes, and transcript imports. Those entries and
-their topics remain available before a day summary is ready. **Ask Daythread** opens Chat for
-the selected day, its Monday–Sunday week, or an editable date range beginning on the selected
-day. Chat uses the full chosen period, independently of Today’s tag and location filters.
+Today shows one **Day summary**: the detailed recap, generated automatically as transcribed
+recordings become eligible throughout the day. **Topics** lets you search and open individual
+subjects. Each topic opens on **Topic summary**; **Topic transcript** switches to the matching
+original passages. **Day recordings** jumps to the chronological list of conversations, voice
+notes, and transcript imports, which remain available before the recap is ready. The floating
+**Ask Daythread** bubble opens a chat on Today. Its header shows the selected day by default;
+open the date control to switch to that day’s Monday–Sunday week or choose a custom date range.
+Chat uses the full chosen period, independently of Today’s tag and location filters.
 
 Today shows recording activity alongside the day content, including recordings waiting to upload,
 server queue and processing counts, transcription stages and chunk progress, and queued or

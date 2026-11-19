@@ -121,6 +121,22 @@
 .chat-starter { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: start; min-height: 44px; padding: 9px 12px; background: var(--canvas); border: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
 .chat-starter:hover { background: var(--hover); border-color: var(--hover-line); }
 
+.day-chat-dock {
+  --chat-dock-bottom: max(22px, env(safe-area-inset-bottom));
+  --chat-dock-side: max(16px, env(safe-area-inset-right));
+  position: fixed; right: var(--chat-dock-side); bottom: var(--chat-dock-bottom); z-index: 24;
+}
+.day-chat-launcher { display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border-radius: 50%; box-shadow: var(--shadow); }
+.day-chat-window { position: absolute; right: 0; bottom: 66px; width: min(420px, calc(100vw - var(--chat-dock-side) - 12px)); }
+.day-chat-window:focus-visible { outline-offset: 4px; border-radius: 18px; }
+.chat-layout.chat-layout-embedded { display: block; }
+.chat-layout-embedded .conversation-panel { height: min(560px, calc(100dvh - var(--chat-dock-bottom) - max(10px, env(safe-area-inset-top)) - 66px)); }
+.chat-layout-embedded .chat-thread-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-layout-embedded .chat-thread-title h2 { margin: 0; }
+.chat-layout-embedded .day-chat-close { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+.chat-layout-embedded .chat-range-shortcuts .button { min-height: 44px; }
+.day-chat-filter-note { margin: 0 0 8px; }
+
 @media (min-width: 1101px) {
   .chat-layout { grid-template-columns: minmax(190px, 235px) minmax(0, 1fr); }
   .chat-layout:has(.chat-index:not([open])) { grid-template-columns: minmax(0, 1fr); }
@@ -128,6 +144,8 @@
   .chat-index nav { max-height: min(70dvh, 860px); }
 }
 @media (max-width: 760px) {
+  .day-chat-dock { --chat-dock-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .chat-layout-embedded .chat-scope { max-height: min(26dvh, 200px); }
   .main-canvas[data-page='chat'] { padding-inline: clamp(10px, 4vw, 20px); }
   .main-canvas[data-page='chat'] .page-header { margin-bottom: 12px; }
   .chat-layout { gap: 8px; }

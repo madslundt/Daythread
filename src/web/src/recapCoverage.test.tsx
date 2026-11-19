@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Recap } from "./types";
 import { localDay } from "./format";
-import { dayChatScopes, RecapSection, Today } from "./Today";
+import { RecapSection, Today } from "./Today";
+import { Chat } from "./Chat";
 import { allDayFilters, rememberDayFilters, type DayFilters } from "./dayFilters";
 
 const resource = vi.hoisted(() => ({ data: undefined as Recap | undefined, useResource: vi.fn() }));
@@ -152,11 +153,12 @@ describe("transcribed recording recap display", () => {
       const html = renderToStaticMarkup(<Today {...props} day={day} />);
       expect(html.indexOf('aria-label="Day filters"')).toBeLessThan(html.indexOf('class="recap-section"'));
       expect(html.indexOf('aria-label="Day filters"')).toBeLessThan(html.indexOf('class="timeline-section"'));
-      expect(html.match(/<select/g)?.length).toBe(4); // Tag, location, highlight category and quick rewind.
+      expect(html.match(/<select/g)?.length).toBe(3); // Tag, location and quick rewind.
       expect(html).toContain("Clear filters");
       expect(html).toContain("No recordings match the selected filters for this day.");
       expect(html).not.toContain("The day recap still covers the whole day.");
-      expect(html).toContain("Chat uses all entries in the chosen period, regardless of these filters.");
+      expect(html).toContain('aria-label="Ask Daythread"');
+      expect(html).not.toContain("Your day at a glance");
       const timelinePath = resource.useResource.mock.calls.map(([path]) => String(path)).reverse().find((path) => path.startsWith("/v1/recording-groups?"))!;
       const query = new URLSearchParams(timelinePath.split("?")[1]);
       expect(query.get("day")).toBe(day); expect(query.get("tag_id")).toBe("tag"); expect(query.get("zone_id")).toBe("zone"); expect(query.get("offset")).toBe("0");
@@ -168,13 +170,18 @@ describe("Today reading and chat", () => {
   const props = { day: "2026-10-15", timezone: "UTC", onUpload: () => {}, onPrepare: () => {}, onRewind: () => {}, onChat: () => {} };
   const renderToday = () => renderToStaticMarkup(<Today {...props} />);
 
-  it("shows the recap introduction as a fallback, with anchors for topics and entries", () => {
+  it("shows the full automatic recap once, with anchors for topics and recordings", () => {
     resource.data = { ...resource.data!, summary: "A productive Thursday.\n\n## Garden\nThe roses are ready for planting." };
     const html = renderToday();
     expect(html).toContain("Day summary");
     expect(html).toContain("A productive Thursday.");
     expect(html.indexOf("A productive Thursday.")).toBeLessThan(html.indexOf('id="day-topics"'));
-    expect(html).toContain("Read the detailed recap");
+    expect(html.match(/The roses are ready for planting\./g)).toHaveLength(1);
+    expect(html).not.toContain("Read the detailed recap");
+    expect(html).not.toContain("Your day at a glance");
+    expect(html).toContain("Day recordings");
+    expect(resource.useResource).toHaveBeenCalledWith("/v1/recaps/2026-10-15", 15_000);
+    expect(resource.useResource.mock.calls.some(([path]) => path?.endsWith("/overview"))).toBe(false);
     expect(html).not.toContain('data-topic-id="recap:introduction"');
     expect(html).toContain('data-topic-id="recap:0:Garden"');
     expect(html).toContain('id="day-entries"');
@@ -191,9 +198,9 @@ describe("Today reading and chat", () => {
     expect(html).not.toContain("Plant the roses on Friday.");
     expect(html).not.toContain("An original spoken sentence.");
     expect(html).not.toContain("Read the detailed recap");
-    expect(html).toContain('aria-label="Chat with this day"');
-    expect(html).toContain('aria-label="Chat with this week"');
-    expect(html).toContain('aria-label="Chat with a date range"');
+    expect(html).toContain('aria-label="Ask Daythread"');
+    expect(html).toContain('aria-expanded="false" aria-haspopup="dialog"');
+    expect(html).not.toContain('class="chat-layout');
   });
 
   it("does not show an empty topic browser for a narrative-only recap", () => {
@@ -204,11 +211,14 @@ describe("Today reading and chat", () => {
     expect(html).not.toContain("Search recap topics");
   });
 
-  it("starts week chat on the Monday of the selected day, not the current week", () => {
-    expect(dayChatScopes("2027-01-03")).toEqual({
-      day: { kind: "day", day: "2027-01-03" },
-      week: { kind: "range", start_day: "2026-12-28", end_day: "2027-01-03" },
-      range: { kind: "range", start_day: "2027-01-03", end_day: "2027-01-03" },
-    });
+  it("shows the selected day in the embedded chat header with period choices and a filter warning", () => {
+    const html = renderToStaticMarkup(<Chat timezone="UTC" initialScope={{ kind: "day", day: "2027-01-03" }}
+      dayChat={{ day: "2027-01-03", filtered: true, onClose: () => {} }} />);
+    expect(html).toContain("Jan 3, 2027");
+    expect(html).toContain("This day");
+    expect(html).toContain("This week");
+    expect(html).toContain("Date range");
+    expect(html).toContain("Chat uses all entries in the chosen period, regardless of these filters.");
+    expect(html).not.toContain("Saved conversations");
   });
 });
